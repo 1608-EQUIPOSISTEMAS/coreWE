@@ -1,0 +1,57 @@
+# ---------------------------
+# Node / Fastify
+# ---------------------------
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# PM2 logs
+.pids
+*.pid
+*.seed
+*.pid.lock
+
+# Cache
+.cache/
+.tmp/
+temp/
+tmp/
+
+# Build / Output
+dist/
+build/
+out/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Editor folders
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript (si usas TS)
+*.tsbuildinfo
+
+# Prisma (si usas)
+prisma/generated/
+prisma/migrations/
+
+# Docker
+docker-data/
+
+# Optional: ignore local test files
+tests/local/

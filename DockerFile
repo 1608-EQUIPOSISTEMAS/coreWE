@@ -1,0 +1,22 @@
+# COREWE/Dockerfile
+
+# Usamos Node 20 (o la versión que uses) en versión ligera
+FROM node:20-alpine
+
+# Directorio de trabajo dentro del contenedor
+WORKDIR /app
+
+# Copiamos package.json primero para aprovechar la caché de Docker
+COPY package.json package-lock.json ./
+
+# Instalamos dependencias
+RUN npm install
+
+# Copiamos el resto del código
+COPY . .
+
+# Exponemos el puerto que usa tu Fastify (8082 según tu terminal)
+EXPOSE 8082
+
+# Comando para iniciar (asegúrate que en tu package.json tengas el script "start")
+CMD ["npm", "run", "start"]
