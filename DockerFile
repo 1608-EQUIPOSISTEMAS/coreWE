@@ -7,12 +7,10 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copiamos package.json primero para aprovechar la caché de Docker
-COPY package.json package-lock.json ./
+COPY package*.json ./
 
-# Instalamos dependencias
 RUN npm install
 
-# Copiamos el resto del código
 COPY . .
 
 # Exponemos el puerto que usa tu Fastify (8082 según tu terminal)
