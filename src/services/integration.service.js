@@ -3,11 +3,11 @@ import { google } from 'googleapis'
 import path from 'path'
 
 
-async function syncLeadsToSheet({ user_registration_id }) {
+async function syncLeadsToSheet({ user_id }) {
   const spreadsheetId = '1B4NAcmk1QjwLV_NhfP4FPkQrdFWLdanvIg_gkPufCPg'; 
   const sheetName = '2. Base';
 
-  const result = await pool.query(`SELECT * FROM public.sp_leads_report($1)`, [user_registration_id])
+  const result = await pool.query(`SELECT * FROM public.sp_leads_report($1)`, [user_id])
   const rows = result.rows || []
 
   if (rows.length === 0) {
@@ -145,7 +145,7 @@ async function syncInscToSheet({ enrollment_id }) {
 }
 
 async function syncScheduleToSheet() {
-
+  console.log("datassss")
   const spreadsheetId = '1-kp3PVfpsNQcl4HKBFnPkjTDVpAeLKgCaV5fEqs30gs'; 
   const sheetName = 'SISTEMAS-PILOTO';
 

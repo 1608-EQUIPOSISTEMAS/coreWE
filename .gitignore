@@ -43,6 +43,11 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Editor preferences
+.history
+.credentials/
+
+
 # TypeScript (si usas TS)
 *.tsbuildinfo
 

@@ -184,6 +184,7 @@ export default async function editionRoutes (fastify) {
           date_to:            { type: ['string', 'null'] }, // 'YYYY-MM-DD'
           instructor_id:      { type: ['integer', 'null'] },
           program_version_id: { type: ['integer', 'null'] },
+          clasification: { type: ['string', 'null'] },
           cat_type_program:   { type: ['integer', 'null'] },
           cat_category:       { type: ['integer', 'null'] },
           cat_day_combination:{ type: ['integer', 'null'] },

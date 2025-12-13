@@ -59,6 +59,7 @@ async function editionList (payload = {}) {
     cat_model_modality = null,
     cat_segment = null,
     cat_course_category = null,
+    clasification = null,
     
     active = null,
     q = null,
@@ -83,6 +84,7 @@ async function editionList (payload = {}) {
     cat_segment,
     cat_course_category,
     cat_model_modality,
+    clasification,
     q,
     page,
     size
@@ -224,22 +226,21 @@ async function editionGet ({ id }) {
 async function editionCaller (payload = {}) {
   const {
     program_version_id,
-    active = 'Y', 
+    active = null, 
     cat_status_edition = null,
     q = null
   } = payload
 
-  // Normalizar active
-  let activeParam = active
-  if (active === true) activeParam = 'Y'
-  else if (active === false) activeParam = 'N'
+  console.log("data")
+  console.log(program_version_id)
+
 
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_edition_caller',
     [
       program_version_id,
-      activeParam,
+      active,
       cat_status_edition,
       q
     ],

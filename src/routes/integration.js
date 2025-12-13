@@ -10,10 +10,10 @@ export default async function integrationRoutes (fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['user_registration_id'],
+        required: ['user_id'],
         additionalProperties: false,
         properties: {
-          user_registration_id: {
+          user_id: {
             type: 'integer',
             additionalProperties: true
           }
