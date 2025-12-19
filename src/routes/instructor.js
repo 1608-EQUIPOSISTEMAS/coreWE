@@ -88,41 +88,92 @@ export default async function instructorRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
-  // ACTUALIZAR INSTRUCTOR + PERSONA
+ // ACTUALIZAR INSTRUCTOR + PERSONA + DOCUMENTOS
   fastify.post('/instructorupdate', {
     schema: {
-      body: {
+  body: {
+    type: 'object',
+    required: ['instructor'], // 'id' suele venir en params, pero si viene en body, agrégalo
+    additionalProperties: false,
+    properties: {
+      id: { type: 'integer' }, 
+      
+      instructor: {
         type: 'object',
-        required: ['id', 'instructor'],
         additionalProperties: false,
         properties: {
-          id: { type: 'integer' }, // instructor_id
-          instructor: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              // datos persona (todos opcionales: update parcial)
-              first_name:         { type: ['string', 'null'] },
-              last_name:          { type: ['string', 'null'] },
-              mother_last_name:   { type: ['string', 'null'] },
-              document_number:    { type: ['string', 'null'] },
-              cat_type_document:  { type: ['integer', 'null'] },
-              cat_occupation:     { type: ['integer', 'null'] },
-              cat_person_status:  { type: ['integer', 'null'] },
-              cat_country:        { type: ['integer', 'null'] },
-              birthday:           { type: ['string', 'null'] }, // 'YYYY-MM-DD'
+          // --- DATOS PERSONALES ---
+          first_name:         { type: ['string', 'null'] },
+          last_name:          { type: ['string', 'null'] },
+          mother_last_name:   { type: ['string', 'null'] },
+          document_number:    { type: ['string', 'null'] },
+          cat_type_document:  { type: ['integer', 'null'] },
+          cat_occupation:     { type: ['integer', 'null'] },
+          cat_person_status:  { type: ['integer', 'null'] },
+          cat_country:        { type: ['integer', 'null'] },
+          birthday:           { type: ['string', 'null'] },
+          
+          // --- DATOS PROFESIONALES (NUEVOS) ---
+          linkedin:           { type: ['string', 'null'] },
+          relevant_company:   { type: ['string', 'null'] }, 
+          relevant_work:      { type: ['string', 'null'] }, 
 
-              // flags de activo
-              person_active:      { type: ['string', 'null'] }, // 'Y' | 'N'
-              instructor_active:  { type: ['string', 'null'] }, // 'Y' | 'N'
-
-              // auditoría
-              user_modification_id: { type: ['integer', 'null'] }
+          // --- CVS ---
+          cv_url:             { type: ['string', 'null'] },
+          cv_documents_url:   { type: ['string', 'null'] },
+          // --- ARRAY DE PROGRAMAS (NUEVO) ---
+          programs: {
+            type: ['array', 'null'],
+            items: {
+              type: 'object',
+              required: ['program_id'], 
+              additionalProperties: false,
+              properties: {
+                instructor_program_id: { type: ['integer', 'null'] }, 
+                program_id:            { type: 'integer' },
+                profile_summary:       { type: ['string', 'null'] },
+                active:                { type: ['string', 'null'] } // Recibe 'Y' o 'N'
+              }
             }
-          }
+          },
+          // --- ARRAY DE FINANCIEROS (ACTUALIZADO) ---
+          financials: {
+             type: ['array', 'null'],
+             items: {
+               type: 'object',
+               additionalProperties: false,
+               properties: {
+                 instructor_financial_id: { type: ['integer', 'null'] },
+                 
+                 // CAMBIO: bank_id eliminado, entra bank_name
+                 bank_name:            { type: ['string', 'null'] }, 
+                 
+                 cat_payment_type:     { type: ['integer', 'null'] },
+                 cat_currency:         { type: ['integer', 'null'] },
+                 
+                 // CAMBIO: hourly_rate eliminado, entra cat_rate_pay_id
+                 cat_rate_pay_id:      { type: ['integer', 'null'] },
+                 
+                 observations:         { type: ['string', 'null'] },
+                 
+                 // Array de URLs
+                 attachments: { 
+                    type: ['array', 'null'],
+                    items: { type: 'string' } 
+                 }
+               }
+             }
+          },
+
+          // --- METADATA ---
+          person_active:        { type: ['string', 'null'] },
+          instructor_active:    { type: ['string', 'null'] },
+          user_modification_id: { type: ['integer', 'null'] }
         }
       }
     }
+  }
+}
   }, async (req, reply) => {
     const { instructor_id, person_id, data } =
       await instructorService.instructorUpdate(req.body)

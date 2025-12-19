@@ -1,11 +1,11 @@
 // src/app.js
 import 'dotenv/config' 
 
-import path from 'path' // <--- 1. IMPORTAR PATH
+import path from 'path' 
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
-import fastifyStatic from '@fastify/static' // <--- 2. IMPORTAR STATIC
-import fastifyMultipart from '@fastify/multipart' // <--- 3. IMPORTAR MULTIPART
+import fastifyStatic from '@fastify/static' 
+import fastifyMultipart from '@fastify/multipart' 
 
 import catalogRoutes from './routes/catalog.js'
 import comercialRoutes from './routes/comercial.js'
@@ -18,21 +18,19 @@ import authRoutes from './routes/auth.js'
 import corporateAgreementRoutes from './routes/corporate_agreement.js'  
 import integrationRoutes from './routes/integration.js'
 
+// 1. IMPORTAR LA NUEVA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
+import uploadRoutes from './routes/upload.js' 
+
 const app = Fastify({
   logger: true,
   ajv: { customOptions: { allowUnionTypes: true } }
 })
 
 // --- REGISTRO DE PLUGINS ---
-
-// 4. REGISTRAR MULTIPART (Vital para recibir archivos)
 await app.register(fastifyMultipart, {
   limits: {
-    // 30 MB (ajusta este número según lo que necesites)
     fileSize: 30 * 1024 * 1024, 
-    
-    // Opcionales (buenos para seguridad):
-    files: 5, // Máximo 5 archivos por request
+    files: 5, 
   }
 })
 
@@ -50,19 +48,21 @@ await app.register(corporateAgreementRoutes, { prefix: '/api/corporate_agreement
 await app.register(authRoutes,      { prefix: '/api/auth' })
 await app.register(integrationRoutes, { prefix: '/api/integration' })
 
+// 2. REGISTRAR LA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
+// Esto habilitará el endpoint: POST http://tudominio/api/upload
+await app.register(uploadRoutes,    { prefix: '/api/upload' }) 
+
+
 app.get('/health', async () => ({ ok: true }))
 
-// --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS (SOLO DESARROLLO) ---
-// En producción, Caddy/Nginx se encargan de esto.
+// --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS ---
 if (process.env.NODE_ENV !== 'production') {
   console.log('Modo Desarrollo: Sirviendo /uploads desde Node.js');
-  
   app.register(fastifyStatic, {
     root: path.join(process.cwd(), 'uploads'),
-    prefix: '/uploads/', // accesible en http://localhost:8082/uploads/
-    decorateReply: false // Evita conflictos si registras static multiples veces
+    prefix: '/uploads/', 
+    decorateReply: false 
   });
-  
 }
 
 const PORT = process.env.PORT || 8082
@@ -70,4 +70,4 @@ const HOST = process.env.HOST || '0.0.0.0'
 
 app.listen({ port: PORT, host: HOST })
   .then(() => app.log.info(`API escuchando en http://${HOST}:${PORT}`))
-  .catch((err) => { app.log.error(err); process.exit(1) }) // process.exit(1) para error
+  .catch((err) => { app.log.error(err); process.exit(1) })

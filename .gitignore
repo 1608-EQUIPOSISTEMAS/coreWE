@@ -33,6 +33,7 @@ out/
 # Coverage
 coverage/
 .nyc_output/
+.uploads/
 
 # Editor folders
 .vscode/
