@@ -26,6 +26,7 @@ export default async function programRoutes (fastify) {
               cat_category:         { type: ['integer', 'null'] },
               cat_model_modality:   { type: ['integer', 'null'] },
               active:               { type: ['string', 'null'] }, // 'Y' | 'N'
+              skem_clasification:       { type: ['string', 'null'] },
               
               program_versions: {
                 type: ['array', 'null'],
@@ -36,7 +37,8 @@ export default async function programRoutes (fastify) {
                     program_version_id: { type: ['integer', 'null'] },
                     cat_course_category: { type: ['integer', 'null'] },
                     version_code:       { type: ['string', 'null'] },
-                    skem_clasification:       { type: ['string', 'null'] },
+                    brand_name:       { type: ['string', 'null'] },
+                    expedient_link:   { type: ['string', 'null'] },
                     sessions:           { type: ['integer', 'null'] },
                     active:             { type: ['string', 'null'] },
                     observations:       { type: ['string', 'null'] },
@@ -128,6 +130,7 @@ export default async function programRoutes (fastify) {
               cat_model_modality:   { type: ['integer', 'null'] },
               active:               { type: ['string', 'null'] },
               
+              skem_clasification:       { type: ['string', 'null'] },
               program_versions: {
                 type: ['array', 'null'],
                 items: {
@@ -135,13 +138,15 @@ export default async function programRoutes (fastify) {
                   additionalProperties: false,
                   required: ['program_version_id'],
                   properties: {
-                    program_version_id: { type: 'integer' },
+                    program_version_id: { type: ['integer', 'null'] },
                     cat_course_category: { type: ['integer', 'null'] },
+                    expedient_link:   { type: ['string', 'null'] },
                     version_code:       { type: ['string', 'null'] },
-                    skem_clasification:       { type: ['string', 'null'] },
+                    brand_name:       { type: ['string', 'null'] },
                     sessions:           { type: ['integer', 'null'] },
                     observations:       { type: ['string', 'null'] },
                     description:        { type: ['string', 'null'] },
+                    active:             { type: ['string', 'null'] },
                     abbreviation:       { type: ['string', 'null'] },
                     children_ids: {
                       type: ['array', 'null'],

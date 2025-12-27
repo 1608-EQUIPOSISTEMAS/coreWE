@@ -17,7 +17,7 @@ import customerRoutes from './routes/customer.js'
 import authRoutes from './routes/auth.js'
 import corporateAgreementRoutes from './routes/corporate_agreement.js'  
 import integrationRoutes from './routes/integration.js'
-
+import fastifyJwt from '@fastify/jwt'
 // 1. IMPORTAR LA NUEVA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 import uploadRoutes from './routes/upload.js' 
 
@@ -35,6 +35,23 @@ await app.register(fastifyMultipart, {
 })
 
 await app.register(cors, { origin: true, credentials: true })
+
+
+// -----------------------------------------------------
+// 1. REGISTRAR JWT Y EL DECORADOR (AGREGAR ESTO AQUÍ)
+// -----------------------------------------------------
+await app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET || 'mi_secreto_super_seguro_cambialo' // Usa variable de entorno idealmente
+})
+
+// Decorador para proteger rutas
+app.decorate('authenticate', async function (request, reply) {
+  try {
+    await request.jwtVerify()
+  } catch (err) {
+    reply.send(err)
+  }
+})
 
 // --- REGISTRO DE RUTAS ---
 await app.register(catalogRoutes,   { prefix: '/api/catalog' })

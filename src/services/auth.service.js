@@ -1,46 +1,39 @@
 // src/services/auth.service.js
 import { pool } from '../plugins/db.js'
-
+import { callProcedureReturningRows } from '../plugins/spHelper.js'
 /**
  * LOGIN
  * Verifica usuario y contraseña contra la BD
  */
-async function login({ username, password }) {
+// authService.js
+export async function login({ username, password }) {
   try {
-    console.log('Intentando login para:', username)
-    
-    // Llamamos al SP pasando alias (username) y password
-    const result = await pool.query(
-      'SELECT * FROM public.sp_auth_login($1, $2)',
-      [username, password]
-    )
-    
-    console.log('Resultado de la query:', result.rows)
-    
-    // El resultado está en result.rows, no en result directamente
-    const user = result.rows[0] || null
-    
+    // 1. Llamamos al SP usando tu helper
+    // Pasamos los parámetros en orden (p_alias, p_password). 
+    // El cursor lo maneja el helper internamente.
+    const rows = await callProcedureReturningRows(pool, 'public.sp_auth_login', [username, password]);
+
+    // 2. Extraemos el JSON (Postgres lo devuelve en la columna 'result')
+    // Si no hay filas (credenciales mal), user será undefined
+    const user = rows?.[0]?.result;
+
     if (!user) {
-      throw new Error('Credenciales inválidas')
+      throw new Error('Usuario o contraseña incorrectos');
     }
-    
-    // Aquí retornamos la data del usuario
+
+    // 3. Retornamos la estructura que espera tu controlador
+    // Como el JSON ya viene armado desde SQL, solo lo envolvemos en el objeto que necesitas
     return {
-      user: {
-        user_id: user.user_id,
-        person_id: user.person_id,
-        alias: user.alias,
-        email: user.email,
-        rol_id: user.rol_id,
-        full_name: user.full_name
-      }
+      user // Contiene: { user_id, alias, roles: [...], etc }
     }
+
   } catch (error) {
-    console.error('Error en login service:', error)
-    throw new Error('Error al autenticar: ' + error.message)
+    console.error('Error en login service:', error);
+    // Es buena práctica no revelar errores de BD al cliente final en el login, 
+    // pero mantenemos tu estructura de throw
+    throw error; 
   }
 }
-
 /**
  * userList
  * Obtiene la lista de usuarios desde la base de datos.

@@ -17,31 +17,35 @@ export default async function authRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    try {
-      const { username, password } = req.body
-      
-      console.log("data 1")
-      const { user } = await authService.login({ username, password })
-      
-      const token = 'simulacion_de_token_jwt_xyz'
-      console.log("data 2") 
+    // auth.js
+      try {
+        const { username, password } = req.body
+        const { user } = await authService.login({ username, password })
 
-      // 3. Responder
-      return reply.code(200).send({
-        ok: true,
-        data: {
-          token,
-          user
-        }
-      })
+        // GENERAR EL TOKEN REAL
+        const token = fastify.jwt.sign({ 
+          id: user.user_id,        
+          username: user.alias, 
+          roles: user.roles      // <--- GUARDAMOS EL ARRAY (ej: ['ADMIN', 'VENTAS'])
+        }, { 
+          expiresIn: '12h'    
+        })
 
-    } catch (error) {
-      // Manejo de error si credenciales fallan
-      return reply.code(401).send({ 
-        ok: false, 
-        message: 'Usuario o contraseña incorrectos' 
-      })
-    }
+        return reply.code(200).send({
+          ok: true,
+          data: {
+            token,
+            user // Enviamos el usuario completo al frontend para guardarlo en localStorage
+          }
+        })
+
+      } catch (error) { 
+        // Manejo de error si credenciales fallan
+        return reply.code(401).send({ 
+          ok: false, 
+          message: 'Usuario o contraseña incorrectos' 
+        }) 
+      }
   })
 
   //userlist

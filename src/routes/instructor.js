@@ -111,7 +111,11 @@ export default async function instructorRoutes (fastify) {
           cat_occupation:     { type: ['integer', 'null'] },
           cat_person_status:  { type: ['integer', 'null'] },
           cat_country:        { type: ['integer', 'null'] },
+          profile_resume:     { type: ['string', 'null'] },
           birthday:           { type: ['string', 'null'] },
+          phone:              { type: ['string', 'null'] },
+          email:              { type: ['string', 'null'] },
+          
           
           // --- DATOS PROFESIONALES (NUEVOS) ---
           linkedin:           { type: ['string', 'null'] },
