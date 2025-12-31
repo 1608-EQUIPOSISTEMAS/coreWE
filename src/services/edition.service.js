@@ -38,7 +38,7 @@ async function editionTreeRegister ({ edition = {}, user_id }) {
     ],
     { statementTimeoutMs: 25000 }
   )
-
+  console.log(rows)
   return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
 }
 
@@ -177,8 +177,16 @@ async function editionUpdate ({ id, edition = {}, user_id }) {
     { statementTimeoutMs: 25000 }
   )
 
-  // ✅ Cambia esto:
-  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
+  //get response and result
+
+  const row = rows?.[0] || {}
+  console.log(row)
+  return {
+    message: row.message,
+    result: row.result
+  }
+  
+  
 }
 
 
@@ -228,12 +236,10 @@ async function editionCaller (payload = {}) {
     program_version_id,
     active = null, 
     cat_status_edition = null,
-    q = null
+    q = null,
+    year = null,
+    month = null
   } = payload
-
-  console.log("data")
-  console.log(program_version_id)
-
 
   const rows = await callProcedureReturningRows(
     pool,
@@ -242,7 +248,9 @@ async function editionCaller (payload = {}) {
       program_version_id,
       active,
       cat_status_edition,
-      q
+      q,
+      month,
+      year
     ],
     { statementTimeoutMs: 15000 }
   )

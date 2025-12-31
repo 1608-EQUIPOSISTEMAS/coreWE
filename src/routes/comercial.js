@@ -146,63 +146,63 @@ export default async function comercialRoutes (fastify) {
   })
 
 
- // inscribir desde el modal del LeadNew
+  // inscribir desde el modal del LeadNew
   fastify.post('/enrollmentregister', {
     schema: {
       body: {
         type: 'object',
-        // Validamos que venga la estructura básica necesaria
         required: ['inscription', 'user_id'], 
         properties: {
           user_id: { type: 'integer' },
-          
-          // El objeto principal que espera el SP
           inscription: {
             type: 'object',
-            required: ['lead_id', 'program_version_id', 'cat_insc_modality', 'selectedCurrencyAlias'], 
+            required: [
+              'lead_id', 'program_version_id', 'document', 
+              'cat_type_document', 'full_name', 'total_amount', 
+              'cat_type_payment', 'cat_currency'
+            ], 
             properties: {
               lead_id: { type: 'integer' },
-              program_version_id: { type: 'integer' },
+              program_version_id: { type: ['integer', 'null'] },
               program_edition_id: { type: ['integer', 'null'] },
               
               // Datos Persona
-              document: { type: ['string', 'null'] },
-              cat_type_document: { type: ['integer', 'null'] }, // ID o alias si lo manejas
-              full_name: { type: ['string', 'null'] },
+              document: { type: 'string' },
+              cat_type_document: { type: 'integer' }, 
+              full_name: { type: 'string' },
               last_name: { type: ['string', 'null'] },
               mother_last_name: { type: ['string', 'null'] },
               email: { type: ['string', 'null'] },
               
-              // Datos Financieros
+              // Datos Financieros (Mapeados al SP)
               cat_insc_modality: { type: ['integer', 'null'] },
-              cat_type_payment: { type: ['integer', 'null'] }, // Alias o ID
-              selectedCurrencyAlias: { type: ['string', 'null'] },
-              montoFinal: { type: 'number' },
-              saved_money: { type: 'number' },
-              
-              // Descuentos (IDs)
+              cat_type_payment: { type: 'integer' }, // Este entra como cat_payment_plan
+              cat_currency: { type: 'integer' },
+              total_amount: { type: 'number' },    
+              saved_money: { type: 'number' },     
+              discount_amount: { type: 'number' },
+              student_attachment_url:              { type: ['string', 'null'] },
+              payment_attachment_url: { type: ['string', 'null'] },
+              // IDs para la tabla enrollment_discounts
               dsct_porcent_id: { type: ['integer', 'null'] },
               dsct_stick_id: { type: ['integer', 'null'] },
               dsct_benefit_id: { type: ['integer', 'null'] },
               
-              // B2B
-              b2b_contract_id: { type: ['integer', 'null'] }
+              b2b_contract_id: { type: ['integer', 'null'] },
+              observations: { type: ['string', 'null'] }
             }
           }
         }
       }
     }
   }, async (req, reply) => {
-    const payload = req.body
-    
-    // Pasamos todo el body al servicio
-    const response = await comercialService.enrollmentRegister(payload)
+    const response = await comercialService.enrollmentRegister(req.body);
     
     return reply.code(201).send({
       ok: true,
-      ...response // devuelve enrollment_id, person_id, message
-    })
-  })
+      data: response // Contiene new_id, result, message
+    });
+  });
 
 
   

@@ -26,6 +26,7 @@ export default async function editionRoutes (fastify) {
               start_date:              { type: ['string', 'null'] }, // 'YYYY-MM-DD'
               end_date:                { type: ['string', 'null'] }, // 'YYYY-MM-DD'
               cat_type_approved:       { type: ['integer', 'null'] },
+              cat_segment_id:                { type: ['integer', 'null'] },
               cat_status_edition:      { type: ['integer', 'null'] },
               vacant:                  { type: ['integer', 'null'] },
               notes:                   { type: ['string', 'null'] },
@@ -99,6 +100,8 @@ export default async function editionRoutes (fastify) {
               end_date:                { type: ['string', 'null'] },
               cat_type_approved:       { type: ['integer', 'null'] },
               cat_status_edition:      { type: ['integer', 'null'] },
+              year:                   { type: ['integer', 'null'] },
+              cat_segment_id:          { type: ['integer', 'null'] },
               vacant:                  { type: ['integer', 'null'] },
               notes:                   { type: ['string', 'null'] },
 
@@ -283,6 +286,7 @@ export default async function editionRoutes (fastify) {
               instructor_id:           { type: ['integer', 'null'] },
               start_date:              { type: ['string', 'null'] },
               end_date:                { type: ['string', 'null'] },
+              cat_segment_id:                { type: ['integer', 'null'] },
               cat_type_approved:       { type: ['integer', 'null'] },
               cat_status_edition:      { type: ['integer', 'null'] },
               vacant:                  { type: ['integer', 'null'] },
@@ -320,13 +324,11 @@ export default async function editionRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    const { edition_num_id, data } =
-      await editionService.editionUpdate(req.body)
+    const response = await editionService.editionUpdate(req.body)
 
     return reply.code(200).send({
+      ...response,
       ok: true,
-      edition_num_id,
-      data
     })
   })
 
@@ -343,6 +345,8 @@ export default async function editionRoutes (fastify) {
           program_version_id: { type: ['integer', 'null'] },
           active:             { type: ['boolean', 'string', 'null'] }, // true/false o 'Y'/'N'
           cat_status_edition: { type: ['integer', 'null'] },
+          year:               { type: ['integer', 'null'] },
+          month:              { type: ['integer', 'null'] },
           q:                  { type: ['string', 'null'] } // busca en global, clasification, specific
         }
       }
@@ -383,6 +387,7 @@ export default async function editionRoutes (fastify) {
               start_date:              { type: ['string', 'null'] },
               end_date:                { type: ['string', 'null'] },
               cat_type_approved:       { type: ['integer', 'null'] },
+              cat_segment_id:                { type: ['integer', 'null'] },
               cat_status_edition:      { type: ['integer', 'null'] },
               vacant:                  { type: ['integer', 'null'] },
 

@@ -2,6 +2,7 @@
 # Node / Fastify
 # ---------------------------
 node_modules/
+credentials/
 .env
 .env.*
 !.env.example
@@ -46,7 +47,6 @@ Thumbs.db
 
 # Editor preferences
 .history
-.credentials/
 
 
 # TypeScript (si usas TS)

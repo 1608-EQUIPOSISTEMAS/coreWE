@@ -20,6 +20,7 @@ import integrationRoutes from './routes/integration.js'
 import fastifyJwt from '@fastify/jwt'
 // 1. IMPORTAR LA NUEVA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 import uploadRoutes from './routes/upload.js' 
+import ficoRoutes from './routes/fico.js'
 
 const app = Fastify({
   logger: true,
@@ -49,7 +50,10 @@ app.decorate('authenticate', async function (request, reply) {
   try {
     await request.jwtVerify()
   } catch (err) {
-    reply.send(err)
+    reply.code(401).send({
+      message: 'Token inválido o expirado',
+      error: err.message
+    })
   }
 })
 
@@ -64,6 +68,7 @@ await app.register(customerRoutes,  { prefix: '/api/customer' })
 await app.register(corporateAgreementRoutes, { prefix: '/api/corporate_agreement' })
 await app.register(authRoutes,      { prefix: '/api/auth' })
 await app.register(integrationRoutes, { prefix: '/api/integration' })
+await app.register(ficoRoutes,      { prefix: '/api/fico' })
 
 // 2. REGISTRAR LA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 // Esto habilitará el endpoint: POST http://tudominio/api/upload
