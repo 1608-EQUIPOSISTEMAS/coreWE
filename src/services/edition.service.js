@@ -60,7 +60,6 @@ async function editionList (payload = {}) {
     cat_segment = null,
     cat_course_category = null,
     clasification = null,
-    
     active = null,
     q = null,
     page = 1,
@@ -89,6 +88,8 @@ async function editionList (payload = {}) {
     page,
     size
   }
+
+  console.log(filters)
 
   const rows = await callProcedureReturningRows(
     pool,

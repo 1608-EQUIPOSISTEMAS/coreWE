@@ -183,8 +183,8 @@ export default async function editionRoutes (fastify) {
         type: 'object',
         additionalProperties: false,
         properties: {
-          date_from:          { type: ['string', 'null'] }, // 'YYYY-MM-DD'
-          date_to:            { type: ['string', 'null'] }, // 'YYYY-MM-DD'
+          date_from:          { type: ['string', 'null'] },
+          date_to:            { type: ['string', 'null'] },
           instructor_id:      { type: ['integer', 'null'] },
           program_version_id: { type: ['integer', 'null'] },
           clasification: { type: ['string', 'null'] },
