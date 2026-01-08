@@ -62,15 +62,9 @@ export default async function editionRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    // Pasamos todo el body (edition + user_id)
-    const { edition_num_id, data } =
-      await editionService.editionRegister(req.body)
-
-    return reply.code(201).send({
-      ok: true,
-      edition_num_id,
-      data
-    })
+    
+    const response = await editionService.editionRegister(req.body);
+    return reply.code(201).send(response);
   })
 
   /**
@@ -163,14 +157,9 @@ export default async function editionRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    const { edition_num_id, data } =
-      await editionService.editionTreeRegister(req.body)
-
-    return reply.code(201).send({
-      ok: true,
-      edition_num_id,
-      data
-    })
+    
+    const response = await editionService.editionTreeRegister(req.body);
+    return reply.code(201).send(response);
   })
 
 
@@ -326,10 +315,7 @@ export default async function editionRoutes (fastify) {
   }, async (req, reply) => {
     const response = await editionService.editionUpdate(req.body)
 
-    return reply.code(200).send({
-      ...response,
-      ok: true,
-    })
+    return reply.code(201).send(response)
   })
 
     /**
@@ -446,15 +432,8 @@ export default async function editionRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    // Pasamos todo el body para que el servicio tenga acceso a edition y user_id
-    const { edition_num_id, data } =
-      await editionService.editionTreeUpdate(req.body)
-
-    return reply.code(200).send({
-      ok: true,
-      edition_num_id,
-      data
-    })
+    const response = await editionService.editionTreeUpdate(req.body);
+    return reply.code(201).send(response);
   })
 
 }

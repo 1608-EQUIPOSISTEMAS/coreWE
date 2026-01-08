@@ -1,6 +1,9 @@
 import { pool } from '../plugins/db.js'
 import { callProcedureReturningRows } from '../plugins/spHelper.js'
 
+
+// import { handleSpResponse } from '../plugins/dbResponse'
+import { handleSpResponse } from '../plugins/dbResponse.js'
 /**
  * REGISTER (simple)
  * CALL public.sp_edition_register(p_edition jsonb, p_user_id int, p_cur refcursor)
@@ -37,9 +40,12 @@ async function editionTreeRegister ({ edition = {}, user_id }) {
       user_id
     ],
     { statementTimeoutMs: 25000 }
-  )
-  console.log(rows)
-  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
+  );
+
+  // AQUÍ ESTÁ LA MAGIA:
+  // Si el SP devuelve error (0), handleSpResponse lanzará una excepción.
+  // Si es éxito (1), retornará el objeto { result: 1, message: '...', id: ... }
+  return handleSpResponse(rows);
 }
 
 /**

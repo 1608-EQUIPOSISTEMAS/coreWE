@@ -145,7 +145,6 @@ async function syncInscToSheet({ enrollment_id }) {
 }
 
 async function syncScheduleToSheet() {
-  console.log("datassss")
   const spreadsheetId = '1-kp3PVfpsNQcl4HKBFnPkjTDVpAeLKgCaV5fEqs30gs'; 
   const sheetName = 'SISTEMAS-PILOTO';
 
