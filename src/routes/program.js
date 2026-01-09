@@ -180,7 +180,7 @@ export default async function programRoutes (fastify) {
           cat_model_modality: { type: ['integer', 'null'] },
           not_modality:       { type: ['integer', 'null'] },
           cat_type_program:   { type: ['integer', 'null'] },
-          active:     { type: ['boolean', 'string', 'null'] },
+          active:     { type: ['string', 'null'] },
           q:                  { type: ['string', 'null'] }
         }
       }

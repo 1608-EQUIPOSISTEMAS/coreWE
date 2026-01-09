@@ -145,7 +145,7 @@ async function syncInscToSheet({ enrollment_id }) {
 }
 
 async function syncScheduleToSheet() {
-  const spreadsheetId = '1-kp3PVfpsNQcl4HKBFnPkjTDVpAeLKgCaV5fEqs30gs'; 
+  const spreadsheetId = '1vZHEs2URSJOxiBVlnwwgwKV-W-g_pWqdv-Y1wtXmfUc'; 
   const sheetName = 'SISTEMAS-PILOTO';
 
   const result = await pool.query(`SELECT * FROM public.fn_reporte_ediciones_programas()`)
