@@ -170,24 +170,70 @@ export default async function editionRoutes (fastify) {
     schema: {
       body: {
         type: 'object',
-        additionalProperties: false,
+        // additionalProperties: true, // Opcional: cámbialo a true si quieres ser menos estricto mientras pruebas
         properties: {
+          // --- Filtros Simples (Se mantienen igual) ---
           date_from:          { type: ['string', 'null'] },
           date_to:            { type: ['string', 'null'] },
-          instructor_id:      { type: ['integer', 'null'] },
-          program_version_id: { type: ['integer', 'null'] },
-          clasification: { type: ['string', 'null'] },
-          cat_type_program:   { type: ['integer', 'null'] },
-          cat_category:       { type: ['integer', 'null'] },
-          cat_day_combination:{ type: ['integer', 'null'] },
-          cat_model_modality: { type: ['integer', 'null'] },
-          cat_hour_combination:{ type: ['integer', 'null'] },
-          active:             { type: ['boolean', 'string', 'null'] },
-          cat_segment:          { type: ['integer', 'null'] },
-          cat_course_category:  { type: ['integer', 'null'] },
+          program_version_id: { type: ['integer', 'null'] }, // Este sigue siendo simple según tu código anterior
+          clasification:      { type: ['string', 'null'] },
           q:                  { type: ['string', 'null'] },
           page:               { type: ['integer', 'null'], default: 1 },
-          size:               { type: ['integer', 'null'], default: 25 }
+          size:               { type: ['integer', 'null'], default: 25 },
+          active:             { type: ['boolean', 'string', 'null'] },
+
+          // --- NUEVOS Filtros MultiSelect (Arrays de Objetos) ---
+          
+          // 1. Instructores
+          instructores_seleccionados: { 
+            type: ['array', 'null'],
+            items: { 
+              type: 'object', 
+              properties: { value: { type: 'integer' } } // Solo validamos que tenga 'value'
+            }
+          },
+
+          // 2. Líneas de Negocio (category_ids)
+          category_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 3. Categorías (type_program_ids - antes cat_type_program)
+          type_program_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 4. Días (combination_days_ids - antes cat_day_combination)
+          combination_days_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 5. Horas (hour_combination_ids - antes cat_hour_combination)
+          hour_combination_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 6. Segmentos (segment_ids - antes cat_segment)
+          segment_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 7. Modalidad (model_modality_ids - antes cat_model_modality)
+          model_modality_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          },
+
+          // 8. Seguimiento Edición (course_category_ids - antes cat_course_category)
+          course_category_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'object', properties: { value: { type: 'integer' } } }
+          }
         }
       }
     }

@@ -54,24 +54,30 @@ async function editionTreeRegister ({ edition = {}, user_id }) {
  */
 async function editionList (payload = {}) {
   const {
+    // --- Campos Simples (Se quedan en null) ---
     date_from = null,
     date_to = null,
-    instructor_id = null,
-    program_version_id = null,
-    cat_type_program = null,
-    cat_category = null,
-    cat_day_combination = null,
-    cat_hour_combination = null,
-    cat_model_modality = null,
-    cat_segment = null,
-    cat_course_category = null,
+    program_version_id = null, // Este es select simple, se queda null
     clasification = null,
     active = null,
     q = null,
     page = 1,
-    size = 25
+    size = 25,
+
+    // --- CAMBIO AQUÍ: Campos MultiSelect (Cambiar null por []) ---
+    // Al enviar [], PostgreSQL recibe un array vacío, lo procesa sin error,
+    // y tu SP convertirá ese array vacío en NULL internamente para ignorar el filtro.
+    instructores_seleccionados = [], 
+    category_ids = [],               
+    type_program_ids = [],           
+    combination_days_ids = [],       
+    hour_combination_ids = [],       
+    segment_ids = [],                
+    course_category_ids = [],        
+    model_modality_ids = []          
   } = payload
 
+  // Lógica de Activo/Inactivo
   let activeParam = active
   if (active === true) activeParam = 'Y'
   else if (active === false) activeParam = 'N'
@@ -79,23 +85,24 @@ async function editionList (payload = {}) {
   const filters = {
     date_from,
     date_to,
-    instructor_id,
     program_version_id,
-    cat_type_program,
-    cat_category,
-    cat_day_combination,
-    cat_hour_combination,
-    active: activeParam,
-    cat_segment,
-    cat_course_category,
-    cat_model_modality,
     clasification,
+    active: activeParam,
     q,
     page,
-    size
+    size,
+    // Arrays
+    instructores_seleccionados,
+    category_ids,
+    type_program_ids,
+    combination_days_ids,
+    hour_combination_ids,
+    segment_ids,
+    course_category_ids,
+    model_modality_ids
   }
 
-  console.log(filters)
+  // console.log('Filters enviado a BD:', JSON.stringify(filters))
 
   const rows = await callProcedureReturningRows(
     pool,
