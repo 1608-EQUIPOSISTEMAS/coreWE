@@ -237,45 +237,105 @@ export default async function comercialRoutes (fastify) {
     const data = await  programEditionList(req.body)
     return reply.code(200).send({ ok: true, data })
   })
+fastify.post('/leadlist', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: true, // Permite flexibilidad durante desarrollo
+      properties: {
+        // --- Filtros Simples ---
+        q: { type: ['string', 'null'] },
+        page: { type: ['integer', 'null'], default: 1 },
+        size: { type: ['integer', 'null'], default: 25 },
+        from_date: { type: ['string', 'null'] },
+        to_date: { type: ['string', 'null'] },
+        updated_from: { type: ['string', 'null'] },
+        updated_to: { type: ['string', 'null'] },
+        edition_start_from: { type: ['string', 'null'] },
+        edition_start_to: { type: ['string', 'null'] },
+        active: { type: ['boolean', 'string', 'null'] },
+        program_text: { type: ['string', 'null'] },
 
-  fastify.post('/leadlist', {
-    schema: {
-      body: {
-        type: 'object',
-        additionalProperties: true, // Permitimos propiedades extra por flexibilidad
-        properties: {
-          page: { type: 'integer' },
-          size: { type: 'integer' },
-          q: { type: ['string', 'null'] },
-          from_date: { type: ['string', 'null'] },
-          to_date: { type: ['string', 'null'] },
-          updated_from: { type: ['string', 'null'] },
-          updated_to: { type: ['string', 'null'] },
-          
-          // Alias (Strings)
-          cat_status_lead: { type: ['string', 'null'] },
-          cat_channel: { type: ['string', 'null'] },
-          cat_interest_level: { type: ['string', 'null'] },
-          cat_query: { type: ['string', 'null'] },
-          cat_last_follow: { type: ['string', 'null'] },
-          cat_type_program: { type: ['string', 'null'] },
-          cat_model_modality: { type: ['string', 'null'] },
-          
-          // Textos
-          program_text: { type: ['string', 'null'] },
-          
-          // Array de IDs de usuarios
-          owner_user_ids: { 
-            type: ['array', 'null'],
-            items: { type: 'integer' } 
+        // --- NUEVOS Filtros MultiSelect (Arrays de Objetos) ---
+        
+        // 1. Asesores/Propietarios
+        owner_user_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 2. Estatus del Lead
+        status_lead_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 3. Último Seguimiento
+        last_follow_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 4. Nivel de Interés
+        interest_level_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 5. Canal Origen
+        channel_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 6. Promoción/Query
+        query_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 7. Tipo de Programa
+        type_program_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
+        // 8. Modalidad
+        model_modality_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
           }
         }
       }
     }
-  }, async (req, reply) => {
-    const data = await comercialService.leadList(req.body)
-    return reply.code(200).send({ ok: true, data })
-  })
+  }
+}, async (req, reply) => {
+  const data = await comercialService.leadList(req.body)
+  return reply.code(200).send({ ok: true, data })
+})
 
   // RUTA DE UPLOAD CORREGIDA
   fastify.post('/enrollment/upload', async (req, reply) => {

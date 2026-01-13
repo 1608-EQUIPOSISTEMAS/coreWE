@@ -51,12 +51,12 @@ export default async function authRoutes (fastify) {
   //userlist
   fastify.post('/userlist', async (req, reply) => {
     try {
-      const data = await authService.userList()
-      return reply.code(200).send({ ok: true, data })
+      // CORRECCIÓN AQUÍ: Agrega 'authService.' antes de userList
+      const data = await authService.userList(); 
+      return reply.code(200).send({ ok: true, data });
     } catch (err) {
-      req.log.error(err)
-      return reply.code(500).send({ ok: false, error: err.message })
+      req.log.error(err);
+      return reply.code(500).send({ ok: false, error: err.message });
     }
-  })
-  
+  });
 }

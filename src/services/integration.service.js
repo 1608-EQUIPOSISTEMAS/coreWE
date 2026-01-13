@@ -4,8 +4,8 @@ import path from 'path'
 
 
 async function syncLeadsToSheet({ user_id }) {
-  const spreadsheetId = '1B4NAcmk1QjwLV_NhfP4FPkQrdFWLdanvIg_gkPufCPg'; 
-  const sheetName = '2. Base';
+  const spreadsheetId = '1CPbLaxvwnLDKSzk35--2YoIbu98nFQGLEXEg40OQGDw'; 
+  const sheetName = 'SYSTEM';
 
   const result = await pool.query(`SELECT * FROM public.sp_leads_report($1)`, [user_id])
   const rows = result.rows || []

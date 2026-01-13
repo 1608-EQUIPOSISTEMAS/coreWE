@@ -34,18 +34,14 @@ export async function login({ username, password }) {
     throw error; 
   }
 }
-/**
- * userList
- * Obtiene la lista de usuarios desde la base de datos.
- */
-async function userList() {
+
+export async function userList() {
   try {
-    const result = await pool.query('SELECT * FROM public.sp_user_list()');
-    console.log(result)
-    return result.rows;
+    const rows = await callProcedureReturningRows(pool, 'public.sp_user_list', []);
+    return rows;
   } catch (error) {
-    console.error('Error en userList service:', error);
-    throw new Error('Error al obtener la lista de usuarios: ' + error.message);
+    console.error('Error in userList service:', error);
+    throw error;
   }
 }
 

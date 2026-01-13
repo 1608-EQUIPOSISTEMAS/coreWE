@@ -92,48 +92,80 @@ async function enrollmentRegister(payload) {
   return rows?.[0] || {};
 }
 
-// --- LISTADO DE LEADS (Optimizado) ---
-async function leadList(payload) {
+async function leadList(payload = {}) {
   const {
-    q = null, page = 1, size = 25,
-    from_date = null, to_date = null, updated_from = null, updated_to = null,
-    cat_status_lead = null, cat_channel = null, cat_interest_level = null,
-    cat_query = null, cat_last_follow = null,
-    program_text = null, cat_type_program = null, cat_model_modality = null,
-    edition_start_from = null, edition_start_to = null,
-    active = null, owner_user_ids = null
+    // --- Campos Simples ---
+    q = null,
+    page = 1,
+    size = 25,
+    from_date = null,
+    to_date = null,
+    updated_from = null,
+    updated_to = null,
+    edition_start_from = null,
+    edition_start_to = null,
+    active = null,
+    program_text = null,
+
+    // --- Campos MultiSelect ---
+    // Aunque pongas = [], si llega null, la variable será null
+    owner_user_ids = [],
+    status_lead_ids = [],
+    last_follow_ids = [],
+    interest_level_ids = [],
+    channel_ids = [],
+    query_ids = [],
+    type_program_ids = [],
+    model_modality_ids = []
   } = payload
 
-  // Mantenemos el orden estricto de parámetros para el SP
-  const params = [
-    q, page, size,
-    from_date, to_date, updated_from, updated_to,
-    active,
-    cat_status_lead, cat_channel, cat_interest_level, cat_query, cat_last_follow,
-    program_text, cat_type_program, cat_model_modality,
-    edition_start_from, edition_start_to,
-    (Array.isArray(owner_user_ids) && owner_user_ids.length > 0) ? owner_user_ids : null
-  ];
+  // Lógica de Activo/Inactivo
+  let activeParam = active
+  if (active === true) activeParam = 'Y'
+  else if (active === false) activeParam = 'N'
+
+  // --- SOLUCIÓN: Usar (array || []) para proteger contra null ---
+  const filters = {
+    q,
+    page,
+    size,
+    from_date,
+    to_date,
+    updated_from,
+    updated_to,
+    edition_start_from,
+    edition_start_to,
+    active: activeParam,
+    program_text,
+    
+    // Si la variable es null, usa [] antes de mapear
+    owner_user_ids: (owner_user_ids || []).map(item => item.value),
+    status_lead_ids: (status_lead_ids || []).map(item => item.value),
+    last_follow_ids: (last_follow_ids || []).map(item => item.value),
+    interest_level_ids: (interest_level_ids || []).map(item => item.value),
+    channel_ids: (channel_ids || []).map(item => item.value),
+    query_ids: (query_ids || []).map(item => item.value),
+    type_program_ids: (type_program_ids || []).map(item => item.value),
+    model_modality_ids: (model_modality_ids || []).map(item => item.value)
+  }
 
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_comercial_lead_list',
-    params,
+    [JSON.stringify(filters)],
     { statementTimeoutMs: 25000 }
-  );
+  )
 
-  // Extraemos el total del primer row (si existe) para la paginación
-  const total = rows[0]?.total_count ? Number(rows[0].total_count) : 0;
+  const total = rows?.[0]?.total_count ? Number(rows[0].total_count) : 0
 
-  // SIMPLIFICACIÓN: Retornamos 'rows' directo. 
-  // Las columnas se llamarán exactamente igual que en el SELECT del SP.
-  return { 
-    total, 
-    page: Number(page), 
-    size: Number(size), 
-    items: rows 
-  };
+  return {
+    total,
+    page: Number(page),
+    size: Number(size),
+    items: rows
+  }
 }
+
 
 // --- ACTUALIZACIÓN DE LEAD ---
 async function leadUpdate(payload) {
