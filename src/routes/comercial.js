@@ -30,7 +30,8 @@ export default async function comercialRoutes (fastify) {
               cat_frecuency_word:   { type: ['integer','null'] },
               cat_type_strategy:    { type: ['integer','null'] },
               cat_prospect_situation:{ type: ['integer','null'] },
-
+              membership_moment_id: { type: ['integer','null'] },
+              cat_client_moment: { type: ['integer','null'] },
               message_init_conversation: { type: ['string','null'] },
               observations:              { type: ['string','null'] },
 
@@ -59,6 +60,7 @@ export default async function comercialRoutes (fastify) {
                 attempt_number:   { type: ['integer','null'] },
                 cat_status:       { type: ['integer','null'] },
                 contact_datetime: { type: ['string','null'] },
+                cat_result:       { type: ['integer','null'] },
                 response:         { type: ['string','null'] }
               }
             },
@@ -96,7 +98,9 @@ export default async function comercialRoutes (fastify) {
               full_name:              { type: ['string','null'] },
               cat_client_type:               { type: ['integer', 'null'] },
               pay_date:               { type: ['string','null'] },
-
+              membership_moment_id:   { type: ['integer','null'] },
+              cat_client_moment:      { type: ['integer','null'] },
+              
               cat_status_lead:        { type: ['integer','null'] },
               cat_code_country:       { type: ['integer','null'] },
               cat_interest_level:     { type: ['integer','null'] },
@@ -131,6 +135,7 @@ export default async function comercialRoutes (fastify) {
                 attempt_number:   { type: ['integer','null'] },
                 cat_status:       { type: ['integer','null'] },
                 contact_datetime: { type: ['string','null'] },
+                cat_result:       { type: ['integer','null'] },
                 response:         { type: ['string','null'] }
               }
             },
