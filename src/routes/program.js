@@ -271,4 +271,22 @@ export default async function programRoutes (fastify) {
     const data = await programService.programCaller(req.body)
     return reply.code(200).send({ ok: true, data })
   })
+
+  //programVersionDetailGet
+  fastify.post('/programversiondetailget', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['program_version_id'],
+        additionalProperties: false,
+        properties: {
+          program_version_id: { type: 'integer' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { data } = await programService.programVersionDetailGet(req.body)
+    return reply.code(200).send({ ok: true, data })
+  })
+  
 }

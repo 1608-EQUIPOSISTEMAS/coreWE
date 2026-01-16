@@ -272,6 +272,21 @@ fastify.post('/leadlist', {
           }
         },
 
+        moment_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+        membership_moment_ids: { 
+          type: ['array', 'null'],
+          items: { 
+            type: 'object', 
+            properties: { value: { type: 'integer' } }
+          }
+        },
+
         // 2. Estatus del Lead
         status_lead_ids: { 
           type: ['array', 'null'],
@@ -391,6 +406,33 @@ fastify.post('/leadlist', {
 
     return reply.send(result);
   });
+
+  // Buscar información de cliente por teléfono
+  fastify.post('/searchphoneget', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['phone'],
+        additionalProperties: false,
+        properties: {
+          // Validamos que llegue el teléfono como string
+          phone: { type: 'string', minLength: 5 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { phone } = req.body
+    
+    // Llamamos al servicio
+    const data = await comercialService.searchPhoneGet(phone)
+    
+    // Devolvemos la respuesta
+    // data contendrá: { cat_client_moment, membership_tier_id, legacy_details: [...] }
+    return reply.code(200).send({ 
+        ok: true, 
+        ...data 
+    })
+  })
 
   fastify.post('/searchcontact', {
     schema: {

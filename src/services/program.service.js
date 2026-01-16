@@ -148,6 +148,19 @@ async function programVersionCaller (payload = {}) {
   return { items: rows } // <--- DATA TAL CUAL
 }
 
+async function programVersionDetailGet ({ program_version_id }) {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_program_version_detail_get',
+    [program_version_id],
+    { statementTimeoutMs: 25000 }
+  )
+
+  return {
+    data: rows?.[0] || {}
+  }
+}
+
 /**
  * LISTAR VERSIONES DE PROGRAMA
  * Retorna data cruda.
@@ -299,5 +312,6 @@ export default {
   programVersionCaller,
   programVersionList,
   priceList,
-  priceUpdate
+  priceUpdate,
+  programVersionDetailGet
 }

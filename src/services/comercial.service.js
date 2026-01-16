@@ -116,7 +116,10 @@ async function leadList(payload = {}) {
     channel_ids = [],
     query_ids = [],
     type_program_ids = [],
-    model_modality_ids = []
+    model_modality_ids = [],
+    moment_ids = [],
+    membership_moment_ids = [],
+    
   } = payload
 
   // Lógica de Activo/Inactivo
@@ -146,7 +149,9 @@ async function leadList(payload = {}) {
     channel_ids: (channel_ids || []).map(item => item.value),
     query_ids: (query_ids || []).map(item => item.value),
     type_program_ids: (type_program_ids || []).map(item => item.value),
-    model_modality_ids: (model_modality_ids || []).map(item => item.value)
+    model_modality_ids: (model_modality_ids || []).map(item => item.value),
+    moment_ids: (moment_ids || []).map(item => item.value),
+    membership_moment_ids: (membership_moment_ids || []).map(item => item.value)
   }
 
   const rows = await callProcedureReturningRows(
@@ -166,7 +171,22 @@ async function leadList(payload = {}) {
   }
 }
 
+// --- BÚSQUEDA DE CLIENTE POR TELÉFONO ---
+async function searchPhoneGet(phone) {
+  // Llamamos al SP pasando solo el teléfono.
+  // El cursor se maneja internamente por el driver/helper.
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_search_phone_get',
+    [
+      phone
+    ],
+    { statementTimeoutMs: 5000 } // Un timeout corto es suficiente para lectura
+  )
 
+  // El SP devuelve siempre 1 fila con el JSON y los IDs, o un objeto vacío si falla algo
+  return rows?.[0] || {}
+}
 // --- ACTUALIZACIÓN DE LEAD ---
 async function leadUpdate(payload) {
   const { id, lead = {}, user_id, contact_attempts} = payload
@@ -224,5 +244,6 @@ export default {
   leadList,
   leadGet,
   uploadEnrollmentFiles,
-  searchContact
+  searchContact,
+  searchPhoneGet
 }
