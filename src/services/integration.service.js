@@ -146,12 +146,12 @@ async function syncInscToSheet({ enrollment_id }) {
 
 async function syncScheduleToSheet() {
   const spreadsheetId = '1vZHEs2URSJOxiBVlnwwgwKV-W-g_pWqdv-Y1wtXmfUc'; 
-  const sheetName = 'SISTEMAS-PILOTO';
+  const sheetName = 'PLANEAMIENTO';
 
   const result = await pool.query(`SELECT * FROM public.fn_reporte_ediciones_programas()`)
   const rows = result.rows || []
 
-  const headers = Object.keys(rows[0])
+  const headers = Object.keys(rows[0])   
   
   const values = rows.map(row => {
     return headers.map(header => {
