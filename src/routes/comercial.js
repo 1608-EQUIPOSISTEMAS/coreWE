@@ -17,6 +17,8 @@ export default async function comercialRoutes (fastify) {
               first_contact_date:   { type: ['string','null'] }, // ISO (date-time) o null
               program_version_id: { type: ['integer', 'null'] }, 
               program_edition_id:   { type: ['integer','null'] },
+              cat_program_type:     { type: ['integer', 'null'] },
+              cat_program_modality: { type: ['integer', 'null'] },
               cat_query:         { type: ['integer', 'null'] },     // <— NUEVO
               full_name:         { type: ['string', 'null'] },     // <— NUEVO
               pay_date:         { type: ['string', 'null'] },     // <— NUEVO
@@ -99,8 +101,9 @@ export default async function comercialRoutes (fastify) {
               cat_client_type:               { type: ['integer', 'null'] },
               pay_date:               { type: ['string','null'] },
               membership_moment_id:   { type: ['integer','null'] },
-              cat_client_moment:      { type: ['integer','null'] },
-              
+              cat_client_moment:      { type: ['integer','null'] },   
+              cat_program_type:     { type: ['integer', 'null'] },
+              cat_program_modality: { type: ['integer', 'null'] },
               cat_status_lead:        { type: ['integer','null'] },
               cat_code_country:       { type: ['integer','null'] },
               cat_interest_level:     { type: ['integer','null'] },
