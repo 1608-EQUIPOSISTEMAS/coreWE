@@ -162,6 +162,46 @@ export default async function editionRoutes (fastify) {
     return reply.code(201).send(response);
   })
 
+async function auditLogsGet ({ editionId = null, limit = 50, offset = 0 }) {
+  // Convertimos a null explícito si viene undefined o 0, aunque el SP lo maneja
+  const pEditionId = editionId ? Number(editionId) : null
+  const pLimit = Number(limit) || 50
+  const pOffset = Number(offset) || 0
+
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_audit_logs_get',
+    [pEditionId, pLimit, pOffset], 
+    { statementTimeoutMs: 25000 }
+  )
+
+  // Retornamos todas las filas (cada fila es una transacción agrupada)
+  return rows || []
+}
+
+fastify.post('/auditlogsget', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        editionId: { type: ['integer', 'null'] }, // Puede ser null para ver historial global
+        limit: { type: 'integer', default: 50 },
+        offset: { type: 'integer', default: 0 }
+      }
+    }
+  }
+}, async (req, reply) => {
+  const { editionId, limit, offset } = req.body
+  
+  // Llamamos al servicio pasando los parámetros
+  const data = await editionService.auditLogsGet({ editionId, limit, offset })
+
+  return reply.code(200).send({
+    ok: true,
+    data // Devuelve el array de transacciones
+  })
+})
 
   /**
    * LISTAR EDICIONES

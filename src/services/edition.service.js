@@ -241,6 +241,25 @@ async function editionGet ({ id }) {
   return rows?.[0] || null
 }
 
+
+async function auditLogsGet ({ editionId = null, limit = 50, offset = 0 }) {
+  // Convertimos a null explícito si viene undefined o 0, aunque el SP lo maneja
+  const pEditionId = editionId ? Number(editionId) : null
+  const pLimit = Number(limit) || 50
+  const pOffset = Number(offset) || 0
+
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_audit_logs_get',
+    [pEditionId, pLimit, pOffset], 
+    { statementTimeoutMs: 25000 }
+  )
+
+  // Retornamos todas las filas (cada fila es una transacción agrupada)
+  return rows || []
+}
+
+
 /**
  * CALLER (para combos, SearchSelect, etc.)
  * CALL public.sp_edition_caller(...)
@@ -280,6 +299,7 @@ export default {
   editionGet,
   editionUpdate,
   editionCaller,
-  editionByWeeklist
+  editionByWeeklist,
+  auditLogsGet
   
 }
