@@ -428,6 +428,31 @@ fastify.post('/auditlogsget', {
     return reply.code(200).send({ ok: true, items })
   })
 
+
+  /*
+  //edition_extra_info_caller
+  async editionExtraInfoCaller(payload) {
+    const response = (await api.post('/edition/editionextrainfocaller', payload,{
+    meta: { skipLoader: true }
+  })).data;
+    console.log(response)
+    return response.items;
+  }*/
+ fastify.post('/editionextrainfocaller', {
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          program_version_id: { type: ['integer', 'null'] }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const items = await editionService.editionextrainfocaller(req.body)
+    return reply.code(200).send({ ok: true, items })
+  })
+
   
   /**
    * ACTUALIZAR ÁRBOL DE EDICIONES (padre + hijos)

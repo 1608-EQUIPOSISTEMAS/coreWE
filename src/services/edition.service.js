@@ -291,6 +291,31 @@ async function editionCaller (payload = {}) {
   return rows // Return array directo
 }
 
+//editionextrainfocaller
+
+
+/**
+ * CALLER (para combos, SearchSelect, etc.)
+ * CALL public.sp_edition_caller(...)
+ */
+async function editionextrainfocaller (payload = {}) {
+  const {
+    program_version_id
+  } = payload
+
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_edition_extra_info_caller',
+    [
+      program_version_id
+    ],
+    { statementTimeoutMs: 15000 }
+  )
+
+  return rows // Return array directo
+}
+
+
 export default {
   editionRegister,
   editionTreeRegister,
@@ -300,6 +325,7 @@ export default {
   editionUpdate,
   editionCaller,
   editionByWeeklist,
-  auditLogsGet
+  auditLogsGet,
+  editionextrainfocaller
   
 }
