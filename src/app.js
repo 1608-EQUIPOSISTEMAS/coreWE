@@ -15,6 +15,7 @@ import instructorRoutes from './routes/instructor.js'
 import editionRoutes from './routes/edition.js'
 import customerRoutes from './routes/customer.js'
 import authRoutes from './routes/auth.js'
+import dashboardRoutes from './routes/dashboard.js'
 import corporateAgreementRoutes from './routes/corporate_agreement.js'  
 import integrationRoutes from './routes/integration.js'
 import fastifyJwt from '@fastify/jwt'
@@ -69,6 +70,7 @@ await app.register(corporateAgreementRoutes, { prefix: '/api/corporate_agreement
 await app.register(authRoutes,      { prefix: '/api/auth' })
 await app.register(integrationRoutes, { prefix: '/api/integration' })
 await app.register(ficoRoutes,      { prefix: '/api/fico' })
+await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
 
 // 2. REGISTRAR LA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 // Esto habilitará el endpoint: POST http://tudominio/api/upload
