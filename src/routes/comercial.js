@@ -267,95 +267,60 @@ fastify.post('/leadlist', {
         edition_start_to: { type: ['string', 'null'] },
         active: { type: ['boolean', 'string', 'null'] },
         program_text: { type: ['string', 'null'] },
+        web: { type: ['string', 'null'] }, // Espera 'Y' o 'N'
+        b2b: { type: ['string', 'null'] }, // Espera 'Y' o 'N'
 
         // --- NUEVOS Filtros MultiSelect (Arrays de Objetos) ---
         
-        // 1. Asesores/Propietarios
         owner_user_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+            type: ['array', 'null'],
+            items: { type: 'integer' } // <--- CAMBIO AQUÍ
+          },
 
-        moment_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
-        membership_moment_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          status_lead_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 2. Estatus del Lead
-        status_lead_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          moment_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 3. Último Seguimiento
-        last_follow_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          membership_moment_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 4. Nivel de Interés
-        interest_level_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          last_follow_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 5. Canal Origen
-        channel_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          interest_level_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 6. Promoción/Query
-        query_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          channel_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 7. Tipo de Programa
-        type_program_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
-          }
-        },
+          query_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
 
-        // 8. Modalidad
-        model_modality_ids: { 
-          type: ['array', 'null'],
-          items: { 
-            type: 'object', 
-            properties: { value: { type: 'integer' } }
+          type_program_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
+          },
+
+          model_modality_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' } 
           }
-        }
       }
     }
   }

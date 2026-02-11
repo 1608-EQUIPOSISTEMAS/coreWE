@@ -92,9 +92,10 @@ async function enrollmentRegister(payload) {
   return rows?.[0] || {};
 }
 
+// src/services/comercial.service.js
+
 async function leadList(payload = {}) {
   const {
-    // --- Campos Simples ---
     q = null,
     page = 1,
     size = 25,
@@ -106,20 +107,20 @@ async function leadList(payload = {}) {
     edition_start_to = null,
     active = null,
     program_text = null,
+    web = null,
+    b2b = null,
 
-    // --- Campos MultiSelect ---
-    // Aunque pongas = [], si llega null, la variable será null
-    owner_user_ids = [],
-    status_lead_ids = [],
-    last_follow_ids = [],
-    interest_level_ids = [],
-    channel_ids = [],
-    query_ids = [],
-    type_program_ids = [],
-    model_modality_ids = [],
-    moment_ids = [],
-    membership_moment_ids = [],
-    
+    // Recibimos los arrays directos (Fastify ya validó que son enteros o null)
+    owner_user_ids,
+    status_lead_ids,
+    last_follow_ids,
+    interest_level_ids,
+    channel_ids,
+    query_ids,
+    type_program_ids,
+    model_modality_ids,
+    moment_ids,
+    membership_moment_ids
   } = payload
 
   // Lógica de Activo/Inactivo
@@ -127,7 +128,6 @@ async function leadList(payload = {}) {
   if (active === true) activeParam = 'Y'
   else if (active === false) activeParam = 'N'
 
-  // --- SOLUCIÓN: Usar (array || []) para proteger contra null ---
   const filters = {
     q,
     page,
@@ -140,18 +140,23 @@ async function leadList(payload = {}) {
     edition_start_to,
     active: activeParam,
     program_text,
+    web,
+    b2b,
+
+    // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
+    // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
+    // aunque el SP maneja nulls, enviar [] vacío es más seguro en JSON.
     
-    // Si la variable es null, usa [] antes de mapear
-    owner_user_ids: (owner_user_ids || []).map(item => item.value),
-    status_lead_ids: (status_lead_ids || []).map(item => item.value),
-    last_follow_ids: (last_follow_ids || []).map(item => item.value),
-    interest_level_ids: (interest_level_ids || []).map(item => item.value),
-    channel_ids: (channel_ids || []).map(item => item.value),
-    query_ids: (query_ids || []).map(item => item.value),
-    type_program_ids: (type_program_ids || []).map(item => item.value),
-    model_modality_ids: (model_modality_ids || []).map(item => item.value),
-    moment_ids: (moment_ids || []).map(item => item.value),
-    membership_moment_ids: (membership_moment_ids || []).map(item => item.value)
+    owner_user_ids: owner_user_ids || [],
+    status_lead_ids: status_lead_ids || [],
+    last_follow_ids: last_follow_ids || [],
+    interest_level_ids: interest_level_ids || [],
+    channel_ids: channel_ids || [],
+    query_ids: query_ids || [],
+    type_program_ids: type_program_ids || [],
+    model_modality_ids: model_modality_ids || [],
+    moment_ids: moment_ids || [],
+    membership_moment_ids: membership_moment_ids || []
   }
 
   const rows = await callProcedureReturningRows(
@@ -170,7 +175,6 @@ async function leadList(payload = {}) {
     items: rows
   }
 }
-
 // --- BÚSQUEDA DE CLIENTE POR TELÉFONO ---
 async function searchPhoneGet(phone) {
   // Llamamos al SP pasando solo el teléfono.
