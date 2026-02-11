@@ -63,5 +63,17 @@ export default async function integrationRoutes (fastify) {
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })
+
+  //syncRprospectos
+  fastify.post('/syncrprospectos', async (req, reply) => {
+    try {
+      const result = await integrationService.syncRprospectos()
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+  
   
 }

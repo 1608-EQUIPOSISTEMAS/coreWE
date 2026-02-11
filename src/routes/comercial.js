@@ -42,7 +42,9 @@ export default async function comercialRoutes (fastify) {
               origin_email:         { type: ['string','null'] },
 
               planned_payment_date: { type: ['string','null'] }, // si algún día lo usas
-              bot:                 { type: ['string','null'] }
+              bot:                 { type: ['string','null'] },
+              web:    { type: ['string','null'] },
+              b2b:    { type: ['string','null'] }
             }
           },
           user_id: {
@@ -125,7 +127,9 @@ export default async function comercialRoutes (fastify) {
               cat_proposed_method_payment: { type: ['integer','null'] },
               cat_proposed_way_payment:    { type: ['integer','null'] },
               active:                 { type: ['string','null'] },
-              bot:                 { type: ['string','null'] }
+              bot:                 { type: ['string','null'] },
+              web:    { type: ['string','null'] },
+              b2b:    { type: ['string','null'] }
             }
           },
           contact_attempts: {
