@@ -101,10 +101,16 @@ async function leadList(payload = {}) {
     size = 25,
     from_date = null,
     to_date = null,
+    strategy_ids, // Viene del frontend
+    word_ids,     // Viene del frontend
+    medium_contact_ids,
+    code_country_ids,
     updated_from = null,
     updated_to = null,
     edition_start_from = null,
     edition_start_to = null,
+    pay_date_from = null,
+  pay_date_to = null,
     active = null,
     program_text = null,
     web = null,
@@ -142,7 +148,8 @@ async function leadList(payload = {}) {
     program_text,
     web,
     b2b,
-
+    strategy_ids: strategy_ids || [], 
+    word_ids: word_ids || [],
     // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
     // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
     // aunque el SP maneja nulls, enviar [] vacío es más seguro en JSON.
@@ -156,7 +163,11 @@ async function leadList(payload = {}) {
     type_program_ids: type_program_ids || [],
     model_modality_ids: model_modality_ids || [],
     moment_ids: moment_ids || [],
-    membership_moment_ids: membership_moment_ids || []
+    membership_moment_ids: membership_moment_ids || [],
+    pay_date_from,
+  pay_date_to,
+  medium_contact_ids: medium_contact_ids || [],
+    code_country_ids: code_country_ids || []
   }
 
   const rows = await callProcedureReturningRows(
@@ -240,7 +251,49 @@ async function searchContact({ phone }) {
     throw error;
   }
 }
+async function leadStats(payload = {}) {
+  const {
+    q, from_date, to_date, updated_from, updated_to,pay_date_from = null,
+  pay_date_to = null,
+    edition_start_from, edition_start_to, active, program_text,
+    web, b2b,
+    owner_user_ids, status_lead_ids, last_follow_ids, interest_level_ids,
+    channel_ids, query_ids, type_program_ids, model_modality_ids,
+    moment_ids, membership_moment_ids, strategy_ids, word_ids
+  } = payload
 
+  let activeParam = active
+  if (active === true) activeParam = 'Y'
+  else if (active === false) activeParam = 'N'
+
+  const filters = {
+    q, from_date, to_date, updated_from, updated_to,
+    edition_start_from, edition_start_to, active: activeParam, program_text,
+    web, b2b,
+    owner_user_ids: owner_user_ids || [],
+    status_lead_ids: status_lead_ids || [],
+    last_follow_ids: last_follow_ids || [],
+    interest_level_ids: interest_level_ids || [],
+    channel_ids: channel_ids || [],
+    query_ids: query_ids || [],
+    type_program_ids: type_program_ids || [],
+    model_modality_ids: model_modality_ids || [],
+    moment_ids: moment_ids || [],
+    membership_moment_ids: membership_moment_ids || [],
+    strategy_ids: strategy_ids || [],
+    word_ids: word_ids || [],
+    pay_date_from,
+  pay_date_to
+  }
+
+  // Llamada al SP. Como es INOUT, retorna el JSON en la primera fila.
+  const query = `CALL public.sp_comercial_lead_stats($1, $2)`;
+  // Pasamos null como segundo parametro porque es INOUT
+  const res = await pool.query(query, [JSON.stringify(filters), null]);
+  
+  // Dependiendo de tu driver postgres, la respuesta suele estar en rows[0].p_stats
+  return res.rows[0].p_stats;
+}
 export default {
   leadRegister,
   enrollmentRegister,
@@ -249,5 +302,6 @@ export default {
   leadGet,
   uploadEnrollmentFiles,
   searchContact,
-  searchPhoneGet
+  searchPhoneGet,
+  leadStats
 }

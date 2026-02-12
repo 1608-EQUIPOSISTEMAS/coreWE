@@ -37,7 +37,9 @@ async function dashboardList(payload = {}) {
     year: r.year_period,
     month: r.month_period,
     week: r.period_label,
-
+    fecha_inicio: r.fecha_inicio,
+    fecha_fin: r.fecha_fin,
+    
     // Métricas
     objetivo: Number(r.objetivo || 0),
     logrado: Number(r.logrado || 0),

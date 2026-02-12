@@ -269,9 +269,25 @@ fastify.post('/leadlist', {
         program_text: { type: ['string', 'null'] },
         web: { type: ['string', 'null'] }, // Espera 'Y' o 'N'
         b2b: { type: ['string', 'null'] }, // Espera 'Y' o 'N'
-
+        pay_date_from: { type: ['string', 'null'] },
+pay_date_to: { type: ['string', 'null'] },
         // --- NUEVOS Filtros MultiSelect (Arrays de Objetos) ---
-        
+        strategy_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' }
+        },
+        word_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' }
+        },
+        medium_contact_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' }
+        },
+        code_country_ids: { 
+            type: ['array', 'null'],
+            items: { type: 'integer' }
+        },
         owner_user_ids: { 
             type: ['array', 'null'],
             items: { type: 'integer' } // <--- CAMBIO AQUÍ
@@ -328,6 +344,18 @@ fastify.post('/leadlist', {
   const data = await comercialService.leadList(req.body)
   return reply.code(200).send({ ok: true, data })
 })
+
+fastify.post('/leadstats', {
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: true // Permite pasar los mismos filtros que leadlist
+      }
+    }
+  }, async (req, reply) => {
+    const data = await comercialService.leadStats(req.body)
+    return reply.code(200).send(data) // Devuelve el JSON directo
+  })
 
   // RUTA DE UPLOAD CORREGIDA
   fastify.post('/enrollment/upload', async (req, reply) => {
