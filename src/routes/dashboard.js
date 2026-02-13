@@ -14,7 +14,9 @@ export default async function dashboardRoutes (fastify) {
         properties: {
           year:   { type: ['integer', 'null'], default: 2026 },
           month:  { type: ['string', 'null'],  default: 'ENE' },
-          period: { type: ['string', 'null'] }
+          period: { type: ['string', 'null'] },
+          //modality
+          modality: { type: ['string', 'null'], default: 'NO_ONLINE' }
         }
       }
     }
