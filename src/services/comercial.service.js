@@ -97,6 +97,7 @@ async function enrollmentRegister(payload) {
 async function leadList(payload = {}) {
   const {
     q = null,
+    user_id,
     page = 1,
     size = 25,
     from_date = null,
@@ -135,6 +136,7 @@ async function leadList(payload = {}) {
   else if (active === false) activeParam = 'N'
 
   const filters = {
+    current_user_id: user_id,
     q,
     page,
     size,
@@ -251,6 +253,38 @@ async function searchContact({ phone }) {
     throw error;
   }
 }
+async function enrollmentGet(enrollment_id) {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_comercial_enrollment_get',
+    [ enrollment_id ],
+    { statementTimeoutMs: 5000 }
+  );
+  
+  // El SP devuelve 1 sola fila con toda la info
+  return rows?.[0] || {};
+}
+
+// En el servicio
+async function userRestrictionsList(payload = {}) {
+  // Pasamos el JSON directo al SP
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_comercial_user_restrictions_list',
+    [JSON.stringify(payload)]
+  )
+  return rows || []
+}
+
+
+async function userRestrictionsUpdate(payloadArray = []) {
+  // Usamos pool.query directo porque este SP no retorna filas (no tiene cursor)
+  await pool.query(
+    'CALL public.sp_comercial_user_restrictions_update($1::jsonb)',
+    [JSON.stringify(payloadArray)]
+  )
+  return { message: 'Restricciones actualizadas correctamente' }
+}
 async function leadStats(payload = {}) {
   const {
     q, from_date, to_date, updated_from, updated_to,pay_date_from = null,
@@ -297,8 +331,11 @@ async function leadStats(payload = {}) {
 export default {
   leadRegister,
   enrollmentRegister,
+  enrollmentGet,
   leadUpdate,
   leadList,
+  userRestrictionsList,
+  userRestrictionsUpdate,
   leadGet,
   uploadEnrollmentFiles,
   searchContact,

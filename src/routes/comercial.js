@@ -65,7 +65,8 @@ export default async function comercialRoutes (fastify) {
                 cat_status:       { type: ['integer','null'] },
                 contact_datetime: { type: ['string','null'] },
                 cat_result:       { type: ['integer','null'] },
-                response:         { type: ['string','null'] }
+                response:         { type: ['string','null'] },
+                contact_duration: { type: ['integer','null'] }
               }
             },
             default: []
@@ -143,7 +144,8 @@ export default async function comercialRoutes (fastify) {
                 cat_status:       { type: ['integer','null'] },
                 contact_datetime: { type: ['string','null'] },
                 cat_result:       { type: ['integer','null'] },
-                response:         { type: ['string','null'] }
+                response:         { type: ['string','null'] },
+                contact_duration: { type: ['integer','null'] }
               }
             },
             default: []
@@ -157,7 +159,22 @@ export default async function comercialRoutes (fastify) {
     return reply.code(200).send({ ok: true, lead_id })
   })
 
-
+fastify.post('/enrollmentget', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id'],
+        additionalProperties: false,
+        properties: {
+          enrollment_id: { type: 'integer' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { enrollment_id } = req.body
+    const data = await comercialService.enrollmentGet(enrollment_id)
+    return reply.code(200).send({ ok: true, data })
+  })
   // inscribir desde el modal del LeadNew
   fastify.post('/enrollmentregister', {
     schema: {
@@ -249,6 +266,41 @@ export default async function comercialRoutes (fastify) {
     const data = await  programEditionList(req.body)
     return reply.code(200).send({ ok: true, data })
   })
+
+fastify.post('/restrictionslist', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: true
+    }
+  }
+}, async (req, reply) => {
+  const data = await comercialService.userRestrictionsList(req.body)
+  return reply.code(200).send({ ok: true, data })
+})
+
+
+fastify.post('/restrictionsupdate', {
+  schema: {
+    body: {
+      type: 'object', // <-- Ahora espera un objeto
+      additionalProperties: true,
+      properties: {
+        user_id: { type: ['integer', 'null'] },
+        restrictions: { // <-- Tu array viene aquí dentro
+          type: 'array',
+          items: { type: 'object' }
+        }
+      },
+      required: ['restrictions']
+    }
+  }
+}, async (req, reply) => {
+  // Le pasamos al service SOLAMENTE el array 'restrictions'
+  const data = await comercialService.userRestrictionsUpdate(req.body.restrictions)
+  return reply.code(200).send({ ok: true, data })
+})
+
 fastify.post('/leadlist', {
   schema: {
     body: {
@@ -256,6 +308,7 @@ fastify.post('/leadlist', {
       additionalProperties: true, // Permite flexibilidad durante desarrollo
       properties: {
         // --- Filtros Simples ---
+        user_id: { type: ['integer', 'null'] },
         q: { type: ['string', 'null'] },
         page: { type: ['integer', 'null'], default: 1 },
         size: { type: ['integer', 'null'], default: 25 },
