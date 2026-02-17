@@ -22,10 +22,12 @@ import fastifyJwt from '@fastify/jwt'
 // 1. IMPORTAR LA NUEVA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 import uploadRoutes from './routes/upload.js' 
 import ficoRoutes from './routes/fico.js'
+import rateLimit from '@fastify/rate-limit'
 
 const app = Fastify({
   logger: true,
-  ajv: { customOptions: { allowUnionTypes: true } }
+  ajv: { customOptions: { allowUnionTypes: true } },
+  trustProxy: true 
 })
 
 // --- REGISTRO DE PLUGINS ---
@@ -33,6 +35,21 @@ await app.register(fastifyMultipart, {
   limits: {
     fileSize: 30 * 1024 * 1024, 
     files: 5, 
+  }
+})
+
+
+await app.register(rateLimit, {
+  global: true,     // Asegura que aplique a todo
+  max: 20,          // 20 peticiones
+  timeWindow: 1000, // por 1 segundo
+  allowList: ['127.0.0.1', 'localhost'], // No te bloquea a ti mismo en local
+  errorResponseBuilder: function (request, context) {
+    return {
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Cálmate un poco. Has excedido el límite de peticiones. Intenta en ${context.after} segundos.`
+    }
   }
 })
 
