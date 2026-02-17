@@ -2,6 +2,15 @@ import { pool } from '../plugins/db.js'
 import { google } from 'googleapis'
 import path from 'path'
 
+import { WebClient } from '@slack/web-api'
+
+// ⚠️ IMPORTANTE: Pon esto en un archivo .env si puedes
+const SLACK_TOKEN = 'xoxb-TU-NUEVO-TOKEN-AQUI'; 
+const SLACK_CHANNEL = 'C0A0R9H3PGE'; // El ID del canal (puedes usar el de soporte o el de sistemas)
+
+// Inicializamos el cliente
+const client = new WebClient(SLACK_TOKEN);
+
 
 async function syncLeadsToSheet({ user_id }) {
   const spreadsheetId = '1CPbLaxvwnLDKSzk35--2YoIbu98nFQGLEXEg40OQGDw'; 
@@ -278,6 +287,63 @@ async function syncRprospectos() {
   }
 }
 
+
+async function sendReportToSlack({ titulo, texto, imagenesUrls = [] }) {
+  try {
+    // 1. Bloque de cabecera
+    const blocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: titulo,
+          emoji: true
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: texto
+        }
+      },
+      {
+        type: 'divider'
+      }
+    ];
+
+    // 2. Agregar dinámicamente las imágenes (si existen)
+    // Slack permite bloques de tipo "image" que leen una URL pública
+    imagenesUrls.forEach((url, index) => {
+        if(url) {
+            blocks.push({
+                type: 'image',
+                image_url: url,
+                alt_text: `Imagen adjunta ${index + 1}`,
+                title: {
+                    type: 'plain_text',
+                    text: `Evidencia ${index + 1}`,
+                    emoji: true
+                }
+            });
+        }
+    });
+
+    // 3. Enviar mensaje
+    const result = await client.chat.postMessage({
+      channel: SLACK_CHANNEL,
+      text: titulo, // Texto fallback para notificaciones móviles
+      blocks: blocks
+    });
+
+    console.log('✅ Reporte enviado a Slack:', result.ts);
+    return { ok: true };
+
+  } catch (error) {
+    console.error('❌ Error enviando a Slack:', error);
+    return { ok: false, error };
+  }
+}
 
 export default {
   syncLeadsToSheet,

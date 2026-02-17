@@ -140,6 +140,7 @@ export default async function comercialRoutes (fastify) {
               additionalProperties: false,
               properties: {
                 id:   { type: ['integer','null'] },
+                cat_type_attempt:   { type: ['integer','null'] },
                 attempt_number:   { type: ['integer','null'] },
                 cat_status:       { type: ['integer','null'] },
                 contact_datetime: { type: ['string','null'] },
@@ -175,6 +176,7 @@ fastify.post('/enrollmentget', {
     const data = await comercialService.enrollmentGet(enrollment_id)
     return reply.code(200).send({ ok: true, data })
   })
+
   // inscribir desde el modal del LeadNew
   fastify.post('/enrollmentregister', {
     schema: {
@@ -202,13 +204,15 @@ fastify.post('/enrollmentget', {
               last_name: { type: ['string', 'null'] },
               mother_last_name: { type: ['string', 'null'] },
               email: { type: ['string', 'null'] },
-              
+              list_price
               // Datos Financieros (Mapeados al SP)
-              cat_insc_modality: { type: ['integer', 'null'] },
+              : { type: ['integer', 'null'] },
               cat_type_payment: { type: 'integer' }, // Este entra como cat_payment_plan
               cat_currency: { type: 'integer' },
-              total_amount: { type: 'number' },    
+              total_amount: { type: 'number' },   
               saved_money: { type: 'number' },     
+              list_price: { type: 'number' },     
+              cat_method_payment: { type: ['integer', 'null'] },
               discount_amount: { type: 'number' },
               student_attachment_url:              { type: ['string', 'null'] },
               payment_attachment_url: { type: ['string', 'null'] },
@@ -218,7 +222,19 @@ fastify.post('/enrollmentget', {
               dsct_benefit_id: { type: ['integer', 'null'] },
               
               b2b_contract_id: { type: ['integer', 'null'] },
-              observations: { type: ['string', 'null'] }
+              observations: { type: ['string', 'null'] },
+              attachments: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    url: { type: 'string' },
+                    name: { type: 'string' },
+                    type: { type: ['string', 'null'] }
+                  },
+                  required: ['url', 'name']
+                }
+              }
             }
           }
         }

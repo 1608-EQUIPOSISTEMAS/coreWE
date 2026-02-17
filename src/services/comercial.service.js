@@ -204,10 +204,11 @@ async function searchPhoneGet(phone) {
   // El SP devuelve siempre 1 fila con el JSON y los IDs, o un objeto vacío si falla algo
   return rows?.[0] || {}
 }
-// --- ACTUALIZACIÓN DE LEAD ---
+
+
 async function leadUpdate(payload) {
   const { id, lead = {}, user_id, contact_attempts} = payload
-
+  console.log(contact_attempts)
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_comercial_lead_update',
