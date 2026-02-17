@@ -75,5 +75,15 @@ export default async function integrationRoutes (fastify) {
     }
   })
   
+  //syncRprospectos
+  fastify.post('/syncEnrollmentToSheet', async (req, reply) => {
+    try {
+      const result = await integrationService.syncEnrollmentToSheet()
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
   
 }

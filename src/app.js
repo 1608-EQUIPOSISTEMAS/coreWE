@@ -40,10 +40,10 @@ await app.register(fastifyMultipart, {
 
 
 await app.register(rateLimit, {
-  global: true,     // Asegura que aplique a todo
-  max: 20,          // 20 peticiones
-  timeWindow: 1000, // por 1 segundo
-  allowList: ['127.0.0.1', 'localhost'], // No te bloquea a ti mismo en local
+  global: true,     
+  max: 20,         
+  timeWindow: 1000,
+  allowList: ['127.0.0.1', 'localhost'], 
   errorResponseBuilder: function (request, context) {
     return {
       statusCode: 429,

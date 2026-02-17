@@ -11,6 +11,75 @@ const SLACK_CHANNEL = 'C0A0R9H3PGE'; // El ID del canal (puedes usar el de sopor
 // Inicializamos el cliente
 const client = new WebClient(SLACK_TOKEN);
 
+async function syncEnrollmentToSheet() {
+  const spreadsheetId = '1AUkktHwOmGr6DxYOy8TBULcXkYbURhmQwIgWqjXrIVA'; 
+  const sheetName = 'SISTEMA-PILOTO';
+
+const result = await pool.query(`SELECT * FROM public.vw_enrollment_report`)
+  const rows = result.rows || []
+
+  if (rows.length === 0) {
+    return { 
+      ok: true,
+      message: 'El ODS se generó vacío. No se actualizó el Sheet.', 
+      rows_generated: 0 
+    }
+  }
+
+  const headers = Object.keys(rows[0])
+  
+  const values = rows.map(row => {
+    return headers.map(header => {
+      const val = row[header]
+      
+      if (val === null || val === undefined) return ''
+      
+      if (val instanceof Date) {
+         return val.toISOString().replace('T', ' ').substring(0, 19) 
+      }
+      
+      return String(val)
+    })
+  })
+
+  // ---------------------------------------------------------
+  // PASO 4: Escribir en Google Sheets
+  // ---------------------------------------------------------
+  const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(process.cwd(), 'credentials/service.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+
+  const client = await auth.getClient()
+  const googleSheets = google.sheets({ version: 'v4', auth: client })
+
+  // A. Limpiar la hoja desde A2 hacia abajo
+  try {
+    await googleSheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: `${sheetName}!A5:ZZ`, // Rango amplio
+    })
+  } catch (error) {
+     console.warn("Advertencia al limpiar hoja:", error.message)
+  }
+
+  // B. Escribir los nuevos datos desde A2
+  const res = await googleSheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A5`,
+    valueInputOption: 'USER_ENTERED',
+    resource: {
+      values: values,
+    },
+  })
+
+  return { 
+    ok: true, 
+    rows_generated: rows.length, 
+    sheet_updated_cells: res.data.updatedCells 
+  }
+}
+
 
 async function syncLeadsToSheet({ user_id }) {
   const spreadsheetId = '1CPbLaxvwnLDKSzk35--2YoIbu98nFQGLEXEg40OQGDw'; 
@@ -349,5 +418,6 @@ export default {
   syncLeadsToSheet,
   syncInscToSheet,
   syncScheduleToSheet,
-  syncRprospectos
+  syncRprospectos,
+  syncEnrollmentToSheet
 }
