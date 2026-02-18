@@ -2,12 +2,16 @@ import { pool } from '../plugins/db.js'
 import { google } from 'googleapis'
 import path from 'path'
 
+import fs from 'fs';
 import { WebClient } from '@slack/web-api'
+import dotenv from 'dotenv';
 
-// ⚠️ IMPORTANTE: Pon esto en un archivo .env si puedes
-const SLACK_TOKEN = 'xoxb-TU-NUEVO-TOKEN-AQUI'; 
-const SLACK_CHANNEL = 'C0A0R9H3PGE'; // El ID del canal (puedes usar el de soporte o el de sistemas)
+// Cargar variables de entorno
+dotenv.config();
 
+// USAR PROCESS.ENV EN LUGAR DEL TEXTO DIRECTO
+const SLACK_TOKEN = process.env.SLACK_TOKEN; 
+const SLACK_CHANNEL = process.env.SLACK_CHANNEL;
 // Inicializamos el cliente
 const client = new WebClient(SLACK_TOKEN);
 
@@ -57,7 +61,7 @@ const result = await pool.query(`SELECT * FROM public.vw_enrollment_report`)
   try {
     await googleSheets.spreadsheets.values.clear({
         spreadsheetId,
-        range: `${sheetName}!A5:ZZ`, // Rango amplio
+        range: `${sheetName}!A5:Y`, // Rango amplio
     })
   } catch (error) {
      console.warn("Advertencia al limpiar hoja:", error.message)
@@ -356,68 +360,72 @@ async function syncRprospectos() {
   }
 }
 
-
-async function sendReportToSlack({ titulo, texto, imagenesUrls = [] }) {
+async function sendReportToSlack({ titulo, texto, imagenes = [] }) {
   try {
-    // 1. Bloque de cabecera
-    const blocks = [
-      {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: titulo,
-          emoji: true
+    // Preparamos los archivos para subir
+    // Slack V2 permite subir múltiples archivos de golpe
+    const fileUploads = imagenes.map((img) => {
+        // Opción A: Si 'img' es una ruta de archivo local (ej: './uploads/foto.jpg')
+        if (typeof img === 'string' && !img.startsWith('http')) {
+            return {
+                file: img, 
+                filename: path.basename(img)
+            };
         }
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: texto
+        // Opción B: Si ya tienes el Buffer (porque lo subieron al endpoint)
+        if (img.buffer) {
+            return {
+                file: img.buffer,
+                filename: img.filename || 'imagen.jpg'
+            };
         }
-      },
-      {
-        type: 'divider'
-      }
-    ];
+        // Opción C: Si son URLs públicas, files.upload NO sirve bien, 
+        // pero asumimos que aquí quieres subir archivos reales.
+        return null;
+    }).filter(f => f !== null);
 
-    // 2. Agregar dinámicamente las imágenes (si existen)
-    // Slack permite bloques de tipo "image" que leen una URL pública
-    imagenesUrls.forEach((url, index) => {
-        if(url) {
-            blocks.push({
-                type: 'image',
-                image_url: url,
-                alt_text: `Imagen adjunta ${index + 1}`,
-                title: {
-                    type: 'plain_text',
-                    text: `Evidencia ${index + 1}`,
-                    emoji: true
+    // Si hay archivos, usamos el método de SUBIDA (files.uploadV2)
+    if (fileUploads.length > 0) {
+        const result = await client.files.uploadV2({
+            channel_id: SLACK_CHANNEL,
+            initial_comment: `*${titulo}*\n${texto}`, // El texto va aquí
+            file_uploads: fileUploads,
+        });
+        console.log('✅ Archivos subidos a Slack:', result.file_id || 'Multiple files');
+        return { ok: true };
+    } 
+    
+    // Si NO hay archivos, enviamos solo texto normal (como antes)
+    else {
+        const result = await client.chat.postMessage({
+            channel: SLACK_CHANNEL,
+            text: titulo,
+            blocks: [
+                {
+                    type: 'header',
+                    text: { type: 'plain_text', text: titulo, emoji: true }
+                },
+                {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: texto }
                 }
-            });
-        }
-    });
-
-    // 3. Enviar mensaje
-    const result = await client.chat.postMessage({
-      channel: SLACK_CHANNEL,
-      text: titulo, // Texto fallback para notificaciones móviles
-      blocks: blocks
-    });
-
-    console.log('✅ Reporte enviado a Slack:', result.ts);
-    return { ok: true };
+            ]
+        });
+        console.log('✅ Texto enviado a Slack:', result.ts);
+        return { ok: true };
+    }
 
   } catch (error) {
     console.error('❌ Error enviando a Slack:', error);
-    return { ok: false, error };
+    // Importante: No rompas el flujo principal si Slack falla
+    return { ok: false, error: error.message };
   }
 }
-
 export default {
   syncLeadsToSheet,
   syncInscToSheet,
   syncScheduleToSheet,
   syncRprospectos,
-  syncEnrollmentToSheet
+  syncEnrollmentToSheet,
+  sendReportToSlack
 }

@@ -85,5 +85,43 @@ export default async function integrationRoutes (fastify) {
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })
+
+// =================================================================
+  // NOTIFICACIONES SLACK (CORREGIDO)
+  // =================================================================
+  fastify.post('/send-slack-report', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['titulo', 'texto'],
+        additionalProperties: false,
+        properties: {
+          titulo: { type: 'string', minLength: 1 },
+          texto: { type: 'string', minLength: 1 },
+          imagenesUrls: { // <--- AQUÍ ESTABA EL ERROR
+            type: 'array',
+            items: { type: 'string' }, // <--- Quitamos "format: uri"
+            default: []
+          },
+          // Opcional: Si quieres ser más semántico, puedes renombrarlo a "imagenes"
+          // pero si lo cambias aquí, recuerda cambiarlo en el JSON que envías.
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      // Mapeamos 'imagenesUrls' a 'imagenes' para que coincida con tu servicio nuevo
+      const payload = {
+          ...req.body,
+          imagenes: req.body.imagenesUrls 
+      }
+      
+      const result = await integrationService.sendReportToSlack(payload)
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
   
 }
