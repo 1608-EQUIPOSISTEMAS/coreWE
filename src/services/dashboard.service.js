@@ -86,7 +86,58 @@ async function dashboardTargetRegister({ target = {} }) {
     return { target_id: rows[0]?.target_id }
 }
 
+async function programGoalsList(payload = {}) {
+  const {
+    year = 2026,
+    month_num = 1 // Esperamos el número del mes (1 = Enero) para ser precisos
+  } = payload
+
+  // Consulta a la nueva vista
+  const sql = `
+    SELECT * FROM public.v_dashboard_program_goals 
+    WHERE anio = $1 
+      AND mes_num = $2
+    ORDER BY fecha_inicio ASC
+  `
+  
+  const { rows } = await pool.query(sql, [year, month_num])
+
+  // Mapeo de respuesta para el Frontend
+  const items = rows.map(r => ({
+    edition_id:       r.edition_num_id,
+    
+    // Información del Programa
+    categoria:        r.categoria,
+    linea:            r.linea,
+    programa:         r.programa,
+    tipo:             r.tipo,       // A, B, C
+    inicio:           r.fecha_inicio, // 2026-01-22
+    codigo:           r.codigo_edicion,
+    
+    // Metas (Editables)
+    meta_monto:       Number(r.meta_monto || 0),
+    meta_vacantes:    Number(r.meta_vacantes || 0),
+    
+    // Logros (Reales)
+    venta_monto:      Number(r.venta_monto || 0),
+    venta_cantidad:   Number(r.venta_cantidad || 0),
+    
+    // Porcentajes
+    logro_monto_pct:    Number(r.porcentaje_logro_monto || 0),
+    logro_vacantes_pct: Number(r.porcentaje_logro_vacantes || 0),
+
+    // Desgloses JSON (Listos para pintar en el front)
+    breakdown_asesores: r.breakdown_asesores || [], // [{name: 'Grecia', count: 5, ...}]
+    breakdown_origen:   r.breakdown_origen   || [], // [{name: 'Facebook', count: 4}]
+    breakdown_clientes: r.breakdown_clientes || [], // [{name: 'Nuevo', count: 2}]
+    breakdown_estados:  r.breakdown_estado_comercial || [] // Embudo completo
+  }))
+
+  return { total: items.length, items }
+}
+
 export default {
   dashboardList,
-  dashboardTargetRegister
+  dashboardTargetRegister,
+  programGoalsList
 }

@@ -25,6 +25,21 @@ export default async function dashboardRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  fastify.post('/program-goals', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          year: { type: 'integer', default: 2026 },
+          month_num: { type: 'integer', default: 1 } // Envía 1 para Enero, 2 Febrero...
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const data = await dashboardService.programGoalsList(req.body)
+    return reply.send({ ok: true, data })
+  })
+
   // 2. REGISTRAR META
   // Ruta final: /api/dashboard/dashboardtargetregister
   fastify.post('/dashboardtargetregister', {
