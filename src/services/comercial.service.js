@@ -99,7 +99,7 @@ async function leadList(payload = {}) {
     q = null,
     user_id,
     page = 1,
-    size = 25,
+    size = 25,order_by = 0, 
     from_date = null,
     to_date = null,
     strategy_ids, // Viene del frontend
@@ -139,7 +139,7 @@ async function leadList(payload = {}) {
     current_user_id: user_id,
     q,
     page,
-    size,
+    size,order_by,
     from_date,
     to_date,
     updated_from,

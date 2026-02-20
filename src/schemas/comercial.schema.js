@@ -245,6 +245,7 @@ export const leadListSchema = {
       to_date:             { type: ['string', 'null'] },
       updated_from:        { type: ['string', 'null'] },
       updated_to:          { type: ['string', 'null'] },
+      order_by: { type: 'number', nullable: true },
       edition_start_from:  { type: ['string', 'null'] },
       edition_start_to:    { type: ['string', 'null'] },
       active:              { type: ['boolean', 'string', 'null'] },
