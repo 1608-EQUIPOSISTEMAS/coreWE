@@ -66,8 +66,7 @@ async function leadRegister({ lead = {}, person = {}, contact_attempts = [], use
     { statementTimeoutMs: 25000 }
   );
 
-  // Retornamos tal cual entrega el SP (generalmente devuelve lead_id y person_id)
-  return rows?.[0] || {};
+  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
 }
 
 // --- REGISTRO DE INSCRIPCIÓN ---
@@ -88,8 +87,7 @@ async function enrollmentRegister(payload) {
     { statementTimeoutMs: 25000 }
   );
 
-  // Retornamos tal cual entrega el SP
-  return rows?.[0] || {};
+  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
 }
 
 // src/services/comercial.service.js
@@ -221,7 +219,7 @@ async function leadUpdate(payload) {
     { statementTimeoutMs: 25000 }
   )
 
-  return rows?.[0] || {}
+  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
 }
 
 // --- OBTENER UN LEAD (Optimizado) ---

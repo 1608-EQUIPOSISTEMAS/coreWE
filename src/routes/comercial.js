@@ -26,16 +26,16 @@ export default async function comercialRoutes (fastify) {
   }, async (req, reply) => {
     const payload = req.body
     console.log('INSCRIPCIÒN:\n', payload)
-    const { lead_id, person_id } = await comercialService.leadRegister(payload)
-    return reply.code(201).send({ ok: true, lead_id, person_id })
+    const response = await comercialService.leadRegister(payload)
+    return reply.code(200).send(response)
   })
 
   fastify.post('/leadupdate', {
     schema: leadUpdateSchema,
     preHandler: [authenticate, ALL_COMERCIAL]
   }, async (req, reply) => {
-    const { lead_id } = await comercialService.leadUpdate(req.body)
-    return reply.code(200).send({ ok: true, lead_id })
+    const response = await comercialService.leadUpdate(req.body)
+    return reply.code(200).send(response)
   })
 
   fastify.post('/leadget', {
@@ -76,7 +76,7 @@ export default async function comercialRoutes (fastify) {
     preHandler: [authenticate, ALL_COMERCIAL]
   }, async (req, reply) => {
     const response = await comercialService.enrollmentRegister(req.body)
-    return reply.code(201).send({ ok: true, data: response })
+    return reply.code(200).send(response)
   })
 
   fastify.post('/enrollment/upload', {
