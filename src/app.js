@@ -1,12 +1,16 @@
 // src/app.js
 import 'dotenv/config' 
-
 import path from 'path' 
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static' 
 import fastifyMultipart from '@fastify/multipart' 
+import swagger from '@fastify/swagger'
+import swaggerUi from '@fastify/swagger-ui'
+import fastifyJwt from '@fastify/jwt'
+import rateLimit from '@fastify/rate-limit'
 
+// Rutas
 import catalogRoutes from './routes/catalog.js'
 import comercialRoutes from './routes/comercial.js'
 import programRoutes from './routes/program.js'
@@ -18,11 +22,8 @@ import authRoutes from './routes/auth.js'
 import dashboardRoutes from './routes/dashboard.js'
 import corporateAgreementRoutes from './routes/corporate_agreement.js'  
 import integrationRoutes from './routes/integration.js'
-import fastifyJwt from '@fastify/jwt'
-// 1. IMPORTAR LA NUEVA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
 import uploadRoutes from './routes/upload.js' 
 import ficoRoutes from './routes/fico.js'
-import rateLimit from '@fastify/rate-limit'
 
 const app = Fastify({
   logger: true,
@@ -30,14 +31,8 @@ const app = Fastify({
   trustProxy: true 
 })
 
-// --- REGISTRO DE PLUGINS ---
-await app.register(fastifyMultipart, {
-  limits: {
-    fileSize: 30 * 1024 * 1024, 
-    files: 5, 
-  }
-})
-
+// --- 1. CORS Y RATE LIMIT ---
+await app.register(cors, { origin: true, credentials: true })
 
 await app.register(rateLimit, {
   global: true,     
@@ -53,17 +48,50 @@ await app.register(rateLimit, {
   }
 })
 
-await app.register(cors, { origin: true, credentials: true })
-
-
-// -----------------------------------------------------
-// 1. REGISTRAR JWT Y EL DECORADOR (AGREGAR ESTO AQUÍ)
-// -----------------------------------------------------
-await app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET || 'mi_secreto_super_seguro_cambialo' // Usa variable de entorno idealmente
+// --- 2. MULTIPART ---
+await app.register(fastifyMultipart, {
+  limits: {
+    fileSize: 30 * 1024 * 1024, 
+    files: 5, 
+  }
 })
 
-// Decorador para proteger rutas
+// --- 3. SWAGGER ---
+await app.register(swagger, {
+  openapi: {
+    openapi: '3.1.0',
+    info: {
+      title: 'Mi API del Sistema',
+      description: 'Documentación interactiva de todos los módulos',
+      version: '1.0.0'
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    security: [{ bearerAuth: [] }] 
+  }
+})
+
+await app.register(swaggerUi, {
+  routePrefix: '/docs', 
+  uiConfig: {
+    docExpansion: 'list',
+    deepLinking: false
+  }
+})
+
+// --- 4. JWT Y AUTENTICACIÓN ---
+await app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET || 'mi_secreto_super_seguro_cambialo' 
+})
+
+// Decorador para proteger rutas (en caso de que lo uses directo en app)
 app.decorate('authenticate', async function (request, reply) {
   try {
     await request.jwtVerify()
@@ -75,7 +103,7 @@ app.decorate('authenticate', async function (request, reply) {
   }
 })
 
-// --- REGISTRO DE RUTAS ---
+// --- 5. RUTAS ---
 await app.register(catalogRoutes,   { prefix: '/api/catalog' })
 await app.register(comercialRoutes, { prefix: '/api/comercial' })
 await app.register(programRoutes,   { prefix: '/api/program' })
@@ -88,15 +116,11 @@ await app.register(authRoutes,      { prefix: '/api/auth' })
 await app.register(integrationRoutes, { prefix: '/api/integration' })
 await app.register(ficoRoutes,      { prefix: '/api/fico' })
 await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
-
-// 2. REGISTRAR LA RUTA AQUÍ (AGREGAR ESTA LÍNEA)
-// Esto habilitará el endpoint: POST http://tudominio/api/upload
 await app.register(uploadRoutes,    { prefix: '/api/upload' }) 
-
 
 app.get('/health', async () => ({ ok: true }))
 
-// --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS ---
+// --- 6. ARCHIVOS ESTÁTICOS ---
 if (process.env.NODE_ENV !== 'production') {
   console.log('Modo Desarrollo: Sirviendo /uploads desde Node.js');
   app.register(fastifyStatic, {

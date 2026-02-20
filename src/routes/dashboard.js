@@ -102,6 +102,24 @@ export default async function dashboardRoutes (fastify) {
     return reply.send({ ok: true, data: rows })
   })
 
+  // 5. CONTACTABILIDAD
+  // Ruta final: /api/dashboard/contactability
+  fastify.post('/contactability', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          year: { type: 'integer', default: 2026 },
+          month: { type: 'integer', default: 1 }, // 0 para traer todos los meses
+          advisor: { type: ['string', 'integer'], default: 'all' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const data = await dashboardService.contactabilityList(req.body)
+    return reply.send({ ok: true, data })
+  })
+
   // 4. DETALLE VENTAS [CORREGIDO]
   // Quitamos '/dashboard' del string. Ruta final: /api/dashboard/detailsales
   fastify.post('/detailsales', {

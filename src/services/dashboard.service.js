@@ -136,8 +136,54 @@ async function programGoalsList(payload = {}) {
   return { total: items.length, items }
 }
 
+async function contactabilityList(payload = {}) {
+  const { year = 2026, month = 1, advisor = 'all' } = payload
+
+  let sql = `SELECT * FROM public.v_dashboard_contactability WHERE anio = $1`
+  const params = [year]
+
+  if (month && month !== 0 && month !== '0') {
+    params.push(month)
+    sql += ` AND mes_num = $${params.length}`
+  }
+
+  if (advisor && advisor !== 'all') {
+    params.push(advisor)
+    sql += ` AND cod_asesor = $${params.length}`
+  }
+
+  sql += ` ORDER BY tasa_conversion DESC`
+
+  const { rows } = await pool.query(sql, params)
+
+  const items = rows.map(r => ({
+    anio: r.anio,
+    mes_num: r.mes_num,
+    mes_nombre: r.mes_nombre,
+    cod_asesor: r.cod_asesor,
+    asesor_nombre: r.asesor_nombre,
+    asesor_alias: r.asesor_alias,
+    total_leads_gestionados: Number(r.total_leads_gestionados || 0),
+    total_intentos: Number(r.total_intentos || 0),
+    total_contactados: Number(r.total_contactados || 0),
+    tasa_contactabilidad: Number(r.tasa_contactabilidad || 0),
+    total_ventas: Number(r.total_ventas || 0),
+    tasa_conversion: Number(r.tasa_conversion || 0),
+    ingresos_recuperados: Number(r.ingresos_recuperados || 0),
+    tiempo_prom_minutos: Number(r.tiempo_prom_minutos || 0),
+    
+    // Parseamos JSONb (Postgres devuelve objeto/array directamente con node-postgres)
+    chart_tendencia_horaria: typeof r.chart_tendencia_horaria === 'string' ? JSON.parse(r.chart_tendencia_horaria) : (r.chart_tendencia_horaria || []),
+    chart_curva_persistencia: typeof r.chart_curva_persistencia === 'string' ? JSON.parse(r.chart_curva_persistencia) : (r.chart_curva_persistencia || []),
+    chart_objeciones: typeof r.chart_objeciones === 'string' ? JSON.parse(r.chart_objeciones) : (r.chart_objeciones || [])
+  }))
+
+  return { total: items.length, items }
+}
+
 export default {
   dashboardList,
   dashboardTargetRegister,
-  programGoalsList
+  programGoalsList,
+  contactabilityList 
 }
