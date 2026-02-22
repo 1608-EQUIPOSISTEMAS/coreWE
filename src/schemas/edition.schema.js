@@ -122,7 +122,7 @@ export const auditLogsGetSchema = {
     type: 'object',
     additionalProperties: false,
     properties: {
-      editionId: { type: ['integer', 'null'] },
+      edition_id: { type: ['integer', 'null'] },
       limit: { type: 'integer', default: 50 },
       offset: { type: 'integer', default: 0 }
     }

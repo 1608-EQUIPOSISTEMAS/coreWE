@@ -56,6 +56,7 @@ export const leadRegisterSchema = {
             attempt_number:   { type: ['integer', 'null'] },
             cat_status:       { type: ['integer', 'null'] },
             contact_datetime: { type: ['string', 'null'] },
+            cat_type_attempt: { type: ['integer', 'null'] },
             cat_result:       { type: ['integer', 'null'] },
             response:         { type: ['string', 'null'] },
             contact_duration: { type: ['integer', 'null'] }
@@ -163,6 +164,7 @@ export const enrollmentRegisterSchema = {
           program_edition_id:      { type: ['integer', 'null'] },
           document:                { type: 'string' },
           cat_type_document:       { type: 'integer' },
+          cat_insc_modality: { type: ['integer', 'null'] },
           full_name:               { type: 'string' },
           last_name:               { type: ['string', 'null'] },
           mother_last_name:        { type: ['string', 'null'] },

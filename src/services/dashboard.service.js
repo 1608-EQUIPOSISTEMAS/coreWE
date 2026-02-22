@@ -181,9 +181,84 @@ async function contactabilityList(payload = {}) {
   return { total: items.length, items }
 }
 
+async function ventasCanalList(payload = {}) {
+  const { year = 2026, month_num = 1, advisor = 'all' } = payload
+
+  let sql = `
+    SELECT * FROM public.v_dashboard_ventas_canal
+    WHERE anio    = $1
+      AND mes_num = $2
+  `
+  const params = [year, month_num]
+
+  if (advisor && advisor !== 'all') {
+    params.push(advisor)
+    sql += ` AND cod_asesor = $${params.length}`
+  }
+
+  sql += ` ORDER BY semana_mes ASC, tipo_cliente ASC`
+
+  const { rows } = await pool.query(sql, params)
+
+  // Canales que el frontend espera (con defaults en 0 si no hay data)
+  const CANAL_DEFAULTS = {
+    lk: {c:0,v:0}, ig: {c:0,v:0}, fb: {c:0,v:0}, other: {c:0,v:0},
+    web:{c:0,v:0}, bot:{c:0,v:0}, cot:{c:0,v:0}, com:  {c:0,v:0}
+  }
+  const TIPOS = ['NEW', 'LDS', 'CWE', 'MEMBERS']
+
+  // Agrupa por semana
+  const semanasMap = {}
+
+  rows.forEach(r => {
+    const key = r.semana_mes
+    if (!semanasMap[key]) {
+      semanasMap[key] = {
+        title:       r.semana_label,
+        fecha_desde: r.fecha_desde,
+        fecha_hasta: r.fecha_hasta,
+        rowsMap:     {}  // tipo_cliente → {type, channels}
+      }
+    }
+
+    // rows_data viene como array JSON de Postgres
+    const rowsData = Array.isArray(r.rows_data) ? r.rows_data : []
+
+    rowsData.forEach(rd => {
+      const tipo = rd.type
+      if (!semanasMap[key].rowsMap[tipo]) {
+        semanasMap[key].rowsMap[tipo] = {
+          type:     tipo,
+          channels: { ...CANAL_DEFAULTS }
+        }
+      }
+      // Merge canales recibidos encima de los defaults
+      Object.entries(rd.channels || {}).forEach(([ch, val]) => {
+        semanasMap[key].rowsMap[tipo].channels[ch] = {
+          c: Number(val.c || 0),
+          v: Number(val.v || 0)
+        }
+      })
+    })
+  })
+
+  // Convierte a array final con todos los tipos garantizados
+  const weeklyData = Object.values(semanasMap).map(sem => ({
+    title: sem.title,
+    rows:  TIPOS.map(tipo => ({
+      type:     tipo,
+      channels: sem.rowsMap[tipo]?.channels || { ...CANAL_DEFAULTS }
+    }))
+  }))
+
+  return { total: weeklyData.length, weeklyData }
+}
+
+// No olvides exportarla:
 export default {
   dashboardList,
   dashboardTargetRegister,
   programGoalsList,
-  contactabilityList 
+  contactabilityList,
+  ventasCanalList  
 }

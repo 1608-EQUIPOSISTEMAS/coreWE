@@ -36,8 +36,8 @@ export default async function editionRoutes(fastify) {
     schema: auditLogsGetSchema,
     preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
-    const { editionId, limit, offset } = req.body
-    const data = await editionService.auditLogsGet({ editionId, limit, offset })
+    const { edition_id, limit, offset } = req.body
+    const data = await editionService.auditLogsGet({ edition_id, limit, offset })
     return reply.code(200).send({ ok: true, data })
   })
 

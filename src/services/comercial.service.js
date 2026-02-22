@@ -125,7 +125,15 @@ async function leadList(payload = {}) {
     type_program_ids,
     model_modality_ids,
     moment_ids,
-    membership_moment_ids
+    membership_moment_ids,
+
+    fico_status_ids,
+    profile_ids,
+    currency_ids,
+    inscription_modality_ids,
+    installment_status_ids,
+    payment_method_ids,
+    settlement_status_ids,
   } = payload
 
   // Lógica de Activo/Inactivo
@@ -167,7 +175,15 @@ async function leadList(payload = {}) {
     pay_date_from,
   pay_date_to,
   medium_contact_ids: medium_contact_ids || [],
-    code_country_ids: code_country_ids || []
+    code_country_ids: code_country_ids || [],
+
+    fico_status_ids:            fico_status_ids || [],
+    profile_ids:                profile_ids || [],
+    currency_ids:               currency_ids || [],
+    inscription_modality_ids:   inscription_modality_ids || [],
+    installment_status_ids:     installment_status_ids || [],
+    payment_method_ids:         payment_method_ids || [],
+    settlement_status_ids:      settlement_status_ids || [],
   }
 
   const rows = await callProcedureReturningRows(

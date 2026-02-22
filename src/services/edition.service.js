@@ -242,16 +242,16 @@ async function editionGet ({ id }) {
 }
 
 
-async function auditLogsGet ({ editionId = null, limit = 50, offset = 0 }) {
+async function auditLogsGet ({ edition_id = null, limit = 50, offset = 0 }) {
   // Convertimos a null explícito si viene undefined o 0, aunque el SP lo maneja
-  const pEditionId = editionId ? Number(editionId) : null
+  const pedition_id = edition_id ? Number(edition_id) : null
   const pLimit = Number(limit) || 50
   const pOffset = Number(offset) || 0
 
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_audit_logs_get',
-    [pEditionId, pLimit, pOffset], 
+    [pedition_id, pLimit, pOffset], 
     { statementTimeoutMs: 25000 }
   )
 

@@ -120,6 +120,22 @@ export default async function dashboardRoutes (fastify) {
     return reply.send({ ok: true, data })
   })
 
+  fastify.post('/ventas-canal', {
+  schema: {
+    body: {
+      type: 'object',
+      properties: {
+        year:      { type: 'integer', default: 2026 },
+        month_num: { type: 'integer', default: 1 },
+        advisor:   { type: ['string','integer'], default: 'all' }
+      }
+    }
+  }
+}, async (req, reply) => {
+  const data = await dashboardService.ventasCanalList(req.body)
+  return reply.send({ ok: true, data })
+})
+
   // 4. DETALLE VENTAS [CORREGIDO]
   // Quitamos '/dashboard' del string. Ruta final: /api/dashboard/detailsales
   fastify.post('/detailsales', {
