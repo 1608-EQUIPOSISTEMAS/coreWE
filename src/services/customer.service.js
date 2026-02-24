@@ -164,11 +164,36 @@ async function customerCaller(payload = {}) {
     company_id: r.company_id
   }))
 }
+/**
+ * INFO GET — Busca persona/cliente por número de documento
+ */
+async function customerInfoGet({ document }) {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_comercial_customer_info_get',
+    [ document ],
+    { statementTimeoutMs: 15000 }
+  )
 
+  const r = rows?.[0] || {}
+  return {
+    result:           r.result ?? 0,
+    message:          r.message ?? null,
+    person_id:        r.person_id ?? null,
+    customer_id:      r.customer_id ?? null,
+    first_name:       r.first_name ?? null,
+    last_name:        r.last_name ?? null,
+    mother_last_name: r.mother_last_name ?? null,
+    document_number:  r.document_number ?? null,
+    email:            r.email ?? null,
+    phone:            r.phone ?? null,
+  }
+}
 export default {
   customerRegister,
   customerList,
   customerGet,
   customerUpdate,
+  customerInfoGet,
   customerCaller
 }

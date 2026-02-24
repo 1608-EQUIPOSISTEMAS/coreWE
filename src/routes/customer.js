@@ -86,6 +86,24 @@ export default async function customerRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  // buscar cliente por documento (para modal de inscripción)
+fastify.post('/customerinfoget', {
+  schema: {
+    body: {
+      type: 'object',
+      required: ['document'],
+      additionalProperties: false,
+      properties: {
+        document: { type: 'string' }
+      }
+    }
+  }
+}, async (req, reply) => {
+  const data = await customerService.customerInfoGet(req.body)
+  const status = data.result === 1 ? 200 : data.result === 2 ? 422 : 404
+  return reply.code(status).send({ ok: data.result === 1, data })
+})
+
   // actualizar cliente
   fastify.post('/customerupdate', {
     schema: {
