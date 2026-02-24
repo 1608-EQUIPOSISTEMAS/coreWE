@@ -16,72 +16,111 @@ const SLACK_CHANNEL = process.env.SLACK_CHANNEL;
 const client = new WebClient(SLACK_TOKEN);
 
 async function syncEnrollmentToSheet() {
-  const spreadsheetId = '1AUkktHwOmGr6DxYOy8TBULcXkYbURhmQwIgWqjXrIVA'; 
-  const sheetName = 'SISTEMA-PILOTO';
+  const spreadsheetId = '1AUkktHwOmGr6DxYOy8TBULcXkYbURhmQwIgWqjXrIVA';
 
-const result = await pool.query(`SELECT * FROM public.vw_enrollment_report`)
-  const rows = result.rows || []
-
-  if (rows.length === 0) {
-    return { 
-      ok: true,
-      message: 'El ODS se generó vacío. No se actualizó el Sheet.', 
-      rows_generated: 0 
-    }
-  }
-
-  const headers = Object.keys(rows[0])
-  
-  const values = rows.map(row => {
-    return headers.map(header => {
-      const val = row[header]
-      
-      if (val === null || val === undefined) return ''
-      
-      if (val instanceof Date) {
-         return val.toISOString().replace('T', ' ').substring(0, 19) 
-      }
-      
-      return String(val)
-    })
-  })
-
-  // ---------------------------------------------------------
-  // PASO 4: Escribir en Google Sheets
-  // ---------------------------------------------------------
+  // AUTH única
   const auth = new google.auth.GoogleAuth({
     keyFile: path.join(process.cwd(), 'credentials/service.json'),
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  })
+  });
+  const authClient = await auth.getClient();
+  const googleSheets = google.sheets({ version: 'v4', auth: authClient });
 
-  const client = await auth.getClient()
-  const googleSheets = google.sheets({ version: 'v4', auth: client })
+  // =========================================================
+  // HOJA: SISTEMA-ORIGINAL → sobreescritura total siempre
+  // =========================================================
+  const resultAll = await pool.query(`SELECT * FROM public.vw_enrollment_report`);
+  const rowsAll = resultAll.rows || [];
 
-  // A. Limpiar la hoja desde A2 hacia abajo
-  try {
-    await googleSheets.spreadsheets.values.clear({
+  if (rowsAll.length > 0) {
+    const headers = Object.keys(rowsAll[0]);
+        
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `SISTEMA-ORIGINAL!A4`,
+  valueInputOption: 'RAW',  // ← cambiar
+      resource: { values: [headers] },
+    });
+
+    const valuesAll = rowsAll.map(row =>
+      headers.map(h => {
+        const val = row[h];
+        if (val === null || val === undefined) return '';
+        if (val instanceof Date) return val.toISOString().replace('T', ' ').substring(0, 19);
+        return String(val);
+      })
+    );
+
+    try {
+      await googleSheets.spreadsheets.values.clear({
         spreadsheetId,
-        range: `${sheetName}!A5:Y`, // Rango amplio
-    })
-  } catch (error) {
-     console.warn("Advertencia al limpiar hoja:", error.message)
+        range: `SISTEMA-ORIGINAL!A5:ZZ`,
+      });
+    } catch (e) {
+      console.warn('Advertencia al limpiar SISTEMA-ORIGINAL:', e.message);
+    }
+
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `SISTEMA-ORIGINAL!A5`,
+  valueInputOption: 'RAW',  // ← cambiar
+      resource: { values: valuesAll },
+    });
   }
 
-  // B. Escribir los nuevos datos desde A2
-  const res = await googleSheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${sheetName}!A5`,
-    valueInputOption: 'USER_ENTERED',
-    resource: {
-      values: values,
-    },
-  })
+  // =========================================================
+  // HOJA: SISTEMA-PILOTO → solo filas nuevas (FLAG_SEND = 'N')
+  // =========================================================
+  const resultNew = await pool.query(
+    `SELECT * FROM public.vw_enrollment_report WHERE "FLAG_SEND" = 'N'`
+  );
+  const rowsNew = resultNew.rows || [];
 
-  return { 
-    ok: true, 
-    rows_generated: rows.length, 
-    sheet_updated_cells: res.data.updatedCells 
+  let pilotoResult = { rows_inserted: 0, sheet_updated_cells: 0 };
+
+  if (rowsNew.length > 0) {
+    const headers = Object.keys(rowsNew[0]);
+    const valuesNew = rowsNew.map(row =>
+      headers.map(h => {
+        const val = row[h];
+        if (val === null || val === undefined) return '';
+        if (val instanceof Date) return val.toISOString().replace('T', ' ').substring(0, 19);
+        return String(val);
+      })
+    );
+
+    // Detectar última fila ocupada en SISTEMA-PILOTO para hacer append
+    const getResponse = await googleSheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `SISTEMA-PILOTO!A:A`,
+    });
+    const existingRows = getResponse.data.values || [];
+    const startRow = existingRows.length + 1;
+
+    const res = await googleSheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `SISTEMA-PILOTO!A${startRow}`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: valuesNew },
+    });
+
+    pilotoResult.sheet_updated_cells = res.data.updatedCells;
+    pilotoResult.rows_inserted = rowsNew.length;
+
+    // Marcar como enviadas → próximo sync las ignora
+    const sentIds = rowsNew.map(r => r['ID']);  // ← alias de la vista
+    await pool.query(
+  `UPDATE public.enrollments SET flag_send = 'Y' WHERE enrollment_id = ANY($1::int[])`,
+  [sentIds]
+    );
   }
+
+  return {
+    ok: true,
+    original_rows_synced: rowsAll.length,
+    piloto_rows_inserted: pilotoResult.rows_inserted,
+    piloto_cells_updated: pilotoResult.sheet_updated_cells,
+  };
 }
 
 

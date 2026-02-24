@@ -154,43 +154,75 @@ export const enrollmentRegisterSchema = {
       inscription: {
         type: 'object',
         required: [
-          'lead_id', 'program_version_id', 'document',
-          'cat_type_document', 'full_name', 'total_amount',
-          'cat_type_payment', 'cat_currency'
+          'lead_id',
+          'document',
+          'cat_type_document',
+          'full_name',
+          'total_amount',
+          'cat_currency',
+          'cat_payment_channel'   // ← único campo de pago verdaderamente obligatorio
         ],
         properties: {
-          lead_id:                 { type: 'integer' },
-          program_version_id:      { type: ['integer', 'null'] },
-          program_edition_id:      { type: ['integer', 'null'] },
-          document:                { type: 'string' },
-          cat_type_document:       { type: 'integer' },
-          cat_insc_modality: { type: ['integer', 'null'] },
-          full_name:               { type: 'string' },
-          last_name:               { type: ['string', 'null'] },
-          mother_last_name:        { type: ['string', 'null'] },
-          email:                   { type: ['string', 'null'] },
-          list_price:              { type: ['number', 'null'] },
-          cat_type_payment:        { type: 'integer' },
-          cat_currency:            { type: 'integer' },
-          total_amount:            { type: 'number' },
-          saved_money:             { type: 'number' },
-          cat_method_payment:      { type: ['integer', 'null'] },
-          discount_amount:         { type: 'number' },
-          student_attachment_url:  { type: ['string', 'null'] },
-          payment_attachment_url:  { type: ['string', 'null'] },
-          dsct_porcent_id:         { type: ['integer', 'null'] },
-          dsct_stick_id:           { type: ['integer', 'null'] },
-          dsct_benefit_id:         { type: ['integer', 'null'] },
-          b2b_contract_id:         { type: ['integer', 'null'] },
-          observations:            { type: ['string', 'null'] },
-          attachments: {
+          lead_id:                { type: 'integer' },
+          program_version_id:     { type: ['integer', 'null'] },
+          program_edition_id:     { type: ['integer', 'null'] },
+
+          // Datos del alumno
+          document:               { type: 'string' },
+          cat_type_document:      { type: 'integer' },
+          cat_insc_modality:      { type: ['integer', 'null'] },
+          full_name:              { type: 'string' },
+          last_name:              { type: ['string', 'null'] },
+          mother_last_name:       { type: ['string', 'null'] },
+          email:                  { type: ['string', 'null'] },
+          cat_country:            { type: ['integer', 'null'] },
+
+          // Canal y pago
+          cat_payment_channel:    { type: 'integer' },              // ← NUEVO (obligatorio)
+          cat_type_payment:       { type: ['integer', 'null'] },    // null para TOKEN/WEB
+          cat_currency:           { type: 'integer' },
+          cat_method_payment:     { type: ['integer', 'null'] },    // null para TOKEN/WEB
+          cat_token_provider:     { type: ['integer', 'null'] },    // ← NUEVO (solo TOKEN)
+          saved_money:            { type: 'number' },
+
+          // Precios y descuentos
+          list_price:             { type: ['number', 'null'] },
+          total_amount:           { type: 'number' },
+          discount_amount:        { type: ['number', 'null'] },
+          dsct_porcent_id:        { type: ['integer', 'null'] },
+          dsct_stick_id:          { type: ['integer', 'null'] },
+          dsct_benefit_id:        { type: ['integer', 'null'] },
+
+          // Adjuntos y extras
+          observations:           { type: ['string', 'null'] },
+          student_attachment_url: { type: ['string', 'null'] },
+          b2b_contract_id:        { type: ['integer', 'null'] },
+
+          // ← NUEVO: Comprobantes de pago → enrollment_attachments (canal GENERAL)
+          ticket_payment_urls: {
             type: 'array',
+            default: [],
             items: {
               type: 'object',
-              required: ['url', 'name'],
+              required: ['url'],
               properties: {
                 url:  { type: 'string' },
-                name: { type: 'string' },
+                name: { type: ['string', 'null'] },
+                type: { type: ['string', 'null'] }
+              }
+            }
+          },
+
+          // Adjuntos generales del lead → lead_attachments (canal WEB u otros)
+          attachments: {
+            type: 'array',
+            default: [],
+            items: {
+              type: 'object',
+              required: ['url'],
+              properties: {
+                url:  { type: 'string' },
+                name: { type: ['string', 'null'] },
                 type: { type: ['string', 'null'] }
               }
             }
