@@ -1,6 +1,6 @@
 // src/routes/programs.js
 import programService from '../services/program.service.js'
-import { authenticate, ALL_PRODUCTO } from '../hooks/auth.hooks.js'
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL } from '../hooks/auth.hooks.js'
 import {
   programRegisterSchema,
   programListSchema,
@@ -50,8 +50,8 @@ export default async function programRoutes(fastify) {
   })
 
   fastify.post('/programversioncaller', {
-    schema: programVersionCallerSchema,
-    preHandler: [authenticate, ALL_PRODUCTO]
+    schema: programVersionCallerSchema
+    // preHandler: [authenticate, ALL_PRODUCTO, ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programVersionCaller(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -91,7 +91,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programversiondetailget', {
     schema: programVersionDetailGetSchema,
-    preHandler: [authenticate, ALL_PRODUCTO]
+    preHandler: [authenticate, ALL_COMERCIAL]
   }, async (req, reply) => {
     const { data } = await programService.programVersionDetailGet(req.body)
     return reply.code(200).send({ ok: true, data })

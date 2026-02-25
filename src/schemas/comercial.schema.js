@@ -160,7 +160,7 @@ export const enrollmentRegisterSchema = {
           'full_name',
           'total_amount',
           'cat_currency',
-          'cat_payment_channel'   // ← único campo de pago verdaderamente obligatorio
+          'cat_payment_channel'
         ],
         properties: {
           lead_id:                { type: 'integer' },
@@ -171,6 +171,7 @@ export const enrollmentRegisterSchema = {
           document:               { type: 'string' },
           cat_type_document:      { type: 'integer' },
           cat_insc_modality:      { type: ['integer', 'null'] },
+          cat_certificate_status: { type: ['integer', 'null'] }, // <-- AÑADIDO
           full_name:              { type: 'string' },
           last_name:              { type: ['string', 'null'] },
           mother_last_name:       { type: ['string', 'null'] },
@@ -178,11 +179,11 @@ export const enrollmentRegisterSchema = {
           cat_country:            { type: ['integer', 'null'] },
 
           // Canal y pago
-          cat_payment_channel:    { type: 'integer' },              // ← NUEVO (obligatorio)
-          cat_type_payment:       { type: ['integer', 'null'] },    // null para TOKEN/WEB
+          cat_payment_channel:    { type: 'integer' },
+          cat_type_payment:       { type: ['integer', 'null'] },
           cat_currency:           { type: 'integer' },
-          cat_method_payment:     { type: ['integer', 'null'] },    // null para TOKEN/WEB
-          cat_token_provider:     { type: ['integer', 'null'] },    // ← NUEVO (solo TOKEN)
+          cat_method_payment:     { type: ['integer', 'null'] },
+          cat_token_provider:     { type: ['integer', 'null'] },
           saved_money:            { type: 'number' },
 
           // Precios y descuentos
@@ -193,12 +194,25 @@ export const enrollmentRegisterSchema = {
           dsct_stick_id:          { type: ['integer', 'null'] },
           dsct_benefit_id:        { type: ['integer', 'null'] },
 
+          // <-- AÑADIDO: Plan de cuotas (vital para cuando pagan a plazos)
+          installment_plan: {
+            type: ['array', 'null'],
+            items: {
+              type: 'object',
+              properties: {
+                installment_number: { type: 'integer' },
+                amount:             { type: 'number' },
+                due_date:           { type: 'string' }
+              }
+            }
+          },
+
           // Adjuntos y extras
           observations:           { type: ['string', 'null'] },
           student_attachment_url: { type: ['string', 'null'] },
           b2b_contract_id:        { type: ['integer', 'null'] },
 
-          // ← NUEVO: Comprobantes de pago → enrollment_attachments (canal GENERAL)
+          // Comprobantes de pago -> enrollment_attachments (canal GENERAL)
           ticket_payment_urls: {
             type: 'array',
             default: [],
@@ -213,7 +227,7 @@ export const enrollmentRegisterSchema = {
             }
           },
 
-          // Adjuntos generales del lead → lead_attachments (canal WEB u otros)
+          // Adjuntos generales del lead -> lead_attachments (canal WEB u otros)
           attachments: {
             type: 'array',
             default: [],
@@ -231,8 +245,7 @@ export const enrollmentRegisterSchema = {
       }
     }
   }
-}
-
+}; // <-- Corregida la llave sobrante
 export const leadGetSchema = {
   body: {
     type: 'object',
@@ -288,6 +301,7 @@ export const leadListSchema = {
       b2b:                 { type: ['string', 'null'] },
       pay_date_from:       { type: ['string', 'null'] },
       pay_date_to:         { type: ['string', 'null'] },
+      payment_type_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       strategy_ids:        { type: ['array', 'null'], items: { type: 'integer' } },
       word_ids:            { type: ['array', 'null'], items: { type: 'integer' } },
       medium_contact_ids:  { type: ['array', 'null'], items: { type: 'integer' } },

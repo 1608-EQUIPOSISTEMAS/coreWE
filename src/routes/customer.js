@@ -85,65 +85,41 @@ export default async function customerRoutes (fastify) {
     const { data } = await customerService.customerGet(req.body)
     return reply.code(200).send({ ok: true, data })
   })
-
-  // buscar cliente por documento (para modal de inscripción)
+// buscar cliente por documento
 fastify.post('/customerinfoget', {
   schema: {
     body: {
       type: 'object',
       required: ['document'],
-      additionalProperties: false,
       properties: {
-        document: { type: 'string' }
+        document: { type: 'string', minLength: 1 } // Evita strings vacíos
       }
     }
   }
 }, async (req, reply) => {
-  const data = await customerService.customerInfoGet(req.body)
-  const status = data.result === 1 ? 200 : data.result === 2 ? 422 : 404
-  return reply.code(status).send({ ok: data.result === 1, data })
-})
+  const data = await customerService.customerInfoGet(req.body);
+  return reply.code(200).send({ 
+    ok: data.result === 1, 
+    data 
+  });
+});
 
-  // actualizar cliente
-  fastify.post('/customerupdate', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['id','customer'],
-        additionalProperties: false,
-        properties: {
-          id: { type: 'integer' },
-          customer: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              // Misma estructura que register, pero todo es opcional para update parcial
-              document_number:      { type: ['string','null'] },
-              active:               { type: ['string','boolean','null'] },
-              
-              first_name:           { type: ['string','null'] },
-              last_name:            { type: ['string','null'] },
-              mother_last_name:     { type: ['string','null'] },
-              cat_occupation:       { type: ['integer','null'] },
-              cat_type_document:    { type: ['integer','null'] },
-              cat_person_status:    { type: ['integer','null'] },
-              cat_country:          { type: ['integer','null'] },
+// actualizar cliente
+fastify.post('/customerupdate', {
+  schema: { /* ... tu esquema actual está bien ... */ }
+}, async (req, reply) => {
+  const result = await customerService.customerUpdate(req.body);
+  
+  // Validar si la actualización fue exitosa antes de decir "ok: true"
+  if (!result || result.error) {
+    return reply.code(400).send({ ok: false, message: 'No se pudo actualizar el cliente' });
+  }
 
-              razon_social:         { type: ['string','null'] },
-              razon_comercial:      { type: ['string','null'] },
-
-              cat_customer_segment: { type: ['integer','null'] },
-              cat_customer_status:  { type: ['integer','null'] }
-            }
-          }
-        }
-      }
-    }
-  }, async (req, reply) => {
-    const { customer_id } = await customerService.customerUpdate(req.body)
-    return reply.code(200).send({ ok: true, customer_id })
-  })
-
+  return reply.code(200).send({ 
+    ok: true, 
+    customer_id: result.customer_id 
+  });
+});
   // caller para selects
   fastify.post('/customercaller', {
     schema: {

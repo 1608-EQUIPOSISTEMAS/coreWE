@@ -6,6 +6,7 @@ import { pipeline } from 'stream';
 import fs from 'fs';
 import path from 'path';
 
+import integrationService from './integration.service.js'  
 const pump = promisify(pipeline);
 
 const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
@@ -69,7 +70,6 @@ async function leadRegister({ lead = {}, person = {}, contact_attempts = [], use
   return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
 }
 
-// --- REGISTRO DE INSCRIPCIÓN ---
 async function enrollmentRegister(payload) {
   const user_id = payload.user_id;
   const lead_id = payload.inscription?.lead_id || payload.lead_id;
@@ -80,16 +80,35 @@ async function enrollmentRegister(payload) {
     pool,
     'public.sp_comercial_enrollment_register',
     [
-      lead_id,                 
-      user_id,                 
-      JSON.stringify(payload)  
+      lead_id,
+      user_id,
+      JSON.stringify(payload)
     ],
     { statementTimeoutMs: 25000 }
   );
 
-  return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
-}
+  const response = rows?.[0] || { result: 0, message: 'No response from DB', enrollment_id: null };
 
+  // ✅ Si se registró bien y el canal es WEB → notificar Slack
+  if (response.result === 1 && response.enrollment_id) {
+    const channelId = payload.inscription?.cat_payment_channel;
+
+    // Resolver alias del canal para saber si es WEB
+    const channelRows = await pool.query(
+      `SELECT alias FROM public.catalog WHERE catalog_id = $1 LIMIT 1`,
+      [channelId]
+    );
+    const channelAlias = channelRows.rows?.[0]?.alias;
+
+    if (channelAlias === 'we_channel_web') {
+      // Fire and forget — no bloqueamos la respuesta al cliente si Slack falla
+      integrationService.sendEnrollmentWebToSlack({ enrollment_id: response.enrollment_id })
+        .catch(err => console.error('Slack WEB notify failed:', err));
+    }
+  }
+
+  return response;
+}
 // src/services/comercial.service.js
 
 async function leadList(payload = {}) {
@@ -133,6 +152,7 @@ async function leadList(payload = {}) {
     inscription_modality_ids,
     installment_status_ids,
     payment_method_ids,
+  payment_type_ids,
     settlement_status_ids,
   } = payload
 
@@ -183,6 +203,7 @@ async function leadList(payload = {}) {
     inscription_modality_ids:   inscription_modality_ids || [],
     installment_status_ids:     installment_status_ids || [],
     payment_method_ids:         payment_method_ids || [],
+    payment_type_ids:         payment_type_ids || [],
     settlement_status_ids:      settlement_status_ids || [],
   }
 

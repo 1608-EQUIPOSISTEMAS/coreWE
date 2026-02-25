@@ -10,15 +10,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // USAR PROCESS.ENV EN LUGAR DEL TEXTO DIRECTO
-const SLACK_TOKEN = process.env.SLACK_TOKEN; 
-const SLACK_CHANNEL = process.env.SLACK_CHANNEL;
+
+const SLACK_TOKEN   = process.env.SLACK_TOKEN
+const SLACK_CHANNEL = process.env.SLACK_CHANNEL
 // Inicializamos el cliente
 const client = new WebClient(SLACK_TOKEN);
-
 async function syncEnrollmentToSheet() {
-  const spreadsheetId = '1AUkktHwOmGr6DxYOy8TBULcXkYbURhmQwIgWqjXrIVA';
+  const spreadsheetId = '1ehfYdzIW115KmfUtzFyLrFFnk2PJHy9Vmp4nYLsbvxo';
 
-  // AUTH única
   const auth = new google.auth.GoogleAuth({
     keyFile: path.join(process.cwd(), 'credentials/service.json'),
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -26,19 +25,17 @@ async function syncEnrollmentToSheet() {
   const authClient = await auth.getClient();
   const googleSheets = google.sheets({ version: 'v4', auth: authClient });
 
-  // =========================================================
-  // HOJA: SISTEMA-ORIGINAL → sobreescritura total siempre
-  // =========================================================
+  // ── SISTEMA-ORIGINAL: sobreescritura total ─────────────────────────────────
   const resultAll = await pool.query(`SELECT * FROM public.vw_enrollment_report`);
   const rowsAll = resultAll.rows || [];
 
   if (rowsAll.length > 0) {
     const headers = Object.keys(rowsAll[0]);
-        
+
     await googleSheets.spreadsheets.values.update({
       spreadsheetId,
       range: `SISTEMA-ORIGINAL!A4`,
-  valueInputOption: 'RAW',  // ← cambiar
+      valueInputOption: 'USER_ENTERED',
       resource: { values: [headers] },
     });
 
@@ -63,14 +60,12 @@ async function syncEnrollmentToSheet() {
     await googleSheets.spreadsheets.values.update({
       spreadsheetId,
       range: `SISTEMA-ORIGINAL!A5`,
-  valueInputOption: 'RAW',  // ← cambiar
+      valueInputOption: 'USER_ENTERED',
       resource: { values: valuesAll },
     });
   }
 
-  // =========================================================
-  // HOJA: SISTEMA-PILOTO → solo filas nuevas (FLAG_SEND = 'N')
-  // =========================================================
+  // ── SISTEMA-PILOTO: solo filas nuevas (FLAG_SEND = 'N') ───────────────────
   const resultNew = await pool.query(
     `SELECT * FROM public.vw_enrollment_report WHERE "FLAG_SEND" = 'N'`
   );
@@ -80,6 +75,7 @@ async function syncEnrollmentToSheet() {
 
   if (rowsNew.length > 0) {
     const headers = Object.keys(rowsNew[0]);
+
     const valuesNew = rowsNew.map(row =>
       headers.map(h => {
         const val = row[h];
@@ -89,7 +85,7 @@ async function syncEnrollmentToSheet() {
       })
     );
 
-    // Detectar última fila ocupada en SISTEMA-PILOTO para hacer append
+    // Calcular fila de inicio
     const getResponse = await googleSheets.spreadsheets.values.get({
       spreadsheetId,
       range: `SISTEMA-PILOTO!A:A`,
@@ -97,6 +93,7 @@ async function syncEnrollmentToSheet() {
     const existingRows = getResponse.data.values || [];
     const startRow = existingRows.length + 1;
 
+    // Insertar datos
     const res = await googleSheets.spreadsheets.values.update({
       spreadsheetId,
       range: `SISTEMA-PILOTO!A${startRow}`,
@@ -104,15 +101,15 @@ async function syncEnrollmentToSheet() {
       resource: { values: valuesNew },
     });
 
+    // Marcar como enviados en BD
+    const sentIds = rowsNew.map(r => r['ID']);
+    await pool.query(
+      `UPDATE public.enrollments SET flag_send = 'Y' WHERE enrollment_id = ANY($1::int[])`,
+      [sentIds]
+    );
+
     pilotoResult.sheet_updated_cells = res.data.updatedCells;
     pilotoResult.rows_inserted = rowsNew.length;
-
-    // Marcar como enviadas → próximo sync las ignora
-    const sentIds = rowsNew.map(r => r['ID']);  // ← alias de la vista
-    await pool.query(
-  `UPDATE public.enrollments SET flag_send = 'Y' WHERE enrollment_id = ANY($1::int[])`,
-  [sentIds]
-    );
   }
 
   return {
@@ -121,6 +118,135 @@ async function syncEnrollmentToSheet() {
     piloto_rows_inserted: pilotoResult.rows_inserted,
     piloto_cells_updated: pilotoResult.sheet_updated_cells,
   };
+}
+
+async function sendEnrollmentWebToSlack({ enrollment_id }) {
+  try {
+    const slackClient = new WebClient(SLACK_TOKEN)
+
+    const result = await pool.query(` SELECT
+        e.enrollment_id,
+        to_char(e.registration_date, 'DD/MM/YYYY HH24:MI') AS fecha_registro,
+        prog.program_name,
+        c_type.description AS tipo_programa,
+        c_mod.description  AS modalidad,
+        to_char(pe.start_date::timestamptz, 'DD/MM/YYYY') AS fecha_inicio,
+        per.document_number AS dni,
+        per.first_name || ' ' || COALESCE(per.last_name, '') AS alumno,
+        concat('(', c_sitx.variable_2, ') ', l.origin_phone)  AS celular,
+        l.origin_email  AS correo,
+        c_sit.variable_1 AS ocupacion,
+        concat(u.name,' - ', u.alias )          AS asesor,
+        c_curr.description AS moneda,
+        e.list_price,
+        e.discount_amount,
+        e.total_amount,
+        e.notes,
+        c_fico.description AS estado_financiero,
+        -- Adjuntos del lead (constancias pago web)
+        (
+          SELECT json_agg(json_build_object(
+            'url',  la.file_url,
+            'name', COALESCE(la.file_name, 'Adjunto')
+          ) ORDER BY la.lead_attachment_id)
+          FROM public.lead_attachments la
+          WHERE la.lead_id = l.lead_id AND la.active = 'Y'
+        ) AS lead_attachments
+      FROM public.enrollments e
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per    ON per.person_id = cust.person_id
+      LEFT JOIN public.leads l         ON l.enrollment_id = e.enrollment_id
+      LEFT JOIN public.users u         ON u.user_id = e.seller_agent_id
+      LEFT JOIN public.program_versions ver ON ver.program_version_id = e.program_version_id
+      LEFT JOIN public.programs prog        ON prog.program_id = ver.program_id
+      LEFT JOIN public.program_editions pe  ON pe.edition_num_id = e.program_edition_id
+      LEFT JOIN public.catalog c_type  ON c_type.catalog_id = prog.cat_type_program
+      LEFT JOIN public.catalog c_mod   ON c_mod.catalog_id  = prog.cat_model_modality
+      LEFT JOIN public.catalog c_fico  ON c_fico.catalog_id = e.cat_fico_status
+      LEFT JOIN public.catalog c_sit   ON c_sit.catalog_id  = l.cat_prospect_situation
+      LEFT JOIN public.catalog c_sitx   ON c_sitx.catalog_id  = l.cat_code_country
+      LEFT JOIN public.catalog c_curr  ON c_curr.catalog_id = e.cat_currency
+      WHERE e.enrollment_id = $1
+      LIMIT 1`, [enrollment_id])
+
+    if (result.rows.length === 0) {
+      return { ok: false, error: `Enrollment ${enrollment_id} no encontrado` }
+    }
+
+    const d = result.rows[0]
+    const attachments = d.lead_attachments || []
+
+    // 2. Construir bloques
+    const blocks = [
+      { type: 'header', text: { type: 'plain_text', text: '🌐 Nuevo Pago Web Registrado', emoji: true } },
+      { type: 'divider' },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*📚 Programa:*\n${d.program_name || '—'}` },
+          { type: 'mrkdwn', text: `*🏷️ Tipo:*\n${d.tipo_programa || '—'} · ${d.modalidad || '—'}` },
+          { type: 'mrkdwn', text: `*👤 Alumno:*\n${d.alumno}` },
+          { type: 'mrkdwn', text: `*🪪 DNI:*\n${d.dni || '—'}` },
+          { type: 'mrkdwn', text: `*📞 Celular:*\n${d.celular || '—'}` },
+          { type: 'mrkdwn', text: `*📧 Correo:*\n${d.correo || '—'}` },
+          { type: 'mrkdwn', text: `*🎯 Asesor:*\n${d.asesor || '—'}` },
+          { type: 'mrkdwn', text: `*📅 Fecha Inicio:*\n${d.fecha_inicio || '—'}` },
+        ]
+      },
+      { type: 'divider' },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*💰 Precio Lista:*\n${d.moneda} ${Number(d.list_price).toFixed(2)}` },
+          { type: 'mrkdwn', text: `*🏷️ Descuento:*\n${d.moneda} ${Number(d.discount_amount).toFixed(2)}` },
+          { type: 'mrkdwn', text: `*✅ Total a Pagar:*\n${d.moneda} ${Number(d.total_amount).toFixed(2)}` },
+          { type: 'mrkdwn', text: `*📋 Obs:*\n${d.notes || '—'}` },
+        ]
+      },
+    ]
+
+    // 3. Adjuntos como links dentro del mismo mensaje
+    if (attachments.length > 0) {
+      const linksText = attachments
+        .map((a, i) => `• <${a.url}|${a.name || `Adjunto ${i + 1}`}>`)
+        .join('\n')
+
+      blocks.push({ type: 'divider' })
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*📎 Constancias adjuntas (${attachments.length}):*\n${linksText}`
+        }
+      })
+    } else {
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: '⚠️ Sin constancias adjuntas' }]
+      })
+    }
+
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `Matrícula #${enrollment_id} · Registrada el ${d.fecha_registro}`
+      }]
+    })
+
+    // 4. Un solo mensaje con todo
+    await slackClient.chat.postMessage({
+      channel: SLACK_CHANNEL,
+      text:    `🌐 Nuevo Pago Web — ${d.program_name} — ${d.alumno}`,
+      blocks,
+    })
+
+    return { ok: true, enrollment_id }
+
+  } catch (error) {
+    console.error('❌ Error en sendEnrollmentWebToSlack:', error)
+    return { ok: false, error: error.message }
+  }
 }
 
 
@@ -399,65 +525,56 @@ async function syncRprospectos() {
   }
 }
 
-async function sendReportToSlack({ titulo, texto, imagenes = [] }) {
+async function sendReportToSlack({ titulo, texto, imagenes = [], imagenesUrls = [] }) {
   try {
-    // Preparamos los archivos para subir
-    // Slack V2 permite subir múltiples archivos de golpe
-    const fileUploads = imagenes.map((img) => {
-        // Opción A: Si 'img' es una ruta de archivo local (ej: './uploads/foto.jpg')
-        if (typeof img === 'string' && !img.startsWith('http')) {
-            return {
-                file: img, 
-                filename: path.basename(img)
-            };
-        }
-        // Opción B: Si ya tienes el Buffer (porque lo subieron al endpoint)
-        if (img.buffer) {
-            return {
-                file: img.buffer,
-                filename: img.filename || 'imagen.jpg'
-            };
-        }
-        // Opción C: Si son URLs públicas, files.upload NO sirve bien, 
-        // pero asumimos que aquí quieres subir archivos reales.
-        return null;
-    }).filter(f => f !== null);
+    // Unificar ambas formas de pasar archivos
+    const todasImagenes = [...imagenes, ...imagenesUrls]
 
-    // Si hay archivos, usamos el método de SUBIDA (files.uploadV2)
+    const fileUploads = todasImagenes.map((img) => {
+      // Caso 1: objeto con buffer (upload directo)
+      if (img && img.buffer) {
+        return { file: img.buffer, filename: img.filename || 'imagen.jpg' }
+      }
+
+      // Caso 2: string (ruta local o URL localhost)
+      const rawPath = typeof img === 'string' ? img : null
+      if (!rawPath) return null
+
+      const localPath = rawPath.startsWith('http')
+        ? path.join(process.cwd(), rawPath.replace(/^https?:\/\/[^/]+/, ''))
+        : path.join(process.cwd(), rawPath)
+
+      if (fs.existsSync(localPath)) {
+        return { file: fs.readFileSync(localPath), filename: path.basename(localPath) }
+      }
+
+      console.warn('⚠️ Imagen no encontrada en disco:', localPath)
+      return null
+    }).filter(f => f !== null)
+
     if (fileUploads.length > 0) {
-        const result = await client.files.uploadV2({
-            channel_id: SLACK_CHANNEL,
-            initial_comment: `*${titulo}*\n${texto}`, // El texto va aquí
-            file_uploads: fileUploads,
-        });
-        console.log('✅ Archivos subidos a Slack:', result.file_id || 'Multiple files');
-        return { ok: true };
-    } 
-    
-    // Si NO hay archivos, enviamos solo texto normal (como antes)
-    else {
-        const result = await client.chat.postMessage({
-            channel: SLACK_CHANNEL,
-            text: titulo,
-            blocks: [
-                {
-                    type: 'header',
-                    text: { type: 'plain_text', text: titulo, emoji: true }
-                },
-                {
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: texto }
-                }
-            ]
-        });
-        console.log('✅ Texto enviado a Slack:', result.ts);
-        return { ok: true };
+      await client.files.uploadV2({
+        channel_id:      SLACK_CHANNEL,
+        initial_comment: `*${titulo}*\n${texto}`,
+        file_uploads:    fileUploads,
+      })
+      return { ok: true }
     }
 
+    // Sin archivos → solo texto
+    await client.chat.postMessage({
+      channel: SLACK_CHANNEL,
+      text:    titulo,
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: titulo, emoji: true } },
+        { type: 'section', text: { type: 'mrkdwn', text: texto } }
+      ]
+    })
+    return { ok: true }
+
   } catch (error) {
-    console.error('❌ Error enviando a Slack:', error);
-    // Importante: No rompas el flujo principal si Slack falla
-    return { ok: false, error: error.message };
+    console.error('❌ Error enviando a Slack:', error)
+    return { ok: false, error: error.message }
   }
 }
 export default {
@@ -466,5 +583,6 @@ export default {
   syncScheduleToSheet,
   syncRprospectos,
   syncEnrollmentToSheet,
-  sendReportToSlack
+  sendReportToSlack,
+  sendEnrollmentWebToSlack,
 }
