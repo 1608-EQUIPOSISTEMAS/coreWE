@@ -1,7 +1,7 @@
 // src/schemas/instructor.schema.js
 
 export const instructorRegisterSchema = {
-    tags: ['Instructors'], // <--- ESTA ES LA MAGIA
+  tags: ['Instructors'],
   description: 'Crea un nuevo instructor en el sistema (y opcionalmente la persona)',
   body: {
     type: 'object',
@@ -12,18 +12,27 @@ export const instructorRegisterSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
-          person_id: { type: ['integer', 'null'] },
-          first_name: { type: ['string', 'null'] },
-          last_name: { type: ['string', 'null'] },
-          mother_last_name: { type: ['string', 'null'] },
-          document_number: { type: ['string', 'null'] },
-          cat_type_document: { type: ['integer', 'null'] },
-          cat_occupation: { type: ['integer', 'null'] },
-          cat_person_status: { type: ['integer', 'null'] },
-          cat_country: { type: ['integer', 'null'] },
-          birthday: { type: ['string', 'null'] },
-          person_active: { type: ['string', 'null'] },
-          instructor_active: { type: ['string', 'null'] },
+          person_id:            { type: ['integer', 'null'] },
+          first_name:           { type: ['string',  'null'] },
+          last_name:            { type: ['string',  'null'] },
+          mother_last_name:     { type: ['string',  'null'] },
+          document_number:      { type: ['string',  'null'] },
+          cat_type_document:    { type: ['integer', 'null'] },
+          cat_occupation:       { type: ['integer', 'null'] },
+          cat_person_status:    { type: ['integer', 'null'] },
+          cat_country:          { type: ['integer', 'null'] },
+          birthday:             { type: ['string',  'null'] },
+          email:                { type: ['string',  'null'] },
+          phone:                { type: ['string',  'null'] },
+          person_active:        { type: ['string',  'null'] },
+          instructor_active:    { type: ['string',  'null'] },
+          linkedin:             { type: ['string',  'null'] },
+          relevant_company:     { type: ['string',  'null'] },
+          relevant_work:        { type: ['string',  'null'] },
+          profile_resume:       { type: ['string',  'null'] },
+          cv_url:               { type: ['string',  'null'] },
+          cv_documents_url:     { type: ['string',  'null'] },
+          odoo_parent_id:       { type: ['integer', 'null'] },
           user_registration_id: { type: ['integer', 'null'] }
         }
       }
