@@ -111,118 +111,121 @@ async function enrollmentRegister(payload) {
 }
 // src/services/comercial.service.js
 
-async function leadList(payload = {}) {
-  const {
-    q = null,
-    user_id,
-    page = 1,
-    size = 25,order_by = 0, 
-    from_date = null,
-    to_date = null,
-    strategy_ids, // Viene del frontend
-    word_ids,     // Viene del frontend
-    medium_contact_ids,
-    code_country_ids,
-    updated_from = null,
-    updated_to = null,
-    edition_start_from = null,
-    edition_start_to = null,
-    pay_date_from = null,
-  pay_date_to = null,
-    active = null,
-    program_text = null,
-    web = null,
-    b2b = null,
+  async function leadList(payload = {}) {
+    const {
+      q = null,
+      user_id,
+      page = 1,
+      size = 25,order_by = 0, 
+      from_date = null,
+      to_date = null,
+      attempt_origin_ids,
+      strategy_ids, // Viene del frontend
+      word_ids,     // Viene del frontend
+      medium_contact_ids,
+      code_country_ids,
+      updated_from = null,
+      updated_to = null,
+      edition_start_from = null,
+      edition_start_to = null,
+      pay_date_from = null,
+    pay_date_to = null,
+      active = null,
+      program_text = null,
+      web = null,
+      b2b = null,
 
-    // Recibimos los arrays directos (Fastify ya validó que son enteros o null)
-    owner_user_ids,
-    status_lead_ids,
-    last_follow_ids,
-    interest_level_ids,
-    channel_ids,
-    query_ids,
-    type_program_ids,
-    model_modality_ids,
-    moment_ids,
-    membership_moment_ids,
+      // Recibimos los arrays directos (Fastify ya validó que son enteros o null)
+      owner_user_ids,
+      status_lead_ids,
+      last_follow_ids,
+      interest_level_ids,
+      channel_ids,
+      query_ids,
+      type_program_ids,
+      model_modality_ids,
+      moment_ids,
+      membership_moment_ids,
 
-    fico_status_ids,
-    profile_ids,
-    currency_ids,
-    inscription_modality_ids,
-    installment_status_ids,
-    payment_method_ids,
-  payment_type_ids,
-    settlement_status_ids,
-  } = payload
+      fico_status_ids,
+      profile_ids,
+      currency_ids,
+      inscription_modality_ids,
+      installment_status_ids,
+      payment_method_ids,
+    payment_type_ids,
+      settlement_status_ids,
+    } = payload
 
-  // Lógica de Activo/Inactivo
-  let activeParam = active
-  if (active === true) activeParam = 'Y'
-  else if (active === false) activeParam = 'N'
+    // Lógica de Activo/Inactivo
+    let activeParam = active
+    if (active === true) activeParam = 'Y'
+    else if (active === false) activeParam = 'N'
 
-  const filters = {
-    current_user_id: user_id,
-    q,
-    page,
-    size,order_by,
-    from_date,
-    to_date,
-    updated_from,
-    updated_to,
-    edition_start_from,
-    edition_start_to,
-    active: activeParam,
-    program_text,
-    web,
-    b2b,
-    strategy_ids: strategy_ids || [], 
-    word_ids: word_ids || [],
-    // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
-    // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
-    // aunque el SP maneja nulls, enviar [] vacío es más seguro en JSON.
-    
-    owner_user_ids: owner_user_ids || [],
-    status_lead_ids: status_lead_ids || [],
-    last_follow_ids: last_follow_ids || [],
-    interest_level_ids: interest_level_ids || [],
-    channel_ids: channel_ids || [],
-    query_ids: query_ids || [],
-    type_program_ids: type_program_ids || [],
-    model_modality_ids: model_modality_ids || [],
-    moment_ids: moment_ids || [],
-    membership_moment_ids: membership_moment_ids || [],
-    pay_date_from,
-  pay_date_to,
-  medium_contact_ids: medium_contact_ids || [],
-    code_country_ids: code_country_ids || [],
+    const filters = {
+      current_user_id: user_id,
+      q,
+      page,
+      size,order_by,
+      from_date,
+      to_date,
+      updated_from,
+      updated_to,
+      edition_start_from,
+      edition_start_to,
+      active: activeParam,
+      program_text,
+      web,
+      b2b,
+      strategy_ids: strategy_ids || [], 
+      word_ids: word_ids || [],
+      // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
+      // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
+      // aunque el SP maneja nulls, enviar [] vacío es más seguro en JSON.
+      
+      owner_user_ids: owner_user_ids || [],
+      status_lead_ids: status_lead_ids || [],
+      last_follow_ids: last_follow_ids || [],
+      interest_level_ids: interest_level_ids || [],
+      channel_ids: channel_ids || [],
+      query_ids: query_ids || [],
+      type_program_ids: type_program_ids || [],
+      model_modality_ids: model_modality_ids || [],
+      moment_ids: moment_ids || [],
+      membership_moment_ids: membership_moment_ids || [],
+      
+      attempt_origin_ids: attempt_origin_ids || [],
+      pay_date_from,
+    pay_date_to,
+    medium_contact_ids: medium_contact_ids || [],
+      code_country_ids: code_country_ids || [],
 
-    fico_status_ids:            fico_status_ids || [],
-    profile_ids:                profile_ids || [],
-    currency_ids:               currency_ids || [],
-    inscription_modality_ids:   inscription_modality_ids || [],
-    installment_status_ids:     installment_status_ids || [],
-    payment_method_ids:         payment_method_ids || [],
-    payment_type_ids:         payment_type_ids || [],
-    settlement_status_ids:      settlement_status_ids || [],
+      fico_status_ids:            fico_status_ids || [],
+      profile_ids:                profile_ids || [],
+      currency_ids:               currency_ids || [],
+      inscription_modality_ids:   inscription_modality_ids || [],
+      installment_status_ids:     installment_status_ids || [],
+      payment_method_ids:         payment_method_ids || [],
+      payment_type_ids:         payment_type_ids || [],
+      settlement_status_ids:      settlement_status_ids || [],
+    }
+
+    const rows = await callProcedureReturningRows(
+      pool,
+      'public.sp_comercial_lead_list',
+      [JSON.stringify(filters)],
+      { statementTimeoutMs: 25000 }
+    )
+
+    const total = rows?.[0]?.total_count ? Number(rows[0].total_count) : 0
+
+    return {
+      total,
+      page: Number(page),
+      size: Number(size),
+      items: rows
+    }
   }
-
-  const rows = await callProcedureReturningRows(
-    pool,
-    'public.sp_comercial_lead_list',
-    [JSON.stringify(filters)],
-    { statementTimeoutMs: 25000 }
-  )
-
-  const total = rows?.[0]?.total_count ? Number(rows[0].total_count) : 0
-
-  return {
-    total,
-    page: Number(page),
-    size: Number(size),
-    items: rows
-  }
-}
 // --- BÚSQUEDA DE CLIENTE POR TELÉFONO ---
 async function searchPhoneGet(phone) {
   // Llamamos al SP pasando solo el teléfono.

@@ -175,10 +175,13 @@ async function contactabilityList(payload = {}) {
     ingresos_recuperados: Number(r.ingresos_recuperados || 0),
     tiempo_prom_minutos: Number(r.tiempo_prom_minutos || 0),
     
-    // Parseamos JSONb (Postgres devuelve objeto/array directamente con node-postgres)
+    // Parseamos JSONb
     chart_tendencia_horaria: typeof r.chart_tendencia_horaria === 'string' ? JSON.parse(r.chart_tendencia_horaria) : (r.chart_tendencia_horaria || []),
     chart_curva_persistencia: typeof r.chart_curva_persistencia === 'string' ? JSON.parse(r.chart_curva_persistencia) : (r.chart_curva_persistencia || []),
-    chart_objeciones: typeof r.chart_objeciones === 'string' ? JSON.parse(r.chart_objeciones) : (r.chart_objeciones || [])
+    chart_objeciones: typeof r.chart_objeciones === 'string' ? JSON.parse(r.chart_objeciones) : (r.chart_objeciones || []),
+    
+    // 🔴 AÑADIR ESTA LÍNEA (El eslabón perdido)
+    json_pending_tasks: typeof r.json_pending_tasks === 'string' ? JSON.parse(r.json_pending_tasks) : (r.json_pending_tasks || [])
   }))
 
   return { total: items.length, items }

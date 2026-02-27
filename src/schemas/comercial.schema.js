@@ -309,6 +309,7 @@ export const leadListSchema = {
       owner_user_ids:      { type: ['array', 'null'], items: { type: 'integer' } },
       status_lead_ids:     { type: ['array', 'null'], items: { type: 'integer' } },
       moment_ids:          { type: ['array', 'null'], items: { type: 'integer' } },
+      attempt_origin_ids:  { type: ['array', 'null'], items: { type: 'integer' } },
       membership_moment_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       last_follow_ids:     { type: ['array', 'null'], items: { type: 'integer' } },
       interest_level_ids:  { type: ['array', 'null'], items: { type: 'integer' } },
