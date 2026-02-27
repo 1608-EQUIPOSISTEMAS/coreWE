@@ -9,7 +9,7 @@ import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 import fastifyJwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
-
+ import './cron/crm-auto-attempts.cron.js'
 // Rutas
 import catalogRoutes from './routes/catalog.js'
 import comercialRoutes from './routes/comercial.js'
@@ -24,6 +24,7 @@ import corporateAgreementRoutes from './routes/corporate_agreement.js'
 import integrationRoutes from './routes/integration.js'
 import uploadRoutes from './routes/upload.js' 
 import ficoRoutes from './routes/fico.js'
+import notificationRoutes from './routes/notifications.js'
 
 const app = Fastify({
   logger: true,
@@ -32,7 +33,12 @@ const app = Fastify({
 })
 
 // --- 1. CORS Y RATE LIMIT ---
-await app.register(cors, { origin: true, credentials: true })
+
+await app.register(cors, {
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+})
 
 await app.register(rateLimit, {
   global: true,     
@@ -94,6 +100,11 @@ await app.register(fastifyJwt, {
 // Decorador para proteger rutas (en caso de que lo uses directo en app)
 app.decorate('authenticate', async function (request, reply) {
   try {
+    // SSE usa EventSource que no puede poner headers,
+    // así que acepta el token también desde ?token=
+    if (request.query.token) {
+      request.headers.authorization = `Bearer ${request.query.token}`
+    }
     await request.jwtVerify()
   } catch (err) {
     reply.code(401).send({
@@ -102,6 +113,9 @@ app.decorate('authenticate', async function (request, reply) {
     })
   }
 })
+
+// Evita que Fastify cierre las conexiones SSE automáticamente
+app.addContentTypeParser('text/event-stream', (req, payload, done) => done(null, payload))
 
 // --- 5. RUTAS ---
 await app.register(catalogRoutes,   { prefix: '/api/catalog' })
@@ -117,6 +131,9 @@ await app.register(integrationRoutes, { prefix: '/api/integration' })
 await app.register(ficoRoutes,      { prefix: '/api/fico' })
 await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
 await app.register(uploadRoutes,    { prefix: '/api/upload' }) 
+await app.register(notificationRoutes, { prefix: '/api' })
+
+
 
 app.get('/health', async () => ({ ok: true }))
 

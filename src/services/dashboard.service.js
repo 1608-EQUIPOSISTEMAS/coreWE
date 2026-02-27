@@ -45,6 +45,9 @@ async function dashboardList(payload = {}) {
     logrado_monto:   Number(r.logrado_monto || 0),
     ticket_prom:     Number(r.ticket_prom   || 0),
     consultas:       Number(r.consultas     || 0),
+    high_interest_count: Number(r.high_interest_count || 0),
+    follow_up_pending: Number(r.follow_up_pending || 0),
+
     
     // --- CAMBIOS AQUÍ: Mapeamos lo nuevo de la vista ---
     // Ya no dependemos solo de porcentajes, traemos el dato crudo
