@@ -15,9 +15,11 @@ export default async function instructorRoutes(fastify) {
     schema: instructorRegisterSchema,
     preHandler: [authenticate, ALL_PRODUCTO]
   }, async (req, reply) => {
-    const payload = req.body
-    const { instructor_id, person_id, data } = await instructorService.instructorRegister(payload)
-    return reply.code(201).send({ ok: true, instructor_id, person_id, data })
+    const payload = req.body 
+    const { instructor_id, person_id, odoo_user_id, odoo_partner_id, odoo_error, data } = 
+    await instructorService.instructorRegister(payload)
+    return reply.code(201).send({ ok: true, instructor_id, person_id, odoo_user_id, odoo_partner_id,
+  ...(odoo_error && { odoo_error }), data })
   })
 
   fastify.post('/instructorlist', {
