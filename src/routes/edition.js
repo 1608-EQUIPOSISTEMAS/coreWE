@@ -1,6 +1,6 @@
 // src/routes/editions.js
 import editionService from '../services/edition.service.js'
-import { authenticate, ALL_ADMIN } from '../hooks/auth.hooks.js'
+import { authenticate, ALL_ADMIN, ALL_COMERCIAL} from '../hooks/auth.hooks.js'
 import {
   editionRegisterSchema,
   editionTreeRegisterSchema,
@@ -43,7 +43,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionlist', {
     schema: editionListSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await editionService.editionList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -51,7 +51,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionbyweeklist', {
     schema: editionByWeekListSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await editionService.editionByWeeklist(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -59,7 +59,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionget', {
     schema: editionGetSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const { id } = req.body
     const data = await editionService.editionGet({ id })
@@ -76,7 +76,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editioncaller', {
     schema: editionCallerSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const items = await editionService.editionCaller(req.body)
     return reply.code(200).send({ ok: true, items })
@@ -84,7 +84,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionextrainfocaller', {
     schema: editionExtraInfoCallerSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const items = await editionService.editionextrainfocaller(req.body)
     return reply.code(200).send({ ok: true, items })
