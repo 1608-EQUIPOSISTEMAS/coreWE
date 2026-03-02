@@ -120,6 +120,22 @@ export default async function dashboardRoutes (fastify) {
     return reply.send({ ok: true, data })
   })
 
+  fastify.post('/lider', {
+  schema: {
+    body: {
+      type: 'object',
+      properties: {
+        year:    { type: 'integer', default: 2026 },
+        month:   { type: 'integer', default: 1 },   // 0 = todos los meses
+        advisor: { type: ['string', 'integer'], default: 'all' }
+      }
+    }
+  }
+}, async (req, reply) => {
+  const data = await dashboardService.liderList(req.body)
+  return reply.send({ ok: true, data })
+})
+
   fastify.post('/ventas-canal', {
   schema: {
     body: {

@@ -138,7 +138,48 @@ async function programGoalsList(payload = {}) {
 
   return { total: items.length, items }
 }
+async function liderList(payload = {}) {
+  const { year = 2026, month = 1, advisor = 'all' } = payload
 
+  let sql = `SELECT * FROM public.v_dashboard_lider WHERE anio = $1`
+  const params = [year]
+
+  if (month && month !== 0 && month !== '0') {
+    params.push(month)
+    sql += ` AND mes_num = $${params.length}`
+  }
+
+  if (advisor && advisor !== 'all') {
+    params.push(advisor)
+    sql += ` AND cod_asesor = $${params.length}`
+  }
+
+  sql += ` ORDER BY total_sin_atencion DESC`
+
+  const { rows } = await pool.query(sql, params)
+
+  const items = rows.map(r => ({
+    anio:               r.anio,
+    mes_num:            r.mes_num,
+    mes_nombre:         r.mes_nombre,
+    cod_asesor:         r.cod_asesor,
+    asesor_nombre:      r.asesor_nombre,
+    asesor_alias:       r.asesor_alias,
+    total_leads:        Number(r.total_leads        || 0),
+    total_intentos:     Number(r.total_intentos     || 0),
+    total_atendidas:    Number(r.total_atendidas    || 0),
+    total_sin_atencion: Number(r.total_sin_atencion || 0),
+    total_pendientes:   Number(r.total_pendientes   || 0),
+    pct_atendidas:      Number(r.pct_atendidas      || 0),
+    pct_sin_atencion:   Number(r.pct_sin_atencion   || 0),
+    pct_pendientes:     Number(r.pct_pendientes     || 0),
+    json_origin_stats:     typeof r.json_origin_stats     === 'string' ? JSON.parse(r.json_origin_stats)     : (r.json_origin_stats     || []),
+    json_reschedule_stats: typeof r.json_reschedule_stats === 'string' ? JSON.parse(r.json_reschedule_stats) : (r.json_reschedule_stats || []),
+    json_pending_tasks:    typeof r.json_pending_tasks    === 'string' ? JSON.parse(r.json_pending_tasks)    : (r.json_pending_tasks    || [])
+  }))
+
+  return { total: items.length, items }
+}
 async function contactabilityList(payload = {}) {
   const { year = 2026, month = 1, advisor = 'all' } = payload
 
@@ -263,5 +304,6 @@ export default {
   dashboardTargetRegister,
   programGoalsList,
   contactabilityList,
+  liderList ,
   ventasCanalList  
 }
