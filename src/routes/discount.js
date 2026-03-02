@@ -13,7 +13,7 @@ export default async function discountRoutes(fastify) {
 
   fastify.post('/discountregister', {
     schema: discountRegisterSchema,
-    preHandler: [authenticate, ADMIN_COMERCIAL]
+    // preHandler: [authenticate, ADMIN_COMERCIAL]
   }, async (req, reply) => {
     const payload = req.body
     const { discount_id } = await discountService.discountRegister(payload)
@@ -22,7 +22,7 @@ export default async function discountRoutes(fastify) {
 
   fastify.post('/discountlist', {
     schema: discountListSchema,
-    preHandler: [authenticate, ADMIN_COMERCIAL]
+    // preHandler: [authenticate, ADMIN_COMERCIAL]
   }, async (req, reply) => {
     const data = await discountService.discountList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -30,7 +30,7 @@ export default async function discountRoutes(fastify) {
 
   fastify.post('/discountget', {
     schema: discountGetSchema,
-    preHandler: [authenticate, ADMIN_COMERCIAL]
+    // preHandler: [authenticate, ADMIN_COMERCIAL]
   }, async (req, reply) => {
     const { data } = await discountService.discountGet(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -38,7 +38,7 @@ export default async function discountRoutes(fastify) {
 
   fastify.post('/discountupdate', {
     schema: discountUpdateSchema,
-    preHandler: [authenticate, ADMIN_COMERCIAL]
+    // preHandler: [authenticate, ADMIN_COMERCIAL]
   }, async (req, reply) => {
     const { discount_id } = await discountService.discountUpdate(req.body)
     return reply.code(200).send({ ok: true, discount_id })
@@ -46,7 +46,7 @@ export default async function discountRoutes(fastify) {
 
   fastify.post('/discountcaller', {
     schema: discountCallerSchema,
-    preHandler: [authenticate, ADMIN_COMERCIAL]
+    // preHandler: [authenticate, ADMIN_COMERCIAL]
   }, async (req, reply) => {
     const data = await discountService.discountCaller(req.body)
     return reply.code(200).send({ ok: true, data })
