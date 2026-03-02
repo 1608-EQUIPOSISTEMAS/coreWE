@@ -9,7 +9,7 @@ import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 import fastifyJwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
- import './cron/crm-auto-attempts.cron.js'
+//  import './cron/crm-auto-attempts.cron.js'
 // Rutas
 import catalogRoutes from './routes/catalog.js'
 import comercialRoutes from './routes/comercial.js'

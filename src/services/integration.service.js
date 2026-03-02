@@ -251,55 +251,80 @@ async function sendEnrollmentWebToSlack({ enrollment_id }) {
 
 
 async function syncLeadsToSheet({ user_id }) {
-  const spreadsheetId = '1CPbLaxvwnLDKSzk35--2YoIbu98nFQGLEXEg40OQGDw'; 
-  const sheetName = 'SYSTEM';
+  // ---------------------------------------------------------
+  // PASO 1: Obtener la configuración del Sheet del usuario
+  // ---------------------------------------------------------
+  const userQuery = await pool.query(
+    `SELECT sheet_id, sheet_spring FROM users WHERE user_id = $1`, 
+    [user_id]
+  );
 
-  const result = await pool.query(`SELECT * FROM public.sp_leads_report($1)`, [user_id])
-  const rows = result.rows || []
+  if (userQuery.rows.length === 0) {
+    return { ok: false, message: 'Usuario no encontrado en la base de datos.' };
+  }
+
+  const user = userQuery.rows[0];
+
+  // Validar que tenga las credenciales de la hoja configuradas
+  if (!user.sheet_id || !user.sheet_spring) {
+    return { 
+      ok: false, 
+      message: 'El usuario no tiene un Google Sheet o nombre de hoja configurado.' 
+    };
+  }
+
+  const spreadsheetId = user.sheet_id; 
+  const sheetName = user.sheet_spring;
+
+  // ---------------------------------------------------------
+  // PASO 2: Obtener los leads
+  // ---------------------------------------------------------
+  const result = await pool.query(`SELECT * FROM public.sp_leads_report($1)`, [user_id]);
+  const rows = result.rows || [];
 
   if (rows.length === 0) {
     return { 
       ok: true,
       message: 'El ODS se generó vacío. No se actualizó el Sheet.', 
       rows_generated: 0 
-    }
+    };
   }
 
-  const headers = Object.keys(rows[0])
+  const headers = Object.keys(rows[0]);
   
   const values = rows.map(row => {
     return headers.map(header => {
-      const val = row[header]
+      const val = row[header];
       
-      if (val === null || val === undefined) return ''
+      if (val === null || val === undefined) return '';
       
       if (val instanceof Date) {
-         return val.toISOString().replace('T', ' ').substring(0, 19) 
+         return val.toISOString().replace('T', ' ').substring(0, 19);
       }
       
-      return String(val)
-    })
-  })
+      return String(val);
+    });
+  });
 
   // ---------------------------------------------------------
-  // PASO 4: Escribir en Google Sheets
+  // PASO 3: Escribir en Google Sheets
   // ---------------------------------------------------------
   const auth = new google.auth.GoogleAuth({
     keyFile: path.join(process.cwd(), 'credentials/service.json'),
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  })
+  });
 
-  const client = await auth.getClient()
-  const googleSheets = google.sheets({ version: 'v4', auth: client })
+  const client = await auth.getClient();
+  const googleSheets = google.sheets({ version: 'v4', auth: client });
 
   // A. Limpiar la hoja desde A2 hacia abajo
   try {
     await googleSheets.spreadsheets.values.clear({
         spreadsheetId,
-        range: `${sheetName}!A2:ZZ`, // Rango amplio
-    })
+        range: `${sheetName}!A2:ZZ`, 
+    });
   } catch (error) {
-     console.warn("Advertencia al limpiar hoja:", error.message)
+     console.warn("Advertencia al limpiar hoja:", error.message);
   }
 
   // B. Escribir los nuevos datos desde A2
@@ -310,15 +335,14 @@ async function syncLeadsToSheet({ user_id }) {
     resource: {
       values: values,
     },
-  })
+  });
 
   return { 
     ok: true, 
     rows_generated: rows.length, 
     sheet_updated_cells: res.data.updatedCells 
-  }
+  };
 }
-
 async function syncInscToSheet({ enrollment_id }) {
 
   const spreadsheetId = '1B4NAcmk1QjwLV_NhfP4FPkQrdFWLdanvIg_gkPufCPg'; 
