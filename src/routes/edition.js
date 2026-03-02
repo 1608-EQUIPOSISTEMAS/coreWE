@@ -18,7 +18,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionregister', {
     schema: editionRegisterSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    // preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
     const response = await editionService.editionRegister(req.body)
     return reply.code(201).send(response)
@@ -26,7 +26,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editiontreeregister', {
     schema: editionTreeRegisterSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    // preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
     const response = await editionService.editionTreeRegister(req.body)
     return reply.code(201).send(response)
@@ -34,7 +34,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/auditlogsget', {
     schema: auditLogsGetSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    // preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
     const { edition_id, limit, offset } = req.body
     const data = await editionService.auditLogsGet({ edition_id, limit, offset })
@@ -43,7 +43,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionlist', {
     schema: editionListSchema,
-    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await editionService.editionList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -51,7 +51,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionbyweeklist', {
     schema: editionByWeekListSchema,
-    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await editionService.editionByWeeklist(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -59,7 +59,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionget', {
     schema: editionGetSchema,
-    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const { id } = req.body
     const data = await editionService.editionGet({ id })
@@ -68,7 +68,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionupdate', {
     schema: editionUpdateSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    // preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
     const response = await editionService.editionUpdate(req.body)
     return reply.code(201).send(response)
@@ -76,7 +76,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editioncaller', {
     schema: editionCallerSchema,
-    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const items = await editionService.editionCaller(req.body)
     return reply.code(200).send({ ok: true, items })
@@ -84,7 +84,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editionextrainfocaller', {
     schema: editionExtraInfoCallerSchema,
-    preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, async (req, reply) => {
     const items = await editionService.editionextrainfocaller(req.body)
     return reply.code(200).send({ ok: true, items })
@@ -92,7 +92,7 @@ export default async function editionRoutes(fastify) {
 
   fastify.post('/editiontreeupdate', {
     schema: editionTreeUpdateSchema,
-    preHandler: [authenticate, ALL_ADMIN]
+    // preHandler: [authenticate, ALL_ADMIN]
   }, async (req, reply) => {
     const response = await editionService.editionTreeUpdate(req.body)
     return reply.code(201).send(response)
