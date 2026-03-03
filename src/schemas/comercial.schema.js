@@ -84,6 +84,7 @@ export const leadUpdateSchema = {
           cat_query:                   { type: ['integer', 'null'] },
           full_name:                   { type: ['string', 'null'] },
           cat_client_type:             { type: ['integer', 'null'] },
+          first_contact_date: { type: ['string', 'null'] },
           pay_date:                    { type: ['string', 'null'] },
           membership_moment_id:        { type: ['integer', 'null'] },
           cat_client_moment:           { type: ['integer', 'null'] },
