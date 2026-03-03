@@ -12,7 +12,7 @@ dotenv.config();
 // USAR PROCESS.ENV EN LUGAR DEL TEXTO DIRECTO
 
 const SLACK_TOKEN   = process.env.SLACK_TOKEN
-const SLACK_CHANNEL = process.env.SLACK_CHANNEL
+const SLACK_CHANNEL = process.env.SLACK_CHANNEL_MATCH_WEB
 // Inicializamos el cliente
 const client = new WebClient(SLACK_TOKEN);
 async function syncEnrollmentToSheet() {
