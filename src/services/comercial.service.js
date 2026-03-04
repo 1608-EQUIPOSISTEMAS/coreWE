@@ -89,23 +89,25 @@ async function enrollmentRegister(payload) {
 
   const response = rows?.[0] || { result: 0, message: 'No response from DB', enrollment_id: null };
 
-  // ✅ Si se registró bien y el canal es WEB → notificar Slack
   if (response.result === 1 && response.enrollment_id) {
-    const channelId = payload.inscription?.cat_payment_channel;
+      const channelId = payload.inscription?.cat_payment_channel;
 
-    // Resolver alias del canal para saber si es WEB
-    const channelRows = await pool.query(
-      `SELECT alias FROM public.catalog WHERE catalog_id = $1 LIMIT 1`,
-      [channelId]
-    );
-    const channelAlias = channelRows.rows?.[0]?.alias;
+      const channelRows = await pool.query(
+        `SELECT alias FROM public.catalog WHERE catalog_id = $1 LIMIT 1`,
+        [channelId]
+      );
+      const channelAlias = channelRows.rows?.[0]?.alias;
 
-    if (channelAlias === 'we_channel_web') {
-      // Fire and forget — no bloqueamos la respuesta al cliente si Slack falla
-      integrationService.sendEnrollmentWebToSlack({ enrollment_id: response.enrollment_id })
-        .catch(err => console.error('Slack WEB notify failed:', err));
+      if (channelAlias === 'we_channel_web') {
+        integrationService.sendEnrollmentWebToSlack({ enrollment_id: response.enrollment_id })
+          .catch(err => console.error('Slack WEB notify failed:', err));
+      }
+
+      if (channelAlias === 'we_channel_general') {
+        integrationService.syncEnrollmentToSheet()
+          .catch(err => console.error('Sheet GENERAL sync failed:', err));
+      }
     }
-  }
 
   return response;
 }
@@ -145,6 +147,8 @@ async function enrollmentRegister(payload) {
       query_ids,
       type_program_ids,
       model_modality_ids,
+      program_version_ids,
+
       moment_ids,
       membership_moment_ids,
 
@@ -181,6 +185,8 @@ async function enrollmentRegister(payload) {
       strategy_ids: strategy_ids || [], 
       prospect_situation_ids: prospect_situation_ids || [],
       word_ids: word_ids || [],
+      program_version_ids: program_version_ids || [],
+
       // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
       // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
       // aunque el SP maneja nulls, enviar [] vacío es más seguro en JSON.

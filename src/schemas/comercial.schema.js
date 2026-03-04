@@ -305,6 +305,7 @@ export const leadListSchema = {
       payment_type_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       strategy_ids:        { type: ['array', 'null'], items: { type: 'integer' } },
       prospect_situation_ids: { type: ['array', 'null'], items: { type: 'integer' } },
+      program_version_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       word_ids:            { type: ['array', 'null'], items: { type: 'integer' } },
       medium_contact_ids:  { type: ['array', 'null'], items: { type: 'integer' } },
       code_country_ids:    { type: ['array', 'null'], items: { type: 'integer' } },
