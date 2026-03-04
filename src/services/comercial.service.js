@@ -130,6 +130,7 @@ async function enrollmentRegister(payload) {
       edition_start_to = null,
       pay_date_from = null,
     pay_date_to = null,
+    prospect_situation_ids,
       active = null,
       program_text = null,
       web = null,
@@ -178,6 +179,7 @@ async function enrollmentRegister(payload) {
       web,
       b2b,
       strategy_ids: strategy_ids || [], 
+      prospect_situation_ids: prospect_situation_ids || [],
       word_ids: word_ids || [],
       // CORRECCIÓN: ASIGNACIÓN DIRECTA (Sin .map)
       // Usamos (X || []) solo para asegurar que no sea null al convertir a JSON string,
