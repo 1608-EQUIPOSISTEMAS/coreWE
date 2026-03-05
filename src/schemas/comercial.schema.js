@@ -291,6 +291,8 @@ export const leadListSchema = {
       size:                { type: ['integer', 'null'], default: 25 },
       from_date:           { type: ['string', 'null'] },
       to_date:             { type: ['string', 'null'] },
+      first_contact_from: { type: ['string', 'null'] },
+first_contact_to:   { type: ['string', 'null'] },
       updated_from:        { type: ['string', 'null'] },
       updated_to:          { type: ['string', 'null'] },
       order_by: { type: 'number', nullable: true },
