@@ -7,10 +7,14 @@ import { callProcedureReturningRows } from '../plugins/spHelper.js'
 export const sseClients = new Map() 
 
 async function startPgListener() {
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL_DIRECT, ssl: { rejectUnauthorized: false } })
-  await client.connect()
-  await client.query('LISTEN canal_crm_notificaciones')
-  console.log('[NOTIFY] Escuchando canal_crm_notificaciones...')
+  const isSSL = process.env.DATABASE_SSL?.toLowerCase() === 'true';
+  const client = new pg.Client({ 
+    connectionString: process.env.DATABASE_URL_DIRECT, 
+    ssl: isSSL ? { rejectUnauthorized: false } : false 
+  });
+  await client.connect();
+  await client.query('LISTEN canal_crm_notificaciones');
+  console.log('[NOTIFY] Escuchando canal_crm_notificaciones...');
 
   client.on('notification', (msg) => {
     console.log('[NOTIFY] ► Mensaje recibido desde pg:', msg.payload)

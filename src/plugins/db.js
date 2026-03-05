@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import pg from 'pg';
 
-const isSSL = process.env.DATABASE_SSL?.toLowerCase() === 'true' || true; // Neon suele requerir SSL
+// Ahora solo usará SSL si explícitamente se lo decimos en el .env (que en tu VPS será falso o no existirá)
+const isSSL = process.env.DATABASE_SSL?.toLowerCase() === 'true'; 
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
