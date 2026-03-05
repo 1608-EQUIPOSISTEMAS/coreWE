@@ -156,6 +156,8 @@ async function leadList(payload = {}) {
     type_program_ids,
     model_modality_ids,
     program_version_ids,
+
+payment_channel_ids,
     moment_ids,
     membership_moment_ids,
     fico_status_ids,
@@ -231,6 +233,7 @@ async function leadList(payload = {}) {
     payment_type_ids:          payment_type_ids    || [],
     settlement_status_ids:     settlement_status_ids    || [],
 
+payment_channel_ids:       payment_channel_ids      || [],
     // Arrays con soporte de filtro NULL (centinela -1)
     prospect_situation_ids:    ps.ids,
     include_null_situation:    ps.includeNull,

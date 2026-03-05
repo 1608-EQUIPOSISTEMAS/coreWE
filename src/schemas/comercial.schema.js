@@ -299,6 +299,8 @@ first_contact_to:   { type: ['string', 'null'] },
       edition_start_from:  { type: ['string', 'null'] },
       edition_start_to:    { type: ['string', 'null'] },
       active:              { type: ['boolean', 'string', 'null'] },
+      // Junto a los demás arrays financieros
+payment_channel_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       program_text:        { type: ['string', 'null'] },
       web:                 { type: ['string', 'null'] },
       b2b:                 { type: ['string', 'null'] },
