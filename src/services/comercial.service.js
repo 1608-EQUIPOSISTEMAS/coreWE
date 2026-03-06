@@ -374,49 +374,45 @@ async function userRestrictionsUpdate(payloadArray = []) {
   )
   return { message: 'Restricciones actualizadas correctamente' }
 }
+
 async function leadStats(payload = {}) {
   const {
-    q, from_date, to_date, updated_from, updated_to,pay_date_from = null,
-  pay_date_to = null,
+    q, from_date, to_date, updated_from, updated_to,
     edition_start_from, edition_start_to, active, program_text,
     web, b2b,
     owner_user_ids, status_lead_ids, last_follow_ids, interest_level_ids,
     channel_ids, query_ids, type_program_ids, model_modality_ids,
-    moment_ids, membership_moment_ids, strategy_ids, word_ids
-  } = payload
+    moment_ids, membership_moment_ids, strategy_ids, word_ids,program_version_ids
+  } = payload  // ← pay_date_from / pay_date_to eliminados
 
   let activeParam = active
-  if (active === true) activeParam = 'Y'
+  if (active === true)  activeParam = 'Y'
   else if (active === false) activeParam = 'N'
 
   const filters = {
     q, from_date, to_date, updated_from, updated_to,
     edition_start_from, edition_start_to, active: activeParam, program_text,
     web, b2b,
-    owner_user_ids: owner_user_ids || [],
-    status_lead_ids: status_lead_ids || [],
-    last_follow_ids: last_follow_ids || [],
-    interest_level_ids: interest_level_ids || [],
-    channel_ids: channel_ids || [],
-    query_ids: query_ids || [],
-    type_program_ids: type_program_ids || [],
-    model_modality_ids: model_modality_ids || [],
-    moment_ids: moment_ids || [],
+    owner_user_ids:        owner_user_ids        || [],
+    status_lead_ids:       status_lead_ids       || [],
+    last_follow_ids:       last_follow_ids        || [],
+    interest_level_ids:    interest_level_ids    || [],
+    channel_ids:           channel_ids           || [],
+    query_ids:             query_ids             || [],
+    type_program_ids:      type_program_ids      || [],
+    model_modality_ids:    model_modality_ids    || [],
+    moment_ids:            moment_ids            || [],
     membership_moment_ids: membership_moment_ids || [],
-    strategy_ids: strategy_ids || [],
-    word_ids: word_ids || [],
-    pay_date_from,
-  pay_date_to
+    program_version_ids: program_version_ids || [],
+    strategy_ids:          strategy_ids          || [],
+    word_ids:              word_ids              || []
   }
 
-  // Llamada al SP. Como es INOUT, retorna el JSON en la primera fila.
-  const query = `CALL public.sp_comercial_lead_stats($1, $2)`;
-  // Pasamos null como segundo parametro porque es INOUT
-  const res = await pool.query(query, [JSON.stringify(filters), null]);
-  
-  // Dependiendo de tu driver postgres, la respuesta suele estar en rows[0].p_stats
-  return res.rows[0].p_stats;
+  const query = `CALL public.sp_comercial_lead_stats($1, $2)`
+  const res = await pool.query(query, [JSON.stringify(filters), null])
+  return res.rows[0].p_stats
 }
+
 export default {
   leadRegister,
   enrollmentRegister,
