@@ -119,6 +119,7 @@ async function enrollmentRegister(payload) {
 
   return response;
 }
+
 // src/services/comercial.service.js
 async function leadList(payload = {}) {
   const {

@@ -1,5 +1,7 @@
 // src/routes/comercial.js
 import comercialService from '../services/comercial.service.js'
+
+import integrationService from '../services/integration.service.js'  
 import {
   authenticate,
   ALL_COMERCIAL
@@ -132,6 +134,15 @@ export default async function comercialRoutes (fastify) {
     const data = await comercialService.searchPhoneGet(phone)
     return reply.code(200).send({ ok: true, ...data })
   })
+
+
+fastify.post('/enrollment-slack-web', async (request, reply) => {
+  const { enrollment_id } = request.body;
+  if (!enrollment_id) return reply.status(400).send({ ok: false, message: 'enrollment_id requerido' });
+
+  const result = await integrationService.sendEnrollmentWebToSlack({ enrollment_id });
+  return result;
+});
 
   fastify.post('/searchcontact', {
     schema: searchContactSchema,
