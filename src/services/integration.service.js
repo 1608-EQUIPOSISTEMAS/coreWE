@@ -464,12 +464,10 @@ async function syncScheduleToSheet() {
   }
 }
 
-async function syncRprospectos() {
-  // ID extraído de la URL que proporcionaste
-  const spreadsheetId = '1G05eeO8uCZkKL6RjxYEkQ6riCm3X1g-HbkgxHV6M0G4'; 
-  const sheetName = '1. Consulta 26';
-
-  // 1. Consultar la VISTA (sin parámetros, trae todo)
+async function syncRprospectos() { 
+  const spreadsheetId = '1plkAWdZvcIRt2fRi-nK9NQKuHy86yj2pMD9mtjAxZHc'; 
+  const sheetName = '3. SYSTEM';
+ 
   const result = await pool.query(`SELECT * FROM public.vw_r_prospectos`)
   const rows = result.rows || []
 
@@ -479,10 +477,7 @@ async function syncRprospectos() {
       message: 'La vista vw_r_prospectos no devolvió datos. No se actualizó el Sheet.', 
       rows_generated: 0 
     }
-  }
-
-  // 2. Preparar los datos (Headers y filas)
-  // Nota: Como en la vista SQL ya hicimos los TO_CHAR, las fechas vendrán como strings
+  } 
   const headers = Object.keys(rows[0])
    
   const values = rows.map(row => {
@@ -490,8 +485,7 @@ async function syncRprospectos() {
       const val = row[header]
       
       if (val === null || val === undefined) return ''
-      
-      // Mantenemos esto por seguridad, aunque la vista ya devuelve strings
+       
       if (val instanceof Date) {
          return val.toISOString().replace('T', ' ').substring(0, 19) 
       }
