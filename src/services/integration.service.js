@@ -183,26 +183,13 @@ async function sendEnrollmentWebToSlack({ enrollment_id }) {
       {
         type: 'section',
         fields: [
-          { type: 'mrkdwn', text: `*📚 Programa:*\n${d.program_name || '—'}` },
-          { type: 'mrkdwn', text: `*🏷️ Tipo:*\n${d.tipo_programa || '—'} · ${d.modalidad || '—'}` },
-          { type: 'mrkdwn', text: `*👤 Alumno:*\n${d.alumno}` },
-          { type: 'mrkdwn', text: `*🪪 DNI:*\n${d.dni || '—'}` },
-          { type: 'mrkdwn', text: `*📞 Celular:*\n${d.celular || '—'}` },
-          { type: 'mrkdwn', text: `*📧 Correo:*\n${d.correo || '—'}` },
-          { type: 'mrkdwn', text: `*🎯 Asesor:*\n${d.asesor || '—'}` },
+          { type: 'mrkdwn', text: `*📚 Programa:*\n${d.program_name || '—'}` }, 
           { type: 'mrkdwn', text: `*📅 Fecha Inicio:*\n${d.fecha_inicio || '—'}` },
+          { type: 'mrkdwn', text: `*📞 Celular:*\n${d.celular || '—'}` }, 
+          { type: 'mrkdwn', text: `*🎯 Asesor:*\n${d.asesor || '—'}` },
+          { type: 'mrkdwn', text: `*📋 Obs:*\n${d.notes || '—'}` }
         ]
-      },
-      { type: 'divider' },
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: `*💰 Precio Lista:*\n${d.moneda} ${Number(d.list_price).toFixed(2)}` },
-          { type: 'mrkdwn', text: `*🏷️ Descuento:*\n${d.moneda} ${Number(d.discount_amount).toFixed(2)}` },
-          { type: 'mrkdwn', text: `*✅ Total a Pagar:*\n${d.moneda} ${Number(d.total_amount).toFixed(2)}` },
-          { type: 'mrkdwn', text: `*📋 Obs:*\n${d.notes || '—'}` },
-        ]
-      },
+      }
     ]
 
     // 3. Adjuntos como links dentro del mismo mensaje
