@@ -4,26 +4,25 @@ import { pool } from '../plugins/db.js' // Asegúrate de importar pool si vas a 
 
 export default async function dashboardRoutes (fastify) {
 
-  // 1. LISTAR DASHBOARD
-  // Ruta final: /api/dashboard/dashboardlist
-  fastify.post('/dashboardlist', {
-    schema: {
-      body: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          year:   { type: ['integer', 'null'], default: 2026 },
-          month:  { type: ['string', 'null'],  default: 'ENE' },
-          period: { type: ['string', 'null'] },
-          //modality
-          modality: { type: ['string', 'null'], default: 'NO_ONLINE' }
-        }
+fastify.post('/dashboardlist', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        year:       { type: ['integer', 'null'], default: 2026 },
+        month:      { type: ['string',  'null'], default: 'ENE' },
+        period:     { type: ['string',  'null'] },
+        modality:   { type: ['string',  'null'], default: 'NO_ONLINE' },
+        date_start: { type: ['string',  'null'] },  // ← NUEVO
+        date_end:   { type: ['string',  'null'] }   // ← NUEVO
       }
     }
-  }, async (req, reply) => {
-    const data = await dashboardService.dashboardList(req.body)
-    return reply.code(200).send({ ok: true, data })
-  })
+  }
+}, async (req, reply) => {
+  const data = await dashboardService.dashboardList(req.body)
+  return reply.code(200).send({ ok: true, data })
+})
 
   fastify.post('/program-goals', {
     schema: {
@@ -135,7 +134,64 @@ export default async function dashboardRoutes (fastify) {
   const data = await dashboardService.liderList(req.body)
   return reply.send({ ok: true, data })
 })
+fastify.post('/available-weeks', {
+  schema: {
+    body: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        year:     { type: ['integer', 'null'], default: 2026 },
+        modality: { type: ['string', 'null'],  default: 'NO_ONLINE' }
+      }
+    }
+  }
+}, async (req, reply) => {
+  const { year = 2026, modality = 'NO_ONLINE' } = req.body
 
+  // Sin DISTINCT — GROUP BY ya lo resuelve
+  const sql = `
+    SELECT
+      period_label,
+      month_period,
+      MIN(date_start)::date AS date_start,
+      MAX(date_end)::date   AS date_end
+    FROM sales_targets
+    WHERE year_period = $1
+      AND active      = 'Y'
+      AND modality    = $2
+    GROUP BY period_label, month_period
+    ORDER BY MIN(date_start) ASC
+  `
+  const { rows } = await pool.query(sql, [year, modality])
+
+  const MONTHS_ES = {
+    '01':'Ene','02':'Feb','03':'Mar','04':'Abr',
+    '05':'May','06':'Jun','07':'Jul','08':'Ago',
+    '09':'Sep','10':'Oct','11':'Nov','12':'Dic'
+  }
+
+  const data = rows.map((r, idx) => {
+    const start  = new Date(r.date_start)
+    const end    = new Date(r.date_end)
+    const dStart = start.getUTCDate()
+    const dEnd   = end.getUTCDate()
+    const mStart = MONTHS_ES[String(start.getUTCMonth() + 1).padStart(2, '0')]
+    const mEnd   = MONTHS_ES[String(end.getUTCMonth() + 1).padStart(2, '0')]
+    const rango  = mStart !== mEnd
+      ? `${dStart} ${mStart} al ${dEnd} ${mEnd}`
+      : `${dStart} al ${dEnd} ${mEnd}`
+
+    return {
+      value:      r.period_label,
+      month:      r.month_period,
+      label:      `SEM ${idx + 1} · ${rango}`,
+      date_start: r.date_start,
+      date_end:   r.date_end,
+    }
+  })
+
+  return reply.send({ ok: true, data })
+})
   fastify.post('/ventas-canal', {
   schema: {
     body: {

@@ -2,28 +2,36 @@
 import { pool } from '../plugins/db.js'
 async function dashboardList(payload = {}) {
   const {
-    year = 2026,
-    month = 'ENE',
+    year     = 2026,
+    modality = 'NO_ONLINE',
+    // Nuevos: fecha de inicio y fin de la semana seleccionada
+    date_start = null,   // '2026-03-16'
+    date_end   = null,   // '2026-03-22'
+    // Compatibilidad: si todavía vienen month+period los usamos
+    month  = null,
     period = null,
-    modality = 'NO_ONLINE'
   } = payload
 
-  const params = [year, month, modality] 
-  
-  // Tu query original está bien, asegurate que la vista ya esté actualizada en DB
+  const params = [year, modality]
   let sql = `
-    SELECT * FROM public.v_dashboard_comercial 
-    WHERE year_period  = $1 
-      AND month_period = $2
-      AND modality     = $3
+    SELECT * FROM public.v_dashboard_comercial
+    WHERE year_period = $1
+      AND modality    = $2
   `
 
-  if (period && period !== 'ALL') {
-    sql += ` AND period_label = $4`
-    params.push(period)
+  if (date_start && date_end) {
+    sql += ` AND fecha_inicio >= $3 AND fecha_fin <= $4`
+    params.push(date_start, date_end)
+  } else {
+    // Fallback al filtro clásico
+    if (month)  { sql += ` AND month_period = $${params.length + 1}`; params.push(month) }
+    if (period && period !== 'ALL') { 
+      sql += ` AND period_label = $${params.length + 1}`
+      params.push(period)
+    }
   }
 
-  sql += ` ORDER BY asesor ASC, period_label ASC`
+  sql += ` ORDER BY asesor ASC`
 
   const { rows } = await pool.query(sql, params)
 
@@ -61,6 +69,46 @@ async function dashboardList(payload = {}) {
 
   return { total: items.length, items }
 }
+
+// En tu dashboardService
+async function getAvailableWeeks(payload = {}) {
+  const { year = 2026, modality = 'NO_ONLINE' } = payload
+  const sql = `
+  SELECT
+    period_label,
+    month_period,
+    MIN(date_start)::date AS date_start,
+    MAX(date_end)::date   AS date_end
+  FROM sales_targets
+  WHERE year_period = $1
+    AND active      = 'Y'
+    AND modality    = $2
+  GROUP BY period_label, month_period
+  ORDER BY MIN(date_start) ASC
+`
+  const { rows } = await pool.query(sql, [year, modality])
+  const MONTHS_ES = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic' }
+  
+  return rows.map((r, idx) => {
+    const start  = new Date(r.date_start)
+    const end    = new Date(r.date_end)
+    const dStart = start.getUTCDate()
+    const dEnd   = end.getUTCDate()
+    const mStart = MONTHS_ES[String(start.getUTCMonth() + 1).padStart(2,'0')]
+    const mEnd   = MONTHS_ES[String(end.getUTCMonth() + 1).padStart(2,'0')]
+    const rango  = mStart !== mEnd
+      ? `${dStart} ${mStart} al ${dEnd} ${mEnd}`
+      : `${dStart} al ${dEnd} ${mEnd}`
+
+    return {
+      value:      r.period_label,
+      month:      r.month_period,
+      label:      `SEM ${idx + 1} · ${rango}`,
+      date_start: r.date_start,
+      date_end:   r.date_end,
+    }
+  })
+}
 /**
  * (OPCIONAL) METAS REGISTER
  * Si necesitas crear las metas desde el sistema en lugar de SQL directo
@@ -88,6 +136,7 @@ async function dashboardTargetRegister({ target = {} }) {
     const { rows } = await pool.query(sql, values)
     return { target_id: rows[0]?.target_id }
 }
+
 
 async function programGoalsList(payload = {}) {
   const {
