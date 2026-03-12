@@ -122,4 +122,32 @@ export default async function notificationRoutes(fastify) {
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })
+  // Forzar recarga de restricciones a asesores específicos
+fastify.post('/notifications/push-restrictions-update', { onRequest: [fastify.authenticate] }, async (req, reply) => {
+  try {
+    const { user_ids } = req.body // array de IDs de asesores afectados
+    if (!Array.isArray(user_ids) || user_ids.length === 0) {
+      return reply.code(400).send({ ok: false, error: 'user_ids requerido' })
+    }
+
+    const eventData = `data: ${JSON.stringify({ tipo_evento: 'restricciones_actualizadas' })}\n\n`
+    let notificados = 0
+
+    for (const uid of user_ids) {
+      const userId = Number(uid)
+      const clients = sseClients.get(userId)
+      if (clients && clients.size > 0) {
+        for (const reply of clients) reply.raw.write(eventData)
+        notificados++
+        console.log(`[NOTIFY] ✅ restricciones_actualizadas → userId=${userId}`)
+      } else {
+        console.log(`[NOTIFY] ⚠️  Sin SSE activo para userId=${userId} (se aplicará al próximo login)`)
+      }
+    }
+
+    return reply.code(200).send({ ok: true, notificados })
+  } catch (err) {
+    return reply.code(500).send({ ok: false, error: err.message })
+  }
+})
 }
