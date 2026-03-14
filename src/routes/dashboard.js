@@ -236,5 +236,4 @@ fastify.post('/available-weeks', {
     const { rows } = await pool.query(sql, params)
     return reply.send({ ok: true, data: rows })
   })
-
 }

@@ -53,6 +53,15 @@ async function dashboardList(payload = {}) {
     logrado_monto:   Number(r.logrado_monto || 0),
     ticket_prom:     Number(r.ticket_prom   || 0),
     consultas:       Number(r.consultas     || 0),
+  chart_tendencia_horaria:   typeof r.chart_tendencia_horaria   === 'string' ? JSON.parse(r.chart_tendencia_horaria)   : (r.chart_tendencia_horaria   || []),
+  chart_curva_persistencia:  typeof r.chart_curva_persistencia  === 'string' ? JSON.parse(r.chart_curva_persistencia)  : (r.chart_curva_persistencia  || []),
+  
+  chart_curva_persistencia_mensual: typeof r.chart_curva_persistencia_mensual === 'string'
+    ? JSON.parse(r.chart_curva_persistencia_mensual)
+    : (r.chart_curva_persistencia_mensual || []),
+
+  chart_objeciones:   typeof r.chart_objeciones   === 'string' ? JSON.parse(r.chart_objeciones)   : (r.chart_objeciones   || []),
+  json_pending_tasks: typeof r.json_pending_tasks  === 'string' ? JSON.parse(r.json_pending_tasks)  : (r.json_pending_tasks  || []),
     high_interest_count: Number(r.high_interest_count || 0),
     follow_up_pending: Number(r.follow_up_pending || 0),
 
