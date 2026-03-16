@@ -1,6 +1,6 @@
 // src/services/auth.service.js
-import { pool } from '../plugins/db.js'
-import { callProcedureReturningRows } from '../plugins/spHelper.js'
+import { pool } from '../config/db.js'
+import { callProcedureReturningRows } from '../utils/spHelper.js'
 /**
  * LOGIN
  * Verifica usuario y contraseña contra la BD

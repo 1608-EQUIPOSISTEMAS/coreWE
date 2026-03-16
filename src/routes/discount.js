@@ -1,13 +1,13 @@
 // src/routes/discounts.js
 import discountService from '../services/discount.service.js'
-import { authenticate, ADMIN_COMERCIAL } from '../hooks/auth.hooks.js'
+import { authenticate, ADMIN_COMERCIAL } from '../middlewares/auth.hooks.js'
 import {
   discountRegisterSchema,
   discountListSchema,
   discountGetSchema,
   discountUpdateSchema,
   discountCallerSchema
-} from '../schemas/discount.schema.js'
+} from '../models/discount.schema.js'
 
 export default async function discountRoutes(fastify) {
 

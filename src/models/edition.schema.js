@@ -1,4 +1,4 @@
-// src/schemas/edition.schema.js
+// src/models/edition.schema.js
 
 export const editionRegisterSchema = {
   body: {

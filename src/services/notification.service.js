@@ -1,5 +1,5 @@
 // src/services/notification.service.js
-import { pool } from '../plugins/db.js'
+import { pool } from '../config/db.js'
 
 /**
  * Notificaciones para la campanita:

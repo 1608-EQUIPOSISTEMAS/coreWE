@@ -1,6 +1,6 @@
 // src/routes/editions.js
 import editionService from '../services/edition.service.js'
-import { authenticate, ALL_ADMIN, ALL_COMERCIAL} from '../hooks/auth.hooks.js'
+import { authenticate, ALL_ADMIN, ALL_COMERCIAL} from '../middlewares/auth.hooks.js'
 import {
   editionRegisterSchema,
   editionTreeRegisterSchema,
@@ -12,7 +12,7 @@ import {
   editionCallerSchema,
   editionExtraInfoCallerSchema,
   editionTreeUpdateSchema
-} from '../schemas/edition.schema.js'
+} from '../models/edition.schema.js'
 
 export default async function editionRoutes(fastify) {
 

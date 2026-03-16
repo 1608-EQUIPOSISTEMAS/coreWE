@@ -1,4 +1,4 @@
-// src/plugins/dbResponse.js
+// src/utils/dbResponse.js
 
 // 1. Usamos "export class" en lugar de module.exports
 export class BusinessError extends Error {

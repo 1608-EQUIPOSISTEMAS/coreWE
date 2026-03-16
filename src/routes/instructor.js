@@ -1,13 +1,13 @@
 // src/routes/instructors.js
 import instructorService from '../services/instructor.service.js'
-import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL} from '../hooks/auth.hooks.js'
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL} from '../middlewares/auth.hooks.js'
 import {
   instructorRegisterSchema,
   instructorListSchema,
   instructorGetSchema,
   instructorUpdateSchema,
   instructorCallerSchema
-} from '../schemas/instructor.schema.js'
+} from '../models/instructor.schema.js'
 
 export default async function instructorRoutes(fastify) {
 

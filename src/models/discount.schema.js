@@ -1,4 +1,4 @@
-// src/schemas/discount.schema.js
+// src/models/discount.schema.js
 
 export const discountRegisterSchema = {
   body: {

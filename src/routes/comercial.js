@@ -5,7 +5,7 @@ import integrationService from '../services/integration.service.js'
 import {
   authenticate,
   ALL_COMERCIAL
-} from '../hooks/auth.hooks.js'
+} from '../middlewares/auth.hooks.js'
 import {
   leadRegisterSchema,
   leadUpdateSchema,
@@ -18,7 +18,7 @@ import {
   leadStatsSchema,
   searchPhoneGetSchema,
   searchContactSchema
-} from '../schemas/comercial.schema.js'
+} from '../models/comercial.schema.js'
 
 export default async function comercialRoutes (fastify) {
 

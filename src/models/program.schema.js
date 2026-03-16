@@ -1,4 +1,4 @@
-// src/schemas/program.schema.js
+// src/models/program.schema.js
 
 export const programRegisterSchema = {
   body: {

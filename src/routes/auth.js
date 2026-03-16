@@ -3,7 +3,7 @@ import authService from '../services/auth.service.js'
 
 import {
   loginSchema
-} from '../schemas/auth.schema.js'
+} from '../models/auth.schema.js'
 
 export default async function authRoutes (fastify) {
 

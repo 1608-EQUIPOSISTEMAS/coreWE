@@ -1,6 +1,6 @@
 // src/routes/dashboard.js
 import dashboardService from '../services/dashboard.service.js'
-import { pool } from '../plugins/db.js' // Asegúrate de importar pool si vas a usarlo directo aquí
+import { pool } from '../config/db.js' // Asegúrate de importar pool si vas a usarlo directo aquí
 
 export default async function dashboardRoutes (fastify) {
 

@@ -1,5 +1,5 @@
 // src/services/dashboard.service.js
-import { pool } from '../plugins/db.js'
+import { pool } from '../config/db.js'
 async function dashboardList(payload = {}) {
   const {
     year     = 2026,

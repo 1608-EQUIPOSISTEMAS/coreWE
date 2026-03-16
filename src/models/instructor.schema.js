@@ -1,4 +1,4 @@
-// src/schemas/instructor.schema.js
+// src/models/instructor.schema.js
 
 export const instructorRegisterSchema = {
   tags: ['Instructors'],

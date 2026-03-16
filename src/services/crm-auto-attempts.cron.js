@@ -4,7 +4,7 @@
 // =============================================================================
 
 import cron from 'node-cron';
-import { pool } from '../plugins/db.js';
+import { pool } from '../config/db.js';
 import { sseClients } from '../routes/notifications.js'; // ← NUEVO
 
 async function runCrmRule(functionName) {

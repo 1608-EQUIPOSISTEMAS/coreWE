@@ -1,6 +1,6 @@
 // src/services/comercial.service.js
-import { pool } from '../plugins/db.js'
-import { callProcedureReturningRows } from '../plugins/spHelper.js'
+import { pool } from '../config/db.js'
+import { callProcedureReturningRows } from '../utils/spHelper.js'
 import { promisify } from 'util';
 import { pipeline } from 'stream';
 import fs from 'fs';

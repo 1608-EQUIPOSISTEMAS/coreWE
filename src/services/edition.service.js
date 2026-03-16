@@ -1,9 +1,9 @@
-import { pool } from '../plugins/db.js'
-import { callProcedureReturningRows } from '../plugins/spHelper.js'
+import { pool } from '../config/db.js'
+import { callProcedureReturningRows } from '../utils/spHelper.js'
 
 
-// import { handleSpResponse } from '../plugins/dbResponse'
-import { handleSpResponse } from '../plugins/dbResponse.js'
+// import { handleSpResponse } from '../utils/dbResponse'
+import { handleSpResponse } from '../utils/dbResponse.js'
 /**
  * REGISTER (simple)
  * CALL public.sp_edition_register(p_edition jsonb, p_user_id int, p_cur refcursor)

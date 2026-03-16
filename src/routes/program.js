@@ -1,6 +1,6 @@
 // src/routes/programs.js
 import programService from '../services/program.service.js'
-import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL } from '../hooks/auth.hooks.js'
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL } from '../middlewares/auth.hooks.js'
 import {
   programRegisterSchema,
   programListSchema,
@@ -12,7 +12,7 @@ import {
   programVersionUpdateSchema,
   programCallerSchema,
   programVersionDetailGetSchema
-} from '../schemas/program.schema.js'
+} from '../models/program.schema.js'
 
 export default async function programRoutes(fastify) {
 

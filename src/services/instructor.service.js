@@ -1,8 +1,8 @@
 // src/services/instructor.service.js
-import { pool } from '../plugins/db.js'
-import { callProcedureReturningRows } from '../plugins/spHelper.js'
-import odooClient from '../plugins/odooClient.js'
-import slack from '../plugins/slack.js'  
+import { pool } from '../config/db.js'
+import { callProcedureReturningRows } from '../utils/spHelper.js'
+import odooClient from '../config/odooClient.js'
+import slack from '../config/slack.js'  
 
 /**
  * REGISTER
