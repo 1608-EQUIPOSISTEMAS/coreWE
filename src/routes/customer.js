@@ -70,6 +70,7 @@ export default async function customerRoutes (fastify) {
   })
 
   // obtener cliente por id
+  // obtener cliente por id
   fastify.post('/customerget', {
     schema: {
       body: {
@@ -82,7 +83,8 @@ export default async function customerRoutes (fastify) {
       }
     }
   }, async (req, reply) => {
-    const { data } = await customerService.customerGet(req.body)
+    // ✅ CORREGIDO: Sin llaves
+    const data = await customerService.customerGet(req.body)
     return reply.code(200).send({ ok: true, data })
   })
 // buscar cliente por documento

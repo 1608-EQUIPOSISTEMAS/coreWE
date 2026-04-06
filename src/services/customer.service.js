@@ -5,12 +5,16 @@ import { callProcedureReturningRows } from '../utils/spHelper.js'
 /**
  * REGISTER
  * El payload puede contener datos de Persona (first_name...) o Empresa (razon_social...)
+ * contacts:  [{ cat_way_contact, cat_country, value }]
+ * addresses: [{ cat_address_type, cat_country, cat_street_type, street, street_number,
+ *               cat_interior_type, floor_apt, zip_code, reference, is_main }]
  */
-async function customerRegister({ customer = {} }) {
+async function customerRegister({ customer = {}, contacts = [], addresses = [] }) {
+  const payload = { ...customer, contacts, addresses }
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_customer_register',
-    [ JSON.stringify(customer || {}) ],
+    [ JSON.stringify(payload) ],
     { statementTimeoutMs: 25000 }
   )
 
@@ -85,49 +89,21 @@ async function customerGet({ id }) {
     { statementTimeoutMs: 25000 }
   )
 
-  const r = rows?.[0] || {}
-
-  return {
-    data: {
-      customer_id: r.customer_id,
-      person_id: r.person_id,
-      company_id: r.company_id,
-
-      // Datos Persona
-      first_name: r.first_name,
-      last_name: r.last_name,
-      mother_last_name: r.mother_last_name,
-      person_document_number: r.person_document_number,
-      person_cat_type_document: r.person_cat_type_document,
-
-      // Datos Empresa
-      razon_social: r.razon_social,
-      razon_comercial: r.razon_comercial,
-      company_document_number: r.company_document_number,
-      company_cat_type_document: r.company_cat_type_document,
-      
-      // Datos Cliente
-      cat_customer_segment: r.cat_customer_segment,
-      cat_customer_segment_label: r.cat_customer_segment_label,
-      cat_customer_status: r.cat_customer_status,
-      cat_customer_status_label: r.cat_customer_status_label,
-      
-      active: r.customer_active,
-      registration_date: r.registration_date
-    }
-  }
+  return rows?.[0] || {}
 }
 
 /**
  * UPDATE
+ * contacts y addresses reemplazan completamente los existentes (el SP hace el upsert/delete).
  */
-async function customerUpdate({ id, customer = {} }) {
+async function customerUpdate({ id, customer = {}, contacts = [], addresses = [] }) {
+  const payload = { ...customer, contacts, addresses }
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_customer_update',
     [
       id,
-      JSON.stringify(customer || {})
+      JSON.stringify(payload)
     ],
     { statementTimeoutMs: 25000 }
   )
