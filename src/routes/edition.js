@@ -90,6 +90,31 @@ export default async function editionRoutes(fastify) {
     return reply.code(200).send({ ok: true, items })
   })
 
+  fastify.post('/bulkupdatewhatsapp', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                abbreviation: { type: 'string' },
+                start_date: { type: 'string' },
+                whatsapp_link: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const data = await editionService.bulkUpdateWhatsapp(req.body.items)
+    return reply.code(200).send({ ok: true, data })
+  })
+
   fastify.post('/editiontreeupdate', {
     schema: editionTreeUpdateSchema,
     // preHandler: [authenticate, ALL_ADMIN]

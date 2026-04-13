@@ -24,6 +24,7 @@ import corporateAgreementRoutes from './routes/corporate_agreement.js'
 import integrationRoutes from './routes/integration.js'
 import uploadRoutes from './routes/upload.js' 
 import ficoRoutes from './routes/fico.js'
+import webhookRoutes from './routes/webhooks.js'
 import notificationRoutes from './routes/notifications.js'
 import b2bRoutes from './routes/b2b.js'
 import botRoutes from './routes/bot.js'
@@ -131,6 +132,7 @@ await app.register(corporateAgreementRoutes, { prefix: '/api/corporate_agreement
 await app.register(authRoutes,      { prefix: '/api/auth' })
 await app.register(integrationRoutes, { prefix: '/api/integration' })
 await app.register(ficoRoutes,      { prefix: '/api/fico' })
+await app.register(webhookRoutes,   { prefix: '/api/webhooks' })
 await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
 await app.register(uploadRoutes,    { prefix: '/api/upload' }) 
 await app.register(notificationRoutes, { prefix: '/api' })

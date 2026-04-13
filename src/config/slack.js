@@ -88,4 +88,46 @@ async function notifyInstructorCredentials ({ fullName, email, password, instruc
   }
 }
 
-export default { notifyInstructorCredentials }
+async function notifyStudentRetirement ({ studentName, studentPhone, programName, editionCode, reason, retiredChildren }) {
+  try {
+    const blocks = [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:x: *RETIRO*` }
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `:small_blue_diamond: *Alumno:*\n${studentName}` },
+          { type: 'mrkdwn', text: `:small_blue_diamond: *Celular:*\n${studentPhone}` }
+        ]
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `:small_blue_diamond: *Programa:*\n${programName || '---'} ${editionCode || ''}` }
+        ]
+      },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:small_blue_diamond: *Observacion:*\n${reason || '---'}` }
+      }
+    ]
+
+    if (retiredChildren && retiredChildren.length > 0) {
+      const childList = retiredChildren.map(c => `• ${c}`).join('\n')
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:small_blue_diamond: *Modulos retirados:*\n${childList}` }
+      })
+    }
+
+    blocks.push({ type: 'divider' })
+
+    await post({ channel: SLACK_CHANNEL, blocks })
+  } catch (err) {
+    console.error('[slack] notifyStudentRetirement:', err.message)
+  }
+}
+
+export default { notifyInstructorCredentials, notifyStudentRetirement }

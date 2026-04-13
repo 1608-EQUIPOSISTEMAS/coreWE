@@ -316,6 +316,40 @@ async function editionextrainfocaller (payload = {}) {
 }
 
 
+async function bulkUpdateWhatsapp (items) {
+  let updated = 0
+  let notFound = []
+
+  for (const item of items) {
+    if (!item.abbreviation || !item.start_date || !item.whatsapp_link) continue
+
+    const parts = item.start_date.split('/')
+    let isoDate
+    if (parts.length === 3) {
+      isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    } else {
+      isoDate = item.start_date
+    }
+
+    const { rowCount } = await pool.query(`
+      UPDATE program_editions pe
+      SET whatsapp_link = $1
+      FROM program_versions pv
+      WHERE pv.program_version_id = pe.program_version_id
+        AND UPPER(TRIM(pv.abbreviation)) = UPPER(TRIM($2))
+        AND pe.start_date::date = $3::date
+    `, [item.whatsapp_link.trim(), item.abbreviation.trim(), isoDate])
+
+    if (rowCount > 0) {
+      updated += rowCount
+    } else {
+      notFound.push(`${item.abbreviation} - ${item.start_date}`)
+    }
+  }
+
+  return { updated, not_found: notFound }
+}
+
 export default {
   editionRegister,
   editionTreeRegister,
@@ -326,6 +360,6 @@ export default {
   editionCaller,
   editionByWeeklist,
   auditLogsGet,
-  editionextrainfocaller
-  
+  editionextrainfocaller,
+  bulkUpdateWhatsapp
 }
