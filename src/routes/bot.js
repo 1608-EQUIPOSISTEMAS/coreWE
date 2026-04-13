@@ -1,5 +1,5 @@
 import botService from '../services/bot.service.js'
-import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL } from '../middlewares/auth.hooks.js'
+import { authenticate, ALL_ACADEMICO } from '../middlewares/auth.hooks.js'
 import {
   botTicketListSchema,
   botTicketGetSchema,
@@ -14,7 +14,7 @@ export default async function botRoutes(fastify) {
   // Lista de Tickets
   fastify.post('/botticketlist', {
     schema: botTicketListSchema,
-    preHandler: [authenticate, ALL_COMERCIAL] // <-- Ajusta el rol según tu negocio
+    preHandler: [authenticate, ALL_ACADEMICO] // <-- Ajusta el rol según tu negocio
   }, async (req, reply) => {
     const data = await botService.botTicketList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -23,7 +23,7 @@ export default async function botRoutes(fastify) {
   // Detalle de un Ticket
   fastify.post('/botticketget', {
     schema: botTicketGetSchema,
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     const { data } = await botService.botTicketGet(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -32,7 +32,7 @@ export default async function botRoutes(fastify) {
   // Actualizar Ticket (Marcar Solucionado, añadir notas)
   fastify.post('/botticketupdate', {
     schema: botTicketUpdateSchema,
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     // Inyectamos el ID del usuario logueado desde el token (suponiendo que req.user existe por tu middleware)
     const payload = {
@@ -47,7 +47,7 @@ export default async function botRoutes(fastify) {
   // KPIs y Dashboard
   fastify.post('/botdashboardmetrics', {
     schema: botDashboardMetricsSchema,
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     const { data } = await botService.botDashboardMetricsGet(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -56,7 +56,7 @@ export default async function botRoutes(fastify) {
   // Listar Alumnos
   fastify.post('/botstudentlist', {
     schema: botStudentListSchema,
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     const data = await botService.botStudentList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -65,7 +65,7 @@ export default async function botRoutes(fastify) {
   // Obtener Perfil del Alumno
   fastify.post('/botstudentget', {
     schema: botStudentGetSchema,
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     const { data } = await botService.botStudentGet(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -73,7 +73,7 @@ export default async function botRoutes(fastify) {
 
   // Listar CSAT
   fastify.post('/botcsatlist', {
-    preHandler: [authenticate, ALL_COMERCIAL]
+    preHandler: [authenticate, ALL_ACADEMICO]
   }, async (req, reply) => {
     const data = await botService.botCsatList(req.body)
     return reply.code(200).send({ ok: true, data })
