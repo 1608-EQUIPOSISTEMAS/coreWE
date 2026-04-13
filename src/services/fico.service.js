@@ -19,7 +19,6 @@ async function enrollmentList (payload = {}) {
   }
 }
 
-
 async function paymentDetailGet ({ enrollment_id }) {
   const rows = await callProcedureReturningRows(
     pool,

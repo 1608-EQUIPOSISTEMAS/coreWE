@@ -175,7 +175,7 @@ async function editionByWeeklist (payload = {}) {
  * CALL public.sp_edition_update(p_edition jsonb, p_user_id int, p_cur refcursor)
  */
 
-async function editionUpdate ({ id, edition = {}, user_id }) {
+async function editionUpdate ({ id, edition = {}, user_id = null }) {
   const payloadEdition = {
     ...edition,
     edition_num_id: id || edition.edition_num_id
