@@ -73,7 +73,8 @@ async function dashboardList(payload = {}) {
     
     conversion:      Number(r.conversion    || 0),
     ratio:           Number(r.ratio         || 0),
-    desglose_diario: r.desglose_diario || []
+    desglose_diario: r.desglose_diario || [],
+    ventas_por_programa: r.ventas_por_programa || []
   }))
 
   return { total: items.length, items }
