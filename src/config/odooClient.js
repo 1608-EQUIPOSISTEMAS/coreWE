@@ -225,6 +225,9 @@ async function enrollStudentInCourse ({ partnerId, slideGroupId, slideChannelId,
 async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password, slideGroupId }) {
   try {
     let user = await searchUserByEmail(searchEmail)
+    if (!user && createEmail !== searchEmail) {
+      user = await searchUserByEmail(createEmail)
+    }
     let odooUserId, odooPartnerId, created = false
 
     if (user) {
@@ -418,4 +421,14 @@ async function cancelSaleOrder (orderId) {
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, markFeeAsPaid, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder }
+async function updateUserLogin (odooUserId, newLogin) {
+  try {
+    await callKw('res.users', 'write', [[odooUserId], { login: newLogin, email: newLogin }])
+    return { success: true }
+  } catch (err) {
+    console.error('[odooClient] updateUserLogin:', err.message)
+    return { success: false, error: err.message }
+  }
+}
+
+export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, markFeeAsPaid, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin }

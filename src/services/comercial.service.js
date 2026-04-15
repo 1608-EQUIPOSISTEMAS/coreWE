@@ -98,6 +98,25 @@ async function enrollmentRegister(payload) {
   const response = rows?.[0] || { result: 0, message: 'No response from DB', enrollment_id: null };
 
   if (response.result === 1 && response.enrollment_id) {
+      const vals = payload.validations
+      if (vals?.enabled && vals.validated_children?.length > 0) {
+        try {
+          for (const childId of vals.validated_children) {
+            const customEdId = vals.custom_editions?.[String(childId)] || null
+            await pool.query(`
+              INSERT INTO enrollment_validations (enrollment_id, child_version_id, validation_type, custom_edition_id, notes, status, requested_by)
+              VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+            `, [response.enrollment_id, childId, customEdId ? 'cross_edition' : 'same_edition', customEdId, vals.notes || null, user_id])
+          }
+          await pool.query(`
+            INSERT INTO enrollment_audit_log (enrollment_id, action, performed_by, details)
+            VALUES ($1, 'validation_requested', $2, $3)
+          `, [response.enrollment_id, user_id, `Convalidacion solicitada: ${vals.validated_children.length} modulo(s) convalidado(s). ${vals.notes || ''}`])
+        } catch (err) {
+          console.error('[enrollmentRegister] Error guardando convalidaciones:', err.message)
+        }
+      }
+
       const channelId = payload.inscription?.cat_payment_channel;
 
       const channelRows = await pool.query(
