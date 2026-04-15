@@ -24,6 +24,8 @@ export function hasRole (allowedRoles) {
 export const ADMIN_ONLY       = hasRole(['ADMIN'])
 export const ADMIN_COMERCIAL  = hasRole(['ADMIN', 'LIDER_COMERCIAL'])
 export const ALL_COMERCIAL    = hasRole(['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL'])
+export const ADMIN_FICO  = hasRole(['ADMIN', 'LIDER_FICO'])
+export const ALL_FICO    = hasRole(['ADMIN', 'FICO', 'LIDER_FICO'])
 export const ADMIN_ACADEMICA  = hasRole(['ADMIN', 'LIDER_ACADEMICA'])
 export const ALL_ACADEMICA    = hasRole(['ADMIN', 'ACADEMICA', 'LIDER_ACADEMICA'])
 export const ADMIN_PRODUCTO  = hasRole(['ADMIN', 'LIDER_PRODUCTO'])
