@@ -328,7 +328,7 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
   }
 }
 
-async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, amount, installments }) {
+async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, amount, installments, currency, partnerEmail }) {
   const products = await callKw('product.product', 'search_read', [
     [['name', 'ilike', productName]]
   ], { fields: ['id', 'name'], limit: 5 })
@@ -339,37 +339,102 @@ async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, 
     return { success: false, error: `Producto no encontrado: ${productName}` }
   }
 
-  const orderId = await callKw('sale.order', 'create', [{
+  const pricelistSearch = currency === 'USD' ? 'USD' : 'PEN'
+  const pricelists = await callKw('product.pricelist', 'search_read', [
+    [['name', 'ilike', pricelistSearch]]
+  ], { fields: ['id', 'name'], limit: 3 })
+  const pricelistId = pricelists?.[0]?.id || false
+
+  const paymentTerms = await callKw('account.payment.term', 'search_read', [
+    [['name', 'ilike', 'cr%dito']]
+  ], { fields: ['id', 'name'], limit: 3 })
+  const paymentTermId = paymentTerms?.[0]?.id || 19
+
+  const orderData = {
     partner_id: partnerId,
+    company_id: 1,
     order_line: [[0, 0, {
       product_id: product.id,
       product_uom_qty: 1,
       price_unit: amount,
       slide_group_id: slideGroupId || false
     }]]
-  }])
+  }
+  if (pricelistId) orderData.pricelist_id = pricelistId
+  if (paymentTermId) orderData.payment_term_id = paymentTermId
 
-  await callKw('sale.order', 'action_confirm', [[orderId]])
+  console.log('[odooClient] Creating sale order:', JSON.stringify({ partnerId, productName, pricelistId, paymentTermId, amount, slideGroupId }))
+
+  const odooCtx = { context: { allowed_company_ids: [1], default_warehouse_id: 1 } }
+
+  const orderId = await callKw('sale.order', 'create', [orderData], odooCtx)
+
+  try {
+    await callKw('sale.order', 'action_confirm', [[orderId]], odooCtx)
+  } catch (confirmErr) {
+    console.warn('[odooClient] action_confirm warning:', confirmErr.message)
+    await callKw('sale.order', 'write', [[orderId], { state: 'sale' }], odooCtx)
+  }
+  try {
+    await callKw('sale.order', 'action_done', [[orderId]], odooCtx)
+  } catch (e) {}
+
+  if (paymentTermId) {
+    await callKw('sale.order', 'write', [[orderId], { payment_term_id: paymentTermId }], odooCtx)
+  }
 
   const fees = await callKw('sale.order.fee', 'search_read', [
     [['order_id', '=', orderId]]
   ], { fields: ['id', 'seq', 'state'], limit: 20 })
 
-  if (installments && installments.length > 0 && fees.length > 0) {
-    for (let i = 0; i < Math.min(installments.length, fees.length); i++) {
-      await callKw('sale.order.fee', 'write', [[fees[i].id], {
-        amount: installments[i].amount,
-        due_date: installments[i].due_date
-      }])
-    }
+  const orderLines = await callKw('sale.order.line', 'search_read', [
+    [['order_id', '=', orderId]]
+  ], { fields: ['id'], limit: 1 })
+  const orderLineId = orderLines?.[0]?.id || false
+
+  const baseFee = {
+    order_id: orderId,
+    order_line_id: orderLineId,
+    slide_group_id: slideGroupId || false,
+    partner_id: partnerId,
+    partner_email: partnerEmail || false,
+    payment_state: 'al_dia',
+    state: 'borrador'
   }
+
+  for (const existingFee of fees) {
+    await callKw('sale.order.fee', 'unlink', [[existingFee.id]], odooCtx)
+  }
+
+  const feesToCreate = installments && installments.length > 0
+    ? installments.map((inst, i) => ({ ...baseFee, name: `Cuota ${i + 1}`, seq: i + 1, amount: inst.amount, due_date: inst.due_date || false }))
+    : [{ ...baseFee, name: 'Cuota 1', seq: 1, amount, due_date: false }]
+
+  for (const feeData of feesToCreate) {
+    await callKw('sale.order.fee', 'create', [feeData], odooCtx)
+  }
+
+  const finalFees = await callKw('sale.order.fee', 'search_read', [
+    [['order_id', '=', orderId]]
+  ], { fields: ['id', 'seq', 'state'], limit: 20 })
 
   return {
     success: true,
     order_id: orderId,
-    fee_count: fees.length,
-    fee_ids: fees.map(f => f.id)
+    fee_count: finalFees.length,
+    fee_ids: finalFees.map(f => f.id)
   }
+}
+
+async function activateFees (orderId) {
+  const fees = await callKw('sale.order.fee', 'search_read', [
+    [['order_id', '=', orderId], ['state', '=', 'borrador']]
+  ], { fields: ['id'], limit: 50 })
+  if (fees.length > 0) {
+    const ids = fees.map(f => f.id)
+    await callKw('sale.order.fee', 'write', [ids, { state: 'pendiente' }], { context: { allowed_company_ids: [1] } })
+  }
+  return { success: true, activated: fees.length }
 }
 
 async function markFeeAsPaid (feeId) {
@@ -431,4 +496,4 @@ async function updateUserLogin (odooUserId, newLogin) {
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, markFeeAsPaid, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin }
+export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin }

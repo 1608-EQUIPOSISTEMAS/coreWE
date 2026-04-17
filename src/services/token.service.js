@@ -1,5 +1,6 @@
 import { pool } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
+import slackClient from '../config/slack.js'
 
 const BASE_SELECT = `
   SELECT pt.*,
@@ -15,6 +16,7 @@ const BASE_SELECT = `
     COALESCE(l.origin_phone, l_dir.origin_phone) AS student_phone,
     COALESCE(pv.abbreviation, pv_dir.abbreviation) AS program_name,
     COALESCE(pe.global_code, pe_dir.global_code) AS edition_code,
+    COALESCE(pe.start_date, pe_dir.start_date) AS edition_start_date,
     c_prov.description AS provider_name,
     u_req.name AS requested_by_name,
     u_cre.name AS created_by_name,
@@ -104,17 +106,43 @@ async function tokenList (filters = {}) {
 }
 
 
-async function tokenCreate ({ leadId, enrollmentId, catProvider, amount, currency, paymentUrl, notes, expirationDate, catPaymentChannel, inscriptionData, userId }) {
+async function tokenCreate ({ leadId, enrollmentId, catProvider, paymentType, amount, currency, paymentUrl, notes, advisorObservation, expirationDate, catPaymentChannel, inscriptionData, userId }) {
   const status = paymentUrl ? 'link_sent' : 'pending'
   const requestedBy = paymentUrl ? null : userId
   const createdBy = paymentUrl ? userId : null
 
   const { rows } = await pool.query(`
     INSERT INTO payment_tokens
-      (lead_id, enrollment_id, cat_provider, amount, currency, payment_url, status, requested_by, created_by, notes, expiration_date, cat_payment_channel, inscription_data, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+      (lead_id, enrollment_id, cat_provider, payment_type, amount, currency, payment_url, status, requested_by, created_by, notes, advisor_observation, expiration_date, cat_payment_channel, inscription_data, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
     RETURNING token_id
-  `, [leadId, enrollmentId || null, catProvider, amount, currency || 'USD', paymentUrl || null, status, requestedBy, createdBy, notes || null, expirationDate || null, catPaymentChannel || null, inscriptionData ? JSON.stringify(inscriptionData) : null])
+  `, [leadId, enrollmentId || null, catProvider || null, paymentType || null, amount, currency || 'USD', paymentUrl || null, status, requestedBy, createdBy, notes || null, advisorObservation || null, expirationDate || null, catPaymentChannel || null, inscriptionData ? JSON.stringify(inscriptionData) : null])
+
+  try {
+    const { rows: leadInfo } = await pool.query(`
+      SELECT l.full_name AS student_name, pv.abbreviation AS program_name,
+             pe.global_code AS edition_code, pe.start_date AS edition_start_date, u.alias AS advisor_alias
+      FROM leads l
+      LEFT JOIN program_versions pv ON pv.program_version_id = l.program_version_id
+      LEFT JOIN program_editions pe ON pe.edition_num_id = l.program_edition_id
+      LEFT JOIN users u ON u.user_id = $2
+      WHERE l.lead_id = $1
+    `, [leadId, userId])
+    const info = leadInfo?.[0]
+    if (info) {
+      await slackClient.notifyTokenCreated({
+        studentName: info.student_name,
+        programName: info.program_name,
+        editionCode: info.edition_code
+          ? `${info.edition_code} (${info.edition_start_date ? new Date(info.edition_start_date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) : ''})`
+          : '',
+        paymentType: paymentType,
+        amount, currency,
+        notes: advisorObservation || notes,
+        requestedByName: info.advisor_alias
+      })
+    }
+  } catch (slackErr) { console.error('[tokenCreate] Slack:', slackErr.message) }
 
   return rows[0]
 }
@@ -170,9 +198,36 @@ async function tokenUpdate ({ tokenId, paymentUrl, providerReference, notes, exp
   sets.push(`updated_at = NOW()`)
   params.push(tokenId)
 
+  const isAddingLink = !token.payment_url && paymentUrl
+
   const { rows } = await pool.query(`
     UPDATE payment_tokens SET ${sets.join(', ')} WHERE token_id = $${idx} RETURNING *
   `, params)
+
+  if (isAddingLink && rows[0]) {
+    try {
+      const { rows: info } = await pool.query(`
+        SELECT l.full_name AS student_name, pv.abbreviation AS program_name,
+               u_req.alias AS advisor_alias, u_fico.alias AS fico_alias
+        FROM payment_tokens pt
+        LEFT JOIN leads l ON l.lead_id = pt.lead_id
+        LEFT JOIN program_versions pv ON pv.program_version_id = l.program_version_id
+        LEFT JOIN users u_req ON u_req.user_id = pt.requested_by
+        LEFT JOIN users u_fico ON u_fico.user_id = $2
+        WHERE pt.token_id = $1
+      `, [tokenId, userId])
+      const d = info?.[0]
+      if (d) {
+        await slackClient.notifyTokenLinkAdded({
+          studentName: d.student_name,
+          programName: d.program_name,
+          advisorName: d.advisor_alias,
+          createdByName: d.fico_alias,
+          paymentUrl
+        })
+      }
+    } catch (slackErr) { console.error('[tokenUpdate] Slack:', slackErr.message) }
+  }
 
   return rows[0]
 }
@@ -203,6 +258,9 @@ async function tokenConfirm ({ tokenId, providerReference, userId }) {
       )
 
       const inscPayload = token.inscription_data || {}
+      if (inscPayload.inscription && token.cat_provider) {
+        inscPayload.inscription.cat_token_provider = token.cat_provider
+      }
       const enrollRows = await callProcedureReturningRows(
         pool,
         'public.sp_comercial_enrollment_register',
