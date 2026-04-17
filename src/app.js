@@ -26,8 +26,7 @@ import uploadRoutes from './routes/upload.js'
 import ficoRoutes from './routes/fico.js'
 import webhookRoutes from './routes/webhooks.js'
 import notificationRoutes from './routes/notifications.js'
-import b2bRoutes from './routes/b2b.js'
-import botRoutes from './routes/bot.js'
+import tokenRoutes from './routes/token.js'
 
 const app = Fastify({
   logger: true,
@@ -136,8 +135,7 @@ await app.register(webhookRoutes,   { prefix: '/api/webhooks' })
 await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
 await app.register(uploadRoutes,    { prefix: '/api/upload' }) 
 await app.register(notificationRoutes, { prefix: '/api' })
-await app.register(b2bRoutes,          { prefix: '/api/b2b' })
-await app.register(botRoutes,          { prefix: '/api/bot' })
+await app.register(tokenRoutes,        { prefix: '/api/token' })
 
 
 

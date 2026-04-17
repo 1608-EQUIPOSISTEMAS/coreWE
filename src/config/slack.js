@@ -130,4 +130,134 @@ async function notifyStudentRetirement ({ studentName, studentPhone, programName
   }
 }
 
-export default { notifyInstructorCredentials, notifyStudentRetirement }
+const SLACK_CHANNEL_FICO = process.env.SLACK_CHANNEL_FICO || 'C0AJDKB1692'
+
+async function notifyEnrollmentObserved ({ studentName, programName, editionCode, editionDate, advisorName, reason, rejectedByName }) {
+  try {
+    await post({
+      channel: SLACK_CHANNEL_FICO,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:warning: *INSCRIPCION OBSERVADA*` }
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `:bust_in_silhouette: *Alumno:*\n${studentName || '---'}` },
+            { type: 'mrkdwn', text: `:mortar_board: *Programa:*\n${programName || '---'}` }
+          ]
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `:calendar: *Edicion:*\n${editionCode || ''} ${editionDate || ''}` },
+            { type: 'mrkdwn', text: `:briefcase: *Registrado por:*\n${advisorName || '---'}` }
+          ]
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:memo: *Motivo:*\n${reason || '---'}` }
+        },
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: `:no_entry_sign: *Rechazado por:* ${rejectedByName || '---'}` }
+          ]
+        },
+        { type: 'divider' }
+      ]
+    })
+  } catch (err) {
+    console.error('[slack] notifyEnrollmentObserved:', err.message)
+  }
+}
+
+async function notifyEnrollmentResubmitted ({ studentName, programName, editionCode, editionDate, advisorName }) {
+  try {
+    await post({
+      channel: SLACK_CHANNEL_FICO,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:white_check_mark: *OBSERVACIONES SUBSANADAS*` }
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `El asesor *${advisorName || '---'}* ya subsano las observaciones para la inscripcion de *${studentName || '---'}* en *${programName || '---'}* (${editionCode || ''} ${editionDate || ''}).` }
+        },
+        { type: 'divider' }
+      ]
+    })
+  } catch (err) {
+    console.error('[slack] notifyEnrollmentResubmitted:', err.message)
+  }
+}
+
+async function notifyTokenCreated ({ studentName, programName, editionCode, paymentType, amount, currency, notes, requestedByName }) {
+  try {
+    await post({
+      channel: SLACK_CHANNEL_FICO,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:ticket: *TOKEN SOLICITADO*` }
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `:bust_in_silhouette: *Alumno:*\n${studentName || '---'}` },
+            { type: 'mrkdwn', text: `:mortar_board: *Programa:*\n${programName || '---'} ${editionCode || ''}` }
+          ]
+        },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `:credit_card: *Tipo:*\n${paymentType === 'credito' ? 'Credito' : 'Debito'}` },
+            { type: 'mrkdwn', text: `:moneybag: *Monto:*\n${currency} ${amount}` }
+          ]
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:memo: *Nota:*\n${notes || '---'}` }
+        },
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: `:raising_hand: *Solicitado por:* ${requestedByName || '---'}` }
+          ]
+        },
+        { type: 'divider' }
+      ]
+    })
+  } catch (err) {
+    console.error('[slack] notifyTokenCreated:', err.message)
+  }
+}
+
+async function notifyTokenLinkAdded ({ studentName, programName, advisorName, createdByName, paymentUrl }) {
+  try {
+    await post({
+      channel: SLACK_CHANNEL_FICO,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:link: *TOKEN - LINK GENERADO*` }
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `Se ha generado el link de pago por *${createdByName || '---'}* para *${studentName || '---'}* en *${programName || '---'}*.` }
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `:briefcase: El asesor *${advisorName || '---'}*, por favor pasarselo al alumno.` }
+        },
+        { type: 'divider' }
+      ]
+    })
+  } catch (err) {
+    console.error('[slack] notifyTokenLinkAdded:', err.message)
+  }
+}
+
+export default { notifyInstructorCredentials, notifyStudentRetirement, notifyEnrollmentObserved, notifyEnrollmentResubmitted, notifyTokenCreated, notifyTokenLinkAdded }

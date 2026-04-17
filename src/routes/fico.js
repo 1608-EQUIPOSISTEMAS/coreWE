@@ -57,6 +57,44 @@ export default async function ficoRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  fastify.post('/confirminstallment', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['installment_id', 'enrollment_id'],
+        additionalProperties: true,
+        properties: {
+          installment_id:      { type: 'integer' },
+          enrollment_id:       { type: 'integer' },
+          cat_currency:        { type: ['integer', 'null'] },
+          cat_payment_medium:  { type: ['integer', 'null'] },
+          cat_business_entity: { type: ['integer', 'null'] },
+          bank_account_id:     { type: ['integer', 'null'] },
+          transaction_code:    { type: ['string', 'null'] },
+          voucher_url:         { type: ['string', 'null'] }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.confirmInstallment({
+        installmentId:     req.body.installment_id,
+        enrollmentId:      req.body.enrollment_id,
+        catCurrency:       req.body.cat_currency,
+        catPaymentMedium:  req.body.cat_payment_medium,
+        catBusinessEntity: req.body.cat_business_entity,
+        bankAccountId:     req.body.bank_account_id,
+        transactionCode:   req.body.transaction_code,
+        voucherUrl:        req.body.voucher_url,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[confirmInstallment ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/confirmpayment', {
     schema: {
       body: {
@@ -339,30 +377,42 @@ export default async function ficoRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
-  fastify.post('/changeprofile', {
+  fastify.post('/editstudent', {
     schema: {
       body: {
         type: 'object',
-        required: ['enrollment_id', 'new_profile_id', 'justificacion'],
+        required: ['enrollment_id', 'justificacion'],
         additionalProperties: true,
         properties: {
-          enrollment_id:  { type: 'integer' },
-          new_profile_id: { type: 'integer' },
-          justificacion:  { type: 'string', minLength: 1 }
+          enrollment_id:   { type: 'integer' },
+          first_name:      { type: 'string' },
+          last_name:       { type: 'string' },
+          document_number: { type: 'string' },
+          origin_email:    { type: 'string' },
+          origin_phone:    { type: 'string' },
+          odoo_email:      { type: 'string' },
+          cat_profile_id:  { type: 'integer' },
+          justificacion:   { type: 'string', minLength: 1 }
         }
       }
     }
   }, async (req, reply) => {
     try {
-      const data = await ficoService.changeProfile({
-        enrollmentId: req.body.enrollment_id,
-        newProfileId: req.body.new_profile_id,
-        justificacion: req.body.justificacion,
+      const data = await ficoService.editStudent({
+        enrollmentId:   req.body.enrollment_id,
+        firstName:      req.body.first_name,
+        lastName:       req.body.last_name,
+        documentNumber: req.body.document_number,
+        originEmail:    req.body.origin_email,
+        originPhone:    req.body.origin_phone,
+        odooEmail:      req.body.odoo_email,
+        newProfileId:   req.body.cat_profile_id,
+        justificacion:  req.body.justificacion,
         userId: req.user?.id ?? req.body.user_id
       })
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
-      console.error('[changeProfile ERROR]', err.message)
+      console.error('[editStudent ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })
@@ -507,6 +557,55 @@ export default async function ficoRoutes (fastify) {
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[resubmitEnrollment ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.get('/programchildren/:id', async (req, reply) => {
+    const data = await ficoService.getProgramChildren({ programVersionId: parseInt(req.params.id) })
+    return reply.code(200).send({ ok: true, data })
+  })
+
+  fastify.get('/validations/:enrollmentId', async (req, reply) => {
+    const data = await ficoService.getValidations({ enrollmentId: parseInt(req.params.enrollmentId) })
+    return reply.code(200).send({ ok: true, data })
+  })
+
+  fastify.post('/validations', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'validations'],
+        additionalProperties: true,
+        properties: {
+          enrollment_id: { type: 'integer' },
+          validations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['child_version_id'],
+              additionalProperties: true,
+              properties: {
+                child_version_id: { type: 'integer' },
+                validation_type: { type: 'string' },
+                custom_edition_id: { type: ['integer', 'null'] },
+                notes: { type: ['string', 'null'] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.saveValidations({
+        enrollmentId: req.body.enrollment_id,
+        validations: req.body.validations,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[saveValidations ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })
