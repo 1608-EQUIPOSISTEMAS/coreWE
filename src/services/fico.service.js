@@ -4,8 +4,8 @@ import odooClient from '../config/odooClient.js'
 import { sendEmail, sendFicoEmail } from '../config/zeptomail.js'
 import { buildConfirmacionHTML } from '../templates/confirmacion-inscripcion.js'
 import { buildConfirmacionPagoHTML } from '../templates/confirmacion-pago.js'
-import { buildActivacionHTML } from '../templates/activacion-cursos.js'
 import { buildMembresiaHTML, detectMembershipType } from '../templates/bienvenida-membresia.js'
+import { generateCronogramaPdf } from './pdf.service.js'
 import slackClient from '../config/slack.js'
 
 async function enrollmentList (payload = {}) {
@@ -70,25 +70,61 @@ async function confirmPayment (payload) {
     }
 
     try {
-      const { rows: enrollOdoo } = await pool.query('SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1', [payload.enrollment_id])
-      const odooOrderId = enrollOdoo?.[0]?.odoo_order_id
+      const { rows: enrollOdoo } = await pool.query(
+        'SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1',
+        [payload.enrollment_id]
+      )
+      let odooOrderId = enrollOdoo?.[0]?.odoo_order_id
+
+      if (!odooOrderId) {
+        const odooResult = await enrollInOdoo({ enrollmentId: payload.enrollment_id })
+        if (odooResult?.success) {
+          await logAudit({
+            enrollmentId: payload.enrollment_id,
+            action: 'odoo_enrolled',
+            userId: payload.user_id,
+            details: `Odoo user ${odooResult.odoo_user_id} - ${odooResult.course_search}`
+          })
+          const { rows: updated } = await pool.query(
+            'SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1',
+            [payload.enrollment_id]
+          )
+          odooOrderId = updated?.[0]?.odoo_order_id
+        }
+      }
+
       if (odooOrderId) {
         const activated = await odooClient.activateFees(odooOrderId)
         if (activated?.activated > 0) {
-          await logAudit({ enrollmentId: payload.enrollment_id, action: 'odoo_fees_activated', userId: payload.user_id, details: `${activated.activated} cuota(s) pasadas a Pendiente en Odoo` })
+          await logAudit({
+            enrollmentId: payload.enrollment_id,
+            action: 'odoo_fees_activated',
+            userId: payload.user_id,
+            details: `${activated.activated} cuota(s) pasadas a Pendiente en Odoo`
+          })
         }
       }
     } catch (odooErr) {
-      console.error('[confirmPayment] Odoo activate fees:', odooErr.message)
+      console.error('[confirmPayment] Odoo enroll/activate:', odooErr.message)
     }
 
-    try {
-      const odooResult = await syncInstallmentPaymentToOdoo({ enrollmentId: payload.enrollment_id, installmentNumber: 1 })
-      if (odooResult?.success) {
-        await logAudit({ enrollmentId: payload.enrollment_id, action: 'odoo_fee_paid', userId: payload.user_id, details: `Pago contado sincronizado con Odoo (fee_id: ${odooResult.fee_id})` })
+    if (payload.action === 'confirm_contado') {
+      try {
+        const odooResult = await syncInstallmentPaymentToOdoo({
+          enrollmentId: payload.enrollment_id,
+          installmentNumber: 1
+        })
+        if (odooResult?.success) {
+          await logAudit({
+            enrollmentId: payload.enrollment_id,
+            action: 'odoo_fee_paid',
+            userId: payload.user_id,
+            details: `Pago contado sincronizado con Odoo (fee_id: ${odooResult.fee_id})`
+          })
+        }
+      } catch (odooErr) {
+        console.error('[confirmPayment] Odoo sync contado:', odooErr.message)
       }
-    } catch (odooErr) {
-      console.error('[confirmPayment] Odoo sync:', odooErr.message)
     }
   }
 
@@ -292,20 +328,26 @@ async function buildUniqueOdooEmail (firstName, lastName, documentNumber) {
 
   if (ownEnroll?.length > 0) return candidateEmail
 
-  const { rows: otherEnroll } = await pool.query(
-    'SELECT enrollment_id FROM enrollments WHERE odoo_email = $1 LIMIT 1',
-    [candidateEmail]
-  )
+  const isEmailAvailable = async (email) => {
+    const { rows: inDb } = await pool.query(
+      'SELECT enrollment_id FROM enrollments WHERE odoo_email = $1 LIMIT 1',
+      [email]
+    )
+    if (inDb?.length) return false
+    try {
+      const odooUser = await odooClient.searchUserByEmail(email)
+      if (odooUser) return false
+    } catch (err) {
+      console.warn('[buildUniqueOdooEmail] Odoo lookup failed, assuming available:', err.message)
+    }
+    return true
+  }
 
-  if (!otherEnroll?.length) return candidateEmail
+  if (await isEmailAvailable(candidateEmail)) return candidateEmail
 
   for (let i = 2; i <= 20; i++) {
     const altEmail = `${base}${i}${domain}`
-    const { rows: chk } = await pool.query(
-      'SELECT enrollment_id FROM enrollments WHERE odoo_email = $1 LIMIT 1',
-      [altEmail]
-    )
-    if (!chk?.length) return altEmail
+    if (await isEmailAvailable(altEmail)) return altEmail
   }
 
   const suffix = documentNumber ? documentNumber.slice(-3) : String(Date.now()).slice(-4)
@@ -314,12 +356,24 @@ async function buildUniqueOdooEmail (firstName, lastName, documentNumber) {
 
 async function enrollInOdoo ({ enrollmentId }) {
   const { rows: chk } = await pool.query(`
-    SELECT pv.abbreviation FROM enrollments e
+    SELECT pv.abbreviation, e.odoo_order_id, e.odoo_user_id, e.odoo_student_id, e.odoo_email
+    FROM enrollments e
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
   if (chk?.[0] && isMembership(chk[0].abbreviation)) {
     return enrollMembershipInOdoo({ enrollmentId })
+  }
+  if (chk?.[0]?.odoo_order_id) {
+    console.log(`[enrollInOdoo] Skip — enrollment ${enrollmentId} ya tiene odoo_order_id=${chk[0].odoo_order_id}`)
+    return {
+      success: true,
+      skipped: true,
+      odoo_user_id: chk[0].odoo_user_id,
+      odoo_student_id: chk[0].odoo_student_id,
+      odoo_email: chk[0].odoo_email,
+      order_id: chk[0].odoo_order_id
+    }
   }
 
   const { rows } = await pool.query(`
@@ -404,12 +458,12 @@ async function enrollInOdoo ({ enrollmentId }) {
       `, [enrollmentId])
 
       const { rows: enrollData } = await pool.query(`
-        SELECT e.total_amount, e.discount_amount, c.alias AS currency_alias
+        SELECT e.total_amount, e.discount_amount, e.list_price, c.alias AS currency_alias
         FROM enrollments e
         LEFT JOIN catalog c ON c.catalog_id = e.cat_currency
         WHERE e.enrollment_id = $1
       `, [enrollmentId])
-      const netAmount = (enrollData?.[0]?.total_amount || 0) - (enrollData?.[0]?.discount_amount || 0)
+      const netAmount = Number(enrollData?.[0]?.total_amount) || 0
       const currencyCode = enrollData?.[0]?.currency_alias === 'we_currency_usd' ? 'USD' : 'PEN'
 
       const orderResult = await odooClient.createSaleOrderWithFees({
@@ -464,6 +518,7 @@ async function previewConfirmationEmail ({ enrollmentId }) {
            pe.start_date, pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
            e.odoo_user_id,
+           e.odoo_email,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -499,10 +554,16 @@ async function previewConfirmationEmail ({ enrollmentId }) {
 
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
-  const isNew = !data.odoo_user_id
-  const odooEmail = isNew
-    ? `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-    : (data.origin_email || '')
+  const odooEmail = data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
+  const isNew = (odooEmail || '').toLowerCase().endsWith('@weeducacion.edu.pe')
+
+  const { rows: childCheck } = await pool.query(`
+    SELECT 1 FROM program_version_structure pvs
+    JOIN enrollments e ON e.program_version_id = pvs.parent_program_version_id
+    WHERE e.enrollment_id = $1
+    LIMIT 1
+  `, [enrollmentId])
+  const isParentProgram = childCheck.length > 0
 
   const htmlBody = buildConfirmacionHTML({
     studentName: `${firstName} ${lastName}`,
@@ -514,13 +575,16 @@ async function previewConfirmationEmail ({ enrollmentId }) {
     isNew,
     bannerUrl: data.banner_link || '',
     installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
-    currencySymbol: data.currency_symbol || 'S/.'
+    currencySymbol: data.currency_symbol || 'S/.',
+    hideWhatsapp: isParentProgram
   })
 
   return {
     html: htmlBody,
     to: data.origin_email || '---',
-    subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
+    subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
+    hasAttachment: isParentProgram,
+    attachmentName: isParentProgram ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null
   }
 }
 
@@ -590,7 +654,30 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     'SELECT odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
   )
   const odooEmail = freshEnroll?.[0]?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  const isNew = !!freshEnroll?.[0]?.odoo_password
+  const isNew = (odooEmail || '').toLowerCase().endsWith('@weeducacion.edu.pe')
+
+  const { rows: childCheck } = await pool.query(`
+    SELECT 1 FROM program_version_structure pvs
+    JOIN enrollments e ON e.program_version_id = pvs.parent_program_version_id
+    WHERE e.enrollment_id = $1
+    LIMIT 1
+  `, [enrollmentId])
+  const isParentProgram = childCheck.length > 0
+
+  const attachments = []
+  if (isParentProgram) {
+    try {
+      const pdfBuffer = await generateCronogramaPdf({ enrollmentId })
+      const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+      attachments.push({
+        filename: `Cronograma-${safeName}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      })
+    } catch (pdfErr) {
+      console.error('[sendConfirmationEmail] Error generando PDF cronograma:', pdfErr.message)
+    }
+  }
 
   const htmlBody = buildConfirmacionHTML({
     studentName: `${firstName} ${lastName}`,
@@ -603,11 +690,12 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     isNew,
     bannerUrl: data.banner_link || '',
     installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
-    currencySymbol: data.currency_symbol || 'S/.'
+    currencySymbol: data.currency_symbol || 'S/.',
+    hideWhatsapp: isParentProgram && attachments.length > 0
   })
 
   const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
-  const result = await sendEmail({ to: toEmail, subject, htmlBody })
+  const result = await sendEmail({ to: toEmail, subject, htmlBody, attachments })
 
   try {
     await pool.query(`
@@ -694,45 +782,6 @@ async function sendPaymentConfirmationEmail ({ enrollmentId }) {
     await pool.query(`
       INSERT INTO public.email_logs (enrollment_id, to_email, subject, message_id, template_type, status)
       VALUES ($1, $2, $3, $4, 'confirmacion_pago', $5)
-    `, [enrollmentId, toEmail, subject, result.messageId || null, result.success ? 'sent' : 'failed'])
-  } catch (logErr) {
-    console.error('[EmailLog] Error registrando log:', logErr.message)
-  }
-
-  return result
-}
-
-async function sendActivationEmail ({ enrollmentId }) {
-  const { rows } = await pool.query(`
-    SELECT e.enrollment_id,
-           per.first_name,
-           l.origin_email,
-           pv.abbreviation AS program_name
-    FROM enrollments e
-    JOIN customers cust ON cust.customer_id = e.customer_id
-    JOIN persons per ON per.person_id = cust.person_id
-    LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-    WHERE e.enrollment_id = $1
-  `, [enrollmentId])
-
-  const data = rows?.[0]
-  if (!data) return { success: false, error: 'Inscripcion no encontrada' }
-
-  const toEmail = data.origin_email
-  if (!toEmail) return { success: false, error: 'El estudiante no tiene correo registrado' }
-
-  const htmlBody = buildActivacionHTML({
-    studentName: data.first_name
-  })
-
-  const subject = `Tus cursos ya estan activos - ${data.program_name || 'WE Educacion'}`
-  const result = await sendFicoEmail({ to: toEmail, subject, htmlBody })
-
-  try {
-    await pool.query(`
-      INSERT INTO public.email_logs (enrollment_id, to_email, subject, message_id, template_type, status)
-      VALUES ($1, $2, $3, $4, 'activacion', $5)
     `, [enrollmentId, toEmail, subject, result.messageId || null, result.success ? 'sent' : 'failed'])
   } catch (logErr) {
     console.error('[EmailLog] Error registrando log:', logErr.message)
@@ -2211,7 +2260,6 @@ export default {
   enrollInOdoo,
   sendConfirmationEmail,
   sendPaymentConfirmationEmail,
-  sendActivationEmail,
   getEmailLogs,
   ficoEnrollmentRegister,
   logAudit,

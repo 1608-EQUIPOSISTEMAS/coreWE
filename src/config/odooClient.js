@@ -329,10 +329,22 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
 }
 
 async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, amount, installments, currency, partnerEmail }) {
+  const odooCtx = { context: { allowed_company_ids: [1], default_warehouse_id: 1 } }
+
+  const existingFees = await callKw('sale.order.fee', 'search_read', [
+    [['partner_id', '=', partnerId], ['slide_group_id', '=', slideGroupId]]
+  ], { fields: ['order_id'], limit: 1 })
+  if (existingFees?.[0]?.order_id) {
+    const existingOrderId = Array.isArray(existingFees[0].order_id)
+      ? existingFees[0].order_id[0]
+      : existingFees[0].order_id
+    console.log(`[odooClient] Reusing existing sale.order ${existingOrderId} for partner=${partnerId} slide_group=${slideGroupId}`)
+    return { success: true, order_id: existingOrderId, reused: true }
+  }
+
   const products = await callKw('product.product', 'search_read', [
     [['name', 'ilike', productName]]
   ], { fields: ['id', 'name'], limit: 5 })
-
   const product = products?.[0]
   if (!product) {
     console.warn(`[odooClient] Producto no encontrado: "${productName}"`)
@@ -345,14 +357,20 @@ async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, 
   ], { fields: ['id', 'name'], limit: 3 })
   const pricelistId = pricelists?.[0]?.id || false
 
+  const isInstallments = installments && installments.length > 0
+  const termName = isInstallments ? 'Crédito' : 'Contado'
   const paymentTerms = await callKw('account.payment.term', 'search_read', [
-    [['name', 'ilike', 'cr%dito']]
-  ], { fields: ['id', 'name'], limit: 3 })
-  const paymentTermId = paymentTerms?.[0]?.id || 19
+    [['name', '=', termName]]
+  ], { fields: ['id', 'name'], limit: 1 })
+  if (!paymentTerms?.[0]) {
+    return { success: false, error: `Payment term "${termName}" no encontrado en Odoo` }
+  }
+  const paymentTermId = paymentTerms[0].id
 
   const orderData = {
     partner_id: partnerId,
     company_id: 1,
+    payment_term_id: paymentTermId,
     order_line: [[0, 0, {
       product_id: product.id,
       product_uom_qty: 1,
@@ -361,11 +379,8 @@ async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, 
     }]]
   }
   if (pricelistId) orderData.pricelist_id = pricelistId
-  if (paymentTermId) orderData.payment_term_id = paymentTermId
 
-  console.log('[odooClient] Creating sale order:', JSON.stringify({ partnerId, productName, pricelistId, paymentTermId, amount, slideGroupId }))
-
-  const odooCtx = { context: { allowed_company_ids: [1], default_warehouse_id: 1 } }
+  console.log('[odooClient] Creating sale order:', JSON.stringify({ partnerId, productName, pricelistId, paymentTermId, termName, amount, slideGroupId }))
 
   const orderId = await callKw('sale.order', 'create', [orderData], odooCtx)
 
@@ -379,50 +394,26 @@ async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, 
     await callKw('sale.order', 'action_done', [[orderId]], odooCtx)
   } catch (e) {}
 
-  if (paymentTermId) {
-    await callKw('sale.order', 'write', [[orderId], { payment_term_id: paymentTermId }], odooCtx)
-  }
+  await callKw('sale.order', 'write', [[orderId], { payment_term_id: paymentTermId }], odooCtx)
 
   const fees = await callKw('sale.order.fee', 'search_read', [
     [['order_id', '=', orderId]]
-  ], { fields: ['id', 'seq', 'state'], limit: 20 })
+  ], { fields: ['id', 'seq', 'state'], limit: 20, order: 'seq asc' })
 
-  const orderLines = await callKw('sale.order.line', 'search_read', [
-    [['order_id', '=', orderId]]
-  ], { fields: ['id'], limit: 1 })
-  const orderLineId = orderLines?.[0]?.id || false
-
-  const baseFee = {
-    order_id: orderId,
-    order_line_id: orderLineId,
-    slide_group_id: slideGroupId || false,
-    partner_id: partnerId,
-    partner_email: partnerEmail || false,
-    payment_state: 'al_dia',
-    state: 'borrador'
+  if (fees.length > 0 && partnerEmail) {
+    const feeIds = fees.map(f => f.id)
+    try {
+      await callKw('sale.order.fee', 'write', [feeIds, { partner_email: partnerEmail }], odooCtx)
+    } catch (e) {
+      console.warn('[odooClient] No se pudo setear partner_email en fees:', e.message)
+    }
   }
-
-  for (const existingFee of fees) {
-    await callKw('sale.order.fee', 'unlink', [[existingFee.id]], odooCtx)
-  }
-
-  const feesToCreate = installments && installments.length > 0
-    ? installments.map((inst, i) => ({ ...baseFee, name: `Cuota ${i + 1}`, seq: i + 1, amount: inst.amount, due_date: inst.due_date || false }))
-    : [{ ...baseFee, name: 'Cuota 1', seq: 1, amount, due_date: false }]
-
-  for (const feeData of feesToCreate) {
-    await callKw('sale.order.fee', 'create', [feeData], odooCtx)
-  }
-
-  const finalFees = await callKw('sale.order.fee', 'search_read', [
-    [['order_id', '=', orderId]]
-  ], { fields: ['id', 'seq', 'state'], limit: 20 })
 
   return {
     success: true,
     order_id: orderId,
-    fee_count: finalFees.length,
-    fee_ids: finalFees.map(f => f.id)
+    fee_count: fees.length,
+    fee_ids: fees.map(f => f.id)
   }
 }
 
