@@ -2,6 +2,12 @@ import { pool } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
 import slackClient from '../config/slack.js'
 
+const FULL_VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
+
+function hasFullView (userRoles = []) {
+  return userRoles.some(r => FULL_VIEW_ROLES.includes(r))
+}
+
 const BASE_SELECT = `
   SELECT pt.*,
     CASE WHEN e.enrollment_id IS NOT NULL
@@ -37,7 +43,7 @@ const BASE_SELECT = `
   LEFT JOIN users u_conf ON u_conf.user_id = pt.confirmed_by
 `
 
-async function tokenList (filters = {}) {
+async function tokenList (filters = {}, { userId, userRoles = [] } = {}) {
   const conditions = []
   const params = []
   let idx = 1
@@ -65,6 +71,12 @@ async function tokenList (filters = {}) {
   if (filters.enrollment_id) {
     conditions.push(`pt.enrollment_id = $${idx++}`)
     params.push(Number(filters.enrollment_id))
+  }
+
+  if (!hasFullView(userRoles) && userId) {
+    conditions.push(`(pt.requested_by = $${idx} OR pt.created_by = $${idx})`)
+    params.push(Number(userId))
+    idx++
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -102,6 +114,35 @@ async function tokenList (filters = {}) {
     page,
     size,
     items: dataRes.rows
+  }
+}
+
+
+async function tokenStats ({ userId, userRoles = [] } = {}) {
+  const params = []
+  let where = ''
+  if (!hasFullView(userRoles) && userId) {
+    where = 'WHERE requested_by = $1 OR created_by = $1'
+    params.push(Number(userId))
+  }
+
+  const { rows } = await pool.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'pending')   AS pending_count,
+      COUNT(*) FILTER (WHERE status = 'link_sent') AS link_sent_count,
+      COUNT(*) FILTER (WHERE status = 'paid')      AS paid_count,
+      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'PEN'), 0) AS amount_pen,
+      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'USD'), 0) AS amount_usd
+    FROM payment_tokens
+    ${where}
+  `, params)
+  const r = rows[0] || {}
+  return {
+    pending:         Number(r.pending_count   || 0),
+    linkSent:        Number(r.link_sent_count || 0),
+    paidUnconfirmed: Number(r.paid_count      || 0),
+    amountPen:       Number(r.amount_pen      || 0),
+    amountUsd:       Number(r.amount_usd      || 0)
   }
 }
 
@@ -381,6 +422,7 @@ async function tokenDelete ({ tokenId }) {
 
 export default {
   tokenList,
+  tokenStats,
   tokenCreate,
   tokenUpdate,
   tokenConfirm,

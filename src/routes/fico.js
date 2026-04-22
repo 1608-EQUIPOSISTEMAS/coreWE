@@ -40,6 +40,7 @@ export default async function ficoRoutes (fastify) {
           size:                     { type: ['integer', 'null'], default: 25 },
           order_by:                 { type: ['number', 'null'] },
           student_statuses:         { type: ['array', 'null'], items: { type: 'string' } },
+          confirmations:            { type: ['array', 'null'], items: { type: 'string' } },
           advisors:                 { type: ['array', 'null'], items: { type: 'string' } },
           program_types:            { type: ['array', 'null'], items: { type: 'string' } },
           modalities:               { type: ['array', 'null'], items: { type: 'string' } },
@@ -204,26 +205,6 @@ export default async function ficoRoutes (fastify) {
       return reply.code(200).send({ ok: true, data: result })
     } catch (err) {
       console.error('[sendPaymentConfirmationEmail ERROR]', err.message)
-      return reply.code(200).send({ ok: false, error: err.message })
-    }
-  })
-
-  fastify.post('/sendactivationemail', {
-    schema: {
-      body: {
-        type: 'object',
-        required: ['enrollment_id'],
-        properties: {
-          enrollment_id: { type: 'integer' }
-        }
-      }
-    }
-  }, async (req, reply) => {
-    try {
-      const result = await ficoService.sendActivationEmail({ enrollmentId: req.body.enrollment_id })
-      return reply.code(200).send({ ok: true, data: result })
-    } catch (err) {
-      console.error('[sendActivationEmail ERROR]', err.message)
       return reply.code(200).send({ ok: false, error: err.message })
     }
   })

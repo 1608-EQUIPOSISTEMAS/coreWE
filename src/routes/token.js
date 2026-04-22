@@ -1,10 +1,19 @@
 import tokenService from '../services/token.service.js'
+import { authenticate, hasRole } from '../middlewares/auth.hooks.js'
+
+const WRITE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
+const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
 
 export default async function tokenRoutes (fastify) {
 
-  fastify.get('/list', async (req, reply) => {
+  fastify.get('/list', {
+    preHandler: [authenticate]
+  }, async (req, reply) => {
     try {
-      const data = await tokenService.tokenList(req.query)
+      const data = await tokenService.tokenList(req.query, {
+        userId: req.user?.id,
+        userRoles: req.user?.roles || []
+      })
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[tokenList ERROR]', err.message)
@@ -12,7 +21,23 @@ export default async function tokenRoutes (fastify) {
     }
   })
 
+  fastify.get('/stats', {
+    preHandler: [authenticate]
+  }, async (req, reply) => {
+    try {
+      const data = await tokenService.tokenStats({
+        userId: req.user?.id,
+        userRoles: req.user?.roles || []
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[tokenStats ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/create', {
+    preHandler: [authenticate, hasRole(CREATE_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -56,6 +81,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.put('/update', {
+    preHandler: [authenticate, hasRole(WRITE_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -92,6 +118,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.post('/markpaid', {
+    preHandler: [authenticate, hasRole(WRITE_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -118,6 +145,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.post('/confirm', {
+    preHandler: [authenticate, hasRole(WRITE_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -144,7 +172,9 @@ export default async function tokenRoutes (fastify) {
     }
   })
 
-  fastify.delete('/delete/:id', async (req, reply) => {
+  fastify.delete('/delete/:id', {
+    preHandler: [authenticate, hasRole(WRITE_ROLES)]
+  }, async (req, reply) => {
     try {
       const data = await tokenService.tokenDelete({
         tokenId: Number(req.params.id)

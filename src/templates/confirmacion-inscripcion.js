@@ -71,7 +71,8 @@ export function buildConfirmacionHTML (data) {
     isNew,
     bannerUrl,
     installments,
-    currencySymbol
+    currencySymbol,
+    hideWhatsapp
   } = data
 
   const nombre = capitalizeName(studentName)
@@ -172,6 +173,16 @@ export function buildConfirmacionHTML (data) {
         </td></tr>
 
         <!--DATOS DE BOTONES LINKS-->
+        ${hideWhatsapp ? `
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma acad\u00e9mico</strong>
+              <br/><br/>
+              <font face="Tahoma" size="4">Adjuntamos en este correo el <strong>cronograma completo del programa</strong> en formato PDF con las fechas, docentes, horarios y sesiones de cada m\u00f3dulo.</font>
+              <br/><br/>
+            </td>
+        </tr>
+        ` : `
         <tr style="text-align:center">
             <td>
               <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1pBX3L1-9k-9q8TON5W1OhatayiYBUxWr" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>${whatsappLink ? '\u00danete al grupo oficial de WhatsApp' : 'Solicita el link de tu grupo de WhatsApp'}</strong>
@@ -190,6 +201,7 @@ export function buildConfirmacionHTML (data) {
                   </a>
               </td>
         </tr>
+        `}
         <tr style="text-align:center">
             <td>
               <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>

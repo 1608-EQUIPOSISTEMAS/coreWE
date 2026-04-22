@@ -21,7 +21,7 @@ const transportFico = nodemailer.createTransport({
 const FROM_EMAIL = process.env.ZEPTOMAIL_FROM_EMAIL || 'noreply@we-educacion.com'
 const FROM_NAME = process.env.ZEPTOMAIL_FROM_NAME || 'WE Educacion Ejecutiva'
 
-export async function sendEmail ({ to, subject, htmlBody, replyTo }) {
+export async function sendEmail ({ to, subject, htmlBody, replyTo, attachments }) {
   if (!process.env.ZEPTOMAIL_API_KEY) {
     console.warn('[ZeptoMail] API key no configurada, email no enviado')
     return { success: false, error: 'API key no configurada' }
@@ -33,7 +33,8 @@ export async function sendEmail ({ to, subject, htmlBody, replyTo }) {
       to,
       subject,
       html: htmlBody,
-      ...(replyTo && { replyTo })
+      ...(replyTo && { replyTo }),
+      ...(Array.isArray(attachments) && attachments.length > 0 && { attachments })
     })
     console.log(`[ZeptoMail] Email enviado a ${to} | messageId: ${info.messageId}`)
     return { success: true, messageId: info.messageId }
