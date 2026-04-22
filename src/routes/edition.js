@@ -1,5 +1,6 @@
 // src/routes/editions.js
 import editionService from '../services/edition.service.js'
+import { generateSchedulePdf } from '../services/pdf.service.js'
 import { authenticate, ALL_ADMIN, ALL_COMERCIAL} from '../middlewares/auth.hooks.js'
 import {
   editionRegisterSchema,
@@ -121,6 +122,27 @@ export default async function editionRoutes(fastify) {
   }, async (req, reply) => {
     const response = await editionService.editionTreeUpdate(req.body)
     return reply.code(201).send(response)
+  })
+
+  // ── PDF: Programación del Curso ──────────────────────────────────────────
+  fastify.post('/schedule-pdf', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['parent_edition_id', 'child_edition_id'],
+        properties: {
+          parent_edition_id: { type: 'number' },
+          child_edition_id:  { type: 'number' },
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { parent_edition_id, child_edition_id } = req.body
+    const pdfBuffer = await generateSchedulePdf(parent_edition_id, child_edition_id)
+    reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="programacion-${child_edition_id}.pdf"`)
+      .send(pdfBuffer)
   })
 
 }
