@@ -65,14 +65,14 @@ async function botTicketGet ({ id }) {
 /**
  * ACTUALIZAR TICKET (Estado, notas, agente)
  */
-async function botTicketUpdate ({ id, status, notes, user_id }) {
+async function botTicketUpdate ({ id, status, notes, assigned_to, user_id, current_user_id }) {
   const payload = {
     status,
     notes,
-    resolved_by: user_id // <-- Esto lo arreglaste perfecto
+    assigned_to: assigned_to ?? null,
+    resolved_by: current_user_id ?? user_id ?? null
   }
 
-  // AQUÍ ESTÁ EL CAMBIO: Usamos pool.query directo en vez del helper
   const query = 'CALL public.sp_bot_ticket_update($1, $2::jsonb)';
   const values = [id, JSON.stringify(payload)];
 
@@ -120,6 +120,20 @@ async function botCsatList(payload = {}) {
   return { total, page: Number(page), size: Number(size), items: rows }
 }
 
+/**
+ * LISTA DE ASESORES (para asignación de tickets)
+ * Devuelve usuarios con rol ACADEMICA habilitados.
+ */
+async function botAdvisorList() {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_bot_advisor_list',
+    [],
+    { statementTimeoutMs: 15000 }
+  )
+  return { items: rows }
+}
+
 export default {
   botTicketList,
   botTicketGet,
@@ -127,5 +141,6 @@ export default {
   botDashboardMetricsGet,
   botStudentList,
   botStudentGet,
-  botCsatList
+  botCsatList,
+  botAdvisorList
 }

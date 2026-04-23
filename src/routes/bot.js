@@ -79,4 +79,12 @@ export default async function botRoutes(fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  // Listar Asesores asignables
+  fastify.post('/botadvisorlist', {
+    preHandler: [authenticate, ALL_ACADEMICA]
+  }, async (req, reply) => {
+    const data = await botService.botAdvisorList()
+    return reply.code(200).send({ ok: true, data })
+  })
+
 }

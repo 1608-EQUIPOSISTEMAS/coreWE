@@ -137,16 +137,18 @@ export async function generateSchedulePdf(parentEditionId, childEditionId) {
 
   if (row.children) {
     parentInfo = {
-      version_code:  row.version_code  || '',
-      global_code:   row.global_code   || row.parent_global_code  || '',
-      abbreviation:  row.program_public_label || row.abbreviation || row.parent_abbreviation || '',
+      version_code:      row.version_code  || '',
+      global_code:       row.global_code   || row.parent_global_code  || '',
+      abbreviation:      row.program_public_label || row.abbreviation || row.parent_abbreviation || '',
+      program_type_alias: row.program_type_alias || '',
     }
     children = Array.isArray(row.children) ? row.children : JSON.parse(row.children || '[]')
   } else {
     parentInfo = {
-      version_code:  row.version_code  || '',
-      global_code:   row.global_code   || '',
-      abbreviation:  row.program_public_label || row.abbreviation || '',
+      version_code:      row.version_code  || '',
+      global_code:       row.global_code   || '',
+      abbreviation:      row.program_public_label || row.abbreviation || '',
+      program_type_alias: row.program_type_alias || '',
     }
   }
 
@@ -273,9 +275,11 @@ export async function generateSchedulePdf(parentEditionId, childEditionId) {
       .text('Critério', ML + 34, yCH + 5, { width: W - 38 })
     doc.y = yCH + ROW_H
 
+    const isDiploma = parentInfo.program_type_alias === 'we_program_type_diploma'
+
     const criteria = [
       'En caso de reprogramaciones de clases o inicios, estas serán comunicadas vía correo mediante el domínio <alumno.we@we-educación.com>, y a travéz del grupo de whatsapp del aula.',
-      'En caso de certificación internacional, avalada por FGU (Florida Global University). Estas tienen un plazo de emisión de hasta 30 días hábiles posterior a la certificación del programa (emitida por WE Educación Ejecutiva).',
+      ...(!isDiploma ? ['En caso de certificación internacional, avalada por FGU (Florida Global University). Estas tienen un plazo de emisión de hasta 30 días hábiles posterior a la certificación del programa (emitida por WE Educación Ejecutiva).'] : []),
       'Toda entrega de documentos y comunicación formal se realizan vía correo <alumno.we@we-educacion.com>',
       'Ante cualquier duda o consulta comunicarse al siguiente número +51 922 744 702, o al siguiente enlace https://bit.ly/3LbMuGm',
     ]
@@ -302,7 +306,7 @@ export async function generateSchedulePdf(parentEditionId, childEditionId) {
     // Texto del footer alineado al centro-derecha
     const FTX = ML + 180
     doc.fillColor(C.text).font('Helvetica-Bold').fontSize(F.footer)
-      .text('Maria Claudia Medina', FTX, logoY, { width: 260 })
+      .text('Alexandra Torres', FTX, logoY, { width: 260 })
     doc.fillColor(C.muted).font('Helvetica').fontSize(F.footer)
       .text('Coordinación Académica',                       FTX, logoY + 10, { width: 260 })
       .text('--------------------------------------',        FTX, logoY + 19, { width: 260 })
@@ -383,4 +387,130 @@ function moduleTable(doc, ml, w, children, currentChildId) {
   })
 
   doc.y = rY
+}
+
+// ─── PDF de cronograma de programa (para email de confirmación FICO) ──────────
+export async function generateCronogramaPdf({ enrollmentId }) {
+  // Obtener la edición padre asociada a la inscripción
+  const { rows } = await pool.query(`
+    SELECT
+      e.program_edition_id,
+      pv.abbreviation  AS program_name,
+      pv.version_code,
+      pv.global_code
+    FROM enrollments e
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  const enroll = rows?.[0]
+  if (!enroll) throw new Error('Inscripción no encontrada para PDF cronograma')
+
+  const parentEditionId = enroll.program_edition_id
+  if (!parentEditionId) throw new Error('La inscripción no tiene edición padre asignada')
+
+  const [tree, catalog] = await Promise.all([
+    getEditionTree(parentEditionId),
+    getCatalog()
+  ])
+
+  if (!tree) throw new Error('Árbol de edición no encontrado')
+
+  const row        = Array.isArray(tree) ? tree[0] : tree
+  const children   = Array.isArray(row.children) ? row.children
+                   : (row.children ? JSON.parse(row.children) : [])
+  const dayCombos  = catalog['we_day_combination'] || []
+  const holidays   = catalog['we_holiday'] || []
+  const holidaySet = new Set(holidays.map(h => h.variable_3).filter(Boolean))
+
+  const fmtDate = (d) => {
+    if (!d) return '—'
+    const obj = (d instanceof Date) ? d : parseLocalDate(d)
+    if (isNaN(obj)) return '—'
+    return obj.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+
+  // ── Construir el PDF ────────────────────────────────────────────────────────
+  const ML = 40, MT = 40
+  const PAGE_W = 595.28
+
+  const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true })
+  const chunks = []
+  doc.on('data', d => chunks.push(d))
+  const pdfPromise = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+  })
+
+  // Encabezado
+  doc.rect(0, 0, PAGE_W, 70).fill(C.navy)
+  try { doc.image(LOGO_PATH, ML, 17, { height: 36 }) } catch {}
+  doc.fillColor(C.white).font('Helvetica-Bold').fontSize(13)
+     .text('Cronograma del Programa', 0, 22, { align: 'center' })
+  doc.font('Helvetica').fontSize(9).fillColor('#B0C4DE')
+     .text(enroll.program_name || '', 0, 40, { align: 'center' })
+
+  let y = 90
+
+  // Cabecera tabla
+  const COL = { num: 30, name: 200, start: 80, end: 80, days: 75, hours: 75 }
+  const cols = [
+    { label: 'N°',        w: COL.num  },
+    { label: 'Módulo',    w: COL.name },
+    { label: 'Inicio',    w: COL.start },
+    { label: 'Fin',       w: COL.end  },
+    { label: 'Días',      w: COL.days },
+    { label: 'Sesiones',  w: COL.hours },
+  ]
+  const totalW = cols.reduce((s, c) => s + c.w, 0)
+
+  doc.rect(ML, y, totalW, 18).fill(C.navy)
+  let cx = ML
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(C.white)
+  cols.forEach(c => {
+    doc.text(c.label, cx + 3, y + 5, { width: c.w - 6, align: 'left' })
+    cx += c.w
+  })
+  y += 18
+
+  // Filas de módulos
+  children.forEach((ch, idx) => {
+    let allowedDays = getAllowedDays(dayCombos, ch.cat_day_combination_id)
+    if (allowedDays.length === 0 && ch.start_date) {
+      allowedDays = [parseLocalDate(ch.start_date).getDay()]
+    }
+    const dayLabels = {0:'Dom',1:'Lun',2:'Mar',3:'Mié',4:'Jue',5:'Vie',6:'Sáb'}
+    const daysStr = allowedDays.map(d => dayLabels[d] || '').filter(Boolean).join(', ')
+
+    const bg = idx % 2 === 0 ? C.white : C.light
+    doc.rect(ML, y, totalW, 20).fill(bg)
+    doc.rect(ML, y, totalW, 20).stroke(C.border).lineWidth(0.3)
+
+    const vals = [
+      String(idx + 1),
+      ch.program_public_label || ch.program_abreviature || ch.abbreviation || '—',
+      fmtDate(ch.start_date),
+      fmtDate(ch.end_date),
+      daysStr || '—',
+      String(ch.sessions || '—'),
+    ]
+    cx = ML
+    doc.font('Helvetica').fontSize(8).fillColor(C.text)
+    cols.forEach((c, i) => {
+      doc.text(vals[i], cx + 3, y + 6, { width: c.w - 6, ellipsis: true })
+      cx += c.w
+    })
+    y += 20
+  })
+
+  // Footer relativo
+  y += 14
+  doc.moveTo(ML, y).lineTo(ML + totalW, y).strokeColor(C.border).lineWidth(0.5).stroke()
+  y += 8
+  try { doc.image(LOGO_PATH, ML, y, { height: 28 }) } catch {}
+  doc.font('Helvetica').fontSize(7).fillColor(C.muted)
+     .text('WE Educación — Documento generado automáticamente', ML + 80, y + 8, { width: totalW - 80 })
+
+  doc.end()
+  return pdfPromise
 }
