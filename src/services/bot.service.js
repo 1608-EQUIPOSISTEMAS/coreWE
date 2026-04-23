@@ -80,6 +80,7 @@ async function botTicketUpdate ({ id, status, notes, assigned_to, user_id, curre
 
   return { success: true, ticket_id: id }
 }
+
 async function botStudentList(payload = {}) {
   const { page = 1, size = 25 } = payload
 
@@ -125,12 +126,7 @@ async function botCsatList(payload = {}) {
  * Devuelve usuarios con rol ACADEMICA habilitados.
  */
 async function botAdvisorList() {
-  const rows = await callProcedureReturningRows(
-    pool,
-    'public.sp_bot_advisor_list',
-    [],
-    { statementTimeoutMs: 15000 }
-  )
+  const { rows } = await pool.query('SELECT * FROM public.sp_bot_advisor_list()')
   return { items: rows }
 }
 
