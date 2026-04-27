@@ -1724,6 +1724,12 @@ async function ficoEnrollmentRegister ({ data, userId }) {
     if (emailRes?.success) {
       await logAudit({ enrollmentId: eid, action: 'email_sent', userId, details: `Correo confirmacion: ${emailRes.messageId}` })
     }
+
+    // Crear enrollments hijos si el programa es padre (diplomado/especializacion).
+    // Para FICO directo, todavia no hay convalidaciones en BD, asi que esto inscribe
+    // a TODOS los hijos del arbol de la edicion. El operador puede convalidar despues
+    // desde el detalle de la inscripcion.
+    await safeAsync('[FICO][Children] create', () => createChildEnrollments({ enrollmentId: eid, userId }))
   }
 
   return enrollResp
