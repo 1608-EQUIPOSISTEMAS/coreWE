@@ -139,22 +139,29 @@ async function tokenGetById (tokenId) {
 
 
 async function tokenStats () {
+  // Modelo de KPIs:
+  // - pending: tokens esperando que FICO ponga link
+  // - awaitingConfirmation: links enviados esperando que FICO confirme inscripcion (antes "linkSent")
+  // - confirmedToday: tokens confirmados hoy (cerrados)
+  // - amount: monto en espera (pending + link_sent), separado PEN/USD
+  // Nota: el estado 'paid' existe en BD pero ningun flujo lo activa actualmente,
+  // por eso no se cuenta como KPI separado. Los tokens van pending -> link_sent -> confirmed.
   const { rows } = await pool.query(`
     SELECT
       COUNT(*) FILTER (WHERE status = 'pending')   AS pending_count,
       COUNT(*) FILTER (WHERE status = 'link_sent') AS link_sent_count,
-      COUNT(*) FILTER (WHERE status = 'paid')      AS paid_count,
-      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'PEN'), 0) AS amount_pen,
-      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'USD'), 0) AS amount_usd
+      COUNT(*) FILTER (WHERE status = 'confirmed' AND updated_at::date = CURRENT_DATE) AS confirmed_today_count,
+      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent') AND currency = 'PEN'), 0) AS amount_pen,
+      COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent') AND currency = 'USD'), 0) AS amount_usd
     FROM payment_tokens
   `)
   const r = rows[0] || {}
   return {
-    pending:         Number(r.pending_count   || 0),
-    linkSent:        Number(r.link_sent_count || 0),
-    paidUnconfirmed: Number(r.paid_count      || 0),
-    amountPen:       Number(r.amount_pen      || 0),
-    amountUsd:       Number(r.amount_usd      || 0)
+    pending:              Number(r.pending_count          || 0),
+    awaitingConfirmation: Number(r.link_sent_count        || 0),
+    confirmedToday:       Number(r.confirmed_today_count  || 0),
+    amountPen:            Number(r.amount_pen             || 0),
+    amountUsd:            Number(r.amount_usd             || 0)
   }
 }
 
