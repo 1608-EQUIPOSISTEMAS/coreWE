@@ -172,10 +172,23 @@ async function syncInstructorToOdoo ({ login, name, password, linkedin, internal
 // ─── Operaciones de Estudiante ───────────────────────────────────────────────
 
 async function searchUserByEmail (email) {
-  const rows = await callKw('res.users', 'search_read', [
-    [['login', '=', email]]
+  if (!email) return null
+  const normalized = String(email).trim().toLowerCase()
+  if (!normalized) return null
+
+  // 1) Por login exacto (case-insensitive)
+  let rows = await callKw('res.users', 'search_read', [
+    [['login', '=ilike', normalized]]
   ], { fields: ['id', 'name', 'login', 'partner_id'], limit: 1 })
-  return rows?.[0] ?? null
+  if (rows?.[0]) return rows[0]
+
+  // 2) Por email del partner asociado al user (case-insensitive)
+  rows = await callKw('res.users', 'search_read', [
+    [['partner_id.email', '=ilike', normalized]]
+  ], { fields: ['id', 'name', 'login', 'partner_id'], limit: 1 })
+  if (rows?.[0]) return rows[0]
+
+  return null
 }
 
 async function createPortalUser ({ login, name, password }) {
@@ -261,6 +274,7 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
       odoo_user_id:     odooUserId,
       odoo_partner_id:  odooPartnerId,
       odoo_student_id:  enrollment.student_id,
+      odoo_login:       user ? user.login : createEmail,
       user_created:     created,
       already_enrolled: enrollment.already_enrolled,
       password_set:     created ? password : null,
@@ -317,6 +331,7 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
       success: true,
       odoo_user_id: odooUserId,
       odoo_partner_id: odooPartnerId,
+      odoo_login: user ? user.login : createEmail,
       user_created: created,
       password_set: created ? password : null,
       channels_enrolled: enrolled,
@@ -433,6 +448,54 @@ async function markFeeAsPaid (feeId) {
   return { success: true }
 }
 
+async function updateFeeDueDates ({ orderId, changes }) {
+  if (!orderId) return { success: false, error: 'Sin order_id' }
+  if (!Array.isArray(changes) || changes.length === 0) return { success: true, updated: 0 }
+
+  const multiCtx = { context: { allowed_company_ids: [1] } }
+
+  const orderInfo = await callKw('sale.order', 'search_read', [
+    [['id', '=', orderId]]
+  ], { fields: ['id', 'name', 'state', 'payment_term_id', 'company_id', 'partner_id'], limit: 1, ...multiCtx })
+  console.log(`[updateFeeDueDates] order=${orderId} info:`, orderInfo?.[0] || 'NO EXISTE')
+
+  const fees = await callKw('sale.order.fee', 'search_read', [
+    [['order_id', '=', orderId]]
+  ], { fields: ['id', 'seq', 'state', 'due_date', 'amount', 'company_id'], limit: 50, order: 'seq asc', ...multiCtx })
+
+  console.log(`[updateFeeDueDates] order=${orderId} fees encontradas: ${(fees || []).length}`,
+    (fees || []).map(f => ({ id: f.id, seq: f.seq, state: f.state, due_date: f.due_date })))
+
+  if (!fees || fees.length === 0) {
+    return {
+      success: false,
+      error: orderInfo?.[0]
+        ? 'Inscripcion antigua sin cuotas en Odoo. Sincronizar manualmente.'
+        : 'Orden no existe en Odoo. Sincronizar manualmente.'
+    }
+  }
+
+  const bySeq = new Map()
+  for (const f of (fees || [])) bySeq.set(f.seq, f)
+
+  const results = []
+  for (const change of changes) {
+    const fee = bySeq.get(change.seq)
+    if (!fee) { results.push({ seq: change.seq, success: false, error: 'Fee no encontrada en Odoo' }); continue }
+    if (fee.state === 'pagado') { results.push({ seq: change.seq, success: false, error: 'Fee ya pagada' }); continue }
+    try {
+      await callKw('sale.order.fee', 'write', [[fee.id], { due_date: change.new_due_date }], { context: { allowed_company_ids: [1] } })
+      results.push({ seq: change.seq, fee_id: fee.id, success: true })
+    } catch (err) {
+      console.error(`[updateFeeDueDates] fee_id=${fee.id} seq=${change.seq}:`, err.message)
+      results.push({ seq: change.seq, fee_id: fee.id, success: false, error: err.message })
+    }
+  }
+
+  const failed = results.filter(r => !r.success)
+  return { success: failed.length === 0, updated: results.length - failed.length, failed, results }
+}
+
 async function findOdooFees ({ partnerId, slideGroupId }) {
   const fees = await callKw('sale.order.fee', 'search_read', [
     [['partner_id', '=', partnerId], ['slide_group_id', '=', slideGroupId], ['state', '=', 'pendiente']]
@@ -487,4 +550,44 @@ async function updateUserLogin (odooUserId, newLogin) {
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin }
+/**
+ * Sincroniza edicion de alumno con Odoo: actualiza res.users y res.partner.
+ * Solo escribe los campos que vienen definidos (undefined = no tocar).
+ * Nunca lanza al caller — captura errores y devuelve { success, error }.
+ */
+async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}) {
+  if (!odooUserId) return { success: false, error: 'odooUserId requerido' }
+
+  try {
+    const userVals = {}
+    if (name !== undefined && name !== null && String(name).trim() !== '') userVals.name = String(name).trim()
+    if (login !== undefined && login !== null && String(login).trim() !== '') {
+      userVals.login = String(login).trim()
+      userVals.email = String(login).trim()
+    }
+    if (Object.keys(userVals).length) {
+      await callKw('res.users', 'write', [[odooUserId], userVals])
+    }
+
+    const [user] = await callKw('res.users', 'read', [[odooUserId], ['partner_id']])
+    const partnerId = user?.partner_id?.[0] ?? null
+
+    if (partnerId) {
+      const partnerVals = {}
+      if (userVals.name)     partnerVals.name   = userVals.name
+      if (userVals.email)    partnerVals.email  = userVals.email
+      if (phone !== undefined && phone !== null && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
+      if (vat   !== undefined && vat   !== null && String(vat).trim()   !== '') partnerVals.vat   = String(vat).trim()
+      if (Object.keys(partnerVals).length) {
+        await callKw('res.partner', 'write', [[partnerId], partnerVals])
+      }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[odooClient] updateStudentInOdoo:', err.message)
+    return { success: false, error: err.message }
+  }
+}
+
+export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

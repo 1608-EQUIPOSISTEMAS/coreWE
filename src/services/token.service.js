@@ -1,11 +1,28 @@
+import crypto from 'node:crypto'
 import { pool } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
 import slackClient from '../config/slack.js'
 
-const FULL_VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
+const MAX_TOKENS_PER_GROUP = 5
+const MAX_GROUP_AMOUNT     = 3000
 
-function hasFullView (userRoles = []) {
-  return userRoles.some(r => FULL_VIEW_ROLES.includes(r))
+function inscriptionFullName (inscriptionData) {
+  const insc = inscriptionData?.inscription
+  if (!insc) return null
+  const parts = [insc.full_name, insc.last_name, insc.mother_last_name]
+    .map(s => (s || '').trim()).filter(Boolean)
+  return parts.length ? parts.join(' ') : null
+}
+
+async function logTokenEvent ({ tokenId, tokenIds, action, userId, details = null, changes = null }) {
+  const ids = Array.isArray(tokenIds) ? tokenIds : [tokenId]
+  const changesJson = changes ? JSON.stringify(changes) : null
+  for (const id of ids) {
+    await pool.query(`
+      INSERT INTO enrollment_audit_log (token_id, action, performed_by, details, changes)
+      VALUES ($1, $2, $3, $4, $5::jsonb)
+    `, [id, action, userId || null, details, changesJson])
+  }
 }
 
 const BASE_SELECT = `
@@ -24,9 +41,9 @@ const BASE_SELECT = `
     COALESCE(pe.global_code, pe_dir.global_code) AS edition_code,
     COALESCE(pe.start_date, pe_dir.start_date) AS edition_start_date,
     c_prov.description AS provider_name,
-    u_req.name AS requested_by_name,
-    u_cre.name AS created_by_name,
-    u_conf.name AS confirmed_by_name
+    u_req.alias AS requested_by_name,
+    u_cre.alias AS created_by_name,
+    u_conf.alias AS confirmed_by_name
   FROM payment_tokens pt
   LEFT JOIN enrollments e ON e.enrollment_id = pt.enrollment_id
   LEFT JOIN customers cust ON cust.customer_id = e.customer_id
@@ -43,7 +60,7 @@ const BASE_SELECT = `
   LEFT JOIN users u_conf ON u_conf.user_id = pt.confirmed_by
 `
 
-async function tokenList (filters = {}, { userId, userRoles = [] } = {}) {
+async function tokenList (filters = {}) {
   const conditions = []
   const params = []
   let idx = 1
@@ -71,12 +88,6 @@ async function tokenList (filters = {}, { userId, userRoles = [] } = {}) {
   if (filters.enrollment_id) {
     conditions.push(`pt.enrollment_id = $${idx++}`)
     params.push(Number(filters.enrollment_id))
-  }
-
-  if (!hasFullView(userRoles) && userId) {
-    conditions.push(`(pt.requested_by = $${idx} OR pt.created_by = $${idx})`)
-    params.push(Number(userId))
-    idx++
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -118,14 +129,16 @@ async function tokenList (filters = {}, { userId, userRoles = [] } = {}) {
 }
 
 
-async function tokenStats ({ userId, userRoles = [] } = {}) {
-  const params = []
-  let where = ''
-  if (!hasFullView(userRoles) && userId) {
-    where = 'WHERE requested_by = $1 OR created_by = $1'
-    params.push(Number(userId))
-  }
+async function tokenGetById (tokenId) {
+  const { rows } = await pool.query(`
+    ${BASE_SELECT}
+    WHERE pt.token_id = $1
+  `, [tokenId])
+  return rows[0] || null
+}
 
+
+async function tokenStats () {
   const { rows } = await pool.query(`
     SELECT
       COUNT(*) FILTER (WHERE status = 'pending')   AS pending_count,
@@ -134,8 +147,7 @@ async function tokenStats ({ userId, userRoles = [] } = {}) {
       COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'PEN'), 0) AS amount_pen,
       COALESCE(SUM(amount) FILTER (WHERE status IN ('pending','link_sent','paid') AND currency = 'USD'), 0) AS amount_usd
     FROM payment_tokens
-    ${where}
-  `, params)
+  `)
   const r = rows[0] || {}
   return {
     pending:         Number(r.pending_count   || 0),
@@ -172,7 +184,7 @@ async function tokenCreate ({ leadId, enrollmentId, catProvider, paymentType, am
     const info = leadInfo?.[0]
     if (info) {
       await slackClient.notifyTokenCreated({
-        studentName: info.student_name,
+        studentName: inscriptionFullName(inscriptionData) || info.student_name,
         programName: info.program_name,
         editionCode: info.edition_code
           ? `${info.edition_code} (${info.edition_start_date ? new Date(info.edition_start_date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) : ''})`
@@ -239,35 +251,100 @@ async function tokenUpdate ({ tokenId, paymentUrl, providerReference, notes, exp
   sets.push(`updated_at = NOW()`)
   params.push(tokenId)
 
-  const isAddingLink = !token.payment_url && paymentUrl
+  const isAddingLink   = !token.payment_url && paymentUrl
+  const isLinkChanging = paymentUrl !== undefined && paymentUrl !== token.payment_url
 
   const { rows } = await pool.query(`
     UPDATE payment_tokens SET ${sets.join(', ')} WHERE token_id = $${idx} RETURNING *
   `, params)
 
+  if (isLinkChanging && rows[0]?.group_id) {
+    await pool.query(`
+      UPDATE payment_tokens
+      SET payment_url     = $1,
+          status          = CASE WHEN status = 'pending' THEN 'link_sent' ELSE status END,
+          created_by      = COALESCE(created_by, $2),
+          cat_provider    = COALESCE($3, cat_provider),
+          expiration_date = COALESCE($4, expiration_date),
+          updated_at      = NOW()
+      WHERE group_id = $5 AND token_id <> $6
+    `, [paymentUrl, userId, catProvider ?? null, expirationDate ?? null, rows[0].group_id, tokenId])
+  }
+
+  if (isLinkChanging) {
+    const action      = isAddingLink ? 'token_link_added' : 'token_link_edited'
+    const affectedIds = rows[0]?.group_id
+      ? (await pool.query('SELECT token_id FROM payment_tokens WHERE group_id = $1', [rows[0].group_id])).rows.map(r => r.token_id)
+      : [tokenId]
+    await logTokenEvent({
+      tokenIds: affectedIds,
+      action,
+      userId,
+      details: `${isAddingLink ? 'Link colocado' : 'Link editado'}: ${paymentUrl}`
+    })
+  }
+
   if (isAddingLink && rows[0]) {
     try {
+      const groupId     = rows[0].group_id
+      const useGroup    = !!groupId
+      const whereClause = useGroup ? 'pt.group_id = $1' : 'pt.token_id = $1'
+      const firstParam  = useGroup ? groupId : tokenId
+      console.log(`[tokenUpdate] Preparando Slack: tokenId=${tokenId} groupId=${groupId || '(sin grupo)'}`)
+
       const { rows: info } = await pool.query(`
-        SELECT l.full_name AS student_name, pv.abbreviation AS program_name,
-               u_req.alias AS advisor_alias, u_fico.alias AS fico_alias
+        SELECT
+          pt.token_id,
+          pt.amount,
+          pt.currency,
+          COALESCE(
+            NULLIF(TRIM(
+              COALESCE(pt.inscription_data->'inscription'->>'full_name','') || ' ' ||
+              COALESCE(pt.inscription_data->'inscription'->>'last_name','') || ' ' ||
+              COALESCE(pt.inscription_data->'inscription'->>'mother_last_name','')
+            ), ''),
+            l.full_name
+          ) AS student_name,
+          pv.abbreviation AS program_name,
+          u_req.alias AS advisor_alias,
+          u_fico.alias AS fico_alias
         FROM payment_tokens pt
         LEFT JOIN leads l ON l.lead_id = pt.lead_id
         LEFT JOIN program_versions pv ON pv.program_version_id = l.program_version_id
         LEFT JOIN users u_req ON u_req.user_id = pt.requested_by
         LEFT JOIN users u_fico ON u_fico.user_id = $2
-        WHERE pt.token_id = $1
-      `, [tokenId, userId])
-      const d = info?.[0]
-      if (d) {
+        WHERE ${whereClause}
+        ORDER BY pt.token_id ASC
+      `, [firstParam, userId])
+
+      console.log(`[tokenUpdate] Slack query obtuvo ${info.length} filas`)
+
+      if (info.length) {
+        const students = info.map(r => ({
+          name:        r.student_name || '---',
+          programName: r.program_name || '---',
+          amount:      Number(r.amount),
+          currency:    r.currency
+        }))
+        const total = students.reduce((s, x) => s + x.amount, 0)
         await slackClient.notifyTokenLinkAdded({
-          studentName: d.student_name,
-          programName: d.program_name,
-          advisorName: d.advisor_alias,
-          createdByName: d.fico_alias,
+          students,
+          groupTotal:    total,
+          currency:      students[0].currency,
+          advisorName:   info[0].advisor_alias,
+          createdByName: info[0].fico_alias,
           paymentUrl
         })
+        console.log(`[tokenUpdate] Slack enviado con ${students.length} estudiante(s)`)
+      } else {
+        console.warn('[tokenUpdate] Slack no enviado: query retorno 0 filas')
       }
-    } catch (slackErr) { console.error('[tokenUpdate] Slack:', slackErr.message) }
+    } catch (slackErr) {
+      console.error('[tokenUpdate] Slack error:', slackErr.message)
+      console.error(slackErr.stack)
+    }
+  } else {
+    console.log(`[tokenUpdate] Slack omitido: isAddingLink=${isAddingLink} hasRows=${!!rows[0]}`)
   }
 
   return rows[0]
@@ -381,10 +458,15 @@ async function tokenConfirm ({ tokenId, providerReference, userId }) {
 
     try {
       await pool.query(`
-        INSERT INTO enrollment_audit_log (enrollment_id, action, performed_by, details)
-        VALUES ($1, 'created_from_token', $2, $3)
+        UPDATE enrollment_audit_log SET enrollment_id = $1 WHERE token_id = $2
+      `, [enrollmentId, token.token_id])
+
+      await pool.query(`
+        INSERT INTO enrollment_audit_log (enrollment_id, token_id, action, performed_by, details)
+        VALUES ($1, $2, 'created_from_token', $3, $4)
       `, [
         enrollmentId,
+        token.token_id,
         userId,
         `Inscripcion creada desde token de pago | Proveedor: ${provName} | Monto: ${token.currency || 'PEN'} ${token.amount} | Link: ${token.payment_url || '---'} | Solicitado por: ${reqName}`
       ])
@@ -420,12 +502,179 @@ async function tokenDelete ({ tokenId }) {
 }
 
 
+async function tokenGroup ({ tokenIds, userId }) {
+  if (!Array.isArray(tokenIds) || tokenIds.length < 2) {
+    throw new Error('Selecciona al menos 2 tokens para agrupar')
+  }
+  if (tokenIds.length > MAX_TOKENS_PER_GROUP) {
+    throw new Error(`Maximo ${MAX_TOKENS_PER_GROUP} tokens por grupo`)
+  }
+
+  const { rows } = await pool.query(
+    `SELECT token_id, status, payment_url, requested_by, currency, cat_provider, payment_type, amount, group_id
+     FROM payment_tokens WHERE token_id = ANY($1::int[])`,
+    [tokenIds]
+  )
+
+  if (rows.length !== tokenIds.length) throw new Error('Uno o mas tokens no existen')
+  if (rows.some(t => t.requested_by !== userId)) throw new Error('Solo puedes agrupar tus propios tokens')
+  if (rows.some(t => t.status !== 'pending' || t.payment_url || t.group_id)) {
+    throw new Error('Solo tokens pendientes sin link y sin grupo previo pueden agruparse')
+  }
+
+  const uniq = (field) => new Set(rows.map(t => t[field])).size === 1
+  if (!uniq('currency'))     throw new Error('Los tokens deben tener la misma moneda')
+  if (!uniq('cat_provider')) throw new Error('Los tokens deben tener el mismo proveedor')
+  if (!uniq('payment_type')) throw new Error('Los tokens deben tener el mismo tipo de pago (credito / debito)')
+
+  const total = rows.reduce((s, t) => s + Number(t.amount || 0), 0)
+  if (total > MAX_GROUP_AMOUNT) {
+    throw new Error(`El total del grupo (${rows[0].currency} ${total.toFixed(2)}) supera el limite permitido de ${MAX_GROUP_AMOUNT}`)
+  }
+
+  const groupId = crypto.randomUUID()
+  await pool.query(
+    'UPDATE payment_tokens SET group_id = $1, updated_at = NOW() WHERE token_id = ANY($2::int[])',
+    [groupId, tokenIds]
+  )
+
+  await logTokenEvent({
+    tokenIds,
+    action:  'token_grouped',
+    userId,
+    details: `Agrupado en grupo ${groupId.slice(0, 4).toUpperCase()} con ${rows.length} tokens, total ${rows[0].currency} ${rows.reduce((s, t) => s + Number(t.amount || 0), 0).toFixed(2)}`
+  })
+
+  return { group_id: groupId, token_count: rows.length }
+}
+
+
+async function tokenEditInscription ({ tokenId, inscription, amount, currency, paymentType, catPaymentChannel, advisorObservation, userId }) {
+  const { rows } = await pool.query(
+    'SELECT * FROM payment_tokens WHERE token_id = $1',
+    [tokenId]
+  )
+  const t = rows[0]
+  if (!t) throw new Error('Token no encontrado')
+  if (Number(t.requested_by) !== Number(userId)) {
+    throw new Error('Solo el asesor que solicito el token puede editar la inscripcion')
+  }
+  if (t.status === 'confirmed') {
+    throw new Error('No se puede editar: la inscripcion ya fue creada. Usar el flujo de edicion en el detalle del enrollment.')
+  }
+  if (t.status === 'paid') {
+    throw new Error('No se puede editar: el cliente ya pago. El ajuste debe hacerlo FICO desde la inscripcion.')
+  }
+
+  const currentInsc = t.inscription_data?.inscription || {}
+  const changes = {}
+
+  for (const f of Object.keys(inscription || {})) {
+    const oldVal = currentInsc[f]
+    const newVal = inscription[f]
+    if (String(oldVal ?? '') !== String(newVal ?? '')) {
+      changes[f] = { old: oldVal ?? null, new: newVal ?? null }
+    }
+  }
+
+  const topLevelDiff = (colName, newVal) => {
+    if (newVal === undefined) return
+    if (String(t[colName] ?? '') !== String(newVal ?? '')) {
+      changes[colName] = { old: t[colName] ?? null, new: newVal ?? null }
+    }
+  }
+  topLevelDiff('amount',              amount)
+  topLevelDiff('currency',            currency)
+  topLevelDiff('payment_type',        paymentType)
+  topLevelDiff('cat_payment_channel', catPaymentChannel)
+  topLevelDiff('advisor_observation', advisorObservation)
+
+  if (!Object.keys(changes).length) return { ok: true, updated_fields: [], message: 'Sin cambios' }
+
+  const merged  = { ...currentInsc, ...inscription }
+  const newData = { ...(t.inscription_data || {}), inscription: merged }
+
+  const sets   = ['inscription_data = $1::jsonb']
+  const params = [JSON.stringify(newData)]
+  let idx = 2
+  const addSet = (col, val) => {
+    if (val === undefined) return
+    sets.push(`${col} = $${idx++}`)
+    params.push(val)
+  }
+  addSet('amount',              amount)
+  addSet('currency',            currency)
+  addSet('payment_type',        paymentType)
+  addSet('cat_payment_channel', catPaymentChannel)
+  addSet('advisor_observation', advisorObservation)
+  sets.push('updated_at = NOW()')
+  params.push(tokenId)
+
+  await pool.query(
+    `UPDATE payment_tokens SET ${sets.join(', ')} WHERE token_id = $${idx}`,
+    params
+  )
+
+  await logTokenEvent({
+    tokenId,
+    action:  'token_inscription_edited',
+    userId,
+    details: `Asesor edito campos: ${Object.keys(changes).join(', ')}`,
+    changes
+  })
+
+  return { ok: true, updated_fields: Object.keys(changes) }
+}
+
+
+async function tokenUngroup ({ groupId, userId }) {
+  const { rows } = await pool.query(
+    'SELECT token_id, status, requested_by FROM payment_tokens WHERE group_id = $1',
+    [groupId]
+  )
+  if (!rows.length) throw new Error('Grupo no encontrado')
+  if (rows.some(t => t.requested_by !== userId)) {
+    throw new Error('Solo el asesor dueno del grupo puede desagruparlo')
+  }
+
+  const locked = rows.find(t => t.status === 'paid' || t.status === 'confirmed')
+  if (locked) {
+    throw new Error(`No se puede desagrupar: hay tokens en estado "${locked.status}". Los pagos o inscripciones ya registrados no pueden revertirse.`)
+  }
+
+  const tokenIds = rows.map(r => r.token_id)
+  await logTokenEvent({
+    tokenIds,
+    action:  'token_ungrouped',
+    userId,
+    details: `Desagrupado del grupo ${groupId.slice(0, 4).toUpperCase()}. Link compartido borrado y token vuelve a pendiente.`
+  })
+
+  await pool.query(`
+    UPDATE payment_tokens
+    SET group_id           = NULL,
+        payment_url        = NULL,
+        status             = 'pending',
+        created_by         = NULL,
+        provider_reference = NULL,
+        updated_at         = NOW()
+    WHERE group_id = $1
+  `, [groupId])
+
+  return { ungrouped: rows.length }
+}
+
+
 export default {
   tokenList,
+  tokenGetById,
   tokenStats,
   tokenCreate,
   tokenUpdate,
   tokenConfirm,
   tokenMarkPaid,
-  tokenDelete
+  tokenDelete,
+  tokenGroup,
+  tokenUngroup,
+  tokenEditInscription
 }

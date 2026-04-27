@@ -1,4 +1,7 @@
 import ficoService from '../services/fico.service.js'
+import { authenticate, hasRole } from '../middlewares/auth.hooks.js'
+
+const RESCHEDULE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
 export default async function ficoRoutes (fastify) {
   fastify.post('/enrollmentregister', {
@@ -72,7 +75,8 @@ export default async function ficoRoutes (fastify) {
           cat_business_entity: { type: ['integer', 'null'] },
           bank_account_id:     { type: ['integer', 'null'] },
           transaction_code:    { type: ['string', 'null'] },
-          voucher_url:         { type: ['string', 'null'] }
+          voucher_url:         { type: ['string', 'null'] },
+          payment_date:        { type: ['string', 'null'] }
         }
       }
     }
@@ -87,6 +91,7 @@ export default async function ficoRoutes (fastify) {
         bankAccountId:     req.body.bank_account_id,
         transactionCode:   req.body.transaction_code,
         voucherUrl:        req.body.voucher_url,
+        paymentDate:       req.body.payment_date,
         userId: req.user?.id ?? req.body.user_id
       })
       return reply.code(200).send({ ok: true, data })
@@ -492,6 +497,49 @@ export default async function ficoRoutes (fastify) {
     }
   })
 
+  fastify.post('/rescheduleinstallments', {
+    preHandler: [authenticate, hasRole(RESCHEDULE_ROLES)],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'changes', 'justificacion'],
+        additionalProperties: false,
+        properties: {
+          enrollment_id: { type: 'integer' },
+          justificacion: { type: 'string', minLength: 1 },
+          reason_code:   { type: ['string', 'null'] },
+          changes: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              required: ['installment_id', 'new_due_date'],
+              additionalProperties: false,
+              properties: {
+                installment_id: { type: 'integer' },
+                new_due_date:   { type: 'string', minLength: 10 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.rescheduleInstallments({
+        enrollmentId: req.body.enrollment_id,
+        changes: req.body.changes,
+        justificacion: req.body.justificacion,
+        reasonCode: req.body.reason_code,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[rescheduleInstallments ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/rejectenrollment', {
     schema: {
       body: {
@@ -543,7 +591,11 @@ export default async function ficoRoutes (fastify) {
   })
 
   fastify.get('/programchildren/:id', async (req, reply) => {
-    const data = await ficoService.getProgramChildren({ programVersionId: parseInt(req.params.id) })
+    const parentEditionId = req.query?.parent_edition_id ? parseInt(req.query.parent_edition_id) : null
+    const data = await ficoService.getProgramChildren({
+      programVersionId: parseInt(req.params.id),
+      parentEditionId
+    })
     return reply.code(200).send({ ok: true, data })
   })
 

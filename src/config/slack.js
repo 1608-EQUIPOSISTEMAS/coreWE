@@ -235,26 +235,36 @@ async function notifyTokenCreated ({ studentName, programName, editionCode, paym
   }
 }
 
-async function notifyTokenLinkAdded ({ studentName, programName, advisorName, createdByName, paymentUrl }) {
+async function notifyTokenLinkAdded ({ students, groupTotal, currency, advisorName, createdByName, paymentUrl }) {
   try {
-    await post({
-      channel: SLACK_CHANNEL_FICO,
-      blocks: [
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: `:link: *TOKEN - LINK GENERADO*` }
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: `Se ha generado el link de pago por *${createdByName || '---'}* para *${studentName || '---'}* en *${programName || '---'}*.` }
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: `:briefcase: El asesor *${advisorName || '---'}*, por favor pasarselo al alumno.` }
-        },
-        { type: 'divider' }
-      ]
+    const list    = Array.isArray(students) ? students : []
+    const isGroup = list.length > 1
+
+    const header = isGroup
+      ? `:link: *TOKEN - LINK GENERADO (GRUPO de ${list.length})*`
+      : `:link: *TOKEN - LINK GENERADO*`
+
+    const summary = isGroup
+      ? `Se ha generado un link unico por *${createdByName || '---'}* que cubre *${list.length} inscripciones* por un total de *${currency || ''} ${Number(groupTotal || 0).toFixed(2)}*:`
+      : `Se ha generado el link de pago por *${createdByName || '---'}* para *${list[0]?.name || '---'}* en *${list[0]?.programName || '---'}*.`
+
+    const blocks = [
+      { type: 'section', text: { type: 'mrkdwn', text: header } },
+      { type: 'section', text: { type: 'mrkdwn', text: summary } }
+    ]
+
+    if (isGroup) {
+      const lines = list.map(s => `• *${s.name}* — ${s.programName} (${s.currency} ${Number(s.amount).toFixed(2)})`).join('\n')
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lines } })
+    }
+
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:briefcase: El asesor *${advisorName || '---'}*, por favor pasarselo al alumno${isGroup ? 's' : ''}.` }
     })
+    blocks.push({ type: 'divider' })
+
+    await post({ channel: SLACK_CHANNEL_FICO, blocks })
   } catch (err) {
     console.error('[slack] notifyTokenLinkAdded:', err.message)
   }
