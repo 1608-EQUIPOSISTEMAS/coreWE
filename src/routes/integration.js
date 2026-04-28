@@ -86,6 +86,28 @@ export default async function integrationRoutes (fastify) {
     }
   })
 
+  // FICO -> hoja "0. Ventas Sistemas"
+  fastify.post('/syncFicoSalesToSheet', async (req, reply) => {
+    try {
+      const result = await integrationService.syncFicoSalesToSheet()
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  // FICO -> ambas hojas (Ventas + Aula) en una sola llamada
+  fastify.post('/syncFicoToSheets', async (req, reply) => {
+    try {
+      const result = await integrationService.syncFicoToSheets()
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
 // =================================================================
   // NOTIFICACIONES SLACK (CORREGIDO)
   // =================================================================
