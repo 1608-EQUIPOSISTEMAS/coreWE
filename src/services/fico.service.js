@@ -1,5 +1,8 @@
 import { pool } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
+import { ALIAS } from '../utils/catalog-aliases.js'
+import { getCatalogIdByAlias } from '../utils/catalog-helper.js'
+import { safeAsync } from '../utils/safe-async.js'
 import odooClient from '../config/odooClient.js'
 import { sendEmail, sendFicoEmail } from '../config/zeptomail.js'
 import { buildConfirmacionHTML } from '../templates/confirmacion-inscripcion.js'
@@ -7,6 +10,37 @@ import { buildConfirmacionPagoHTML } from '../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from './pdf.service.js'
 import slackClient from '../config/slack.js'
+
+// =============================================================================
+// SQL FRAGMENTS REUSABLES
+// =============================================================================
+// Source of Truth para resolver datos de contacto del alumno.
+// Las inscripciones FICO directas no crean lead, por lo que `leads.origin_email`
+// es NULL — el correo y telefono viven solo en `person_contacts`.
+// Cualquier query que necesite estos datos DEBE usar estos fragmentos.
+
+// Resuelve email del alumno: lead.origin_email -> person_contacts (way_email)
+// Requiere alias `l` (leads) y `per` (persons) en la query base.
+const STUDENT_EMAIL_SQL = `
+  COALESCE(
+    l.origin_email,
+    (SELECT pc.value FROM person_contacts pc
+       WHERE pc.person_id = per.person_id
+         AND pc.cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_email' LIMIT 1)
+         AND pc.active = 'Y'
+       ORDER BY pc.registration_date DESC LIMIT 1)
+  )`
+
+// Resuelve telefono del alumno: lead.origin_phone -> person_contacts (way_phone)
+const STUDENT_PHONE_SQL = `
+  COALESCE(
+    l.origin_phone,
+    (SELECT pc.value FROM person_contacts pc
+       WHERE pc.person_id = per.person_id
+         AND pc.cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_phone' LIMIT 1)
+         AND pc.active = 'Y'
+       ORDER BY pc.registration_date DESC LIMIT 1)
+  )`
 
 async function enrollmentList (payload = {}) {
   const rows = await callProcedureReturningRows(
@@ -35,11 +69,44 @@ async function paymentDetailGet ({ enrollment_id }) {
     { statementTimeoutMs: 25000 }
   )
 
-  return rows?.[0] || null
+  const result = rows?.[0] || null
+  if (result) {
+    try {
+      const { rows: edRows } = await pool.query(`
+        SELECT pe.start_date AS edition_start_date, pe.end_date AS edition_end_date,
+               l.pay_date AS commercial_pay_date
+        FROM enrollments e
+        LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+        LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+        WHERE e.enrollment_id = $1
+      `, [enrollment_id])
+      if (edRows?.[0]) {
+        result.edition_start_date    = edRows[0].edition_start_date || null
+        result.edition_end_date      = edRows[0].edition_end_date || null
+        result.commercial_pay_date   = edRows[0].commercial_pay_date || null
+      }
+    } catch (err) {
+      console.error('[paymentDetailGet] edition dates:', err.message)
+    }
+  }
+  return result
 }
 
 
 async function confirmPayment (payload) {
+  // Validacion previa: si la inscripcion es padre con hijos, todos los hijos no convalidados
+  // deben tener una edicion asignable (en el arbol del padre o custom). Si falta, abortar.
+  if (payload.enrollment_id) {
+    const validation = await validateChildEnrollmentSetup({ enrollmentId: payload.enrollment_id })
+    if (!validation.ok) {
+      return {
+        result: 2,
+        message: 'Faltan ediciones por configurar antes de confirmar el pago',
+        validation_errors: validation.errors
+      }
+    }
+  }
+
   const { rows } = await pool.query(
     'SELECT * FROM public.sp_fico_confirm_payment($1::jsonb)',
     [JSON.stringify(payload)]
@@ -131,50 +198,42 @@ async function confirmPayment (payload) {
   return resp
 }
 
-async function createChildEnrollments ({ enrollmentId, userId }) {
-  const { rows: parentData } = await pool.query(`
-    SELECT e.enrollment_id, e.customer_id, e.program_version_id, e.program_edition_id,
-           e.cat_currency, e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
-           e.cat_profile_id, e.seller_agent_id,
-           per.first_name, per.last_name, per.document_number, per.cat_type_document,
-           l.origin_email, l.origin_phone, l.cat_code_country,
-           pv.abbreviation AS parent_program_name,
-           pe.global_code AS parent_edition_code
-    FROM enrollments e
-    JOIN customers cust ON cust.customer_id = e.customer_id
-    JOIN persons per ON per.person_id = cust.person_id
-    LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
-    WHERE e.enrollment_id = $1
-  `, [enrollmentId])
-
-  const parent = parentData?.[0]
-  if (!parent) { console.log('[childEnrollments] No se encontro enrollment padre'); return }
-  console.log('[childEnrollments] Enrollment padre:', enrollmentId, 'pvId:', parent.program_version_id, 'edId:', parent.program_edition_id)
+/**
+ * Carga la estructura completa de hijos para un enrollment padre.
+ * Devuelve los datos necesarios para planear ediciones y validar.
+ *
+ * @returns {Promise<{
+ *   parent: object,
+ *   childrenStruct: Array<{child_program_version_id: number, child_name: string, sort_order: number}>,
+ *   editionMap: Object<number, {editionId, globalCode, startDate, sortOrder}>,
+ *   validations: Array,
+ *   validatedSet: Set<number>,
+ *   customEditions: Object<number, number>
+ * }|null>}
+ */
+async function _loadChildrenContext (enrollmentId) {
+  const { rows: parentRows } = await pool.query(
+    'SELECT enrollment_id, program_version_id, program_edition_id FROM enrollments WHERE enrollment_id = $1',
+    [enrollmentId]
+  )
+  const parent = parentRows?.[0]
+  if (!parent) return null
 
   const { rows: structRows } = await pool.query(`
-    SELECT child_program_version_id, sort_order
-    FROM program_version_structure
-    WHERE parent_program_version_id = $1
-    ORDER BY sort_order
+    SELECT pvs.child_program_version_id, pvs.sort_order, pv.abbreviation AS child_name
+      FROM program_version_structure pvs
+      JOIN program_versions pv ON pv.program_version_id = pvs.child_program_version_id
+     WHERE pvs.parent_program_version_id = $1
+     ORDER BY pvs.sort_order
   `, [parent.program_version_id])
 
-  const childrenIds = (structRows || []).map(r => r.child_program_version_id).filter(Boolean)
-  console.log('[childEnrollments] childrenIds:', JSON.stringify(childrenIds))
-  if (childrenIds.length === 0) { console.log('[childEnrollments] Sin hijos, saliendo'); return }
+  const childrenStruct = structRows || []
+  if (childrenStruct.length === 0) return { parent, childrenStruct: [], editionMap: {}, validations: [], validatedSet: new Set(), customEditions: {} }
 
-  const treeRows = await callProcedureReturningRows(
-    pool,
-    'public.sp_edition_tree_get',
-    [parent.program_edition_id],
-    { statementTimeoutMs: 15000 }
-  ).catch(() => [])
-
-  const treeData = treeRows?.[0]
-  const treeChildren = treeData?.children
-  console.log('[childEnrollments] treeChildren:', JSON.stringify(treeChildren?.map(c => ({ pvId: c.child_program_version_id, edId: c.edition_id || c.edition_num_id, code: c.global_code }))))
-  if (!treeChildren || !Array.isArray(treeChildren) || treeChildren.length === 0) { console.log('[childEnrollments] Sin ediciones hijas en el arbol, saliendo'); return }
+  const treeRows = parent.program_edition_id
+    ? await callProcedureReturningRows(pool, 'public.sp_edition_tree_get', [parent.program_edition_id], { statementTimeoutMs: 15000 }).catch(() => [])
+    : []
+  const treeChildren = treeRows?.[0]?.children || []
 
   const editionMap = {}
   for (const ch of treeChildren) {
@@ -188,45 +247,142 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
     }
   }
 
-  const { rows: certCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_certificate_status_paid' LIMIT 1`
+  const validations = await getValidations({ enrollmentId })
+  const validatedSet = new Set(
+    validations.filter(v => v.validation_type !== 'edition_override').map(v => v.child_version_id)
   )
-  const { rows: contadoCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_payment_way_single' LIMIT 1`
-  )
-  const { rows: defaultMethod } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_payment_method_transfer' LIMIT 1`
-  )
-  const { rows: segCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_tracking' LIMIT 1`
-  )
+  const customEditions = {}
+  validations.filter(v => v.custom_edition_id).forEach(v => { customEditions[v.child_version_id] = v.custom_edition_id })
+
+  return { parent, childrenStruct, editionMap, validations, validatedSet, customEditions }
+}
+
+/**
+ * Valida que el setup de hijos sea inscribible.
+ * Si algun hijo NO esta convalidado Y NO esta en el arbol del padre Y NO tiene custom_edition_id,
+ * devuelve error indicando que el operador debe convalidar o elegir edicion.
+ */
+async function validateChildEnrollmentSetup ({ enrollmentId }) {
+  const ctx = await _loadChildrenContext(enrollmentId)
+  if (!ctx) return { ok: true, errors: [] }
+  if (ctx.childrenStruct.length === 0) return { ok: true, errors: [] }
+
+  const errors = []
+  for (const ch of ctx.childrenStruct) {
+    const childPvId = ch.child_program_version_id
+    if (ctx.validatedSet.has(childPvId)) continue
+    const inTree = !!ctx.editionMap[childPvId]
+    const hasCustom = !!ctx.customEditions[childPvId]
+    if (!inTree && !hasCustom) {
+      errors.push({
+        child_program_version_id: childPvId,
+        child_name: ch.child_name,
+        message: `El modulo "${ch.child_name}" no tiene edicion programada en este diplomado. Debes convalidarlo o elegir una edicion especifica.`
+      })
+    }
+  }
+  return { ok: errors.length === 0, errors }
+}
+
+async function createChildEnrollments ({ enrollmentId, userId }) {
+  const ctx = await _loadChildrenContext(enrollmentId)
+  if (!ctx || ctx.childrenStruct.length === 0) {
+    console.log('[childEnrollments] Sin hijos para procesar, saliendo')
+    return { isE0: false, createdChildren: [] }
+  }
+
+  // Datos completos del padre para INSERTs de hijos
+  const { rows: parentData } = await pool.query(`
+    SELECT e.enrollment_id, e.customer_id, e.program_version_id, e.program_edition_id,
+           e.cat_currency, e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
+           e.cat_profile_id, e.seller_agent_id,
+           per.first_name, per.last_name, per.document_number, per.cat_type_document,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
+           l.cat_code_country,
+           pv.abbreviation AS parent_program_name,
+           pe.global_code AS parent_edition_code
+    FROM enrollments e
+    JOIN customers cust ON cust.customer_id = e.customer_id
+    JOIN persons per ON per.person_id = cust.person_id
+    LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+  const parent = parentData?.[0]
+  if (!parent) return { isE0: false, createdChildren: [] }
+
+  // Plan de inscripcion: para cada hijo NO convalidado, definir su edicion final.
+  // Detectar si algun hijo esta fuera del arbol del padre = escenario E0.
+  const editionPlan = []
+  let anyOutsideTree = false
+  for (const ch of ctx.childrenStruct) {
+    const childPvId = ch.child_program_version_id
+    if (ctx.validatedSet.has(childPvId)) continue
+    const treeEdition = ctx.editionMap[childPvId]
+    const customEdId = ctx.customEditions[childPvId]
+    const isOutsideTree = !treeEdition
+    if (isOutsideTree) anyOutsideTree = true
+    const editionId = customEdId || treeEdition?.editionId
+    if (!editionId) {
+      // Sin edicion asignable. Se loguea y se salta este hijo.
+      await logAudit({
+        enrollmentId,
+        action: 'children_skipped_no_edition',
+        userId,
+        details: `Modulo ${ch.child_name} (pv=${childPvId}) saltado: sin edicion en arbol del padre y sin custom edition`
+      })
+      continue
+    }
+    editionPlan.push({
+      childPvId,
+      childName: ch.child_name,
+      editionId,
+      isOutsideTree,
+      globalCode: treeEdition?.globalCode || `(custom-${editionId})`,
+      sortOrder: ch.sort_order ?? treeEdition?.sortOrder ?? 0
+    })
+  }
+
+  if (editionPlan.length === 0) {
+    console.log('[childEnrollments] No hay hijos a inscribir (todos convalidados o sin edicion)')
+    return { isE0: false, createdChildren: [] }
+  }
+
+  const isE0 = anyOutsideTree
+
+  // Si E0: marcar el enrollment padre con program_edition_id = NULL
+  // para que enrollInOdoo lo trate como "no inscribir el padre" y los hijos vayan individualmente.
+  if (isE0) {
+    await pool.query(
+      'UPDATE enrollments SET program_edition_id = NULL WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+    await logAudit({
+      enrollmentId,
+      action: 'parent_marked_e0',
+      userId,
+      details: `Diplomado marcado como E0: ${editionPlan.length} modulo(s) inscritos individualmente, fuera del arbol del padre`
+    })
+  }
+
+  const certCatId    = await getCatalogIdByAlias(ALIAS.CERTIFICATE_STATUS_PAID)
+  const contadoCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_SINGLE)
+  const segCatId     = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_TRACKING)
+  const checkedCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_CHECKED)
+
   const { rows: parentAttachments } = await pool.query(
     `SELECT file_url AS url, file_url AS name FROM enrollment_attachments WHERE enrollment_id = $1 AND active = 'Y'`,
     [enrollmentId]
   ).catch(() => ({ rows: [] }))
 
   const createdChildren = []
-  const totalChildren = Object.keys(editionMap).length
+  const totalChildren = editionPlan.length
 
-  const { rows: catChecked } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_checked' LIMIT 1`
-  )
-
-  const validations = await getValidations({ enrollmentId })
-  const validatedVersionIds = validations.map(v => v.child_version_id)
-  const customEditions = {}
-  validations.filter(v => v.custom_edition_id).forEach(v => { customEditions[v.child_version_id] = v.custom_edition_id })
-
-  for (const childPvId of childrenIds) {
-    const childInfo = editionMap[childPvId]
-    if (!childInfo) continue
-
-    if (validatedVersionIds.includes(childPvId)) {
-      console.log(`[childEnrollments] Skipping ${childPvId} - convalidado`)
-      continue
-    }
-
-    const editionId = customEditions[childPvId] || childInfo.editionId
+  for (const item of editionPlan) {
+    const childPvId = item.childPvId
+    const editionId = item.editionId
 
     try {
       const { rows: newEnroll } = await pool.query(`
@@ -248,10 +404,10 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
       `, [
         parent.customer_id, childPvId, editionId,
         enrollmentId,
-        parent.cat_currency, parent.cat_inscription_modality, parent.cat_payment_channel, contadoCat?.[0]?.catalog_id || parent.cat_payment_plan,
-        catChecked?.[0]?.catalog_id || null, segCat?.[0]?.catalog_id || null, certCat?.[0]?.catalog_id || null,
+        parent.cat_currency, parent.cat_inscription_modality, parent.cat_payment_channel, contadoCatId || parent.cat_payment_plan,
+        checkedCatId || null, segCatId || null, certCatId || null,
         parent.seller_agent_id, userId || 9,
-        `Seguimiento (${childInfo.sortOrder}/${totalChildren}) de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`.trim(),
+        `Seguimiento (${item.sortOrder}/${totalChildren}) de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`.trim(),
         parent.cat_profile_id
       ])
 
@@ -261,10 +417,22 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
           enrollmentId: childEid,
           action: 'created',
           userId,
-          details: `Seguimiento ${childInfo.globalCode} (${childInfo.sortOrder}/${totalChildren}) - Modulo de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`
+          details: `Seguimiento ${item.globalCode} (${item.sortOrder}/${totalChildren}) - Modulo de ${parent.parent_program_name || ''}${item.isOutsideTree ? ' (E0: edicion individual)' : ''}`
         })
-        createdChildren.push({ id: childEid, code: childInfo.globalCode, order: childInfo.sortOrder })
-        console.log(`[createChildEnrollments] Hijo creado: enrollment #${childEid} pvId=${childPvId} ${childInfo.globalCode}`)
+        createdChildren.push({ id: childEid, code: item.globalCode, order: item.sortOrder, isOutsideTree: item.isOutsideTree })
+
+        // Si es E0, sincronizar el hijo individualmente con Odoo + email.
+        // En el flujo normal (no E0), el padre cubre los hijos en su slide_group.
+        if (isE0) {
+          const odooRes = await safeAsync(`[childEnrollments][Odoo] enroll child #${childEid}`, () => enrollInOdoo({ enrollmentId: childEid }))
+          if (odooRes?.success) {
+            await logAudit({ enrollmentId: childEid, action: 'odoo_enrolled', userId, details: `Inscripcion individual E0 en Odoo: user ${odooRes.odoo_user_id}` })
+          }
+          const emailRes = await safeAsync(`[childEnrollments][Email] send child #${childEid}`, () => sendConfirmationEmail({ enrollmentId: childEid }))
+          if (emailRes?.success) {
+            await logAudit({ enrollmentId: childEid, action: 'email_sent', userId, details: `Correo confirmacion enviado (E0)` })
+          }
+        }
       }
     } catch (childErr) {
       console.error(`[createChildEnrollments] ERROR pvId=${childPvId}:`, childErr.message)
@@ -280,18 +448,20 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
       enrollmentId,
       action: 'children_created',
       userId,
-      details: `Seguimiento: ${childList}`
+      details: `Seguimiento${isE0 ? ' E0' : ''}: ${childList}`
     })
   }
 
-  if (validatedVersionIds.length > 0) {
+  if (ctx.validatedSet.size > 0) {
     await logAudit({
       enrollmentId,
       action: 'validation_applied',
       userId,
-      details: `Convalidacion aplicada: ${validatedVersionIds.length} modulo(s) convalidados, ${createdChildren.length} modulo(s) inscritos`
+      details: `Convalidacion aplicada: ${ctx.validatedSet.size} modulo(s) convalidados, ${createdChildren.length} modulo(s) inscritos`
     })
   }
+
+  return { isE0, createdChildren }
 }
 
 function generatePassword (length = 8) {
@@ -355,13 +525,29 @@ async function buildUniqueOdooEmail (firstName, lastName, documentNumber) {
 }
 
 async function enrollInOdoo ({ enrollmentId }) {
+  // Skip si la inscripcion esta en E0 (program_edition_id NULL) Y es padre con hijos.
+  // En ese caso los hijos se inscriben individualmente; el padre no se sincroniza con Odoo.
+  const { rows: e0Check } = await pool.query(`
+    SELECT e.program_edition_id,
+           (SELECT COUNT(*) FROM program_version_structure
+             WHERE parent_program_version_id = e.program_version_id)::INT AS children_count
+      FROM enrollments e
+     WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+  if (e0Check?.[0] && e0Check[0].program_edition_id == null && e0Check[0].children_count > 0) {
+    console.log(`[enrollInOdoo] Skip - enrollment #${enrollmentId} en E0 (padre sin edicion programada). Hijos se inscriben individualmente.`)
+    return { success: true, skipped: true, reason: 'e0_parent', odoo_user_id: null }
+  }
+
   const { rows: chk } = await pool.query(`
-    SELECT pv.abbreviation, e.odoo_order_id, e.odoo_user_id, e.odoo_student_id, e.odoo_email
+    SELECT pv.abbreviation, prog.is_membership,
+           e.odoo_order_id, e.odoo_user_id, e.odoo_student_id, e.odoo_email
     FROM enrollments e
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
-  if (chk?.[0] && isMembership(chk[0].abbreviation)) {
+  if (chk?.[0] && isMembership(chk[0].abbreviation, chk[0].is_membership)) {
     return enrollMembershipInOdoo({ enrollmentId })
   }
   if (chk?.[0]?.odoo_order_id) {
@@ -379,7 +565,7 @@ async function enrollInOdoo ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.program_edition_id,
            per.first_name, per.last_name, per.document_number,
-           l.origin_email,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
            prog.odoo_activation,
            pe.start_date
     FROM enrollments e
@@ -442,6 +628,7 @@ async function enrollInOdoo ({ enrollmentId }) {
   })
 
   if (result.success) {
+    const odooEmailFinal = result.odoo_login || createEmail
     await pool.query(`
       UPDATE enrollments SET
         odoo_user_id = $1,
@@ -449,7 +636,7 @@ async function enrollInOdoo ({ enrollmentId }) {
         odoo_password = $3,
         odoo_email = $5
       WHERE enrollment_id = $4
-    `, [result.odoo_user_id, result.odoo_student_id, result.password_set || null, enrollmentId, createEmail])
+    `, [result.odoo_user_id, result.odoo_student_id, result.password_set || null, enrollmentId, odooEmailFinal])
 
     try {
       const { rows: instRows } = await pool.query(`
@@ -481,6 +668,21 @@ async function enrollInOdoo ({ enrollmentId }) {
 
       if (orderResult.success) {
         await pool.query(`UPDATE enrollments SET odoo_order_id = $1 WHERE enrollment_id = $2`, [orderResult.order_id, enrollmentId])
+
+        // Activar cuotas: pasar de 'borrador' a 'pendiente' inmediatamente.
+        // Aplica para TODOS los flujos (FICO directo, courseChange, E0 children, etc.)
+        // sin esperar a confirmPayment.
+        await safeAsync('[enrollInOdoo][Odoo] activateFees', async () => {
+          const activated = await odooClient.activateFees(orderResult.order_id)
+          if (activated?.activated > 0) {
+            await logAudit({
+              enrollmentId,
+              action: 'odoo_fees_activated',
+              userId: null,
+              details: `${activated.activated} cuota(s) Odoo activadas (Borrador -> Pendiente)`
+            })
+          }
+        })
       }
     } catch (orderErr) {
       console.error('[enrollInOdoo] Error creando orden de venta:', orderErr.message, orderErr.data || '')
@@ -512,13 +714,14 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
            per.first_name, per.last_name,
-           l.origin_email,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
            pe.start_date, pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
            e.odoo_user_id,
            e.odoo_email,
+           e.odoo_password,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -555,7 +758,8 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
   const odooEmail = data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  const isNew = (odooEmail || '').toLowerCase().endsWith('@weeducacion.edu.pe')
+  // isNew: el alumno se creo en esta inscripcion (tiene password seteada por nosotros).
+  const isNew = !!data.odoo_password
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -590,18 +794,19 @@ async function previewConfirmationEmail ({ enrollmentId }) {
 
 async function sendConfirmationEmail ({ enrollmentId }) {
   const { rows: checkRows } = await pool.query(`
-    SELECT pv.abbreviation FROM enrollments e
+    SELECT pv.abbreviation, prog.is_membership FROM enrollments e
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
-  if (checkRows?.[0] && isMembership(checkRows[0].abbreviation)) {
+  if (checkRows?.[0] && isMembership(checkRows[0].abbreviation, checkRows[0].is_membership)) {
     return sendMembershipEmail({ enrollmentId })
   }
 
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
            per.first_name, per.last_name, per.document_number,
-           l.origin_email,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
            pe.start_date,
@@ -609,6 +814,7 @@ async function sendConfirmationEmail ({ enrollmentId }) {
            curr.variable_2 AS currency_symbol,
            e.odoo_user_id,
            e.odoo_email,
+           e.odoo_password,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -626,7 +832,15 @@ async function sendConfirmationEmail ({ enrollmentId }) {
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
   const toEmail = data.origin_email
-  if (!toEmail) return { success: false, error: 'El estudiante no tiene correo registrado' }
+  if (!toEmail) {
+    await logAudit({
+      enrollmentId,
+      action: 'email_failed',
+      userId: null,
+      details: 'Error al enviar correo: el alumno no tiene correo registrado'
+    }).catch(() => {})
+    return { success: false, error: 'El estudiante no tiene correo registrado' }
+  }
 
   const { rows: schedRows } = await pool.query(`
     SELECT c.description AS day_name, es.start_time, es.end_time
@@ -654,7 +868,9 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     'SELECT odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
   )
   const odooEmail = freshEnroll?.[0]?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  const isNew = (odooEmail || '').toLowerCase().endsWith('@weeducacion.edu.pe')
+  // isNew: el alumno se creo en esta inscripcion (tiene password seteada por nosotros).
+  // Si ya existia en Odoo, odoo_password queda NULL y el email dice "ya tienes usuario".
+  const isNew = !!freshEnroll?.[0]?.odoo_password
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -708,6 +924,13 @@ async function sendConfirmationEmail ({ enrollmentId }) {
 
   if (result.success) {
     await logAudit({ enrollmentId, action: 'email_sent', userId: null, details: `Correo confirmacion enviado a ${toEmail}` })
+  } else {
+    await logAudit({
+      enrollmentId,
+      action: 'email_failed',
+      userId: null,
+      details: `Error al enviar correo a ${toEmail}: ${result.error || 'desconocido'}`
+    })
   }
 
   return result
@@ -729,7 +952,7 @@ async function sendPaymentConfirmationEmail ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id,
            per.first_name, per.last_name,
-           l.origin_email,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            curr.variable_2 AS currency_symbol,
            CASE WHEN c_plan.alias = 'we_payment_way_single' THEN 'curso' ELSE 'curso' END AS program_type
@@ -819,7 +1042,7 @@ async function resolveLabel (catalogId) {
   return rows?.[0]?.description || String(catalogId)
 }
 
-async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, catPaymentMedium, catBusinessEntity, bankAccountId, transactionCode, voucherUrl, userId }) {
+async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, catPaymentMedium, catBusinessEntity, bankAccountId, transactionCode, voucherUrl, paymentDate, userId }) {
   const { rows: instRows } = await pool.query(
     'SELECT * FROM payment_installments WHERE installment_id = $1 AND enrollment_id = $2',
     [installmentId, enrollmentId]
@@ -833,12 +1056,14 @@ async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, c
     [installmentId]
   )
 
+  const paidAt = paymentDate ? new Date(paymentDate) : new Date()
+
   await pool.query(`
     INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
       cat_method_payment, cat_payment_type, cat_settlement_status,
       settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
-    VALUES ($1, $2, $3, NOW(), $4, $5, 3115, 2573, $6, $7, 'Y', $8, NOW())
-  `, [enrollmentId, installmentId, inst.amount, transactionCode || '', catPaymentMedium || null, bankAccountId || null, voucherUrl || null, userId])
+    VALUES ($1, $2, $3, $4, $5, $6, 3115, 2573, $7, $8, 'Y', $9, NOW())
+  `, [enrollmentId, installmentId, inst.amount, paidAt, transactionCode || '', catPaymentMedium || null, bankAccountId || null, voucherUrl || null, userId])
 
   if (catCurrency) {
     await pool.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])
@@ -969,7 +1194,7 @@ async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }
   try {
     const { rows } = await pool.query(`
       SELECT e.odoo_user_id, e.odoo_order_id,
-             pv.abbreviation, prog.odoo_activation, pe.start_date
+             pv.abbreviation, prog.odoo_activation, prog.is_membership, pe.start_date
       FROM enrollments e
       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
@@ -978,7 +1203,7 @@ async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }
     `, [enrollmentId])
 
     const data = rows?.[0]
-    if (isMembership(data?.abbreviation)) return { success: false, error: 'Membresias no sincronizan cuotas con Odoo' }
+    if (isMembership(data?.abbreviation, data?.is_membership)) return { success: false, error: 'Membresias no sincronizan cuotas con Odoo' }
     if (!data?.odoo_order_id) return { success: false, error: 'Sin orden Odoo asociada' }
 
     const fees = await odooClient.callKw('sale.order.fee', 'search_read', [
@@ -997,7 +1222,19 @@ async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }
   }
 }
 
-function isMembership (programName) {
+/**
+ * Clasifica si un programa es membresia.
+ * Prioriza el flag explicito programs.is_membership (Source of Truth).
+ * Solo cae al match heuristico si no se le pasa el flag (compatibilidad transicional).
+ *
+ * @param {string} programName - abbreviation del programa
+ * @param {boolean|null} isMembershipFlag - flag desde programs.is_membership
+ * @returns {boolean}
+ */
+function isMembership (programName, isMembershipFlag = null) {
+  if (isMembershipFlag === true) return true
+  if (isMembershipFlag === false) return false
+  // Fallback heuristico cuando no viene el flag desde la query.
   const name = (programName || '').toUpperCase()
   return name.includes('MEMB') || name.includes('PLUS') || name.includes('PLAT') || name.includes('BLACK') || name.includes('GOLD')
 }
@@ -1005,7 +1242,8 @@ function isMembership (programName) {
 async function enrollMembershipInOdoo ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
-           l.origin_email, pv.abbreviation AS program_name
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           pv.abbreviation AS program_name
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
     JOIN persons per ON per.person_id = cust.person_id
@@ -1028,9 +1266,12 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
   const result = await odooClient.enrollInAllOnlineCourses({ searchEmail, createEmail, fullName, password })
 
   if (result.success) {
+    const odooEmailFinal = result.odoo_login || createEmail
     await pool.query(`
-      UPDATE enrollments SET odoo_user_id = $1 WHERE enrollment_id = $2
-    `, [result.odoo_user_id, enrollmentId])
+      UPDATE enrollments
+      SET odoo_user_id = $1, odoo_email = $3, odoo_password = $4
+      WHERE enrollment_id = $2
+    `, [result.odoo_user_id, enrollmentId, odooEmailFinal, result.password_set || null])
   }
 
   return result
@@ -1039,7 +1280,8 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
 async function sendMembershipEmail ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name,
-           l.origin_email, pv.abbreviation AS program_name,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           pv.abbreviation AS program_name,
            pe.start_date, e.odoo_user_id,
            curr.variable_2 AS currency_symbol
     FROM enrollments e
@@ -1160,7 +1402,7 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
   const { rows: oldRows } = await pool.query(`
     SELECT e.enrollment_id,
            CONCAT(per.first_name, ' ', per.last_name) AS student_name,
-           l.origin_phone AS student_phone,
+           ${STUDENT_PHONE_SQL} AS student_phone,
            pv.abbreviation AS program_name, pe.global_code AS edition_code
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -1173,11 +1415,8 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
 
   if (!oldRows?.[0]) throw new Error('Inscripcion no encontrada')
 
-  const { rows: retCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_retired' LIMIT 1`
-  )
-  if (!retCat?.[0]?.catalog_id) throw new Error('Catalogo de estado Retirado no encontrado')
-  const retId = retCat[0].catalog_id
+  const retId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_RETIRED)
+  if (!retId) throw new Error('Catalogo de estado Retirado no encontrado')
 
   await pool.query(
     'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
@@ -1237,8 +1476,12 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
 
   try {
     const { rows: odooData } = await pool.query(
-      `SELECT e.odoo_user_id, e.odoo_order_id, l.origin_email, prog.odoo_activation
+      `SELECT e.odoo_user_id, e.odoo_order_id,
+              ${STUDENT_EMAIL_SQL} AS origin_email,
+              prog.odoo_activation
        FROM enrollments e
+       JOIN customers cust ON cust.customer_id = e.customer_id
+       JOIN persons per ON per.person_id = cust.person_id
        LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
        LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
        LEFT JOIN programs prog ON prog.program_id = pv.program_id
@@ -1279,7 +1522,8 @@ async function getEnrollmentFlags ({ enrollmentId }) {
            e.cat_fico_status, e.odoo_email AS stored_odoo_email, e.program_version_id,
            c_fico.alias AS fico_status_alias,
            per.first_name, per.last_name,
-           l.origin_email, l.origin_phone
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
     JOIN persons per ON per.person_id = cust.person_id
@@ -1298,7 +1542,9 @@ async function getEnrollmentFlags ({ enrollmentId }) {
 async function editStudent ({ enrollmentId, firstName, lastName, documentNumber, originEmail, originPhone, odooEmail, newProfileId, justificacion, userId }) {
   const { rows: currentRows } = await pool.query(`
     SELECT per.first_name, per.last_name, per.document_number, per.person_id,
-           l.origin_email, l.origin_phone, l.lead_id,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
+           l.lead_id,
            e.cat_profile_id, e.odoo_email, e.odoo_user_id, c_prof.description AS profile_desc
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -1371,13 +1617,26 @@ async function editStudent ({ enrollmentId, firstName, lastName, documentNumber,
     if (changes['Correo Odoo']) { eUpdFields.push(`odoo_email = $${eIdx++}`); eUpdValues.push(odooEmail) }
     eUpdValues.push(enrollmentId)
     await pool.query(`UPDATE enrollments SET ${eUpdFields.join(', ')} WHERE enrollment_id = $${eIdx}`, eUpdValues)
+  }
 
-    if (changes['Correo Odoo'] && current.odoo_user_id) {
-      try {
-        await odooClient.updateUserLogin(current.odoo_user_id, odooEmail)
-      } catch (e) {
-        console.error('[editStudent] Error actualizando login en Odoo:', e.message)
-      }
+  const needsOdooSync = current.odoo_user_id && (
+    changes['Nombre'] || changes['Apellido'] || changes['Documento'] ||
+    changes['Telefono'] || changes['Correo Odoo']
+  )
+  if (needsOdooSync) {
+    const finalFirst = changes['Nombre']    ? firstName      : current.first_name
+    const finalLast  = changes['Apellido']  ? lastName       : current.last_name
+    const fullName   = [finalFirst, finalLast].filter(Boolean).join(' ').trim()
+    try {
+      const res = await odooClient.updateStudentInOdoo(current.odoo_user_id, {
+        name:  fullName || undefined,
+        login: changes['Correo Odoo'] ? odooEmail     : undefined,
+        phone: changes['Telefono']   ? originPhone   : undefined,
+        vat:   changes['Documento']  ? documentNumber : undefined
+      })
+      if (!res.success) console.error('[editStudent] Odoo sync partial:', res.error)
+    } catch (e) {
+      console.error('[editStudent] Error sincronizando con Odoo:', e.message)
     }
   }
 
@@ -1396,107 +1655,41 @@ async function editStudent ({ enrollmentId, firstName, lastName, documentNumber,
 }
 
 async function ficoEnrollmentRegister ({ data, userId }) {
-  const person = {
-    cat_type_document: data.cat_type_document,
-    document_number: data.document_number,
-    first_name: data.first_name,
-    last_name: data.last_name
-  }
-
-  const { rows: defaults } = await pool.query(`
-    SELECT alias, catalog_id FROM catalog WHERE alias IN (
-      'we_lead_status_insc', 'we_channel_general',
-      'we_client_person', 'we_social_media_whatsapp',
-      'we_key_word_null', 'we_lead_interest_high',
-      'we_moment_cwd', 'we_country_peru',
-      'we_certificate_status_paid'
-    )
-  `)
-  const cat = {}
-  for (const r of defaults) cat[r.alias] = r.catalog_id
-
-  const lead = {
-    origin_email: data.email,
-    origin_phone: data.phone,
-    cat_code_country: data.cat_country || cat['we_country_peru'],
-    cat_channel: data.cat_payment_channel || cat['we_channel_general'],
-    cat_medium_contact: cat['we_social_media_whatsapp'],
-    cat_prospect_situation: data.client_profile === 'estudiante' ? 2530 : 2532,
-    cat_frecuency_word: cat['we_key_word_null'],
-    cat_type_strategy: null,
-    cat_interest_level: cat['we_lead_interest_high'],
-    cat_query: null,
-    cat_client_type: cat['we_client_person'],
-    cat_client_moment: cat['we_moment_cwd'] || 3048,
-    web: 'N',
-    b2b: 'N',
-    bot: 'N',
-    program_version_id: data.program_version_id,
-    program_edition_id: data.program_edition_id,
-    full_name: `${data.first_name} ${data.last_name}`.trim(),
-    cat_status_lead: cat['we_lead_status_insc'] || null,
-    pay_date: new Date().toISOString().slice(0, 10),
-    owner_user_id: data.seller_agent_id || userId,
-    message_init_conversation: data.observations || 'Registro directo FICO'
-  }
-
-  const leadRows = await callProcedureReturningRows(
-    pool,
-    'public.sp_comercial_lead_register',
-    [
-      JSON.stringify(person),
-      JSON.stringify(lead),
-      JSON.stringify([]),
-      userId
-    ],
-    { statementTimeoutMs: 25000 }
-  )
-
-  const leadResp = leadRows?.[0]
-  if (!leadResp || leadResp.result !== 1) {
-    return { result: 0, message: leadResp?.message || 'Error al crear el lead' }
-  }
-
-  const leadId = leadResp.lead_id
-  if (!leadId) return { result: 0, message: 'No se obtuvo lead_id' }
-
-  const isBeca = data.is_scholarship === true
-  const { rows: channelWebRows } = isBeca
-    ? await pool.query("SELECT catalog_id FROM catalog WHERE alias = 'we_channel_web' LIMIT 1")
-    : { rows: [] }
-  const channelForBeca = channelWebRows?.[0]?.catalog_id || null
-
   const inscription = {
-    lead_id: leadId,
+    document_number: data.document_number,
+    cat_type_document: data.cat_type_document,
+    first_name: data.first_name,
+    last_name: data.last_name,
+    email: data.email,
+    phone: data.phone,
     program_version_id: data.program_version_id,
     program_edition_id: data.program_edition_id,
     cat_insc_modality: data.cat_insc_modality,
-    cat_certificate_status: isBeca
-      ? (cat['we_certificate_status_paid'] || 2569)
-      : cat['we_certificate_status_paid'],
-    cat_payment_channel: isBeca ? channelForBeca : (data.cat_payment_channel || cat['we_channel_general']),
+    cat_payment_channel: data.cat_payment_channel || null,
     cat_currency: data.cat_currency,
     cat_payment_way: data.cat_payment_way,
-    cat_type_payment: data.cat_payment_way,
-    cat_method_payment: data.cat_payment_medium || null,
-    list_price: data.list_price || 1,
-    total_amount: isBeca ? (data.list_price || 1) : (data.total_amount || 0),
+    cat_payment_medium: data.cat_payment_medium || null,
+    cat_business_entity: data.cat_business_entity || null,
+    bank_account_id: data.bank_account_id || null,
+    transaction_code: data.transaction_code || null,
+    payment_date: data.payment_date || null,
+    list_price: data.list_price || 0,
+    total_amount: data.total_amount || 0,
     saved_money: data.saved_money || 0,
+    is_scholarship: data.is_scholarship === true,
+    cat_b2b_doctype: data.cat_b2b_doctype || null,
+    seller_agent_id: data.seller_agent_id || null,
+    agent_origin: data.agent_origin || null,
+    client_profile: data.client_profile || null,
     observations: data.observations || 'Registro directo FICO',
-    ticket_payment_urls: data.ticket_payment_urls || [],
-    installment_plan: data.installment_plan || null,
-    document: data.document_number,
-    cat_type_document: data.cat_type_document,
-    full_name: data.first_name,
-    last_name: data.last_name,
-    email: data.email,
-    cat_country: data.cat_country
+    ticket_payment_urls: Array.isArray(data.ticket_payment_urls) ? data.ticket_payment_urls : [],
+    installment_plan: data.installment_plan || null
   }
 
   const enrollRows = await callProcedureReturningRows(
     pool,
-    'public.sp_comercial_enrollment_register',
-    [leadId, userId, JSON.stringify({ inscription })],
+    'public.sp_fico_enrollment_register_direct',
+    [userId, JSON.stringify({ inscription })],
     { statementTimeoutMs: 25000 }
   )
 
@@ -1505,63 +1698,38 @@ async function ficoEnrollmentRegister ({ data, userId }) {
   if (enrollResp.result === 1 && enrollResp.enrollment_id) {
     const eid = enrollResp.enrollment_id
 
-    const { rows: catRows } = await pool.query(
-      `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_checked' LIMIT 1`
-    )
-    if (catRows?.[0]?.catalog_id) {
-      await pool.query(`UPDATE enrollments SET cat_fico_status = $1, seller_agent_id = COALESCE($3, seller_agent_id) WHERE enrollment_id = $2`, [catRows[0].catalog_id, eid, data.seller_agent_id || null])
-    }
-
-    if (isBeca) {
-      await pool.query(`UPDATE enrollments SET total_amount = 0, discount_amount = $2 WHERE enrollment_id = $1`, [eid, data.list_price || 0])
-    }
-
     await logAudit({ enrollmentId: eid, action: 'created', userId, details: 'Inscripcion registrada desde FICO' })
-    await logAudit({ enrollmentId: eid, action: 'approved', userId, details: isBeca ? 'Beca - sin pago requerido' : 'Auto-aprobado por registro directo FICO' })
+    await logAudit({
+      enrollmentId: eid,
+      action: 'approved',
+      userId,
+      details: inscription.is_scholarship ? 'Beca - sin pago requerido' : 'Auto-aprobado por registro directo FICO'
+    })
+    if (!inscription.is_scholarship && data.cat_payment_medium) {
+      const payAmount = data.total_amount || data.saved_money || 0
+      await logAudit({
+        enrollmentId: eid,
+        action: 'payment_registered',
+        userId,
+        details: `Pago registrado: ${payAmount} - Op: ${data.transaction_code || 'N/A'}`
+      })
+    }
 
-    try {
-      const { rows: existingInst } = await pool.query(
-        'SELECT installment_id, amount FROM payment_installments WHERE enrollment_id = $1 ORDER BY installment_number LIMIT 1',
-        [eid]
-      )
-      const instId = existingInst?.[0]?.installment_id || null
+    const odoo = await safeAsync('[FICO][Odoo] auto-enroll', () => enrollInOdoo({ enrollmentId: eid }))
+    if (odoo?.success) {
+      await logAudit({ enrollmentId: eid, action: 'odoo_enrolled', userId, details: `Odoo user: ${odoo.odoo_user_id}` })
+    }
 
-      if (isBeca) {
-        if (instId) {
-          await pool.query('UPDATE payment_installments SET amount = 0, cat_status = 4454 WHERE installment_id = $1', [instId])
-        }
-      } else if (data.cat_payment_medium) {
-        const payAmount = data.total_amount || data.saved_money || 0
-        const voucherUrl = Array.isArray(data.ticket_payment_urls) && data.ticket_payment_urls.length > 0
-          ? data.ticket_payment_urls[0] : null
+    const emailRes = await safeAsync('[FICO][Email] auto-send', () => sendConfirmationEmail({ enrollmentId: eid }))
+    if (emailRes?.success) {
+      await logAudit({ enrollmentId: eid, action: 'email_sent', userId, details: `Correo confirmacion: ${emailRes.messageId}` })
+    }
 
-        if (instId) {
-          await pool.query('UPDATE payment_installments SET cat_status = 4454 WHERE installment_id = $1', [instId])
-        }
-
-        await pool.query(`
-          INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
-            cat_method_payment, cat_payment_type, cat_settlement_status,
-            settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
-          VALUES ($1, $2, $3, NOW(), $4, $5, 3115, 2573, $6, $7, 'Y', $8, NOW())
-        `, [eid, instId, payAmount, data.transaction_code || '', data.cat_payment_medium, data.bank_account_id || null, voucherUrl, userId])
-        await logAudit({ enrollmentId: eid, action: 'payment_registered', userId, details: `Pago registrado: ${payAmount} - Op: ${data.transaction_code || 'N/A'}` })
-      }
-    } catch (payErr) { console.error('[FICO] Payment/installment update failed:', payErr.message) }
-
-    try {
-      const odoo = await enrollInOdoo({ enrollmentId: eid })
-      if (odoo?.success) {
-        await logAudit({ enrollmentId: eid, action: 'odoo_enrolled', userId, details: `Odoo user: ${odoo.odoo_user_id}` })
-      }
-    } catch (e) { console.error('[FICO] Odoo auto-enroll failed:', e.message) }
-
-    try {
-      const emailRes = await sendConfirmationEmail({ enrollmentId: eid })
-      if (emailRes?.success) {
-        await logAudit({ enrollmentId: eid, action: 'email_sent', userId, details: `Correo confirmacion: ${emailRes.messageId}` })
-      }
-    } catch (e) { console.error('[FICO] Email auto-send failed:', e.message) }
+    // Crear enrollments hijos si el programa es padre (diplomado/especializacion).
+    // Para FICO directo, todavia no hay convalidaciones en BD, asi que esto inscribe
+    // a TODOS los hijos del arbol de la edicion. El operador puede convalidar despues
+    // desde el detalle de la inscripcion.
+    await safeAsync('[FICO][Children] create', () => createChildEnrollments({ enrollmentId: eid, userId }))
   }
 
   return enrollResp
@@ -1589,9 +1757,11 @@ async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, us
   const { rows: oldRows } = await pool.query(`
     SELECT e.program_edition_id, e.program_version_id,
            pe.global_code AS old_code, pe.start_date AS old_start_date,
-           l.origin_email,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
            prog.odoo_activation
     FROM enrollments e
+    JOIN customers cust ON cust.customer_id = e.customer_id
+    JOIN persons per ON per.person_id = cust.person_id
     LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
@@ -1625,17 +1795,12 @@ async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, us
   )
 
   try {
-    const { rows: rpCat } = await pool.query(
-      `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_reprogrammed' LIMIT 1`
-    )
-    console.log('[reprogramEdition] catalog RP:', JSON.stringify(rpCat))
-    console.log('[reprogramEdition] enrollmentId:', enrollmentId)
-    if (rpCat?.[0]?.catalog_id) {
-      const upd = await pool.query(
+    const rpCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_REPROGRAMMED)
+    if (rpCatId) {
+      await pool.query(
         'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
-        [rpCat[0].catalog_id, enrollmentId]
+        [rpCatId, enrollmentId]
       )
-      console.log('[reprogramEdition] UPDATE result rowCount:', upd.rowCount)
     } else {
       console.warn('[reprogramEdition] No se encontro catalogo RP')
     }
@@ -1746,6 +1911,88 @@ async function getProgramPrice ({ programVersionId }) {
   return rows?.[0] || null
 }
 
+// Clona el lead del enrollment original para asociarlo a la nueva inscripcion del cambio de curso.
+// Mantiene todos los campos originales pero apunta al nuevo programa/edicion y resetea fechas.
+async function _ccCloneLeadForChange ({ enrollmentId, newProgramVersionId, newEditionId, userId }) {
+  const { rows: leadCols } = await pool.query(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'leads' AND table_schema = 'public'
+      AND column_name NOT IN ('lead_id')
+    ORDER BY ordinal_position
+  `)
+  const allCols = leadCols.map(r => r.column_name)
+  const overrides = {
+    program_version_id: newProgramVersionId,
+    program_edition_id: newEditionId,
+    pay_date: 'NOW()::DATE',
+    registration_date: 'NOW()',
+    modification_date: 'NOW()',
+    active: "'Y'",
+    user_registration_id: userId,
+    user_modification_id: userId,
+    enrollment_id: 'NULL'
+  }
+  const selectParts = allCols.map(col => {
+    if (overrides[col] !== undefined) return `${overrides[col]} AS "${col}"`
+    return `l."${col}"`
+  })
+
+  const { rows } = await pool.query(`
+    INSERT INTO leads (${allCols.map(c => `"${c}"`).join(', ')})
+    SELECT ${selectParts.join(', ')}
+    FROM leads l
+    WHERE l.enrollment_id = $1
+    RETURNING lead_id
+  `, [enrollmentId])
+
+  const newLeadId = rows?.[0]?.lead_id
+  if (!newLeadId) throw new Error('Error al crear el lead para el cambio de curso')
+  return newLeadId
+}
+
+// Registra la fila en course_changes con metadata del cambio.
+async function _ccRecordCourseChangeRow ({ old, newEid, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, oldAmount }) {
+  await pool.query(`
+    INSERT INTO course_changes (
+      customer_id, enrollment_origin_id, enrollment_destination_id,
+      program_origin_id, program_destination_id,
+      edition_origin_id, edition_destination_id,
+      amount_origin, amount_destination, amount_difference,
+      justificacion, approved_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  `, [
+    old.customer_id, old.enrollment_id, newEid,
+    old.program_version_id, newProgramVersionId,
+    old.program_edition_id, newEditionId,
+    oldAmount, totalAmount, totalAmount - oldAmount,
+    justificacion, userId
+  ])
+}
+
+// Desinscribe al alumno del curso anterior en Odoo y cancela su sale order.
+// Si falla cualquier paso, se loguea y continua sin bloquear el flujo principal.
+async function _ccUnenrollFromOldOdoo ({ enrollmentId, old }) {
+  if (!old.old_odoo_activation) return
+  await safeAsync('[courseChange][Odoo] unenroll old', async () => {
+    const { rows: odooData } = await pool.query(
+      `SELECT odoo_user_id, odoo_order_id FROM enrollments WHERE enrollment_id = $1`, [enrollmentId]
+    )
+    const od = odooData?.[0]
+    if (!od?.odoo_user_id) return
+
+    const user = await odooClient.searchUserByEmail(old.origin_email)
+    if (user?.partner_id?.[0]) {
+      const groups = await odooClient.searchSlideGroup(old.old_odoo_activation)
+      for (const g of (groups || [])) {
+        await odooClient.unenrollStudentFromCourse({ partnerId: user.partner_id[0], slideGroupId: g.id })
+      }
+    }
+    if (od.odoo_order_id) {
+      await odooClient.cancelSaleOrder(od.odoo_order_id)
+    }
+  })
+}
+
 async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
   const { rows: oldRows } = await pool.query(`
     SELECT e.enrollment_id, e.program_version_id, e.program_edition_id,
@@ -1753,7 +2000,7 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
            e.total_amount, e.discount_amount,
            e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
            per.first_name, per.last_name, per.document_number, per.cat_type_document,
-           l.lead_id, l.origin_email, l.cat_code_country,
+           l.lead_id, ${STUDENT_EMAIL_SQL} AS origin_email, l.cat_code_country,
            pv.abbreviation AS old_program_name,
            prog.odoo_activation AS old_odoo_activation,
            pe.global_code AS old_edition_code, pe.start_date AS old_start_date
@@ -1781,68 +2028,27 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   const newEd = newEdRows?.[0]
   if (!newEd) throw new Error('La edicion destino no existe o no pertenece al programa seleccionado')
 
-  const { rows: ccCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_course_changed' LIMIT 1`
-  )
-  if (ccCat?.[0]?.catalog_id) {
+  const ccCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_COURSE_CHANGED)
+  if (ccCatId) {
     await pool.query(
       'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
-      [ccCat[0].catalog_id, enrollmentId]
+      [ccCatId, enrollmentId]
     )
   }
 
   const ccNote = `Cambio de curso desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
 
-  const { rows: leadCols } = await pool.query(`
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'leads' AND table_schema = 'public'
-    AND column_name NOT IN ('lead_id')
-    ORDER BY ordinal_position
-  `)
-  const allCols = leadCols.map(r => r.column_name)
-  const overrides = {
-    program_version_id: newProgramVersionId,
-    program_edition_id: newEditionId,
-    pay_date: 'NOW()::DATE',
-    registration_date: 'NOW()',
-    modification_date: 'NOW()',
-    active: "'Y'",
-    user_registration_id: userId,
-    user_modification_id: userId,
-    enrollment_id: 'NULL'
-  }
-  const selectParts = allCols.map(col => {
-    if (overrides[col] !== undefined) return `${overrides[col]} AS "${col}"`
-    return `l."${col}"`
-  })
+  const newLeadId = await _ccCloneLeadForChange({ enrollmentId, newProgramVersionId, newEditionId, userId })
 
-  const { rows: newLeadRows } = await pool.query(`
-    INSERT INTO leads (${allCols.map(c => `"${c}"`).join(', ')})
-    SELECT ${selectParts.join(', ')}
-    FROM leads l
-    WHERE l.enrollment_id = $1
-    RETURNING lead_id
-  `, [enrollmentId])
-
-  const newLeadId = newLeadRows?.[0]?.lead_id
-  if (!newLeadId) throw new Error('Error al crear el lead para el cambio de curso')
-
-  const { rows: certCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_certificate_status_paid' LIMIT 1`
-  )
-  const { rows: contadoCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_payment_way_single' LIMIT 1`
-  )
+  const ccCertCatId    = await getCatalogIdByAlias(ALIAS.CERTIFICATE_STATUS_PAID)
+  const ccContadoCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_SINGLE)
   const { rows: oldPayment } = await pool.query(
     `SELECT cat_method_payment FROM payments WHERE enrollment_id = $1 AND active = 'Y' ORDER BY payment_id DESC LIMIT 1`,
     [enrollmentId]
   )
   let methodPayment = oldPayment?.[0]?.cat_method_payment || null
   if (!methodPayment) {
-    const { rows: defMethod } = await pool.query(
-      `SELECT catalog_id FROM catalog WHERE alias = 'we_payment_method_transfer' LIMIT 1`
-    )
-    methodPayment = defMethod?.[0]?.catalog_id || null
+    methodPayment = await getCatalogIdByAlias(ALIAS.PAYMENT_METHOD_TRANSFER)
   }
 
   const inscription = {
@@ -1852,10 +2058,10 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
     cat_insc_modality: old.cat_inscription_modality,
     cat_payment_channel: old.cat_payment_channel,
     cat_currency: old.cat_currency,
-    cat_payment_way: contadoCat?.[0]?.catalog_id || old.cat_payment_plan,
-    cat_type_payment: contadoCat?.[0]?.catalog_id || old.cat_payment_plan,
+    cat_payment_way: ccContadoCatId || old.cat_payment_plan,
+    cat_type_payment: ccContadoCatId || old.cat_payment_plan,
     cat_method_payment: cat_method_payment || methodPayment,
-    cat_certificate_status: certCat?.[0]?.catalog_id || null,
+    cat_certificate_status: ccCertCatId || null,
     cat_currency: cat_currency || old.cat_currency,
     list_price: totalAmount || 0,
     total_amount: totalAmount,
@@ -1885,11 +2091,9 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
 
   const newEid = newEnroll.enrollment_id
 
-  const { rows: catChecked } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_checked' LIMIT 1`
-  )
-  if (catChecked?.[0]?.catalog_id && newEid) {
-    await pool.query('UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2', [catChecked[0].catalog_id, newEid])
+  const ccCheckedCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_CHECKED)
+  if (ccCheckedCatId && newEid) {
+    await pool.query('UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2', [ccCheckedCatId, newEid])
   }
 
   if (newEid) {
@@ -1914,21 +2118,13 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   }
 
   const oldAmount = Number(old.total_amount || 0) - Number(old.discount_amount || 0)
-  await pool.query(`
-    INSERT INTO course_changes (
-      customer_id, enrollment_origin_id, enrollment_destination_id,
-      program_origin_id, program_destination_id,
-      edition_origin_id, edition_destination_id,
-      amount_origin, amount_destination, amount_difference,
-      justificacion, approved_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-  `, [
-    old.customer_id, enrollmentId, newEid,
-    old.program_version_id, newProgramVersionId,
-    old.program_edition_id, newEditionId,
-    oldAmount, totalAmount, totalAmount - oldAmount,
-    justificacion, userId
-  ])
+  await _ccRecordCourseChangeRow({
+    old: { ...old, enrollment_id: enrollmentId },
+    newEid,
+    newProgramVersionId, newEditionId,
+    totalAmount, justificacion, userId,
+    oldAmount
+  })
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'
 
@@ -1959,42 +2155,20 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   }
 
   if (newEid) {
-    try {
-      if (old.old_odoo_activation) {
-        const { rows: odooData } = await pool.query(
-          `SELECT odoo_user_id, odoo_order_id FROM enrollments WHERE enrollment_id = $1`, [enrollmentId]
-        ).catch(() => ({ rows: [] }))
-        const od = odooData?.[0]
+    await _ccUnenrollFromOldOdoo({ enrollmentId, old })
+    if (old.old_odoo_activation) {
+      await logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${old.old_odoo_activation}` })
+    }
 
-        if (od?.odoo_user_id) {
-          const user = await odooClient.searchUserByEmail(old.origin_email)
-          if (user?.partner_id?.[0]) {
-            const groups = await odooClient.searchSlideGroup(old.old_odoo_activation)
-            for (const g of (groups || [])) {
-              await odooClient.unenrollStudentFromCourse({ partnerId: user.partner_id[0], slideGroupId: g.id })
-            }
-          }
-          if (od.odoo_order_id) {
-            await odooClient.cancelSaleOrder(od.odoo_order_id)
-          }
-          await logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${old.old_odoo_activation}` })
-        }
-      }
-    } catch (e) { console.error('[courseChange] Error desinscribiendo de Odoo:', e.message) }
+    const odoo = await safeAsync('[courseChange][Odoo] enroll new', () => enrollInOdoo({ enrollmentId: newEid }))
+    if (odoo?.success) {
+      await logAudit({ enrollmentId: newEid, action: 'odoo_enrolled', userId, details: `Inscrito en Odoo: user ${odoo.odoo_user_id}` })
+    }
 
-    try {
-      const odoo = await enrollInOdoo({ enrollmentId: newEid })
-      if (odoo?.success) {
-        await logAudit({ enrollmentId: newEid, action: 'odoo_enrolled', userId, details: `Inscrito en Odoo: user ${odoo.odoo_user_id}` })
-      }
-    } catch (e) { console.error('[courseChange] Error inscribiendo en Odoo:', e.message) }
-
-    try {
-      const emailRes = await sendConfirmationEmail({ enrollmentId: newEid })
-      if (emailRes?.success) {
-        await logAudit({ enrollmentId: newEid, action: 'email_sent', userId, details: `Correo confirmacion CC: ${emailRes.messageId}` })
-      }
-    } catch (e) { console.error('[courseChange] Error enviando email:', e.message) }
+    const emailRes = await safeAsync('[courseChange][Email] send confirmation', () => sendConfirmationEmail({ enrollmentId: newEid }))
+    if (emailRes?.success) {
+      await logAudit({ enrollmentId: newEid, action: 'email_sent', userId, details: `Correo confirmacion CC: ${emailRes.messageId}` })
+    }
   }
 
   return { result: 1, message: 'Cambio de curso realizado', new_enrollment_id: newEid }
@@ -2003,7 +2177,8 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
 async function getEnrollmentSnapshot (enrollmentId) {
   const { rows } = await pool.query(`
     SELECT e.total_amount, e.discount_amount, e.list_price,
-           l.origin_email, l.origin_phone,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
            per.first_name, per.last_name, per.document_number,
            c_cur.description AS currency,
            c_plan.description AS payment_plan,
@@ -2060,14 +2235,12 @@ async function rejectEnrollment ({ enrollmentId, reason, userId }) {
   if (!rows?.[0]) throw new Error('Inscripcion no encontrada')
   const data = rows[0]
 
-  const { rows: obsCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_observed' LIMIT 1`
-  )
-  if (!obsCat?.[0]?.catalog_id) throw new Error('Catalogo de estado Observado no encontrado')
+  const obsCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_OBSERVED)
+  if (!obsCatId) throw new Error('Catalogo de estado Observado no encontrado')
 
   await pool.query(
     'UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2',
-    [obsCat[0].catalog_id, enrollmentId]
+    [obsCatId, enrollmentId]
   )
 
   const snapshot = await getEnrollmentSnapshot(enrollmentId)
@@ -2116,17 +2289,15 @@ async function rejectEnrollment ({ enrollmentId, reason, userId }) {
 }
 
 async function resubmitEnrollment ({ enrollmentId, userId }) {
-  const { rows: obsCat } = await pool.query(
-    `SELECT catalog_id FROM catalog WHERE alias = 'we_enrollment_status_observed' LIMIT 1`
-  )
-  if (!obsCat?.[0]?.catalog_id) throw new Error('Catalogo de estado Observado no encontrado')
+  const obsCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_OBSERVED)
+  if (!obsCatId) throw new Error('Catalogo de estado Observado no encontrado')
 
   const { rows: chk } = await pool.query(
     'SELECT cat_fico_status, seller_agent_id FROM enrollments WHERE enrollment_id = $1',
     [enrollmentId]
   )
   if (!chk?.[0]) throw new Error('Inscripcion no encontrada')
-  if (chk[0].cat_fico_status !== obsCat[0].catalog_id) throw new Error('La inscripcion no esta en estado Observado')
+  if (chk[0].cat_fico_status !== obsCatId) throw new Error('La inscripcion no esta en estado Observado')
 
   const snapshotAfter = await getEnrollmentSnapshot(enrollmentId)
 
@@ -2237,7 +2408,13 @@ async function saveValidations ({ enrollmentId, validations, userId }) {
   return { result: 1, message: 'Convalidaciones guardadas' }
 }
 
-async function getProgramChildren ({ programVersionId }) {
+/**
+ * Devuelve los modulos hijos de un program_version, con sus ediciones disponibles.
+ * Si se pasa parentEditionId, calcula tambien `tree_edition_id` para cada hijo:
+ * la edicion default que el arbol del padre asigna. Si null = el hijo NO esta
+ * programado en esa edicion del padre y el operador debe elegir manualmente.
+ */
+async function getProgramChildren ({ programVersionId, parentEditionId = null }) {
   const { rows } = await pool.query(`
     SELECT pvs.child_program_version_id, pvs.sort_order,
            pv.abbreviation as child_name,
@@ -2249,7 +2426,164 @@ async function getProgramChildren ({ programVersionId }) {
     WHERE pvs.parent_program_version_id = $1
     ORDER BY pvs.sort_order
   `, [programVersionId])
-  return rows
+
+  if (!parentEditionId || !rows?.length) return rows
+
+  // Calcular tree_edition_id por hijo a partir del arbol del padre.
+  const treeRows = await callProcedureReturningRows(pool, 'public.sp_edition_tree_get', [parentEditionId], { statementTimeoutMs: 15000 }).catch(() => [])
+  const treeChildren = treeRows?.[0]?.children || []
+  const treeMap = {}
+  for (const ch of treeChildren) {
+    if (ch.child_program_version_id) {
+      treeMap[ch.child_program_version_id] = ch.edition_id || ch.edition_num_id || null
+    }
+  }
+  return rows.map(r => ({
+    ...r,
+    tree_edition_id: treeMap[r.child_program_version_id] || null,
+    is_in_parent_tree: !!treeMap[r.child_program_version_id]
+  }))
+}
+
+async function rescheduleInstallments ({ enrollmentId, changes, justificacion, reasonCode, userId }) {
+  if (!Array.isArray(changes) || changes.length === 0) {
+    throw new Error('Debe especificar al menos una cuota a reprogramar')
+  }
+  if (!justificacion || !justificacion.trim()) {
+    throw new Error('La justificacion es obligatoria')
+  }
+
+  const { rows: enrollRows } = await pool.query(`
+    SELECT e.enrollment_id, e.odoo_order_id, pe.end_date AS edition_end_date, pe.global_code
+    FROM enrollments e
+    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+  const enrollment = enrollRows?.[0]
+  if (!enrollment) throw new Error('Inscripcion no encontrada')
+
+  const installmentIds = changes.map(c => Number(c.installment_id)).filter(Boolean)
+  const { rows: currentInst } = await pool.query(`
+    SELECT installment_id, installment_number, due_date, amount, cat_status
+    FROM payment_installments
+    WHERE enrollment_id = $1 AND installment_id = ANY($2::int[])
+  `, [enrollmentId, installmentIds])
+
+  const byId = new Map()
+  for (const i of currentInst) byId.set(Number(i.installment_id), i)
+
+  const editionEnd = enrollment.edition_end_date ? new Date(enrollment.edition_end_date) : null
+  const normalizedChanges = []
+  const auditDiff = {}
+
+  for (const raw of changes) {
+    const id = Number(raw.installment_id)
+    const inst = byId.get(id)
+    if (!inst) throw new Error(`Cuota ${id} no pertenece a la inscripcion`)
+    if (inst.installment_number === 0) throw new Error('El pago inicial no se reprograma')
+    if (inst.cat_status === 4454) throw new Error(`La cuota ${inst.installment_number} ya esta pagada`)
+
+    const newDate = new Date(raw.new_due_date)
+    if (isNaN(newDate.getTime())) throw new Error(`Fecha invalida para cuota ${inst.installment_number}`)
+
+    const oldDate = new Date(inst.due_date)
+    newDate.setHours(0, 0, 0, 0)
+    oldDate.setHours(0, 0, 0, 0)
+
+    if (newDate <= oldDate) {
+      throw new Error(`La nueva fecha de la cuota ${inst.installment_number} debe ser posterior a la actual (${oldDate.toISOString().slice(0, 10)})`)
+    }
+    if (editionEnd) {
+      const endCopy = new Date(editionEnd); endCopy.setHours(0, 0, 0, 0)
+      if (newDate > endCopy) {
+        throw new Error(`La cuota ${inst.installment_number} no puede superar la fecha fin de la edicion (${endCopy.toISOString().slice(0, 10)})`)
+      }
+    }
+
+    normalizedChanges.push({
+      installment_id: id,
+      installment_number: inst.installment_number,
+      old_due_date: oldDate.toISOString().slice(0, 10),
+      new_due_date: newDate.toISOString().slice(0, 10)
+    })
+    auditDiff[`Cuota ${inst.installment_number}`] = {
+      old: oldDate.toISOString().slice(0, 10),
+      new: newDate.toISOString().slice(0, 10)
+    }
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    for (const ch of normalizedChanges) {
+      await client.query(
+        'UPDATE payment_installments SET due_date = $1 WHERE installment_id = $2 AND enrollment_id = $3',
+        [ch.new_due_date, ch.installment_id, enrollmentId]
+      )
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  let odooResult = { success: true, updated: 0, skipped: true }
+  if (enrollment.odoo_order_id) {
+    try {
+      odooResult = await odooClient.updateFeeDueDates({
+        orderId: enrollment.odoo_order_id,
+        changes: normalizedChanges.map(c => ({ seq: c.installment_number, new_due_date: c.new_due_date }))
+      })
+      console.log('[rescheduleInstallments] Odoo result:', JSON.stringify(odooResult))
+    } catch (err) {
+      console.error('[rescheduleInstallments] Odoo sync exception:', err.message, err.stack)
+      odooResult = { success: false, error: err.message }
+    }
+  } else {
+    console.log('[rescheduleInstallments] Sin odoo_order_id, sync omitido')
+  }
+
+  const reasonLabels = { financiero: 'Financiero', academico: 'Academico', personal: 'Personal', otro: 'Otro' }
+  const reasonLabel = reasonLabels[reasonCode] || 'Otro'
+
+  let odooErrorSummary = null
+  if (odooResult?.success === false) {
+    if (odooResult.error) {
+      odooErrorSummary = odooResult.error
+    } else if (odooResult.failed?.length) {
+      odooErrorSummary = odooResult.failed
+        .map(f => `Cuota ${f.seq}: ${f.error}`)
+        .join('; ')
+    } else {
+      odooErrorSummary = 'Error desconocido'
+    }
+  }
+
+  const odooNote = odooResult?.success === false
+    ? ` | Odoo: FALLO (${odooErrorSummary})`
+    : (enrollment.odoo_order_id ? ' | Odoo: sincronizado' : ' | Odoo: sin orden asociada')
+  const details = `Motivo: ${reasonLabel} — ${normalizedChanges.length} cuota(s) reprogramada(s)${odooNote}`
+
+  await logAudit({
+    enrollmentId,
+    action: 'installments_rescheduled',
+    userId,
+    justificacion: justificacion.trim(),
+    changes: auditDiff,
+    details
+  })
+
+  return {
+    result: 1,
+    message: 'Cuotas reprogramadas correctamente',
+    updated: normalizedChanges.length,
+    odoo_sync: odooResult?.success !== false,
+    odoo_error: odooErrorSummary,
+    odoo_failed_fees: odooResult?.failed || [],
+    odoo_skipped: !!odooResult?.skipped
+  }
 }
 
 export default {
@@ -2282,5 +2616,7 @@ export default {
   syncInstallmentPaymentToOdoo,
   getValidations,
   saveValidations,
-  getProgramChildren
+  getProgramChildren,
+  rescheduleInstallments,
+  validateChildEnrollmentSetup
 }

@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node -e \"import\\('fluent-json-schema'\\).then\\(m => console.log\\('ok'\\)\\).catch\\(e => console.log\\('not found'\\)\\)\")",
-      "Bash(npm install:*)",
-      "Bash(npm uninstall:*)"
-    ]
-  }
-}

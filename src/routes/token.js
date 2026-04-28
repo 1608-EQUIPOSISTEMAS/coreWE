@@ -1,19 +1,18 @@
 import tokenService from '../services/token.service.js'
 import { authenticate, hasRole } from '../middlewares/auth.hooks.js'
 
-const WRITE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
-const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
+const VIEW_ROLES    = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
+const CREATE_ROLES  = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
+const LINK_ROLES    = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
+const CONFIRM_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
 export default async function tokenRoutes (fastify) {
 
   fastify.get('/list', {
-    preHandler: [authenticate]
+    preHandler: [authenticate, hasRole(VIEW_ROLES)]
   }, async (req, reply) => {
     try {
-      const data = await tokenService.tokenList(req.query, {
-        userId: req.user?.id,
-        userRoles: req.user?.roles || []
-      })
+      const data = await tokenService.tokenList(req.query)
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[tokenList ERROR]', err.message)
@@ -21,14 +20,24 @@ export default async function tokenRoutes (fastify) {
     }
   })
 
-  fastify.get('/stats', {
-    preHandler: [authenticate]
+  fastify.get('/:id', {
+    preHandler: [authenticate, hasRole(VIEW_ROLES)]
   }, async (req, reply) => {
     try {
-      const data = await tokenService.tokenStats({
-        userId: req.user?.id,
-        userRoles: req.user?.roles || []
-      })
+      const data = await tokenService.tokenGetById(Number(req.params.id))
+      if (!data) return reply.code(404).send({ ok: false, error: 'Token no encontrado' })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[tokenGetById ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.get('/stats', {
+    preHandler: [authenticate, hasRole(VIEW_ROLES)]
+  }, async (req, reply) => {
+    try {
+      const data = await tokenService.tokenStats()
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[tokenStats ERROR]', err.message)
@@ -81,7 +90,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.put('/update', {
-    preHandler: [authenticate, hasRole(WRITE_ROLES)],
+    preHandler: [authenticate, hasRole(LINK_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -118,7 +127,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.post('/markpaid', {
-    preHandler: [authenticate, hasRole(WRITE_ROLES)],
+    preHandler: [authenticate, hasRole(CONFIRM_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -145,7 +154,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.post('/confirm', {
-    preHandler: [authenticate, hasRole(WRITE_ROLES)],
+    preHandler: [authenticate, hasRole(CONFIRM_ROLES)],
     schema: {
       body: {
         type: 'object',
@@ -173,7 +182,7 @@ export default async function tokenRoutes (fastify) {
   })
 
   fastify.delete('/delete/:id', {
-    preHandler: [authenticate, hasRole(WRITE_ROLES)]
+    preHandler: [authenticate, hasRole(LINK_ROLES)]
   }, async (req, reply) => {
     try {
       const data = await tokenService.tokenDelete({
@@ -183,6 +192,90 @@ export default async function tokenRoutes (fastify) {
     } catch (err) {
       console.error('[tokenDelete ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.post('/group', {
+    preHandler: [authenticate, hasRole(CREATE_ROLES)],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['token_ids'],
+        properties: {
+          token_ids: { type: 'array', items: { type: 'integer' }, minItems: 2 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await tokenService.tokenGroup({
+        tokenIds: req.body.token_ids,
+        userId:   req.user?.id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[tokenGroup ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.put('/edit-inscription', {
+    preHandler: [authenticate, hasRole(CREATE_ROLES)],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['token_id', 'inscription'],
+        properties: {
+          token_id:            { type: 'integer' },
+          inscription:         { type: 'object', additionalProperties: true },
+          amount:              { type: ['number', 'null'] },
+          currency:            { type: ['string', 'null'] },
+          payment_type:        { type: ['string', 'null'] },
+          cat_payment_channel: { type: ['integer', 'null'] },
+          advisor_observation: { type: ['string', 'null'] }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await tokenService.tokenEditInscription({
+        tokenId:            req.body.token_id,
+        inscription:        req.body.inscription,
+        amount:             req.body.amount,
+        currency:           req.body.currency,
+        paymentType:        req.body.payment_type,
+        catPaymentChannel:  req.body.cat_payment_channel,
+        advisorObservation: req.body.advisor_observation,
+        userId:             req.user?.id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[tokenEditInscription ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.post('/ungroup', {
+    preHandler: [authenticate, hasRole(CREATE_ROLES)],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['group_id'],
+        properties: {
+          group_id: { type: 'string' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await tokenService.tokenUngroup({
+        groupId: req.body.group_id,
+        userId:  req.user?.id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[tokenUngroup ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
     }
   })
 }
