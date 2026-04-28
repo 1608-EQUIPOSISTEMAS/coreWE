@@ -582,12 +582,307 @@ async function sendReportToSlack({ titulo, texto, imagenes = [], imagenesUrls = 
     return { ok: false, error: error.message }
   }
 }
+
+// =====================================================================
+// FICO Ventas a Google Sheets
+// =====================================================================
+// Sincroniza el listado de inscripciones APROBADAS a la hoja "0. Ventas Sistemas"
+// del spreadsheet 19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c.
+//
+// Reglas:
+//  - Solo inscripciones con cat_fico_status = 'we_enrollment_status_checked' (aprobadas).
+//  - Solo "ventas" reales: hijos individuales (parent_enrollment_id IS NOT NULL)
+//    o cursos sin estructura padre/hijo. NO se exporta el padre cuando tiene hijos
+//    (eso seria duplicar la inscripcion).
+//  - 20 columnas A..T, sobreescritura total desde fila 2 (asumiendo fila 1 = headers).
+async function syncFicoSalesToSheet () {
+  const SPREADSHEET_ID = '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
+  const SHEET_NAME = '0. Ventas Sistemas'
+
+  const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(process.cwd(), 'credentials/service.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+  const authClient = await auth.getClient()
+  const googleSheets = google.sheets({ version: 'v4', auth: authClient })
+
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND (
+              e.parent_enrollment_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
+         )
+    )
+    SELECT
+      pv.version_code                                     AS cod,
+      CASE WHEN e.program_edition_id IS NULL THEN 'E0'
+           ELSE COALESCE(pe.global_code, '')
+      END                                                  AS ed,
+      to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
+      to_char(COALESCE(l.pay_date, e.registration_date::date), 'DD/MM/YYYY') AS f_pago,
+      per.document_number                                  AS dni,
+      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END                                                  AS ocup,
+      COALESCE(
+        u.alias,
+        e.agent_origin,
+        'S/A'
+      )                                                    AS asesor,
+      CASE c_plan.alias
+        WHEN 'we_payment_way_single'        THEN 'PT'
+        WHEN 'we_payment_way_installments'  THEN 'PP'
+        ELSE ''
+      END                                                  AS estado,
+      CASE
+        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+      END                                                  AS dsct,
+      CASE
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
+        ELSE 'Al dia'
+      END                                                  AS al_dia,
+      replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',') AS inicial,
+      replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',') AS ingreso,
+      COALESCE(c_moment.variable_2, '')                    AS tipo_cliente,
+      'ACT'                                                AS estado_alumno,
+      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS membresia,
+      CASE WHEN c_mod.alias = 'we_insc_modality_flexible' THEN 'FLEX' ELSE '' END AS flex
+    FROM public.enrollments e
+    JOIN approved a ON a.enrollment_id = e.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.programs prog       ON prog.program_id = pv.program_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
+    LEFT JOIN public."catalog" c_prof    ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" c_mod     ON c_mod.catalog_id  = e.cat_inscription_modality
+    LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
+    LEFT JOIN LATERAL (
+      SELECT SUM(p.amount) AS total_paid
+        FROM public.payments p
+       WHERE p.enrollment_id = e.enrollment_id
+         AND p.active = 'Y'
+    ) pay_agg ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+       LIMIT 1
+    ) pi_res ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND pi.installment_number > 0
+         AND pi.due_date < CURRENT_DATE
+         AND cs.alias <> 'we_payment_status_paid'
+    ) inst_overdue ON TRUE
+    ORDER BY l.pay_date NULLS LAST, e.enrollment_id
+  `)
+
+  const values = (rows || []).map(r => [
+    r.cod || '', r.ed || '', r.f_inicio || '', r.f_pago || '',
+    r.dni || '', r.nombres || '', r.celular || '', r.correo || '',
+    r.ocup || '', r.asesor || '', r.estado || '', r.dsct || '',
+    r.al_dia || '', r.inicial || '', r.saldo || '', r.ingreso || '',
+    r.tipo_cliente || '', r.estado_alumno || '',
+    r.membresia || '', r.flex || ''
+  ])
+
+  // Limpiar desde A2 hasta T (preserva fila 1 con headers que el usuario maneja en sheet)
+  await googleSheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHEET_NAME}'!A2:T`
+  }).catch((e) => { console.warn('Advertencia al limpiar Ventas Sistemas:', e.message) })
+
+  if (values.length > 0) {
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values }
+    })
+  }
+
+  return { rows_synced: values.length, sheet: SHEET_NAME }
+}
+
+// =====================================================================
+// FICO Aula a Google Sheets
+// =====================================================================
+// Sincroniza el listado de seguimientos (hijos de diplomados) y cursos solos
+// a la hoja "1. Aula Sistemas" del mismo spreadsheet de FICO.
+//
+// Diferencia con "0. Ventas Sistemas":
+//  - Esta es la vista ACADEMICA (matriculas activas a cada curso/modulo).
+//  - Trae 16 columnas (sin desglose financiero detallado).
+//  - Incluye CURSO (pv.version_code) y CATG (padre si es hijo de un diplomado).
+async function syncFicoAulaToSheet () {
+  const SPREADSHEET_ID = '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
+  const SHEET_NAME = '1. Aula Sistemas'
+
+  const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(process.cwd(), 'credentials/service.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+  const authClient = await auth.getClient()
+  const googleSheets = google.sheets({ version: 'v4', auth: authClient })
+
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND (
+              e.parent_enrollment_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
+         )
+    )
+    SELECT
+      pv.version_code                                      AS curso,
+      COALESCE(pv_parent.version_code, '')                 AS catg,
+      to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
+      COALESCE(per.document_number, '')                    AS dni,
+      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END                                                  AS ocup,
+      COALESCE(u.alias, e.agent_origin, 'S/A')             AS asesor,
+      'ACT'                                                AS estado_alumno,
+      CASE
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
+        ELSE 'Al dia'
+      END                                                  AS al_dia,
+      replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      CASE c_plan.alias
+        WHEN 'we_payment_way_single'        THEN 'PT'
+        WHEN 'we_payment_way_installments'  THEN 'PP'
+        ELSE ''
+      END                                                  AS estado_pago,
+      CASE
+        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 1), 'FM999990.0'), '.', ',') || '%'
+      END                                                  AS descuento,
+      COALESCE(c_moment.variable_2, '')                    AS tipo_cliente,
+      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS es_member
+    FROM public.enrollments e
+    JOIN approved a ON a.enrollment_id = e.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.programs prog       ON prog.program_id = pv.program_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
+    LEFT JOIN public."catalog" c_prof    ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
+    LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
+    LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+    LEFT JOIN LATERAL (
+      SELECT SUM(p.amount) AS total_paid
+        FROM public.payments p
+       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+    ) pay_agg ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND pi.installment_number > 0
+         AND pi.due_date < CURRENT_DATE
+         AND cs.alias <> 'we_payment_status_paid'
+    ) inst_overdue ON TRUE
+    ORDER BY pe.start_date NULLS LAST, per.last_name
+  `)
+
+  const values = (rows || []).map(r => [
+    r.curso || '', r.catg || '', r.f_inicio || '', r.dni || '',
+    r.nombres || '', r.celular || '', r.correo || '', r.ocup || '',
+    r.asesor || '', r.estado_alumno || '', r.al_dia || '', r.saldo || '',
+    r.estado_pago || '', r.descuento || '', r.tipo_cliente || '', r.es_member || ''
+  ])
+
+  await googleSheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHEET_NAME}'!A2:P`
+  }).catch((e) => { console.warn('Advertencia al limpiar Aula Sistemas:', e.message) })
+
+  if (values.length > 0) {
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values }
+    })
+  }
+
+  return { rows_synced: values.length, sheet: SHEET_NAME }
+}
+
+// Sincroniza ambas hojas (Ventas + Aula) en una sola llamada.
+// Es lo que el boton "Sincronizar ventas" del frontend dispara para minimizar
+// clicks del operador FICO.
+async function syncFicoToSheets () {
+  const ventas = await syncFicoSalesToSheet()
+  const aula = await syncFicoAulaToSheet()
+  return { ventas, aula }
+}
+
 export default {
   syncLeadsToSheet,
   syncInscToSheet,
   syncScheduleToSheet,
   syncRprospectos,
   syncEnrollmentToSheet,
+  syncFicoSalesToSheet,
+  syncFicoAulaToSheet,
+  syncFicoToSheets,
   sendReportToSlack,
   sendEnrollmentWebToSlack,
 }
