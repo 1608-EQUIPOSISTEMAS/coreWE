@@ -176,19 +176,17 @@ async function searchUserByEmail (email) {
   const normalized = String(email).trim().toLowerCase()
   if (!normalized) return null
 
-  // 1) Por login exacto (case-insensitive)
-  let rows = await callKw('res.users', 'search_read', [
+  // SOLO buscamos por login (identificador unico en res.users).
+  // El fallback por partner_id.email se removio porque ese campo puede repetirse
+  // entre varias personas (un padre con varios hijos, asesor que reusa correo,
+  // lead test reutilizado, etc.) y devolvia un user que NO correspondia al
+  // alumno actual: terminabamos reusando a otra persona y la plantilla del
+  // correo decia "ya estas registrado, usa la misma contrasenia" cuando era
+  // alguien diferente. El login es la unica llave segura.
+  const rows = await callKw('res.users', 'search_read', [
     [['login', '=ilike', normalized]]
   ], { fields: ['id', 'name', 'login', 'partner_id'], limit: 1 })
-  if (rows?.[0]) return rows[0]
-
-  // 2) Por email del partner asociado al user (case-insensitive)
-  rows = await callKw('res.users', 'search_read', [
-    [['partner_id.email', '=ilike', normalized]]
-  ], { fields: ['id', 'name', 'login', 'partner_id'], limit: 1 })
-  if (rows?.[0]) return rows[0]
-
-  return null
+  return rows?.[0] || null
 }
 
 async function createPortalUser ({ login, name, password }) {
