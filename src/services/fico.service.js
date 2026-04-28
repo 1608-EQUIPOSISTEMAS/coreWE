@@ -592,7 +592,16 @@ async function enrollInOdoo ({ enrollmentId }) {
     ORDER BY e.enrollment_id DESC LIMIT 1
   `, [data.document_number])
 
-  let searchEmail = data.origin_email
+  const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
+
+  // searchEmail debe ser SIEMPRE un identificador unico del alumno en Odoo.
+  // Si la persona (mismo DNI) ya tiene un odoo_user_id, usamos su login Odoo.
+  // Si NO existe alumno previo con este DNI, usamos el createEmail (interno y unico
+  // por construccion via buildUniqueOdooEmail). Nunca usamos origin_email aqui:
+  // es el correo personal del lead, que puede repetirse entre personas distintas
+  // (un padre inscribe a sus hijos, asesor que reusa correo, etc.) y matchearia
+  // por partner.email a OTRO usuario de Odoo.
+  let searchEmail = createEmail
   if (prevOdoo?.[0]?.odoo_user_id) {
     const existingUser = await odooClient.callKw('res.users', 'read', [
       [prevOdoo[0].odoo_user_id], ['login']
@@ -601,8 +610,6 @@ async function enrollInOdoo ({ enrollmentId }) {
       searchEmail = existingUser[0].login
     }
   }
-
-  const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
   const password = '1234567'
 
@@ -758,8 +765,12 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
   const odooEmail = data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  // isNew: el alumno se creo en esta inscripcion (tiene password seteada por nosotros).
-  const isNew = !!data.odoo_password
+  // isNew: se va a crear (o se creo) un usuario nuevo en esta inscripcion.
+  //  - odoo_password seteado -> lo creamos nosotros (1234567), mostrar credenciales
+  //  - sin odoo_user_id (no se sincronizo aun) -> asumimos que sera nuevo
+  //  - con odoo_user_id pero sin odoo_password -> se reuso un user existente,
+  //    no conocemos su contrasenia real, muestra el bloque "misma contrasenia"
+  const isNew = !!data.odoo_password || !data.odoo_user_id
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -865,12 +876,15 @@ async function sendConfirmationEmail ({ enrollmentId }) {
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
 
   const { rows: freshEnroll } = await pool.query(
-    'SELECT odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
+    'SELECT odoo_user_id, odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
   )
   const odooEmail = freshEnroll?.[0]?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  // isNew: el alumno se creo en esta inscripcion (tiene password seteada por nosotros).
-  // Si ya existia en Odoo, odoo_password queda NULL y el email dice "ya tienes usuario".
-  const isNew = !!freshEnroll?.[0]?.odoo_password
+  // isNew: se va a crear (o se creo) un usuario nuevo en esta inscripcion.
+  //  - odoo_password seteado -> lo creamos nosotros (1234567), mostrar credenciales
+  //  - sin odoo_user_id (no se sincronizo aun) -> asumimos que sera nuevo
+  //  - con odoo_user_id pero sin odoo_password -> se reuso un user existente,
+  //    no conocemos su contrasenia real, muestra el bloque "misma contrasenia"
+  const isNew = !!freshEnroll?.[0]?.odoo_password || !freshEnroll?.[0]?.odoo_user_id
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -1256,12 +1270,35 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
   if (!data) throw new Error('Inscripcion no encontrada')
 
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
-  const searchEmail = data.origin_email
   const normalize = s => (s || '').toLowerCase().trim()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z\s]/g, '').replace(/\s+/g, '.')
   const createEmail = `${normalize(data.last_name)}.${normalize(data.first_name)}@weeducacion.edu.pe`
   const password = 'WE' + String(data.document_number || '').slice(-4) + '!'
+
+  // Buscamos un Odoo user previo del MISMO alumno (mismo DNI). Si existe, usamos su
+  // login Odoo como searchEmail; si no, usamos createEmail. Nunca origin_email: el
+  // correo personal del lead puede repetirse entre personas distintas y matchearia
+  // por partner.email a otro usuario en Odoo (resultado: reutilizamos a otra persona
+  // y la plantilla dice "ya estas registrado, usa la misma contrasenia" cuando es
+  // alguien diferente).
+  const { rows: prevOdooMb } = await pool.query(`
+    SELECT e.odoo_user_id FROM enrollments e
+    JOIN customers c ON c.customer_id = e.customer_id
+    JOIN persons p ON p.person_id = c.person_id
+    WHERE p.document_number = $1 AND e.odoo_user_id IS NOT NULL
+    ORDER BY e.enrollment_id DESC LIMIT 1
+  `, [data.document_number])
+
+  let searchEmail = createEmail
+  if (prevOdooMb?.[0]?.odoo_user_id) {
+    const existingUser = await odooClient.callKw('res.users', 'read', [
+      [prevOdooMb[0].odoo_user_id], ['login']
+    ]).catch(() => null)
+    if (existingUser?.[0]?.login) {
+      searchEmail = existingUser[0].login
+    }
+  }
 
   const result = await odooClient.enrollInAllOnlineCourses({ searchEmail, createEmail, fullName, password })
 
