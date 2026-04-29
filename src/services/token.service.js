@@ -65,9 +65,25 @@ async function tokenList (filters = {}) {
   const params = []
   let idx = 1
 
+  // Helper: querystring puede traer un array como repeticion (?k=a&k=b) o como
+  // string CSV (?k=a,b). Normalizamos a array.
+  const toArray = v => {
+    if (v == null || v === '') return []
+    if (Array.isArray(v)) return v.filter(x => x != null && x !== '')
+    return String(v).split(',').map(s => s.trim()).filter(Boolean)
+  }
+
+  // Compat con la version anterior: status simple (string) sigue funcionando.
   if (filters.status) {
     conditions.push(`pt.status = $${idx++}`)
     params.push(filters.status)
+  }
+
+  // status_in: multi-select
+  const statusIn = toArray(filters.status_in)
+  if (statusIn.length) {
+    conditions.push(`pt.status = ANY($${idx++}::text[])`)
+    params.push(statusIn)
   }
 
   if (filters.provider) {
@@ -75,13 +91,60 @@ async function tokenList (filters = {}) {
     params.push(Number(filters.provider))
   }
 
-  if (filters.search) {
+  const providersIn = toArray(filters.providers_in).map(Number).filter(Number.isFinite)
+  if (providersIn.length) {
+    conditions.push(`pt.cat_provider = ANY($${idx++}::int[])`)
+    params.push(providersIn)
+  }
+
+  const paymentTypeIn = toArray(filters.payment_type_in)
+  if (paymentTypeIn.length) {
+    conditions.push(`pt.payment_type = ANY($${idx++}::text[])`)
+    params.push(paymentTypeIn)
+  }
+
+  const requestedByIn = toArray(filters.requested_by_in).map(Number).filter(Number.isFinite)
+  if (requestedByIn.length) {
+    conditions.push(`COALESCE(pt.requested_by, pt.created_by) = ANY($${idx++}::int[])`)
+    params.push(requestedByIn)
+  }
+
+  if (filters.installment_only === 'true' || filters.installment_only === true) {
+    conditions.push(`pt.inscription_data->'inscription'->>'cat_type_payment' = 'we_payment_way_installments'`)
+  } else if (filters.installment_only === 'false' || filters.installment_only === false) {
+    conditions.push(`COALESCE(pt.inscription_data->'inscription'->>'cat_type_payment', '') <> 'we_payment_way_installments'`)
+  }
+
+  if (filters.currency) {
+    conditions.push(`pt.currency = $${idx++}`)
+    params.push(String(filters.currency))
+  }
+
+  if (filters.date_from) {
+    conditions.push(`pt.created_at::date >= $${idx++}::date`)
+    params.push(filters.date_from)
+  }
+  if (filters.date_to) {
+    conditions.push(`pt.created_at::date <= $${idx++}::date`)
+    params.push(filters.date_to)
+  }
+
+  // Busqueda libre (q): nombre, DNI, lead, programa, edicion.
+  // search se mantiene como alias por compat.
+  const q = filters.q || filters.search
+  if (q) {
     conditions.push(`(
       per.first_name || ' ' || per.last_name ILIKE $${idx}
       OR per.document_number ILIKE $${idx}
       OR l_dir.full_name ILIKE $${idx}
+      OR pv.abbreviation ILIKE $${idx}
+      OR pv_dir.abbreviation ILIKE $${idx}
+      OR pe.global_code ILIKE $${idx}
+      OR pe_dir.global_code ILIKE $${idx}
+      OR COALESCE(l.origin_email, l_dir.origin_email, '') ILIKE $${idx}
+      OR COALESCE(l.origin_phone, l_dir.origin_phone, '') ILIKE $${idx}
     )`)
-    params.push(`%${filters.search}%`)
+    params.push(`%${q}%`)
     idx++
   }
 
@@ -96,6 +159,8 @@ async function tokenList (filters = {}) {
   const size = Math.max(1, Math.min(100, Number(filters.size) || 25))
   const offset = (page - 1) * size
 
+  // Joins replicados de BASE_SELECT — necesarios para que los WHERE referencien
+  // pv/pe/pv_dir/pe_dir (busqueda por codigo de programa o edicion).
   const countQuery = `
     SELECT COUNT(*) AS total
     FROM payment_tokens pt
@@ -103,7 +168,11 @@ async function tokenList (filters = {}) {
     LEFT JOIN customers cust ON cust.customer_id = e.customer_id
     LEFT JOIN persons per ON per.person_id = cust.person_id
     LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN leads l_dir ON l_dir.lead_id = pt.lead_id
+    LEFT JOIN program_versions pv_dir ON pv_dir.program_version_id = l_dir.program_version_id
+    LEFT JOIN program_editions pe_dir ON pe_dir.edition_num_id = l_dir.program_edition_id
     ${where}
   `
 
