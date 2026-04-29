@@ -194,42 +194,54 @@ async function notifyEnrollmentResubmitted ({ studentName, programName, editionC
   }
 }
 
-async function notifyTokenCreated ({ studentName, programName, editionCode, paymentType, amount, currency, notes, requestedByName }) {
+async function notifyTokenCreated ({ studentName, programName, editionCode, paymentType, amount, currency, isInstallment, notes, requestedByName }) {
   try {
-    await post({
-      channel: SLACK_CHANNEL_FICO,
-      blocks: [
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: `:ticket: *TOKEN SOLICITADO*` }
-        },
-        {
-          type: 'section',
-          fields: [
-            { type: 'mrkdwn', text: `:bust_in_silhouette: *Alumno:*\n${studentName || '---'}` },
-            { type: 'mrkdwn', text: `:mortar_board: *Programa:*\n${programName || '---'} ${editionCode || ''}` }
-          ]
-        },
-        {
-          type: 'section',
-          fields: [
-            { type: 'mrkdwn', text: `:credit_card: *Tipo:*\n${paymentType === 'credito' ? 'Credito' : 'Debito'}` },
-            { type: 'mrkdwn', text: `:moneybag: *Monto:*\n${currency} ${amount}` }
-          ]
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: `:memo: *Nota:*\n${notes || '---'}` }
-        },
-        {
-          type: 'context',
-          elements: [
-            { type: 'mrkdwn', text: `:raising_hand: *Solicitado por:* ${requestedByName || '---'}` }
-          ]
-        },
-        { type: 'divider' }
-      ]
-    })
+    const amountLabel = isInstallment ? 'Monto inicial' : 'Monto'
+    const blocks = [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:ticket: *TOKEN SOLICITADO*` }
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `:bust_in_silhouette: *Alumno:*\n${studentName || '---'}` },
+          { type: 'mrkdwn', text: `:mortar_board: *Programa:*\n${programName || '---'} ${editionCode || ''}` }
+        ]
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `:credit_card: *Tipo:*\n${paymentType === 'credito' ? 'Credito' : 'Debito'}` },
+          { type: 'mrkdwn', text: `:moneybag: *${amountLabel}:*\n${currency} ${amount}` }
+        ]
+      }
+    ]
+
+    if (isInstallment) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: `:repeat: _Inscripcion en cuotas — el link cobra solo la inicial._` }
+        ]
+      })
+    }
+
+    blocks.push(
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `:memo: *Nota:*\n${notes || '---'}` }
+      },
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: `:raising_hand: *Solicitado por:* ${requestedByName || '---'}` }
+        ]
+      },
+      { type: 'divider' }
+    )
+
+    await post({ channel: SLACK_CHANNEL_FICO, blocks })
   } catch (err) {
     console.error('[slack] notifyTokenCreated:', err.message)
   }
@@ -237,16 +249,23 @@ async function notifyTokenCreated ({ studentName, programName, editionCode, paym
 
 async function notifyTokenLinkAdded ({ students, groupTotal, currency, advisorName, createdByName, paymentUrl }) {
   try {
-    const list    = Array.isArray(students) ? students : []
-    const isGroup = list.length > 1
+    const list             = Array.isArray(students) ? students : []
+    const isGroup          = list.length > 1
+    const anyInstallment   = list.some(s => s.isInstallment)
+    const totalLabel       = anyInstallment ? 'total inicial' : 'total'
 
     const header = isGroup
       ? `:link: *TOKEN - LINK GENERADO (GRUPO de ${list.length})*`
       : `:link: *TOKEN - LINK GENERADO*`
 
-    const summary = isGroup
-      ? `Se ha generado un link unico por *${createdByName || '---'}* que cubre *${list.length} inscripciones* por un total de *${currency || ''} ${Number(groupTotal || 0).toFixed(2)}*:`
-      : `Se ha generado el link de pago por *${createdByName || '---'}* para *${list[0]?.name || '---'}* en *${list[0]?.programName || '---'}*.`
+    let summary
+    if (isGroup) {
+      summary = `Se ha generado un link unico por *${createdByName || '---'}* que cubre *${list.length} inscripciones* por un ${totalLabel} de *${currency || ''} ${Number(groupTotal || 0).toFixed(2)}*:`
+    } else {
+      const single = list[0]
+      const inicialNote = single?.isInstallment ? ' _(inicial de plan en cuotas)_' : ''
+      summary = `Se ha generado el link de pago por *${createdByName || '---'}* para *${single?.name || '---'}* en *${single?.programName || '---'}*${inicialNote}.`
+    }
 
     const blocks = [
       { type: 'section', text: { type: 'mrkdwn', text: header } },
@@ -254,8 +273,20 @@ async function notifyTokenLinkAdded ({ students, groupTotal, currency, advisorNa
     ]
 
     if (isGroup) {
-      const lines = list.map(s => `• *${s.name}* — ${s.programName} (${s.currency} ${Number(s.amount).toFixed(2)})`).join('\n')
+      const lines = list.map(s => {
+        const tag = s.isInstallment ? ' _(inicial)_' : ''
+        return `• *${s.name}* — ${s.programName} (${s.currency} ${Number(s.amount).toFixed(2)}${tag})`
+      }).join('\n')
       blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lines } })
+
+      if (anyInstallment) {
+        blocks.push({
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: ':repeat: _Los montos marcados como (inicial) son la primera cuota; el resto se cobra fuera del link._' }
+          ]
+        })
+      }
     }
 
     blocks.push({
