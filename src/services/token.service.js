@@ -190,6 +190,11 @@ async function tokenCreate ({ leadId, enrollmentId, catProvider, paymentType, am
     `, [leadId, userId])
     const info = leadInfo?.[0]
     if (info) {
+      // Espejo de la logica del frontend (LeadsNew.vue:3288): cuando la inscripcion
+      // va en cuotas, el `amount` ya viene siendo solo la inicial. Slack debe
+      // explicitar esa distincion para que quien lee el canal no confunda
+      // "S/150 al contado" con "S/150 inicial de un plan de S/600".
+      const isInstallment = inscriptionData?.inscription?.cat_type_payment === 'we_payment_way_installments'
       await slackClient.notifyTokenCreated({
         studentName: inscriptionFullName(inscriptionData) || info.student_name,
         programName: info.program_name,
@@ -198,6 +203,7 @@ async function tokenCreate ({ leadId, enrollmentId, catProvider, paymentType, am
           : '',
         paymentType: paymentType,
         amount, currency,
+        isInstallment,
         notes: advisorObservation || notes,
         requestedByName: info.advisor_alias
       })
@@ -304,6 +310,7 @@ async function tokenUpdate ({ tokenId, paymentUrl, providerReference, notes, exp
           pt.token_id,
           pt.amount,
           pt.currency,
+          pt.inscription_data->'inscription'->>'cat_type_payment' AS cat_type_payment,
           COALESCE(
             NULLIF(TRIM(
               COALESCE(pt.inscription_data->'inscription'->>'full_name','') || ' ' ||
@@ -328,10 +335,11 @@ async function tokenUpdate ({ tokenId, paymentUrl, providerReference, notes, exp
 
       if (info.length) {
         const students = info.map(r => ({
-          name:        r.student_name || '---',
-          programName: r.program_name || '---',
-          amount:      Number(r.amount),
-          currency:    r.currency
+          name:          r.student_name || '---',
+          programName:   r.program_name || '---',
+          amount:        Number(r.amount),
+          currency:      r.currency,
+          isInstallment: r.cat_type_payment === 'we_payment_way_installments'
         }))
         const total = students.reduce((s, x) => s + x.amount, 0)
         await slackClient.notifyTokenLinkAdded({
