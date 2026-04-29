@@ -395,6 +395,7 @@ export async function generateCronogramaPdf({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT
       e.program_edition_id,
+      e.program_version_id,
       pv.abbreviation  AS program_name,
       pv.version_code,
       pv.global_code
@@ -407,18 +408,49 @@ export async function generateCronogramaPdf({ enrollmentId }) {
   if (!enroll) throw new Error('Inscripción no encontrada para PDF cronograma')
 
   const parentEditionId = enroll.program_edition_id
-  if (!parentEditionId) throw new Error('La inscripción no tiene edición padre asignada')
+  // E0 = padre sin edicion programada. Igual generamos el PDF mostrando la
+  // estructura del programa (modulos del program_version_structure) con fechas
+  // pendientes; al confirmar la edicion el alumno recibira el cronograma final.
+  const isE0 = !parentEditionId
 
-  const [tree, catalog] = await Promise.all([
-    getEditionTree(parentEditionId),
-    getCatalog()
-  ])
+  let children = []
+  let catalog = {}
 
-  if (!tree) throw new Error('Árbol de edición no encontrado')
+  if (isE0) {
+    // Sin edicion: traemos la estructura del programa directo (sin fechas).
+    const { rows: structRows } = await pool.query(`
+      SELECT
+        pvs.child_program_version_id,
+        pvs.sort_order,
+        pv.abbreviation  AS abbreviation,
+        pv.global_code   AS global_code
+      FROM program_version_structure pvs
+      JOIN program_versions pv ON pv.program_version_id = pvs.child_program_version_id
+      WHERE pvs.parent_program_version_id = $1
+      ORDER BY pvs.sort_order
+    `, [enroll.program_version_id])
 
-  const row        = Array.isArray(tree) ? tree[0] : tree
-  const children   = Array.isArray(row.children) ? row.children
-                   : (row.children ? JSON.parse(row.children) : [])
+    children = (structRows || []).map(r => ({
+      program_public_label: r.abbreviation || r.global_code,
+      program_abreviature: r.abbreviation,
+      abbreviation: r.abbreviation,
+      start_date: null,
+      end_date: null,
+      sessions: null,
+      cat_day_combination_id: null
+    }))
+  } else {
+    const [tree, cat] = await Promise.all([
+      getEditionTree(parentEditionId),
+      getCatalog()
+    ])
+    if (!tree) throw new Error('Árbol de edición no encontrado')
+    const row = Array.isArray(tree) ? tree[0] : tree
+    children = Array.isArray(row.children) ? row.children
+             : (row.children ? JSON.parse(row.children) : [])
+    catalog = cat || {}
+  }
+
   const dayCombos  = catalog['we_day_combination'] || []
   const holidays   = catalog['we_holiday'] || []
   const holidaySet = new Set(holidays.map(h => h.variable_3).filter(Boolean))
@@ -446,11 +478,22 @@ export async function generateCronogramaPdf({ enrollmentId }) {
   doc.rect(0, 0, PAGE_W, 70).fill(C.navy)
   try { doc.image(LOGO_PATH, ML, 17, { height: 36 }) } catch {}
   doc.fillColor(C.white).font('Helvetica-Bold').fontSize(13)
-     .text('Cronograma del Programa', 0, 22, { align: 'center' })
+     .text(isE0 ? 'Estructura del Programa' : 'Cronograma del Programa', 0, 22, { align: 'center' })
   doc.font('Helvetica').fontSize(9).fillColor('#B0C4DE')
      .text(enroll.program_name || '', 0, 40, { align: 'center' })
 
   let y = 90
+
+  // Nota explicativa para E0 (programa padre sin edicion programada)
+  if (isE0) {
+    const noteH = 36
+    doc.rect(ML, y, PAGE_W - 2 * ML, noteH).fill('#FEF3C7').stroke('#FBBF24').lineWidth(0.5)
+    doc.fillColor('#92400E').font('Helvetica-Bold').fontSize(8)
+       .text('Cronograma pendiente', ML + 10, y + 6)
+    doc.font('Helvetica').fontSize(8).fillColor('#78350F')
+       .text('Las fechas, horarios y sesiones de cada modulo se asignaran al confirmar la edicion programada. Recibiras el cronograma definitivo por correo.', ML + 10, y + 18, { width: PAGE_W - 2 * ML - 20 })
+    y += noteH + 10
+  }
 
   // Cabecera tabla
   const COL = { num: 30, name: 200, start: 80, end: 80, days: 75, hours: 75 }

@@ -15,26 +15,73 @@ function getMembershipAssets (tipo) {
   const map = {
     PLATINUM: {
       bannerid: '1b0r-oURRlWgnOwDNKo8NOaQOhXGGShQd',
-      benefitlink: 'http://bit.ly/GBMPlatWE',
-      wspgrouplink: 'https://chat.whatsapp.com/EcbSmYfB8Rb4aYBL1xVikZ'
+      benefitlink: 'http://bit.ly/GBMPlatWE'
     },
     GOLD: {
       bannerid: '1_wXIDeem4GJiE6um_eKxH6GhNF-zq_pM',
-      benefitlink: 'http://bit.ly/GBMBlackWe',
-      wspgrouplink: 'https://chat.whatsapp.com/EcbSmYfB8Rb4aYBL1xVikZ'
+      benefitlink: 'http://bit.ly/GBMBlackWe'
     },
     PLUS: {
       bannerid: '1StopsX6rjJ80Mg7VhsUAX70-xetGT4CL',
-      benefitlink: 'http://bit.ly/GBMPlusWe',
-      wspgrouplink: 'https://chat.whatsapp.com/KYyUZ4vDV7TGRfwJKhinys'
+      benefitlink: 'http://bit.ly/GBMPlusWe'
     },
     BLACK: {
       bannerid: '1i7iD6NIBEnMx6QGOSHgLY9qEpsN6oBCY',
-      benefitlink: 'http://bit.ly/GBMBlackWe',
-      wspgrouplink: 'https://chat.whatsapp.com/EcbSmYfB8Rb4aYBL1xVikZ'
+      benefitlink: 'http://bit.ly/GBMBlackWe'
     }
   }
   return map[tipo] || map.GOLD
+}
+
+// Equivalente exacto a obtenerConfiguracionMembresia() del Apps Script.
+// Devuelve { beneficios, whatsapp } por tipo de membresia.
+function getMembershipConfig (tipo) {
+  const defaultWsp = 'https://chat.whatsapp.com/EcbSmYfB8Rb4aYBL1xVikZ'
+  let beneficios = ''
+  let whatsapp = defaultWsp
+
+  switch (tipo) {
+    case 'PLATINUM':
+      beneficios = `
+        <ol style="margin-top:5px;">
+        <li><strong>Acceso al 100% de cursos online</strong> actuales y nuevos programas.</li>
+        <li>Acceso todo incluido a <strong>5 programas Zoom</strong>.<br>Comunicate: <a href="https://wa.me/51946912021?text=Hola.%20Soy%20Member%20PLATINIUM%20y%20quiero%20inscribirme%20a%20un%20%2Aprograma%20Zoom%2A." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 946 912 021</strong></a></li>
+        <li>Acceso con 60% dscto. en otros programas Zoom.</li>
+        </ol>`
+      break
+
+    case 'GOLD':
+      beneficios = `
+        <ol style="margin-top:5px;">
+        <li><strong>Acceso al 100% de cursos online</strong> actuales y nuevos programas.</li>
+        <li>Acceso todo incluido a <strong>2 programas Zoom</strong>.<br>Comunicate: <a href="https://wa.me/51946912021?text=Hola.%20Soy%20Member%20GOLD%20y%20quiero%20inscribirme%20a%20un%20%2Aprograma%20Zoom%2A." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 946 912 021</strong></a></li>
+        <li>Acceso con 60% dscto. en otros programas Zoom.</li>
+        <li>Acceso al <strong>servidor SAP</strong> durante 6 meses.<br>Solicita usuario: <a href="https://wa.me/51943882766?text=Hola%20soy%20member%20we%2C%20solicito%20mi%20usuario%20y%20contrase%C3%B1a%20SAP." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 986115148</strong></a></li>
+       </ol>`
+      break
+
+    case 'PLUS':
+      whatsapp = 'https://chat.whatsapp.com/IjyWpnOZGuG62Xuzt7IXWk'
+      beneficios = `
+        <ol style="margin-top:5px;">
+        <li><strong>Acceso al 100% de cursos online</strong> actuales y nuevos programas.</li>
+        <li>Acceso con 60% dscto. en programas Zoom.<br>Comunicate: <a href="https://wa.me/51946912021?text=Hola.%20Soy%20Member%20PLUS%20y%20quiero%20inscribirme%20a%20un%20%2Aprograma%20Zoom%2A." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 946 912 021</strong></a></li>
+        <li>Acceso al <strong>servidor SAP</strong> durante 6 meses.<br>Solicita usuario: <a href="https://wa.me/51943882766?text=Hola%20soy%20member%20we%2C%20solicito%20mi%20usuario%20y%20contrase%C3%B1a%20SAP." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 943 882 766</strong></a></li>
+        </ol>`
+      break
+
+    case 'BLACK':
+      beneficios = `
+        <ol style="margin-top:5px;">
+        <li><strong>Acceso al 100% de cursos online</strong> actuales y nuevos programas.</li>
+        <li>Acceso a <strong>TODOS los programas Zoom</strong>.<br>Comunicate: <a href="https://wa.me/51946912021?text=Hola.%20Soy%20Member%20BLACK%20y%20quiero%20inscribirme%20a%20un%20%2Aprograma%20Zoom%2A." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 946 912 021</strong></a></li>
+        <li>Acceso Premium todo incluido a eventos virtuales y presenciales.</li>
+        <li>Acceso al <strong>servidor SAP</strong> durante 6 meses.<br>Solicita usuario: <a href="https://wa.me/51943882766?text=Hola%20soy%20member%20we%2C%20solicito%20mi%20usuario%20y%20contrase%C3%B1a%20SAP." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 943 882 766</strong></a></li>
+        </ol>`
+      break
+  }
+
+  return { beneficios, whatsapp }
 }
 
 export function buildMembresiaHTML (data) {
@@ -55,9 +102,14 @@ export function buildMembresiaHTML (data) {
   const nombre = capitalizeName(studentName)
   const tipo = detectMembershipType(programName)
   const assets = getMembershipAssets(tipo)
+  const config = getMembershipConfig(tipo)
   const tablaHTML = installmentsHTML || ''
-  const beneficiosHTML = bloqueBeneficios || ''
-  const fichaLink = fichaRegistroLink || 'https://we-educacion-certificacion.com/'
+  // Si no nos pasaron beneficios desde el caller, los toma del config por tipo.
+  const beneficiosHTML = bloqueBeneficios || config.beneficios
+  // Link al grupo de WhatsApp del tipo (PLUS tiene grupo distinto al resto).
+  const whatsappLink = config.whatsapp
+  // Ficha de registro: misma URL fija que usa el GAS para todas las membresias.
+  const fichaLink = fichaRegistroLink || 'https://docs.google.com/forms/d/e/1FAIpQLScBPUFPYM665vzPSPqoQR_c-W-gqziFsJYQQp441_SArEWQ8g/viewform'
 
   const accessBlock = isNew
     ? `<tr style="background-color: #ffffff; color:black; text-align: center;">
@@ -69,7 +121,7 @@ export function buildMembresiaHTML (data) {
     : `<tr style="background-color: #ffffff; color:black; text-align: center;">
                     <td align="center" style="padding: 10px;">
                         <font face="Tahoma" size="2"><strong>USUARIO: ${email}</strong></font><br>
-                        <font face="Tahoma" size="2">Si ya cuentas con un usuario, podr\u00e1s acceder con la contrase\u00f1a que creaste.</font>
+                        <font face="Tahoma" size="2">Tu cuenta ya est\u00e1 activa. Si olvidaste tu contrase\u00f1a, <a href="https://we-educacion.com/web/reset_password" target="_blank" style="color:#1155cc;"><strong>recup\u00e9rala aqu\u00ed</strong></a>.</font>
                     </td>
                 </tr>`
 
@@ -118,6 +170,7 @@ export function buildMembresiaHTML (data) {
         </td>
     </tr>
 
+    ${tablaHTML ? `
     <tr>
         <td align="center" style="padding: 5px 0px;">
             <hr width="400" align="center" color="#cccccc">
@@ -125,7 +178,7 @@ export function buildMembresiaHTML (data) {
     </tr>
     <tr>
         <td align="center">${tablaHTML}</td>
-    </tr>
+    </tr>` : ''}
 
     <tr>
         <td align="center" style="padding-top: 20px;text-align:center">
@@ -244,7 +297,7 @@ export function buildMembresiaHTML (data) {
     </tr>
     <tr>
           <td align="center" style="padding: 5px 0 10px 0;">
-              <a href="${assets.wspgrouplink}" target="_blank">
+              <a href="${whatsappLink}" target="_blank">
                   <img src="https://lh3.googleusercontent.com/d/1brFYxzYxWNeliQvIU9dhc62X888rlQJB"
                         alt="GRUPO WHATSAPP"
                         width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
@@ -311,4 +364,4 @@ export function buildMembresiaHTML (data) {
 </html>`
 }
 
-export { detectMembershipType }
+export { detectMembershipType, getMembershipAssets, getMembershipConfig }

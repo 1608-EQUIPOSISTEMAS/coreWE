@@ -97,29 +97,44 @@ async function confirmPayment (payload) {
   // Validacion previa: si la inscripcion es padre con hijos, todos los hijos no convalidados
   // deben tener una edicion asignable (en el arbol del padre o custom). Si falta, abortar.
   if (payload.enrollment_id) {
-    const validation = await validateChildEnrollmentSetup({ enrollmentId: payload.enrollment_id })
-    if (!validation.ok) {
-      return {
-        result: 2,
-        message: 'Faltan ediciones por configurar antes de confirmar el pago',
-        validation_errors: validation.errors
+    try {
+      const validation = await validateChildEnrollmentSetup({ enrollmentId: payload.enrollment_id })
+      if (!validation.ok) {
+        return {
+          result: 2,
+          message: 'Faltan ediciones por configurar antes de confirmar el pago',
+          validation_errors: validation.errors
+        }
       }
+    } catch (vErr) {
+      console.error('[confirmPayment] validateChildEnrollmentSetup falló:', vErr.message, vErr.stack)
+      // No abortamos: los enrollments sin estructura de hijos no requieren validacion.
     }
   }
 
-  const { rows } = await pool.query(
-    'SELECT * FROM public.sp_fico_confirm_payment($1::jsonb)',
-    [JSON.stringify(payload)]
-  )
-  const resp = rows?.[0] || { result: 0, message: 'Sin respuesta' }
+  let resp
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM public.sp_fico_confirm_payment($1::jsonb)',
+      [JSON.stringify(payload)]
+    )
+    resp = rows?.[0] || { result: 0, message: 'Sin respuesta' }
+  } catch (spErr) {
+    console.error('[confirmPayment] SP sp_fico_confirm_payment falló:', spErr.message, spErr.stack, 'payload:', JSON.stringify(payload))
+    throw new Error(`SP confirm_payment: ${spErr.message}`)
+  }
 
   if (resp.result === 1 && payload.enrollment_id) {
-    await logAudit({
-      enrollmentId: payload.enrollment_id,
-      action: 'approved',
-      userId: payload.user_id,
-      details: `Pago confirmado: ${payload.action || ''}`
-    })
+    try {
+      await logAudit({
+        enrollmentId: payload.enrollment_id,
+        action: 'approved',
+        userId: payload.user_id,
+        details: `Pago confirmado: ${payload.action || ''}`
+      })
+    } catch (auditErr) {
+      console.error('[confirmPayment] logAudit approved falló:', auditErr.message)
+    }
 
     try {
       await createChildEnrollments({ enrollmentId: payload.enrollment_id, userId: payload.user_id })
@@ -146,11 +161,12 @@ async function confirmPayment (payload) {
       if (!odooOrderId) {
         const odooResult = await enrollInOdoo({ enrollmentId: payload.enrollment_id })
         if (odooResult?.success) {
+          const cursoLabel = odooResult.course_search || 'Curso no especificado'
           await logAudit({
             enrollmentId: payload.enrollment_id,
             action: 'odoo_enrolled',
             userId: payload.user_id,
-            details: `Odoo user ${odooResult.odoo_user_id} - ${odooResult.course_search}`
+            details: `Odoo user ${odooResult.odoo_user_id} - ${cursoLabel}`
           })
           const { rows: updated } = await pool.query(
             'SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1',
@@ -718,9 +734,20 @@ async function bankAccountList () {
 }
 
 async function previewConfirmationEmail ({ enrollmentId }) {
+  // Si es membresia, derivar al preview de membresia (otra plantilla, otros datos).
+  const { rows: checkRows } = await pool.query(`
+    SELECT pv.abbreviation, prog.is_membership FROM enrollments e
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+  if (checkRows?.[0] && isMembership(checkRows[0].abbreviation, checkRows[0].is_membership)) {
+    return previewMembershipEmail({ enrollmentId })
+  }
+
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
-           per.first_name, per.last_name,
+           per.first_name, per.last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
@@ -765,12 +792,16 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
   const odooEmail = data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  // isNew: se va a crear (o se creo) un usuario nuevo en esta inscripcion.
-  //  - odoo_password seteado -> lo creamos nosotros (1234567), mostrar credenciales
-  //  - sin odoo_user_id (no se sincronizo aun) -> asumimos que sera nuevo
-  //  - con odoo_user_id pero sin odoo_password -> se reuso un user existente,
-  //    no conocemos su contrasenia real, muestra el bloque "misma contrasenia"
-  const isNew = !!data.odoo_password || !data.odoo_user_id
+
+  // Mismo check que el envio real: si ya hubo un envio exitoso, el preview muestra
+  // el bloque "cuenta activa, recupera password". Si nunca se envio, muestra
+  // credenciales (asumiendo que sera primer envio al confirmar).
+  const { rows: priorSendsPreview } = await pool.query(`
+    SELECT 1 FROM public.email_logs
+    WHERE enrollment_id = $1 AND template_type = 'confirmacion' AND status = 'sent'
+    LIMIT 1
+  `, [enrollmentId])
+  const isNew = !priorSendsPreview?.[0]
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -780,6 +811,8 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   `, [enrollmentId])
   const isParentProgram = childCheck.length > 0
 
+  // Para programas padre siempre ocultamos WhatsApp y mostramos mensaje de cronograma
+  // adjunto (igual que el envio real, aunque el PDF se construye en send time).
   const htmlBody = buildConfirmacionHTML({
     studentName: `${firstName} ${lastName}`,
     programName: data.program_name,
@@ -800,6 +833,99 @@ async function previewConfirmationEmail ({ enrollmentId }) {
     subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
     hasAttachment: isParentProgram,
     attachmentName: isParentProgram ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null
+  }
+}
+
+async function previewMembershipEmail ({ enrollmentId }) {
+  const { rows } = await pool.query(`
+    SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           pv.abbreviation AS program_name,
+           pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
+           curr.variable_2 AS currency_symbol,
+           c_plan.alias AS payment_plan_alias
+    FROM enrollments e
+    JOIN customers cust ON cust.customer_id = e.customer_id
+    JOIN persons per ON per.person_id = cust.person_id
+    LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
+    LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  const data = rows?.[0]
+  if (!data) return { html: null, error: 'Inscripcion no encontrada' }
+
+  const startDate = data.start_date ? new Date(data.start_date) : new Date()
+  const fechaAct = startDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
+  const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
+  const lastName  = (data.last_name  || '').trim().split(/\s+/)[0] || ''
+  // Para PREVIEW si aun no se sincronizo, usamos el email proyectado (lastname.firstname).
+  // Esto solo se muestra en preview — el envio real falla si no hay odoo_email persistido.
+  const odooEmail = data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
+
+  // Cuotas: solo si el plan es por cuotas. Pago al contado oculta la tabla.
+  let installmentsHTML = ''
+  const isSinglePayment = data.payment_plan_alias === 'we_payment_way_single'
+  if (!isSinglePayment) {
+    const { rows: instRows } = await pool.query(`
+      SELECT installment_number, amount, due_date
+      FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0
+      ORDER BY installment_number
+    `, [enrollmentId])
+
+    if (instRows && instRows.length > 0) {
+      const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+      const fechasCells = instRows.map(i => {
+        const d = new Date(i.due_date)
+        return `<td><font face="Tahoma" size="2">${String(d.getUTCDate()).padStart(2,'0')} ${meses[d.getUTCMonth()]}</font></td>`
+      }).join('')
+      const pagosCells = instRows.map(i => `<td><font face="Tahoma" size="2">${data.currency_symbol || 'S/.'} ${Math.trunc(Number(i.amount || 0))}</font></td>`).join('')
+      installmentsHTML = `
+        <table width="450" border="2" align="center" style="border-collapse:collapse;text-align:center;">
+          <thead><tr><td colspan="${instRows.length + 1}" style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">CRONOGRAMA DE PAGOS</font></td></tr></thead>
+          <tbody>
+            <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Fechas</font></td>${fechasCells}</tr>
+            <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Pago</font></td>${pagosCells}</tr>
+          </tbody>
+        </table>`
+    }
+  }
+
+  // Mismo check que el envio real: si ya hubo un envio exitoso para esta
+  // inscripcion, el preview muestra el bloque de "cuenta activa, recupera tu
+  // password" — lo que el alumno realmente recibira al darle reenviar.
+  const { rows: priorSendsPreview } = await pool.query(`
+    SELECT 1 FROM public.email_logs
+    WHERE enrollment_id = $1 AND template_type = 'membresia' AND status = 'sent'
+    LIMIT 1
+  `, [enrollmentId])
+  const isFirstSendPreview = !priorSendsPreview?.[0]
+
+  const htmlBody = buildMembresiaHTML({
+    studentName: `${data.first_name} ${data.last_name}`,
+    programName: data.program_name,
+    email: odooEmail,
+    password: '1234567',
+    isNew: isFirstSendPreview,
+    duracion: '12 meses',
+    fechaActivacion: fechaAct,
+    fechaRenovacion: '---',
+    installmentsHTML,
+    bloqueBeneficios: undefined,
+    fichaRegistroLink: undefined
+  })
+
+  const tipo = detectMembershipType(data.program_name)
+  return {
+    html: htmlBody,
+    to: data.origin_email || '---',
+    subject: `Bienvenido a tu Membresia ${tipo} - WE Educacion`,
+    hasAttachment: false,
+    attachmentName: null
   }
 }
 
@@ -879,12 +1005,17 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     'SELECT odoo_user_id, odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
   )
   const odooEmail = freshEnroll?.[0]?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
-  // isNew: se va a crear (o se creo) un usuario nuevo en esta inscripcion.
-  //  - odoo_password seteado -> lo creamos nosotros (1234567), mostrar credenciales
-  //  - sin odoo_user_id (no se sincronizo aun) -> asumimos que sera nuevo
-  //  - con odoo_user_id pero sin odoo_password -> se reuso un user existente,
-  //    no conocemos su contrasenia real, muestra el bloque "misma contrasenia"
-  const isNew = !!freshEnroll?.[0]?.odoo_password || !freshEnroll?.[0]?.odoo_user_id
+
+  // Resend detection: si ya hubo un envio exitoso ('confirmacion' status='sent')
+  // para esta inscripcion, lo tratamos como reenvio -> bloque "ya estas registrado,
+  // recupera password aqui" en lugar de exponer credenciales otra vez.
+  const { rows: priorSends } = await pool.query(`
+    SELECT 1 FROM public.email_logs
+    WHERE enrollment_id = $1 AND template_type = 'confirmacion' AND status = 'sent'
+    LIMIT 1
+  `, [enrollmentId])
+  const isFirstSend = !priorSends?.[0]
+  const isNew = isFirstSend
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -897,18 +1028,28 @@ async function sendConfirmationEmail ({ enrollmentId }) {
   const attachments = []
   if (isParentProgram) {
     try {
+      console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
       const pdfBuffer = await generateCronogramaPdf({ enrollmentId })
-      const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
-      attachments.push({
-        filename: `Cronograma-${safeName}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf'
-      })
+      if (!pdfBuffer || pdfBuffer.length === 0) {
+        console.error(`[sendConfirmationEmail] PDF cronograma vacio para enrollment #${enrollmentId}`)
+      } else {
+        const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+        attachments.push({
+          filename: `Cronograma-${safeName}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        })
+        console.log(`[sendConfirmationEmail] PDF cronograma generado OK (${pdfBuffer.length} bytes) para enrollment #${enrollmentId}`)
+      }
     } catch (pdfErr) {
-      console.error('[sendConfirmationEmail] Error generando PDF cronograma:', pdfErr.message)
+      console.error(`[sendConfirmationEmail] Error generando PDF cronograma para enrollment #${enrollmentId}:`, pdfErr.message, pdfErr.stack)
     }
   }
 
+  // Para programas padre (ESP/PEE/DIPLOMADO), siempre ocultamos el bloque de WhatsApp
+  // porque cada hijo tiene su propio grupo. NO depende de si el PDF se adjunto o no
+  // (si fallo el PDF, igual queremos ocultar WhatsApp; el alumno puede pedir el
+  // cronograma despues, pero el bloque de "unete a WhatsApp" no aplica al padre).
   const htmlBody = buildConfirmacionHTML({
     studentName: `${firstName} ${lastName}`,
     programName: data.program_name,
@@ -921,7 +1062,7 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     bannerUrl: data.banner_link || '',
     installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
     currencySymbol: data.currency_symbol || 'S/.',
-    hideWhatsapp: isParentProgram && attachments.length > 0
+    hideWhatsapp: isParentProgram
   })
 
   const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
@@ -1254,6 +1395,15 @@ function isMembership (programName, isMembershipFlag = null) {
 }
 
 async function enrollMembershipInOdoo ({ enrollmentId }) {
+  try {
+    return await _enrollMembershipInOdooInner({ enrollmentId })
+  } catch (err) {
+    console.error('[enrollMembershipInOdoo] Throw inesperado:', err.message, err.stack)
+    return { success: false, error: `enrollMembershipInOdoo: ${err.message}`, odoo_user_id: null }
+  }
+}
+
+async function _enrollMembershipInOdooInner ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
@@ -1270,18 +1420,17 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
   if (!data) throw new Error('Inscripcion no encontrada')
 
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
-  const normalize = s => (s || '').toLowerCase().trim()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z\s]/g, '').replace(/\s+/g, '.')
-  const createEmail = `${normalize(data.last_name)}.${normalize(data.first_name)}@weeducacion.edu.pe`
-  const password = 'WE' + String(data.document_number || '').slice(-4) + '!'
+  // Mismo password que el flujo de cursos regulares. Es el unico que conocemos y
+  // por lo tanto el unico que tenemos derecho a comunicar al alumno por correo.
+  const password = '1234567'
+  // createEmail UNICO \u2014 si otro alumno con apellido.nombre ya tiene ese login en
+  // Odoo, buildUniqueOdooEmail agrega sufijo numerico. Sin esto, antes hacia falsa
+  // reutilizacion de un user de otra persona y el correo final ni mostraba password.
+  const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // Buscamos un Odoo user previo del MISMO alumno (mismo DNI). Si existe, usamos su
-  // login Odoo como searchEmail; si no, usamos createEmail. Nunca origin_email: el
-  // correo personal del lead puede repetirse entre personas distintas y matchearia
-  // por partner.email a otro usuario en Odoo (resultado: reutilizamos a otra persona
-  // y la plantilla dice "ya estas registrado, usa la misma contrasenia" cuando es
-  // alguien diferente).
+  // Si la persona (mismo DNI) ya tiene un odoo_user_id propio, lo reusamos. Sino,
+  // searchEmail = createEmail (que esta garantizado disponible) -> el lookup en Odoo
+  // retorna null y se crea un user nuevo con password 1234567.
   const { rows: prevOdooMb } = await pool.query(`
     SELECT e.odoo_user_id FROM enrollments e
     JOIN customers c ON c.customer_id = e.customer_id
@@ -1311,16 +1460,29 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
     `, [result.odoo_user_id, enrollmentId, odooEmailFinal, result.password_set || null])
   }
 
-  return result
+  // Etiqueta para el audit log: las membresias inscriben en TODOS los cursos online
+  // del Campus, no a un curso especifico. Asi el detalle del audit se ve claro
+  // ("Odoo user 46953 - Todos los cursos online") en vez de "- undefined".
+  return { ...result, course_search: 'Todos los cursos online' }
 }
 
 async function sendMembershipEmail ({ enrollmentId }) {
-  const { rows } = await pool.query(`
+  try {
+    return await _sendMembershipEmailInner({ enrollmentId })
+  } catch (err) {
+    console.error('[sendMembershipEmail] Throw inesperado:', err.message, err.stack)
+    return { success: false, error: `sendMembershipEmail: ${err.message}` }
+  }
+}
+
+async function _sendMembershipEmailInner ({ enrollmentId }) {
+  const queryEnrollment = () => pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
-           pe.start_date, e.odoo_user_id,
-           curr.variable_2 AS currency_symbol
+           pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
+           curr.variable_2 AS currency_symbol,
+           c_plan.alias AS payment_plan_alias
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
     JOIN persons per ON per.person_id = cust.person_id
@@ -1328,59 +1490,113 @@ async function sendMembershipEmail ({ enrollmentId }) {
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
+    LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
 
-  const data = rows?.[0]
+  let { rows } = await queryEnrollment()
+  let data = rows?.[0]
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
   const toEmail = data.origin_email
   if (!toEmail) return { success: false, error: 'Sin correo registrado' }
 
+  // Si no tenemos odoo_user_id todavia, intentamos crear el usuario en Odoo +
+  // inscribirlo en todos los cursos online ANTES de mandar el correo. Sin user
+  // creado las credenciales del correo no funcionan — preferimos no mandar nada
+  // a mandar credenciales falsas.
+  if (!data.odoo_user_id) {
+    console.log(`[sendMembershipEmail] enrollment ${enrollmentId}: sin odoo_user_id, ejecutando enrollMembershipInOdoo`)
+    const odooRes = await enrollMembershipInOdoo({ enrollmentId })
+    if (!odooRes?.success) {
+      const errMsg = odooRes?.error || 'fallo desconocido al crear usuario en Odoo'
+      console.error(`[sendMembershipEmail] No se pudo crear user en Odoo para enrollment ${enrollmentId}: ${errMsg}`)
+      return {
+        success: false,
+        error: `No se creo usuario en Odoo (${errMsg}). El correo NO fue enviado para evitar entregar credenciales falsas.`
+      }
+    }
+    // Refrescamos data con los campos Odoo recien guardados.
+    const refreshed = await queryEnrollment()
+    data = refreshed.rows?.[0] || data
+  }
+
+  // Validacion final: si despues del intento aun no hay odoo_email, abortamos.
+  if (!data.odoo_email) {
+    return {
+      success: false,
+      error: 'No se pudo determinar odoo_email tras la inscripcion. Email no enviado.'
+    }
+  }
+
   const startDate = data.start_date ? new Date(data.start_date) : new Date()
   const fechaAct = startDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-  const { rows: instRows } = await pool.query(`
-    SELECT installment_number, amount, due_date
-    FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0
-    ORDER BY installment_number
-  `, [enrollmentId])
-
+  // Solo mostramos el cronograma de pagos cuando el plan es por cuotas. Para
+  // pago al contado (we_payment_way_single) el SP igual genera un installment_number=1
+  // con el total, pero al alumno NO le interesa ver "1 cuota = total" — le confunde.
   let installmentsHTML = ''
-  if (instRows && instRows.length > 0) {
-    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-    const fechasCells = instRows.map(i => {
-      const d = new Date(i.due_date)
-      return `<td><font face="Tahoma" size="2">${String(d.getUTCDate()).padStart(2,'0')} ${meses[d.getUTCMonth()]}</font></td>`
-    }).join('')
-    const pagosCells = instRows.map(i => `<td><font face="Tahoma" size="2">${data.currency_symbol || 'S/.'} ${Math.trunc(Number(i.amount || 0))}</font></td>`).join('')
-    installmentsHTML = `
-      <table width="450" border="2" align="center" style="border-collapse:collapse;text-align:center;">
-        <thead><tr><td colspan="${instRows.length + 1}" style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">CRONOGRAMA DE PAGOS</font></td></tr></thead>
-        <tbody>
-          <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Fechas</font></td>${fechasCells}</tr>
-          <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Pago</font></td>${pagosCells}</tr>
-        </tbody>
-      </table>`
+  const isSinglePayment = data.payment_plan_alias === 'we_payment_way_single'
+  if (!isSinglePayment) {
+    const { rows: instRows } = await pool.query(`
+      SELECT installment_number, amount, due_date
+      FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0
+      ORDER BY installment_number
+    `, [enrollmentId])
+
+    if (instRows && instRows.length > 0) {
+      const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+      const fechasCells = instRows.map(i => {
+        const d = new Date(i.due_date)
+        return `<td><font face="Tahoma" size="2">${String(d.getUTCDate()).padStart(2,'0')} ${meses[d.getUTCMonth()]}</font></td>`
+      }).join('')
+      const pagosCells = instRows.map(i => `<td><font face="Tahoma" size="2">${data.currency_symbol || 'S/.'} ${Math.trunc(Number(i.amount || 0))}</font></td>`).join('')
+      installmentsHTML = `
+        <table width="450" border="2" align="center" style="border-collapse:collapse;text-align:center;">
+          <thead><tr><td colspan="${instRows.length + 1}" style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">CRONOGRAMA DE PAGOS</font></td></tr></thead>
+          <tbody>
+            <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Fechas</font></td>${fechasCells}</tr>
+            <tr><td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="2">Pago</font></td>${pagosCells}</tr>
+          </tbody>
+        </table>`
+    }
   }
+
+  // Detectamos si es REENVIO consultando email_logs. Primer envio muestra
+  // credenciales (USUARIO + 1234567). Reenvio muestra solo USUARIO + link de
+  // recuperacion de password — evitamos mandar el password en multiples correos
+  // (privacidad/seguridad).
+  const { rows: priorSends } = await pool.query(`
+    SELECT 1 FROM public.email_logs
+    WHERE enrollment_id = $1 AND template_type = 'membresia' AND status = 'sent'
+    LIMIT 1
+  `, [enrollmentId])
+  const isFirstSend = !priorSends?.[0]
 
   const htmlBody = buildMembresiaHTML({
     studentName: `${data.first_name} ${data.last_name}`,
     programName: data.program_name,
-    email: toEmail,
+    email: data.odoo_email,
     password: '1234567',
-    isNew: !data.odoo_user_id,
+    isNew: isFirstSend,
     duracion: '12 meses',
     fechaActivacion: fechaAct,
     fechaRenovacion: '---',
     installmentsHTML,
-    bloqueBeneficios: '',
-    fichaRegistroLink: 'https://we-educacion-certificacion.com/'
+    bloqueBeneficios: undefined,
+    fichaRegistroLink: undefined
   })
 
   const tipo = detectMembershipType(data.program_name)
   const subject = `Bienvenido a tu Membresia ${tipo} - WE Educacion`
-  const result = await sendEmail({ to: toEmail, subject, htmlBody })
+  // Las membresias se mandan desde pagos@we-educacion.com (mismo sender que el GAS).
+  const result = await sendEmail({
+    to: toEmail,
+    subject,
+    htmlBody,
+    fromEmail: 'pagos@we-educacion.com',
+    fromName: 'WE Educacion Ejecutiva'
+  })
 
   try {
     await pool.query(`
@@ -1754,13 +1970,20 @@ async function ficoEnrollmentRegister ({ data, userId }) {
 
     const odoo = await safeAsync('[FICO][Odoo] auto-enroll', () => enrollInOdoo({ enrollmentId: eid }))
     if (odoo?.success) {
-      await logAudit({ enrollmentId: eid, action: 'odoo_enrolled', userId, details: `Odoo user: ${odoo.odoo_user_id}` })
+      const cursoLabel = odoo.course_search || 'Curso no especificado'
+      await logAudit({ enrollmentId: eid, action: 'odoo_enrolled', userId, details: `Odoo user ${odoo.odoo_user_id} - ${cursoLabel}` })
     }
 
     const emailRes = await safeAsync('[FICO][Email] auto-send', () => sendConfirmationEmail({ enrollmentId: eid }))
     if (emailRes?.success) {
       await logAudit({ enrollmentId: eid, action: 'email_sent', userId, details: `Correo confirmacion: ${emailRes.messageId}` })
+    } else {
+      console.error('[FICO][Email] auto-send no exitoso:', emailRes?.error || 'sin respuesta')
     }
+    // Adjuntamos el estado del envio en la respuesta para que la UI pueda informar
+    // si el correo de bienvenida (membresias) o confirmacion (cursos) llego.
+    enrollResp.email_sent = !!emailRes?.success
+    enrollResp.email_error = emailRes?.success ? null : (emailRes?.error || 'No se pudo enviar el correo')
 
     // Crear enrollments hijos si el programa es padre (diplomado/especializacion).
     // Para FICO directo, todavia no hay convalidaciones en BD, asi que esto inscribe

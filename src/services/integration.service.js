@@ -591,9 +591,13 @@ async function sendReportToSlack({ titulo, texto, imagenes = [], imagenesUrls = 
 //
 // Reglas:
 //  - Solo inscripciones con cat_fico_status = 'we_enrollment_status_checked' (aprobadas).
-//  - Solo "ventas" reales: hijos individuales (parent_enrollment_id IS NOT NULL)
-//    o cursos sin estructura padre/hijo. NO se exporta el padre cuando tiene hijos
-//    (eso seria duplicar la inscripcion).
+//  - Solo "ventas" reales: una fila por venta verdadera. Esto significa:
+//      * PADRES de programas estructurados (ESP/PEE/DIPLOMADO) — el padre representa
+//        la venta del programa completo. Los hijos (modulos internos / seguimientos)
+//        NO se exportan aqui — se exportan en "1. Aula Sistemas" para vista academica.
+//      * CURSOS STANDALONE — no tienen estructura padre/hijo, son ventas independientes.
+//      * BECAS — son inscripciones top-level normales (parent_enrollment_id NULL).
+//    Filtro: parent_enrollment_id IS NULL (todo lo que NO es hijo de otro enrollment).
 //  - 20 columnas A..T, sobreescritura total desde fila 2 (asumiendo fila 1 = headers).
 async function syncFicoSalesToSheet () {
   const SPREADSHEET_ID = '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
@@ -613,10 +617,7 @@ async function syncFicoSalesToSheet () {
         JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
-         AND (
-              e.parent_enrollment_id IS NOT NULL
-           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
-         )
+         AND e.parent_enrollment_id IS NULL
     )
     SELECT
       pv.version_code                                     AS cod,
