@@ -233,7 +233,7 @@ async function enrollStudentInCourse ({ partnerId, slideGroupId, slideChannelId,
   return { student_id: studentId, already_enrolled: false }
 }
 
-async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password, slideGroupId }) {
+async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password, slideGroupId, phone, documentNumber }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     if (!user && createEmail !== searchEmail) {
@@ -253,6 +253,20 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
 
     if (!odooPartnerId) {
       return { success: false, error: 'No se pudo obtener partner_id', odoo_user_id: odooUserId }
+    }
+
+    // Sincroniza phone/vat (DNI) en res.partner. Se ejecuta tanto en creacion
+    // como en reuso del partner existente: si el alumno ya tenia cuenta sin
+    // estos datos, los completamos; nunca los borra (solo escribe si vienen).
+    const partnerVals = {}
+    if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
+    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    if (Object.keys(partnerVals).length > 0) {
+      try {
+        await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
+      } catch (partnerErr) {
+        console.error('[odooClient] syncStudentToOdoo: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+      }
     }
 
     const group = await getSlideGroup(slideGroupId)
@@ -284,7 +298,7 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
   }
 }
 
-async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password }) {
+async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     let odooUserId, odooPartnerId, created = false
@@ -301,6 +315,17 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
 
     if (!odooPartnerId) {
       return { success: false, error: 'No se pudo obtener partner_id', odoo_user_id: odooUserId }
+    }
+
+    const partnerVals = {}
+    if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
+    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    if (Object.keys(partnerVals).length > 0) {
+      try {
+        await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
+      } catch (partnerErr) {
+        console.error('[odooClient] enrollInAllOnlineCourses: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+      }
     }
 
     const channels = await callKw('slide.channel', 'search_read', [

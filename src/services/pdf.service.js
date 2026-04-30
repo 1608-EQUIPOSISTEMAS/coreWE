@@ -392,15 +392,20 @@ function moduleTable(doc, ml, w, children, currentChildId) {
 // ─── PDF de cronograma de programa (para email de confirmación FICO) ──────────
 export async function generateCronogramaPdf({ enrollmentId }) {
   // Obtener la edición padre asociada a la inscripción
+  // global_code vive en program_editions (no en program_versions). Si el
+  // enrollment esta en E0 (sin edicion programada), pe.global_code sera NULL
+  // y el PDF lo renderiza vacio; eso es aceptable para el caso E0 porque ahi
+  // todavia no hay codigo de edicion asignado.
   const { rows } = await pool.query(`
     SELECT
       e.program_edition_id,
       e.program_version_id,
       pv.abbreviation  AS program_name,
       pv.version_code,
-      pv.global_code
+      pe.global_code
     FROM enrollments e
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
 
@@ -418,12 +423,15 @@ export async function generateCronogramaPdf({ enrollmentId }) {
 
   if (isE0) {
     // Sin edicion: traemos la estructura del programa directo (sin fechas).
+    // No tenemos global_code a este nivel porque vive en program_editions y aqui
+    // solo trabajamos con la estructura de versiones (program_version_structure).
+    // El label cae al abbreviation de la version, que es suficiente para el PDF
+    // del caso E0 (sin codigos de edicion aun).
     const { rows: structRows } = await pool.query(`
       SELECT
         pvs.child_program_version_id,
         pvs.sort_order,
-        pv.abbreviation  AS abbreviation,
-        pv.global_code   AS global_code
+        pv.abbreviation  AS abbreviation
       FROM program_version_structure pvs
       JOIN program_versions pv ON pv.program_version_id = pvs.child_program_version_id
       WHERE pvs.parent_program_version_id = $1
@@ -431,7 +439,7 @@ export async function generateCronogramaPdf({ enrollmentId }) {
     `, [enroll.program_version_id])
 
     children = (structRows || []).map(r => ({
-      program_public_label: r.abbreviation || r.global_code,
+      program_public_label: r.abbreviation,
       program_abreviature: r.abbreviation,
       abbreviation: r.abbreviation,
       start_date: null,

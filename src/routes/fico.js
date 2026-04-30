@@ -165,13 +165,17 @@ export default async function ficoRoutes (fastify) {
         type: 'object',
         required: ['enrollment_id'],
         properties: {
-          enrollment_id: { type: 'integer' }
+          enrollment_id: { type: 'integer' },
+          cc: { type: ['string', 'array', 'null'], items: { type: 'string' } }
         }
       }
     }
   }, async (req, reply) => {
     try {
-      const result = await ficoService.sendConfirmationEmail({ enrollmentId: req.body.enrollment_id })
+      const result = await ficoService.sendConfirmationEmail({
+        enrollmentId: req.body.enrollment_id,
+        cc: req.body.cc ?? undefined
+      })
       return reply.code(200).send({ ok: true, data: result })
     } catch (err) {
       console.error('[sendConfirmationEmail ERROR]', err.message)
