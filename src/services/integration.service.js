@@ -625,7 +625,18 @@ async function syncFicoSalesToSheet () {
            ELSE COALESCE(pe.global_code, '')
       END                                                  AS ed,
       to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
-      to_char(COALESCE(l.pay_date, e.registration_date::date), 'DD/MM/YYYY') AS f_pago,
+      to_char(
+        COALESCE(
+          l.pay_date,
+          (SELECT py.payment_date
+             FROM public.payments py
+            WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+            ORDER BY py.payment_date ASC
+            LIMIT 1),
+          e.registration_date::date
+        ),
+        'DD/MM/YYYY'
+      )                                                    AS f_pago,
       per.document_number                                  AS dni,
       TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
       COALESCE(
@@ -647,6 +658,7 @@ async function syncFicoSalesToSheet () {
         ELSE 'P'
       END                                                  AS ocup,
       COALESCE(
+        ag_token.alias,
         u.alias,
         e.agent_origin,
         'S/A'
@@ -685,6 +697,14 @@ async function syncFicoSalesToSheet () {
     LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_mod     ON c_mod.catalog_id  = e.cat_inscription_modality
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias
+        FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC
+       LIMIT 1
+    ) ag_token ON TRUE
     LEFT JOIN LATERAL (
       SELECT SUM(p.amount) AS total_paid
         FROM public.payments p
@@ -792,7 +812,7 @@ async function syncFicoAulaToSheet () {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END                                                  AS ocup,
-      COALESCE(u.alias, e.agent_origin, 'S/A')             AS asesor,
+      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
       'ACT'                                                AS estado_alumno,
       CASE
         WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
@@ -825,6 +845,14 @@ async function syncFicoAulaToSheet () {
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
     LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
     LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias
+        FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC
+       LIMIT 1
+    ) ag_token ON TRUE
     LEFT JOIN LATERAL (
       SELECT SUM(p.amount) AS total_paid
         FROM public.payments p

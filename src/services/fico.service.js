@@ -12,6 +12,39 @@ import { generateCronogramaPdf } from './pdf.service.js'
 import slackClient from '../config/slack.js'
 
 // =============================================================================
+// MEMBRESIA: helpers de fechas
+// =============================================================================
+// La membresia siempre es de 12 meses (regla de negocio actual). Si el dia de
+// manana se hace configurable por programa, este es el unico punto a tocar.
+const MEMBERSHIP_DURATION_MONTHS = 12
+
+// Formato dd/mm/yyyy usando getters UTC. Postgres parsea columnas DATE como
+// UTC-medianoche en JS; usar getDate()/toLocaleDateString aplicaria la TZ del
+// proceso Node y restaria 1 dia en prod (UTC) frente a local (Lima). UTC
+// getters leen los componentes "tal cual los puso pg".
+function formatCalendarDate (raw) {
+  if (!raw) return '---'
+  const d = raw instanceof Date ? raw : new Date(raw)
+  if (isNaN(d)) return '---'
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getUTCFullYear()}`
+}
+
+// Suma meses preservando "ultimo dia del mes" cuando el destino es mas corto
+// (31 ene + 1 mes = 28/29 feb, no 3 mar). setUTCMonth puro causa overflow al
+// mes siguiente, asi que detectamos el cambio de dia y rebobinamos a fin de mes.
+function addMonthsCalendar (raw, months) {
+  if (!raw) return null
+  const base = raw instanceof Date ? new Date(raw.getTime()) : new Date(raw)
+  if (isNaN(base)) return null
+  const originalDay = base.getUTCDate()
+  base.setUTCMonth(base.getUTCMonth() + months)
+  if (base.getUTCDate() !== originalDay) base.setUTCDate(0)
+  return base
+}
+
+// =============================================================================
 // SQL FRAGMENTS REUSABLES
 // =============================================================================
 // Source of Truth para resolver datos de contacto del alumno.
@@ -41,6 +74,18 @@ const STUDENT_PHONE_SQL = `
          AND pc.active = 'Y'
        ORDER BY pc.registration_date DESC LIMIT 1)
   )`
+
+// Parsea un string de CCs a array de emails validos. Acepta separadores `,` y `;`.
+// Solo emails con formato basico pasan; los invalidos se descartan silenciosamente
+// (el frontend ya valida antes de enviar; este parser es defensa en profundidad).
+function parseEmailCc (raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.filter(Boolean).map(e => String(e).trim()).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+  return String(raw)
+    .split(/[,;]/)
+    .map(e => e.trim())
+    .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+}
 
 async function enrollmentList (payload = {}) {
   const rows = await callProcedureReturningRows(
@@ -582,6 +627,7 @@ async function enrollInOdoo ({ enrollmentId }) {
     SELECT e.enrollment_id, e.program_edition_id,
            per.first_name, per.last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
            prog.odoo_activation,
            pe.start_date
     FROM enrollments e
@@ -610,13 +656,21 @@ async function enrollInOdoo ({ enrollmentId }) {
 
   const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // searchEmail debe ser SIEMPRE un identificador unico del alumno en Odoo.
-  // Si la persona (mismo DNI) ya tiene un odoo_user_id, usamos su login Odoo.
-  // Si NO existe alumno previo con este DNI, usamos el createEmail (interno y unico
-  // por construccion via buildUniqueOdooEmail). Nunca usamos origin_email aqui:
-  // es el correo personal del lead, que puede repetirse entre personas distintas
-  // (un padre inscribe a sus hijos, asesor que reusa correo, etc.) y matchearia
-  // por partner.email a OTRO usuario de Odoo.
+  // Resolucion del searchEmail (login a buscar en Odoo) en orden de prioridad:
+  //   1) Login del odoo_user_id que TENEMOS guardado para este DNI en otro
+  //      enrollment previo. Es la fuente mas confiable porque la mapeamos nosotros.
+  //   2) origin_email del alumno (su correo real, ej. gmail). Cubre el caso de
+  //      alumnos que ya tienen cuenta Odoo desde flujos antiguos (GAS, manual,
+  //      otro sistema) que nuestra BD nunca registro. Antes saltabamos esto y
+  //      siempre creabamos user nuevo -> duplicados con login sintetico que
+  //      nadie usa, contraseña 1234567 que tampoco funciona porque el alumno
+  //      ya tenia una real desde antes.
+  //   3) Synthetic createEmail (apellido.nombre@weeducacion.edu.pe) — fallback
+  //      cuando es un alumno realmente nuevo.
+  //
+  // El search en Odoo es por `res.users.login` (clave unica), no por
+  // `partner.email` — ese es el motivo del filtro estricto explicado en
+  // odooClient.searchUserByEmail.
   let searchEmail = createEmail
   if (prevOdoo?.[0]?.odoo_user_id) {
     const existingUser = await odooClient.callKw('res.users', 'read', [
@@ -624,6 +678,15 @@ async function enrollInOdoo ({ enrollmentId }) {
     ]).catch(() => null)
     if (existingUser?.[0]?.login) {
       searchEmail = existingUser[0].login
+    }
+  } else if (data.origin_email) {
+    const realEmail = String(data.origin_email).trim().toLowerCase()
+    if (realEmail) {
+      const existingByReal = await odooClient.searchUserByEmail(realEmail).catch(() => null)
+      if (existingByReal?.login) {
+        console.log(`[enrollInOdoo] enrollment ${enrollmentId}: alumno antiguo encontrado en Odoo por origin_email (${realEmail}) -> user ${existingByReal.id}`)
+        searchEmail = existingByReal.login
+      }
     }
   }
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
@@ -647,7 +710,9 @@ async function enrollInOdoo ({ enrollmentId }) {
     createEmail,
     fullName,
     password,
-    slideGroupId
+    slideGroupId,
+    phone: data.origin_phone,
+    documentNumber: data.document_number
   })
 
   if (result.success) {
@@ -859,7 +924,8 @@ async function previewMembershipEmail ({ enrollmentId }) {
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
 
   const startDate = data.start_date ? new Date(data.start_date) : new Date()
-  const fechaAct = startDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const fechaAct = formatCalendarDate(startDate)
+  const fechaRenov = formatCalendarDate(addMonthsCalendar(startDate, MEMBERSHIP_DURATION_MONTHS))
 
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName  = (data.last_name  || '').trim().split(/\s+/)[0] || ''
@@ -911,9 +977,9 @@ async function previewMembershipEmail ({ enrollmentId }) {
     email: odooEmail,
     password: '1234567',
     isNew: isFirstSendPreview,
-    duracion: '12 meses',
+    duracion: `${MEMBERSHIP_DURATION_MONTHS} meses`,
     fechaActivacion: fechaAct,
-    fechaRenovacion: '---',
+    fechaRenovacion: fechaRenov,
     installmentsHTML,
     bloqueBeneficios: undefined,
     fichaRegistroLink: undefined
@@ -929,15 +995,46 @@ async function previewMembershipEmail ({ enrollmentId }) {
   }
 }
 
-async function sendConfirmationEmail ({ enrollmentId }) {
+async function sendConfirmationEmail ({ enrollmentId, cc }) {
+  // Reintento manual: dejar la timeline limpia. Si el envio nuevo falla, solo
+  // veremos esa falla; si tiene exito, no queda rastro de intentos previos
+  // fallidos. Cubre tambien la rama de membresia que sale por aqui.
+  await clearPriorEmailFailures(enrollmentId)
+
   const { rows: checkRows } = await pool.query(`
-    SELECT pv.abbreviation, prog.is_membership FROM enrollments e
+    SELECT pv.abbreviation, prog.is_membership, e.odoo_user_id
+    FROM enrollments e
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN programs prog ON prog.program_id = pv.program_id
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
   if (checkRows?.[0] && isMembership(checkRows[0].abbreviation, checkRows[0].is_membership)) {
     return sendMembershipEmail({ enrollmentId })
+  }
+
+  // Si el enrollment no tiene odoo_user_id (la creacion en Odoo se salto durante
+  // confirmPayment, ej. fallo de red o el SP marco un order_id placeholder),
+  // intentamos crearlo aqui antes de mandar el correo. El correo expone
+  // USUARIO+CONTRASEÑA del campus — sin Odoo creado esas credenciales son
+  // ficticias. Mejor reintentar que mandar credenciales muertas.
+  if (checkRows?.[0] && !checkRows[0].odoo_user_id) {
+    console.log(`[sendConfirmationEmail] enrollment ${enrollmentId}: sin odoo_user_id, reintentando enrollInOdoo`)
+    const odooRetry = await safeAsync('[sendConfirmationEmail][Odoo] retry', () => enrollInOdoo({ enrollmentId }))
+    if (odooRetry?.success) {
+      const cursoLabel = odooRetry.course_search || 'Curso no especificado'
+      await logAudit({
+        enrollmentId,
+        action: 'odoo_enrolled',
+        userId: null,
+        details: `Odoo user ${odooRetry.odoo_user_id} - ${cursoLabel} (creado en reintento desde reenviar correo)`
+      })
+    } else {
+      console.error(`[sendConfirmationEmail] enrollInOdoo retry no exitoso para ${enrollmentId}:`, odooRetry?.error || 'sin respuesta')
+      return {
+        success: false,
+        error: `No se pudo crear el alumno en Odoo (${odooRetry?.error || 'fallo desconocido'}). El correo NO fue enviado para evitar credenciales falsas.`
+      }
+    }
   }
 
   const { rows } = await pool.query(`
@@ -952,6 +1049,7 @@ async function sendConfirmationEmail ({ enrollmentId }) {
            e.odoo_user_id,
            e.odoo_email,
            e.odoo_password,
+           e.email_cc,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -1015,7 +1113,29 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     LIMIT 1
   `, [enrollmentId])
   const isFirstSend = !priorSends?.[0]
-  const isNew = isFirstSend
+
+  // `isNew` controla si el correo lleva credenciales (USUARIO + 1234567) o el
+  // bloque "tu cuenta ya existe, recupera tu password". Dos vias para detectar
+  // alumno antiguo:
+  //   1) Tiene OTRO enrollment previo en NUESTRA BD con odoo_user_id seteado.
+  //   2) El odoo_email del enrollment actual es el correo personal del alumno
+  //      (no el synthetic apellido.nombre@weeducacion.edu.pe). Eso pasa cuando
+  //      enrollInOdoo enlazo a un res.users que ya existia en Odoo desde antes
+  //      (creado por flujo viejo / GAS / manual). En ese caso el alumno ya
+  //      tiene su contraseña real, mandar 1234567 lo confunde.
+  const { rows: priorOdoo } = await pool.query(`
+    SELECT 1
+    FROM enrollments e
+    WHERE e.customer_id = (SELECT customer_id FROM enrollments WHERE enrollment_id = $1)
+      AND e.enrollment_id <> $1
+      AND e.odoo_user_id IS NOT NULL
+    LIMIT 1
+  `, [enrollmentId])
+  const hasPriorEnrollment = !!priorOdoo?.[0]
+  const SYNTHETIC_DOMAIN = '@weeducacion.edu.pe'
+  const linkedToExistingOdoo = !!odooEmail && !String(odooEmail).toLowerCase().endsWith(SYNTHETIC_DOMAIN)
+  const isReturningStudent = hasPriorEnrollment || linkedToExistingOdoo
+  const isNew = isFirstSend && !isReturningStudent
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -1025,25 +1145,39 @@ async function sendConfirmationEmail ({ enrollmentId }) {
   `, [enrollmentId])
   const isParentProgram = childCheck.length > 0
 
+  // PDF de cronograma: SOLO los programas padre (ESP/PEE/Diplomado) lo
+  // adjuntan, porque cubren multiples modulos y el alumno necesita ver el
+  // calendario completo. Si el PDF falla, NO mandamos el correo — preferimos
+  // bloquear y avisar al operador antes que entregar un correo incompleto al
+  // alumno (mismo razonamiento que con el reintento de Odoo: no shipear
+  // artefactos rotos en silencio).
   const attachments = []
   if (isParentProgram) {
+    console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
+    let pdfBuffer
     try {
-      console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
-      const pdfBuffer = await generateCronogramaPdf({ enrollmentId })
-      if (!pdfBuffer || pdfBuffer.length === 0) {
-        console.error(`[sendConfirmationEmail] PDF cronograma vacio para enrollment #${enrollmentId}`)
-      } else {
-        const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
-        attachments.push({
-          filename: `Cronograma-${safeName}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        })
-        console.log(`[sendConfirmationEmail] PDF cronograma generado OK (${pdfBuffer.length} bytes) para enrollment #${enrollmentId}`)
-      }
+      pdfBuffer = await generateCronogramaPdf({ enrollmentId })
     } catch (pdfErr) {
       console.error(`[sendConfirmationEmail] Error generando PDF cronograma para enrollment #${enrollmentId}:`, pdfErr.message, pdfErr.stack)
+      return {
+        success: false,
+        error: `No se pudo generar el PDF de cronograma (${pdfErr.message}). El correo NO fue enviado para evitar entregar al alumno un correo de programa padre sin su cronograma adjunto.`
+      }
     }
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error(`[sendConfirmationEmail] PDF cronograma vacio para enrollment #${enrollmentId}`)
+      return {
+        success: false,
+        error: 'El PDF de cronograma se genero vacio (0 bytes). El correo NO fue enviado.'
+      }
+    }
+    const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+    attachments.push({
+      filename: `Cronograma-${safeName}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    })
+    console.log(`[sendConfirmationEmail] PDF cronograma generado OK (${pdfBuffer.length} bytes) para enrollment #${enrollmentId}`)
   }
 
   // Para programas padre (ESP/PEE/DIPLOMADO), siempre ocultamos el bloque de WhatsApp
@@ -1065,8 +1199,14 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     hideWhatsapp: isParentProgram
   })
 
+  // Resolucion del CC en cascada: parametro explicito (override puntual) ->
+  // valor persistido en enrollments.email_cc (capturado en la inscripcion).
+  // El parser tolera null/undefined y descarta entradas invalidas.
+  const ccResolved = parseEmailCc(cc != null ? cc : data.email_cc)
+  const ccForTransport = ccResolved.length > 0 ? ccResolved : undefined
+
   const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
-  const result = await sendEmail({ to: toEmail, subject, htmlBody, attachments })
+  const result = await sendEmail({ to: toEmail, subject, htmlBody, attachments, cc: ccForTransport })
 
   try {
     await pool.query(`
@@ -1077,8 +1217,9 @@ async function sendConfirmationEmail ({ enrollmentId }) {
     console.error('[EmailLog] Error registrando log:', logErr.message)
   }
 
+  const ccDetail = ccResolved.length > 0 ? ` (cc: ${ccResolved.join(',')})` : ''
   if (result.success) {
-    await logAudit({ enrollmentId, action: 'email_sent', userId: null, details: `Correo confirmacion enviado a ${toEmail}` })
+    await logAudit({ enrollmentId, action: 'email_sent', userId: null, details: `Correo confirmacion enviado a ${toEmail}${ccDetail}` })
   } else {
     await logAudit({
       enrollmentId,
@@ -1179,6 +1320,27 @@ async function logAudit ({ enrollmentId, action, userId, justificacion = null, c
   }
 }
 
+// Antes de un reenvio manual de correo, limpiamos los fallos anteriores. Mantiene
+// la timeline limpia y deja `isFirstSend` consistente: el flag ya ignoraba rows
+// con status='failed', pero los borramos tambien para que la fila no aparezca
+// como "intento previo" si alguien consulta email_logs directo.
+// Solo borra fallos — los envios exitosos y otros eventos (approved, odoo_sync,
+// etc.) quedan intactos.
+async function clearPriorEmailFailures (enrollmentId) {
+  try {
+    await pool.query(
+      `DELETE FROM enrollment_audit_log WHERE enrollment_id = $1 AND action = 'email_failed'`,
+      [enrollmentId]
+    )
+    await pool.query(
+      `DELETE FROM email_logs WHERE enrollment_id = $1 AND status = 'failed'`,
+      [enrollmentId]
+    )
+  } catch (err) {
+    console.error('[clearPriorEmailFailures]', err.message)
+  }
+}
+
 async function getAuditLog ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT al.audit_id, al.action, al.performed_at, al.justificacion, al.changes, al.details,
@@ -1257,6 +1419,20 @@ async function resolveBankLabel (accountId) {
   return r ? `${r.bank_name || ''} ${r.currency || ''} ${r.account_number || ''}`.trim() : String(accountId)
 }
 
+// La entidad empresa vive como FK en bank_accounts. La derivamos desde la cuenta
+// porque payments no tiene columna directa de entity — el bank_account_id implica
+// la entidad por la relacion. Util para el diff del audit log.
+async function resolveBusinessEntityFromAccount (accountId) {
+  if (!accountId) return null
+  const { rows } = await pool.query(`
+    SELECT c.description
+    FROM bank_accounts ba
+    LEFT JOIN catalog c ON c.catalog_id = ba.cat_business_entity
+    WHERE ba.account_id = $1
+  `, [accountId])
+  return rows?.[0]?.description || null
+}
+
 async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }) {
   const changes = {}
 
@@ -1311,6 +1487,15 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
     const oldLabel = await resolveBankLabel(oldP.settled_in_account_id)
     const newLabel = await resolveBankLabel(fields.bank_account_id)
     changes['Cuenta Bancaria'] = { old: oldLabel || '---', new: newLabel }
+
+    // La Entidad va emparejada con la cuenta. Solo la incluimos en el diff si
+    // efectivamente cambia — picking de la misma entidad pero distinta cuenta
+    // no genera linea redundante.
+    const oldEntity = await resolveBusinessEntityFromAccount(oldP.settled_in_account_id)
+    const newEntity = await resolveBusinessEntityFromAccount(fields.bank_account_id)
+    if (oldEntity !== newEntity) {
+      changes['Entidad Empresa'] = { old: oldEntity || '---', new: newEntity || '---' }
+    }
   }
   if (fields.transaction_code !== undefined && fields.transaction_code !== (oldP.transaction_code || '')) {
     changes['N. Operacion'] = { old: oldP.transaction_code || '---', new: fields.transaction_code || '---' }
@@ -1407,6 +1592,7 @@ async function _enrollMembershipInOdooInner ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
            pv.abbreviation AS program_name
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -1449,7 +1635,14 @@ async function _enrollMembershipInOdooInner ({ enrollmentId }) {
     }
   }
 
-  const result = await odooClient.enrollInAllOnlineCourses({ searchEmail, createEmail, fullName, password })
+  const result = await odooClient.enrollInAllOnlineCourses({
+    searchEmail,
+    createEmail,
+    fullName,
+    password,
+    phone: data.origin_phone,
+    documentNumber: data.document_number
+  })
 
   if (result.success) {
     const odooEmailFinal = result.odoo_login || createEmail
@@ -1530,7 +1723,8 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
   }
 
   const startDate = data.start_date ? new Date(data.start_date) : new Date()
-  const fechaAct = startDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const fechaAct = formatCalendarDate(startDate)
+  const fechaRenov = formatCalendarDate(addMonthsCalendar(startDate, MEMBERSHIP_DURATION_MONTHS))
 
   // Solo mostramos el cronograma de pagos cuando el plan es por cuotas. Para
   // pago al contado (we_payment_way_single) el SP igual genera un installment_number=1
@@ -1579,9 +1773,9 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
     email: data.odoo_email,
     password: '1234567',
     isNew: isFirstSend,
-    duracion: '12 meses',
+    duracion: `${MEMBERSHIP_DURATION_MONTHS} meses`,
     fechaActivacion: fechaAct,
-    fechaRenovacion: '---',
+    fechaRenovacion: fechaRenov,
     installmentsHTML,
     bloqueBeneficios: undefined,
     fichaRegistroLink: undefined
@@ -1950,6 +2144,21 @@ async function ficoEnrollmentRegister ({ data, userId }) {
 
   if (enrollResp.result === 1 && enrollResp.enrollment_id) {
     const eid = enrollResp.enrollment_id
+
+    // Persistimos email_cc en el enrollment para que reenvios futuros (resend
+    // manual, cronograma actualizado, etc.) sigan copiando a los mismos
+    // destinatarios sin que FICO tenga que reingresarlos cada vez.
+    const ccArray = parseEmailCc(data.email_cc)
+    if (ccArray.length > 0) {
+      try {
+        await pool.query(
+          'UPDATE enrollments SET email_cc = $1 WHERE enrollment_id = $2',
+          [ccArray.join(','), eid]
+        )
+      } catch (ccErr) {
+        console.error('[ficoEnrollmentRegister] No se pudo guardar email_cc:', ccErr.message)
+      }
+    }
 
     await logAudit({ enrollmentId: eid, action: 'created', userId, details: 'Inscripcion registrada desde FICO' })
     await logAudit({
