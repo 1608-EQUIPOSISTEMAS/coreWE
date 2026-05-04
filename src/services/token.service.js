@@ -454,15 +454,18 @@ async function tokenConfirm ({ tokenId, providerReference, userId }) {
       const { rows: statusRows } = await pool.query(
         "SELECT catalog_id FROM catalog WHERE alias = 'we_lead_status_bought' LIMIT 1"
       )
-      await pool.query(
-        "UPDATE leads SET pay_date = CURRENT_DATE, cat_status_lead = COALESCE($3, cat_status_lead), user_modification_id = $2 WHERE lead_id = $1 AND enrollment_id IS NULL",
-        [token.lead_id, userId || 9, statusRows?.[0]?.catalog_id || null]
-      )
 
       const inscPayload = token.inscription_data || {}
       if (inscPayload.inscription && token.cat_provider) {
         inscPayload.inscription.cat_token_provider = token.cat_provider
       }
+      // pay_date del lead = fecha que el asesor capturo al armar la inscripcion.
+      // Caer a CURRENT_DATE solo si el payload no la trae (tokens antiguos sin payment_date).
+      const userPayDate = inscPayload?.inscription?.payment_date || null
+      await pool.query(
+        "UPDATE leads SET pay_date = COALESCE($4::date, CURRENT_DATE), cat_status_lead = COALESCE($3, cat_status_lead), user_modification_id = $2 WHERE lead_id = $1 AND enrollment_id IS NULL",
+        [token.lead_id, userId || 9, statusRows?.[0]?.catalog_id || null, userPayDate]
+      )
       const enrollRows = await callProcedureReturningRows(
         pool,
         'public.sp_comercial_enrollment_register',

@@ -894,13 +894,275 @@ async function syncFicoAulaToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME }
 }
 
-// Sincroniza ambas hojas (Ventas + Aula) en una sola llamada.
+// =====================================================================
+// FICO Consolidado a Google Sheets
+// =====================================================================
+// Hoja "2. Consolidado" (31 columnas A..AE). Vista financiera detallada con
+// cuotas pagadas explicitas (FC1..FC5 / C1..C5) y datos de la primer transaccion
+// (medio, entidad empresa, banco, n.operacion).
+//
+// Reglas confirmadas con FICO:
+//  - BECA (net_amount = 0): Estado='BECA', Dsct='100,00%', Status='Saldado',
+//    Inicial/Saldo/Ingreso = '0', resto vacio.
+//  - FC1..C5 SOLO incluyen cuotas en estado pagado (alias 'we_inst_paid' o
+//    'we_payment_status_paid'). Pendientes/borrador no se exportan en estas columnas.
+//  - PT (contado): Inicial = monto unico, FC/C todos vacios.
+//  - PP (cuotas): Inicial = installment_number=0, FC/C 1..5 = cuotas pagadas.
+//  - TIPO MONEDA, MEDIO, ENTIDAD EMPRESA, BANCO, N.OPERACION = del primer pago
+//    activo (ORDER BY payment_id ASC). Vacios si beca/sin pagos.
+async function syncFicoConsolidadoToSheet () {
+  const SPREADSHEET_ID = '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
+  const SHEET_NAME = '2. Consolidado'
+
+  const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(process.cwd(), 'credentials/service.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+  const authClient = await auth.getClient()
+  const googleSheets = google.sheets({ version: 'v4', auth: authClient })
+
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND e.parent_enrollment_id IS NULL
+    )
+    SELECT
+      pv.version_code AS cod,
+      CASE WHEN e.program_edition_id IS NULL THEN 'E0'
+           ELSE COALESCE(pe.global_code, '')
+      END AS ed,
+      to_char(pe.start_date, 'DD/MM/YYYY') AS f_inicio,
+      to_char(
+        COALESCE(
+          l.pay_date,
+          first_pay.payment_date::date,
+          e.registration_date::date
+        ),
+        'DD/MM/YYYY'
+      ) AS f_pago,
+      per.document_number AS dni,
+      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END AS ocup,
+      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
+      CASE
+        WHEN (e.total_amount - e.discount_amount) = 0 THEN 'BECA'
+        WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
+        WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
+        ELSE ''
+      END AS estado,
+      CASE
+        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+      END AS dsct,
+      CASE
+        WHEN (e.total_amount - e.discount_amount) = 0 THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
+        ELSE 'Al dia'
+      END AS status_pago,
+      CASE
+        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
+        WHEN c_plan.alias = 'we_payment_way_single'
+          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount - e.discount_amount), 'FM999990.00'), '.', ',')
+        WHEN c_plan.alias = 'we_payment_way_installments'
+          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
+        ELSE '0'
+      END AS inicial,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c1_due IS NOT NULL
+           THEN to_char(COALESCE(CASE WHEN cuotas.c1_paid THEN cuotas.c1_pay_date END, cuotas.c1_due), 'DD/MM/YYYY')
+           ELSE '' END AS fc1,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c1_paid
+           THEN replace(to_char(cuotas.c1_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c1,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c2_due IS NOT NULL
+           THEN to_char(COALESCE(CASE WHEN cuotas.c2_paid THEN cuotas.c2_pay_date END, cuotas.c2_due), 'DD/MM/YYYY')
+           ELSE '' END AS fc2,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c2_paid
+           THEN replace(to_char(cuotas.c2_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c2,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c3_due IS NOT NULL
+           THEN to_char(COALESCE(CASE WHEN cuotas.c3_paid THEN cuotas.c3_pay_date END, cuotas.c3_due), 'DD/MM/YYYY')
+           ELSE '' END AS fc3,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c3_paid
+           THEN replace(to_char(cuotas.c3_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c3,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c4_due IS NOT NULL
+           THEN to_char(COALESCE(CASE WHEN cuotas.c4_paid THEN cuotas.c4_pay_date END, cuotas.c4_due), 'DD/MM/YYYY')
+           ELSE '' END AS fc4,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c4_paid
+           THEN replace(to_char(cuotas.c4_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c4,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c5_due IS NOT NULL
+           THEN to_char(COALESCE(CASE WHEN cuotas.c5_paid THEN cuotas.c5_pay_date END, cuotas.c5_due), 'DD/MM/YYYY')
+           ELSE '' END AS fc5,
+      CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c5_paid
+           THEN replace(to_char(cuotas.c5_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c5,
+      CASE
+        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
+        ELSE replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
+      END AS saldo,
+      CASE
+        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
+        ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
+      END AS ingreso,
+      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+           ELSE COALESCE(curr.variable_2, '') END AS tipo_moneda,
+      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+           ELSE COALESCE(c_meth.description, '') END AS medio_pago,
+      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+           ELSE COALESCE(c_be.description, '') END AS entidad_empresa,
+      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+           ELSE COALESCE(ba.bank_name, '') END AS entidad_financiera,
+      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+           ELSE COALESCE(first_pay.transaction_code, '') END AS n_operacion
+    FROM public.enrollments e
+    JOIN approved a ON a.enrollment_id = e.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
+    LEFT JOIN public."catalog" c_prof    ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" curr      ON curr.catalog_id   = e.cat_currency
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias
+        FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC
+       LIMIT 1
+    ) ag_token ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT SUM(p.amount) AS total_paid
+        FROM public.payments p
+       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+    ) pay_agg ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+       LIMIT 1
+    ) pi_res ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
+       LIMIT 1
+    ) pi_pt ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND pi.installment_number > 0
+         AND pi.due_date < CURRENT_DATE
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+    ) inst_overdue ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT
+        p.payment_date, p.transaction_code,
+        p.cat_method_payment, p.settled_in_account_id
+      FROM public.payments p
+      WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+      ORDER BY p.payment_id ASC
+      LIMIT 1
+    ) first_pay ON TRUE
+    LEFT JOIN public.bank_accounts ba ON ba.account_id = first_pay.settled_in_account_id
+    LEFT JOIN public."catalog" c_meth ON c_meth.catalog_id = first_pay.cat_method_payment
+    LEFT JOIN public."catalog" c_be   ON c_be.catalog_id = ba.business_entity_catalog_id
+    LEFT JOIN LATERAL (
+      -- Para cada cuota 1..5 devolvemos due_date (siempre que la cuota exista),
+      -- pay_date (solo si fue pagada) y un flag c{N}_paid. La fecha de pago real
+      -- gana sobre la fecha de vencimiento cuando la cuota ya esta pagada.
+      -- Excluimos anuladas para que no aparezcan como cuota fantasma.
+      SELECT
+        MAX(CASE WHEN pi.installment_number = 1 THEN pi.due_date END) AS c1_due,
+        MAX(CASE WHEN pi.installment_number = 1 AND cs.alias IN ('we_inst_paid','we_payment_status_paid') THEN p.payment_date::date END) AS c1_pay_date,
+        MAX(CASE WHEN pi.installment_number = 1 THEN pi.amount END)   AS c1_amount,
+        BOOL_OR(pi.installment_number = 1 AND cs.alias IN ('we_inst_paid','we_payment_status_paid')) AS c1_paid,
+        MAX(CASE WHEN pi.installment_number = 2 THEN pi.due_date END) AS c2_due,
+        MAX(CASE WHEN pi.installment_number = 2 AND cs.alias IN ('we_inst_paid','we_payment_status_paid') THEN p.payment_date::date END) AS c2_pay_date,
+        MAX(CASE WHEN pi.installment_number = 2 THEN pi.amount END)   AS c2_amount,
+        BOOL_OR(pi.installment_number = 2 AND cs.alias IN ('we_inst_paid','we_payment_status_paid')) AS c2_paid,
+        MAX(CASE WHEN pi.installment_number = 3 THEN pi.due_date END) AS c3_due,
+        MAX(CASE WHEN pi.installment_number = 3 AND cs.alias IN ('we_inst_paid','we_payment_status_paid') THEN p.payment_date::date END) AS c3_pay_date,
+        MAX(CASE WHEN pi.installment_number = 3 THEN pi.amount END)   AS c3_amount,
+        BOOL_OR(pi.installment_number = 3 AND cs.alias IN ('we_inst_paid','we_payment_status_paid')) AS c3_paid,
+        MAX(CASE WHEN pi.installment_number = 4 THEN pi.due_date END) AS c4_due,
+        MAX(CASE WHEN pi.installment_number = 4 AND cs.alias IN ('we_inst_paid','we_payment_status_paid') THEN p.payment_date::date END) AS c4_pay_date,
+        MAX(CASE WHEN pi.installment_number = 4 THEN pi.amount END)   AS c4_amount,
+        BOOL_OR(pi.installment_number = 4 AND cs.alias IN ('we_inst_paid','we_payment_status_paid')) AS c4_paid,
+        MAX(CASE WHEN pi.installment_number = 5 THEN pi.due_date END) AS c5_due,
+        MAX(CASE WHEN pi.installment_number = 5 AND cs.alias IN ('we_inst_paid','we_payment_status_paid') THEN p.payment_date::date END) AS c5_pay_date,
+        MAX(CASE WHEN pi.installment_number = 5 THEN pi.amount END)   AS c5_amount,
+        BOOL_OR(pi.installment_number = 5 AND cs.alias IN ('we_inst_paid','we_payment_status_paid')) AS c5_paid
+      FROM public.payment_installments pi
+      JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+      LEFT JOIN public.payments p ON p.installment_id = pi.installment_id AND p.active = 'Y'
+      WHERE pi.enrollment_id = e.enrollment_id
+        AND pi.installment_number BETWEEN 1 AND 5
+        AND cs.alias <> 'we_inst_cancelled'
+    ) cuotas ON TRUE
+    ORDER BY l.pay_date NULLS LAST, e.enrollment_id
+  `)
+
+  const values = (rows || []).map(r => [
+    r.cod || '', r.ed || '', r.f_inicio || '', r.f_pago || '',
+    r.dni || '', r.nombres || '', r.celular || '', r.correo || '',
+    r.ocup || '', r.asesor || '', r.estado || '', r.dsct || '',
+    r.status_pago || '', r.inicial || '',
+    r.fc1 || '', r.c1 || '', r.fc2 || '', r.c2 || '',
+    r.fc3 || '', r.c3 || '', r.fc4 || '', r.c4 || '',
+    r.fc5 || '', r.c5 || '',
+    r.saldo || '', r.ingreso || '',
+    r.tipo_moneda || '', r.medio_pago || '',
+    r.entidad_empresa || '', r.entidad_financiera || '',
+    r.n_operacion || ''
+  ])
+
+  // 31 columnas A..AE. Limpiamos desde A2 (preserva la fila de headers).
+  await googleSheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHEET_NAME}'!A2:AE`
+  }).catch((e) => { console.warn('Advertencia al limpiar Consolidado:', e.message) })
+
+  if (values.length > 0) {
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values }
+    })
+  }
+
+  return { rows_synced: values.length, sheet: SHEET_NAME }
+}
+
+// Sincroniza las 3 hojas (Ventas + Aula + Consolidado) en una sola llamada.
 // Es lo que el boton "Sincronizar ventas" del frontend dispara para minimizar
 // clicks del operador FICO.
 async function syncFicoToSheets () {
   const ventas = await syncFicoSalesToSheet()
   const aula = await syncFicoAulaToSheet()
-  return { ventas, aula }
+  const consolidado = await syncFicoConsolidadoToSheet()
+  return { ventas, aula, consolidado }
 }
 
 export default {
@@ -911,6 +1173,7 @@ export default {
   syncEnrollmentToSheet,
   syncFicoSalesToSheet,
   syncFicoAulaToSheet,
+  syncFicoConsolidadoToSheet,
   syncFicoToSheets,
   sendReportToSlack,
   sendEnrollmentWebToSlack,

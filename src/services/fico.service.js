@@ -157,6 +157,25 @@ async function confirmPayment (payload) {
     }
   }
 
+  // Capturamos el max payment_id ANTES del SP. Cualquier payment activo con id <= a este
+  // valor es un placeholder previo creado por sp_comercial_enrollment_register cuando el
+  // token fue confirmado (cat_payment_type=3113, sin transaction_code, payment_date defaulteado
+  // a CURRENT_TIMESTAMP). Cuando FICO confirma el pago real, ese placeholder queda obsoleto:
+  // su payment_date desplaza visualmente el pago real en payment_history (ordenado DESC) y
+  // su monto distorsiona el calculo de PAGADO. Lo desactivamos despues que el SP grabe el real.
+  let prevMaxPayId = 0
+  if (payload.enrollment_id) {
+    try {
+      const { rows: prev } = await pool.query(
+        "SELECT COALESCE(MAX(payment_id), 0) AS max_id FROM payments WHERE enrollment_id = $1 AND active = 'Y'",
+        [payload.enrollment_id]
+      )
+      prevMaxPayId = Number(prev?.[0]?.max_id) || 0
+    } catch (e) {
+      console.error('[confirmPayment] No se pudo capturar prevMaxPayId:', e.message)
+    }
+  }
+
   let resp
   try {
     const { rows } = await pool.query(
@@ -170,6 +189,39 @@ async function confirmPayment (payload) {
   }
 
   if (resp.result === 1 && payload.enrollment_id) {
+    if (prevMaxPayId > 0) {
+      try {
+        await pool.query(
+          `UPDATE payments
+              SET active = 'N'
+            WHERE enrollment_id = $1
+              AND payment_id <= $2
+              AND active = 'Y'
+              AND cat_payment_type = 3113
+              AND COALESCE(NULLIF(TRIM(transaction_code), ''), NULL) IS NULL`,
+          [payload.enrollment_id, prevMaxPayId]
+        )
+      } catch (e) {
+        console.error('[confirmPayment] No se pudo desactivar placeholder:', e.message)
+      }
+    }
+
+    // Sincronizamos leads.pay_date con la fecha real que FICO acaba de registrar.
+    // sp_fico_enrollment_list usa cascada leads.pay_date -> payments.payment_date -> registration_date
+    // y leads.pay_date gana. Si comercial no la sabia al crear el token, quedo en CURRENT_DATE
+    // y el listado mostraba hoy aunque el pago real sea otro dia. Aqui la corregimos al hecho.
+    if (payload.payment_date) {
+      try {
+        await pool.query(
+          `UPDATE leads SET pay_date = $2::date, user_modification_id = $3
+            WHERE enrollment_id = $1`,
+          [payload.enrollment_id, payload.payment_date, payload.user_id || 9]
+        )
+      } catch (e) {
+        console.error('[confirmPayment] No se pudo sincronizar leads.pay_date:', e.message)
+      }
+    }
+
     try {
       await logAudit({
         enrollmentId: payload.enrollment_id,
@@ -1437,7 +1489,7 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
   const changes = {}
 
   const { rows: oldEnroll } = await pool.query('SELECT cat_currency FROM enrollments WHERE enrollment_id = $1', [enrollmentId])
-  const { rows: oldPay } = await pool.query('SELECT payment_id, cat_method_payment, settled_in_account_id, transaction_code FROM payments WHERE enrollment_id = $1 AND active = \'Y\' ORDER BY payment_date DESC LIMIT 1', [enrollmentId])
+  const { rows: oldPay } = await pool.query('SELECT payment_id, cat_method_payment, settled_in_account_id, transaction_code, payment_date FROM payments WHERE enrollment_id = $1 AND active = \'Y\' ORDER BY payment_date DESC LIMIT 1', [enrollmentId])
   const oldE = oldEnroll?.[0] || {}
   const oldP = oldPay?.[0] || {}
 
@@ -1457,14 +1509,16 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
     await pool.query(`UPDATE enrollments SET ${eSets.join(', ')} WHERE enrollment_id = $${eIdx}`, eParams)
   }
 
-  const paymentFields = { cat_payment_medium: 'cat_method_payment', transaction_code: 'transaction_code', bank_account_id: 'settled_in_account_id' }
+  const paymentFields = { cat_payment_medium: 'cat_method_payment', transaction_code: 'transaction_code', bank_account_id: 'settled_in_account_id', payment_date: 'payment_date' }
   const pSets = []
   const pParams = []
   let pIdx = 1
   for (const [formKey, dbKey] of Object.entries(paymentFields)) {
     if (fields[formKey] !== undefined) {
-      pSets.push(`${dbKey} = $${pIdx}`)
-      pParams.push(fields[formKey])
+      // payment_date va como ::date para no chocar con string vacio o ISO timestamp.
+      const cast = dbKey === 'payment_date' ? '::date' : ''
+      pSets.push(`${dbKey} = $${pIdx}${cast}`)
+      pParams.push(formKey === 'payment_date' ? (fields[formKey] || null) : fields[formKey])
       pIdx++
     }
   }
@@ -1499,6 +1553,25 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
   }
   if (fields.transaction_code !== undefined && fields.transaction_code !== (oldP.transaction_code || '')) {
     changes['N. Operacion'] = { old: oldP.transaction_code || '---', new: fields.transaction_code || '---' }
+  }
+  if (fields.payment_date !== undefined) {
+    const oldDateIso = oldP.payment_date ? new Date(oldP.payment_date).toISOString().slice(0, 10) : ''
+    const newDateIso = fields.payment_date ? String(fields.payment_date).slice(0, 10) : ''
+    if (oldDateIso !== newDateIso) {
+      const fmt = iso => iso ? iso.split('-').reverse().join('/') : '---'
+      changes['Fecha de Pago'] = { old: fmt(oldDateIso), new: fmt(newDateIso) }
+      // Mantener leads.pay_date alineado con el pago real para que el listado FICO
+      // (cascada leads.pay_date -> payments.payment_date) muestre la misma fecha.
+      try {
+        await pool.query(
+          `UPDATE leads SET pay_date = $2::date, user_modification_id = $3
+            WHERE enrollment_id = $1`,
+          [enrollmentId, newDateIso || null, userId || 9]
+        )
+      } catch (e) {
+        console.error('[enrollmentUpdate] No se pudo sincronizar leads.pay_date:', e.message)
+      }
+    }
   }
 
   if (fields.installments && Array.isArray(fields.installments)) {
