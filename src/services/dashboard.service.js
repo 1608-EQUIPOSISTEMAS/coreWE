@@ -82,7 +82,7 @@ async function dashboardList(payload = {}) {
 
 // En tu dashboardService
 async function getAvailableWeeks(payload = {}) {
-  const { year = 2026, modality = 'NO_ONLINE' } = payload
+  const { year = 2026, modality = 'EN_VIVO' } = payload
   const sql = `
   SELECT
     period_label,
