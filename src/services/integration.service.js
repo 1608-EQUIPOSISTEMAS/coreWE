@@ -673,12 +673,12 @@ async function syncFicoSalesToSheet () {
         ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END                                                  AS dsct,
       CASE
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
       replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',') AS inicial,
-      replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
       replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',') AS ingreso,
       COALESCE(c_moment.variable_2, '')                    AS tipo_cliente,
       'ACT'                                                AS estado_alumno,
@@ -706,10 +706,17 @@ async function syncFicoSalesToSheet () {
        LIMIT 1
     ) ag_token ON TRUE
     LEFT JOIN LATERAL (
-      SELECT SUM(p.amount) AS total_paid
-        FROM public.payments p
-       WHERE p.enrollment_id = e.enrollment_id
-         AND p.active = 'Y'
+      -- Sumar monto de cuotas marcadas como pagadas, no de la tabla payments.
+      -- Razon: payments puede tener filas duplicadas (re-confirmaciones que no
+      -- desactivaron la fila previa). El estado canonico de "cuota saldada"
+      -- vive en payment_installments.cat_status.
+      -- Aceptamos ambos aliases que el sistema usa como sinonimos de "paid":
+      -- 'we_inst_paid' (legacy) y 'we_payment_status_paid' (nuevo).
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
       SELECT amount FROM public.payment_installments
@@ -723,7 +730,7 @@ async function syncFicoSalesToSheet () {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias <> 'we_payment_status_paid'
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
     ORDER BY l.pay_date NULLS LAST, e.enrollment_id
   `)
@@ -815,11 +822,11 @@ async function syncFicoAulaToSheet () {
       COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
       'ACT'                                                AS estado_alumno,
       CASE
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
-      replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
       CASE c_plan.alias
         WHEN 'we_payment_way_single'        THEN 'PT'
         WHEN 'we_payment_way_installments'  THEN 'PP'
@@ -854,9 +861,14 @@ async function syncFicoAulaToSheet () {
        LIMIT 1
     ) ag_token ON TRUE
     LEFT JOIN LATERAL (
-      SELECT SUM(p.amount) AS total_paid
-        FROM public.payments p
-       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+      -- Ver nota en syncFicoSalesToSheet: sumamos monto de cuotas saldadas
+      -- (cat_status = paid) en lugar de SUM de payments, porque payments
+      -- puede contener filas duplicadas que distorsionan el total.
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
@@ -865,7 +877,7 @@ async function syncFicoAulaToSheet () {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias <> 'we_payment_status_paid'
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
     ORDER BY pe.start_date NULLS LAST, per.last_name
   `)
@@ -966,7 +978,7 @@ async function syncFicoConsolidadoToSheet () {
       END AS ocup,
       COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
       CASE
-        WHEN (e.total_amount - e.discount_amount) = 0 THEN 'BECA'
+        WHEN (e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
         WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
         ELSE ''
@@ -976,15 +988,15 @@ async function syncFicoConsolidadoToSheet () {
         ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END AS dsct,
       CASE
-        WHEN (e.total_amount - e.discount_amount) = 0 THEN 'Saldado'
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount - e.discount_amount) THEN 'Saldado'
+        WHEN (e.total_amount) = 0 THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END AS status_pago,
       CASE
-        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
+        WHEN (e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_single'
-          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount - e.discount_amount), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
         WHEN c_plan.alias = 'we_payment_way_installments'
           THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
         ELSE '0'
@@ -1015,27 +1027,27 @@ async function syncFicoConsolidadoToSheet () {
       CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c5_paid
            THEN replace(to_char(cuotas.c5_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c5,
       CASE
-        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
-        ELSE replace(to_char(GREATEST(0, (e.total_amount - e.discount_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
+        WHEN (e.total_amount) = 0 THEN '0'
+        ELSE replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
       END AS saldo,
       CASE
-        WHEN (e.total_amount - e.discount_amount) = 0 THEN '0'
+        WHEN (e.total_amount) = 0 THEN '0'
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
-      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+      CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE CASE curr.alias
                   WHEN 'we_currency_soles'   THEN 'PEN'
                   WHEN 'we_currency_dollars' THEN 'USD'
                   ELSE COALESCE(curr.variable_2, '')
                 END
            END AS tipo_moneda,
-      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+      CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE COALESCE(c_meth.description, '') END AS medio_pago,
-      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+      CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE COALESCE(c_be.description, '') END AS entidad_empresa,
-      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+      CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE COALESCE(ba.bank_name, '') END AS entidad_financiera,
-      CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
+      CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE COALESCE(first_pay.transaction_code, '') END AS n_operacion
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
@@ -1057,9 +1069,14 @@ async function syncFicoConsolidadoToSheet () {
        LIMIT 1
     ) ag_token ON TRUE
     LEFT JOIN LATERAL (
-      SELECT SUM(p.amount) AS total_paid
-        FROM public.payments p
-       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+      -- Ver nota en syncFicoSalesToSheet: sumamos monto de cuotas saldadas
+      -- (cat_status = paid) en lugar de SUM de payments, porque payments
+      -- puede contener filas duplicadas que distorsionan el total.
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
       SELECT amount FROM public.payment_installments

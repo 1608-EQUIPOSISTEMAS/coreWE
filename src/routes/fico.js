@@ -661,4 +661,43 @@ export default async function ficoRoutes (fastify) {
     const data = await ficoService.getAuditLog({ enrollmentId: req.body.enrollment_id })
     return reply.code(200).send({ ok: true, data })
   })
+
+  fastify.get('/classroomexport/options', async (req, reply) => {
+    try {
+      const data = await ficoService.getClassroomExportOptions()
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[classroomExportOptions ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.get('/classroomexport', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['programVersionId', 'editionNumId'],
+        properties: {
+          programVersionId: { type: 'integer' },
+          editionNumId:     { type: 'integer' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const csv = await ficoService.exportClassroomCsv({
+        programVersionId: Number(req.query.programVersionId),
+        editionNumId:     Number(req.query.editionNumId)
+      })
+      const filename = `aula_${req.query.programVersionId}_${req.query.editionNumId}.csv`
+      return reply
+        .code(200)
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(csv)
+    } catch (err) {
+      console.error('[classroomExport ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
 }
