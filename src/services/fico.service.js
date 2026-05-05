@@ -6,6 +6,7 @@ import { safeAsync } from '../utils/safe-async.js'
 import odooClient from '../config/odooClient.js'
 import { sendEmail, sendFicoEmail } from '../config/zeptomail.js'
 import { buildConfirmacionHTML } from '../templates/confirmacion-inscripcion.js'
+import { buildConfirmacionOnlineHTML } from '../templates/confirmacion-online.js'
 import { buildConfirmacionPagoHTML } from '../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from './pdf.service.js'
@@ -681,6 +682,7 @@ async function enrollInOdoo ({ enrollmentId }) {
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
            prog.odoo_activation,
+           prog.cat_model_modality,
            pe.start_date
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
@@ -697,6 +699,9 @@ async function enrollInOdoo ({ enrollmentId }) {
 
   const odooActivation = (data.odoo_activation || '').trim()
   if (!odooActivation) throw new Error('El programa no tiene configurado odoo_activation')
+
+  const onlineModalityId = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
+  const isOnline = data.cat_model_modality === onlineModalityId
 
   const { rows: prevOdoo } = await pool.query(`
     SELECT e.odoo_user_id FROM enrollments e
@@ -744,28 +749,51 @@ async function enrollInOdoo ({ enrollmentId }) {
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
   const password = '1234567'
 
-  const startDate = data.start_date
-  if (!startDate) throw new Error('La edicion no tiene fecha de inicio')
-  const d = new Date(startDate)
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-  const searchName = `${odooActivation} (${dd}/${mm}) - ${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+  let searchName
+  let slideGroupId = null
+  let slideChannelId = null
+  let result
 
-  const groups = await odooClient.searchSlideGroup(odooActivation)
-  const match = groups.find(g => g.name === searchName)
-  if (!match) throw new Error(`Curso no encontrado en Odoo: "${searchName}"`)
-  const slideGroupId = match.id
+  if (isOnline) {
+    searchName = odooActivation
+    const channels = await odooClient.searchSlideChannelByName(odooActivation)
+    const channelMatch = channels.find(c => c.name === odooActivation) || channels[0]
+    if (!channelMatch) throw new Error(`Curso online no encontrado en Odoo: "${odooActivation}"`)
+    slideChannelId = channelMatch.id
 
-  const result = await odooClient.syncStudentToOdoo({
-    searchEmail,
-    createEmail,
-    fullName,
-    password,
-    slideGroupId,
-    phone: data.origin_phone,
-    documentNumber: data.document_number
-  })
+    result = await odooClient.syncStudentToOdooOnline({
+      searchEmail,
+      createEmail,
+      fullName,
+      password,
+      slideChannelId,
+      phone: data.origin_phone,
+      documentNumber: data.document_number
+    })
+  } else {
+    const startDate = data.start_date
+    if (!startDate) throw new Error('La edicion no tiene fecha de inicio')
+    const d = new Date(startDate)
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    searchName = `${odooActivation} (${dd}/${mm}) - ${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+
+    const groups = await odooClient.searchSlideGroup(odooActivation)
+    const match = groups.find(g => g.name === searchName)
+    if (!match) throw new Error(`Curso no encontrado en Odoo: "${searchName}"`)
+    slideGroupId = match.id
+
+    result = await odooClient.syncStudentToOdoo({
+      searchEmail,
+      createEmail,
+      fullName,
+      password,
+      slideGroupId,
+      phone: data.origin_phone,
+      documentNumber: data.document_number
+    })
+  }
 
   if (result.success) {
     const odooEmailFinal = result.odoo_login || createEmail
@@ -868,6 +896,7 @@ async function previewConfirmationEmail ({ enrollmentId }) {
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
+           prog.cat_model_modality,
            pe.start_date, pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
            e.odoo_user_id,
@@ -888,6 +917,9 @@ async function previewConfirmationEmail ({ enrollmentId }) {
 
   const data = rows?.[0]
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
+
+  const onlineModalityIdPreview = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
+  const isOnlinePreview = data.cat_model_modality === onlineModalityIdPreview
 
   const { rows: schedRows } = await pool.query(`
     SELECT c.description AS day_name, es.start_time, es.end_time
@@ -930,26 +962,33 @@ async function previewConfirmationEmail ({ enrollmentId }) {
 
   // Para programas padre siempre ocultamos WhatsApp y mostramos mensaje de cronograma
   // adjunto (igual que el envio real, aunque el PDF se construye en send time).
-  const htmlBody = buildConfirmacionHTML({
-    studentName: `${firstName} ${lastName}`,
-    programName: data.program_name,
-    startDate: data.start_date,
-    frequency, schedule,
-    whatsappLink: data.whatsapp_link || '',
-    email: odooEmail,
-    isNew,
-    bannerUrl: data.banner_link || '',
-    installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
-    currencySymbol: data.currency_symbol || 'S/.',
-    hideWhatsapp: isParentProgram
-  })
+  const htmlBody = isOnlinePreview
+    ? buildConfirmacionOnlineHTML({
+        studentName: `${firstName} ${lastName}`,
+        programName: data.program_name,
+        email: odooEmail,
+        isNew
+      })
+    : buildConfirmacionHTML({
+        studentName: `${firstName} ${lastName}`,
+        programName: data.program_name,
+        startDate: data.start_date,
+        frequency, schedule,
+        whatsappLink: data.whatsapp_link || '',
+        email: odooEmail,
+        isNew,
+        bannerUrl: data.banner_link || '',
+        installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
+        currencySymbol: data.currency_symbol || 'S/.',
+        hideWhatsapp: isParentProgram
+      })
 
   return {
     html: htmlBody,
     to: data.origin_email || '---',
     subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
-    hasAttachment: isParentProgram,
-    attachmentName: isParentProgram ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null
+    hasAttachment: isParentProgram && !isOnlinePreview,
+    attachmentName: (isParentProgram && !isOnlinePreview) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null
   }
 }
 
@@ -1095,6 +1134,7 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
+           prog.cat_model_modality,
            pe.start_date,
            pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
@@ -1117,6 +1157,9 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
 
   const data = rows?.[0]
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
+
+  const onlineModalityIdSend = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
+  const isOnlineSend = data.cat_model_modality === onlineModalityIdSend
 
   const toEmail = data.origin_email
   if (!toEmail) {
@@ -1204,7 +1247,7 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
   // alumno (mismo razonamiento que con el reintento de Odoo: no shipear
   // artefactos rotos en silencio).
   const attachments = []
-  if (isParentProgram) {
+  if (isParentProgram && !isOnlineSend) {
     console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
     let pdfBuffer
     try {
@@ -1236,20 +1279,27 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
   // porque cada hijo tiene su propio grupo. NO depende de si el PDF se adjunto o no
   // (si fallo el PDF, igual queremos ocultar WhatsApp; el alumno puede pedir el
   // cronograma despues, pero el bloque de "unete a WhatsApp" no aplica al padre).
-  const htmlBody = buildConfirmacionHTML({
-    studentName: `${firstName} ${lastName}`,
-    programName: data.program_name,
-    startDate: data.start_date,
-    frequency,
-    schedule,
-    whatsappLink: data.whatsapp_link || '',
-    email: odooEmail,
-    isNew,
-    bannerUrl: data.banner_link || '',
-    installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
-    currencySymbol: data.currency_symbol || 'S/.',
-    hideWhatsapp: isParentProgram
-  })
+  const htmlBody = isOnlineSend
+    ? buildConfirmacionOnlineHTML({
+        studentName: `${firstName} ${lastName}`,
+        programName: data.program_name,
+        email: odooEmail,
+        isNew
+      })
+    : buildConfirmacionHTML({
+        studentName: `${firstName} ${lastName}`,
+        programName: data.program_name,
+        startDate: data.start_date,
+        frequency,
+        schedule,
+        whatsappLink: data.whatsapp_link || '',
+        email: odooEmail,
+        isNew,
+        bannerUrl: data.banner_link || '',
+        installments: data.payment_plan_alias === 'we_payment_way_single' ? [] : (instRows || []),
+        currencySymbol: data.currency_symbol || 'S/.',
+        hideWhatsapp: isParentProgram
+      })
 
   // Resolucion del CC en cascada: parametro explicito (override puntual) ->
   // valor persistido en enrollments.email_cc (capturado en la inscripcion).

@@ -298,6 +298,82 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
   }
 }
 
+async function searchSlideChannelByName (channelName) {
+  const rows = await callKw('slide.channel', 'search_read', [
+    [['name', '=', channelName]]
+  ], { fields: ['id', 'name'], limit: 5 })
+  return rows || []
+}
+
+async function enrollStudentInChannelOnly ({ partnerId, slideChannelId }) {
+  const existing = await callKw('slide.channel.partner', 'search', [
+    [['partner_id', '=', partnerId], ['channel_id', '=', slideChannelId]]
+  ], { limit: 1 })
+  if (existing && existing.length > 0) {
+    return { channel_partner_id: existing[0], already_enrolled: true }
+  }
+  const channelPartnerId = await callKw('slide.channel.partner', 'create', [{
+    partner_id: partnerId,
+    channel_id: slideChannelId
+  }])
+  return { channel_partner_id: channelPartnerId, already_enrolled: false }
+}
+
+async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, password, slideChannelId, phone, documentNumber }) {
+  try {
+    let user = await searchUserByEmail(searchEmail)
+    if (!user && createEmail !== searchEmail) {
+      user = await searchUserByEmail(createEmail)
+    }
+    let odooUserId, odooPartnerId, created = false
+
+    if (user) {
+      odooUserId    = user.id
+      odooPartnerId = user.partner_id?.[0] ?? null
+    } else {
+      odooUserId = await createPortalUser({ login: createEmail, name: fullName, password })
+      const userData = await getUserById(odooUserId)
+      odooPartnerId = userData?.partner_id?.[0] ?? null
+      created = true
+    }
+
+    if (!odooPartnerId) {
+      return { success: false, error: 'No se pudo obtener partner_id', odoo_user_id: odooUserId }
+    }
+
+    const partnerVals = {}
+    if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
+    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    if (Object.keys(partnerVals).length > 0) {
+      try {
+        await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
+      } catch (partnerErr) {
+        console.error('[odooClient] syncStudentToOdooOnline: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+      }
+    }
+
+    const enrollment = await enrollStudentInChannelOnly({
+      partnerId: odooPartnerId,
+      slideChannelId
+    })
+
+    return {
+      success: true,
+      odoo_user_id:     odooUserId,
+      odoo_partner_id:  odooPartnerId,
+      odoo_student_id:  enrollment.channel_partner_id,
+      odoo_login:       user ? user.login : createEmail,
+      user_created:     created,
+      already_enrolled: enrollment.already_enrolled,
+      password_set:     created ? password : null,
+      error: null
+    }
+  } catch (err) {
+    console.error('[odooClient] syncStudentToOdooOnline:', err.message)
+    return { success: false, error: err.message, odoo_user_id: null }
+  }
+}
+
 async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber }) {
   try {
     let user = await searchUserByEmail(searchEmail)
@@ -369,15 +445,17 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
 async function createSaleOrderWithFees ({ partnerId, productName, slideGroupId, amount, installments, currency, partnerEmail }) {
   const odooCtx = { context: { allowed_company_ids: [1], default_warehouse_id: 1 } }
 
-  const existingFees = await callKw('sale.order.fee', 'search_read', [
-    [['partner_id', '=', partnerId], ['slide_group_id', '=', slideGroupId]]
-  ], { fields: ['order_id'], limit: 1 })
-  if (existingFees?.[0]?.order_id) {
-    const existingOrderId = Array.isArray(existingFees[0].order_id)
-      ? existingFees[0].order_id[0]
-      : existingFees[0].order_id
-    console.log(`[odooClient] Reusing existing sale.order ${existingOrderId} for partner=${partnerId} slide_group=${slideGroupId}`)
-    return { success: true, order_id: existingOrderId, reused: true }
+  if (slideGroupId) {
+    const existingFees = await callKw('sale.order.fee', 'search_read', [
+      [['partner_id', '=', partnerId], ['slide_group_id', '=', slideGroupId]]
+    ], { fields: ['order_id'], limit: 1 })
+    if (existingFees?.[0]?.order_id) {
+      const existingOrderId = Array.isArray(existingFees[0].order_id)
+        ? existingFees[0].order_id[0]
+        : existingFees[0].order_id
+      console.log(`[odooClient] Reusing existing sale.order ${existingOrderId} for partner=${partnerId} slide_group=${slideGroupId}`)
+      return { success: true, order_id: existingOrderId, reused: true }
+    }
   }
 
   const products = await callKw('product.product', 'search_read', [
@@ -613,4 +691,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, searchUserByEmail, searchSlideGroup, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

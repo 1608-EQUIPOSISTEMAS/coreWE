@@ -1023,7 +1023,12 @@ async function syncFicoConsolidadoToSheet () {
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
       CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
-           ELSE COALESCE(curr.variable_2, '') END AS tipo_moneda,
+           ELSE CASE curr.alias
+                  WHEN 'we_currency_soles'   THEN 'PEN'
+                  WHEN 'we_currency_dollars' THEN 'USD'
+                  ELSE COALESCE(curr.variable_2, '')
+                END
+           END AS tipo_moneda,
       CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
            ELSE COALESCE(c_meth.description, '') END AS medio_pago,
       CASE WHEN (e.total_amount - e.discount_amount) = 0 THEN ''
