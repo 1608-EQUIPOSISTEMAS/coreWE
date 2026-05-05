@@ -158,6 +158,39 @@ async function confirmPayment (payload) {
     }
   }
 
+  // Guard de idempotencia: el SP `sp_fico_confirm_payment` no deduplica — cada
+  // llamada hace INSERT en `payments`. Si el operador re-cliquea Confirmar (o
+  // dos ventanas de FICO confirman a la vez), terminamos con filas duplicadas
+  // que distorsionan reportes financieros (ej. saldo del Sheets sync).
+  // Si la cuota objetivo del action ya esta en estado 'paid' (cualquier alias),
+  // retornamos exito idempotente sin tocar payments ni efectos posteriores.
+  if (payload.enrollment_id && ['confirm_contado', 'confirm_plan'].includes(payload.action)) {
+    // confirm_contado paga en una sola cuota (installment_number=1).
+    // confirm_plan paga la cuota inicial / reserva (installment_number=0).
+    const targetInstNum = payload.action === 'confirm_contado' ? 1 : 0
+    try {
+      const { rows: chk } = await pool.query(`
+        SELECT c.alias AS status_alias
+          FROM payment_installments pi
+          LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
+         WHERE pi.enrollment_id = $1 AND pi.installment_number = $2
+         LIMIT 1
+      `, [payload.enrollment_id, targetInstNum])
+      const alreadyPaid = chk?.[0] && ['we_inst_paid', 'we_payment_status_paid'].includes(chk[0].status_alias)
+      if (alreadyPaid) {
+        console.warn(`[confirmPayment] Idempotente: enrollment=${payload.enrollment_id} action=${payload.action} ya estaba confirmado`)
+        return {
+          result: 1,
+          message: 'El pago ya fue confirmado previamente',
+          already_confirmed: true
+        }
+      }
+    } catch (chkErr) {
+      console.error('[confirmPayment] Error chequeando idempotencia:', chkErr.message)
+      // Si el chequeo falla por algo raro, dejamos que el SP corra (comportamiento previo).
+    }
+  }
+
   // Capturamos el max payment_id ANTES del SP. Cualquier payment activo con id <= a este
   // valor es un placeholder previo creado por sp_comercial_enrollment_register cuando el
   // token fue confirmado (cat_payment_type=3113, sin transaction_code, payment_date defaulteado
@@ -1462,13 +1495,22 @@ async function resolveLabel (catalogId) {
 }
 
 async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, catPaymentMedium, catBusinessEntity, bankAccountId, transactionCode, voucherUrl, paymentDate, userId }) {
-  const { rows: instRows } = await pool.query(
-    'SELECT * FROM payment_installments WHERE installment_id = $1 AND enrollment_id = $2',
-    [installmentId, enrollmentId]
-  )
+  // Chequeamos via alias (no via id numerico): el sistema convive con dos
+  // namespaces para "cuota saldada": 'we_inst_paid' (legacy, id=4454) y
+  // 'we_payment_status_paid' (nuevo, id=2471). El check por id mágico solo
+  // cachaba el legacy y permitía re-confirmar cuotas del namespace nuevo,
+  // duplicando filas en payments.
+  const { rows: instRows } = await pool.query(`
+    SELECT pi.*, c.alias AS status_alias
+      FROM payment_installments pi
+      LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
+     WHERE pi.installment_id = $1 AND pi.enrollment_id = $2
+  `, [installmentId, enrollmentId])
   const inst = instRows?.[0]
   if (!inst) throw new Error('Cuota no encontrada')
-  if (inst.cat_status === 4454) throw new Error('Esta cuota ya esta pagada')
+  if (['we_inst_paid', 'we_payment_status_paid'].includes(inst.status_alias)) {
+    throw new Error('Esta cuota ya esta pagada')
+  }
 
   await pool.query(
     'UPDATE payment_installments SET cat_status = 4454 WHERE installment_id = $1',
@@ -1993,9 +2035,11 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
     [retId, enrollmentId]
   )
 
+  // Cancelar solo cuotas NO pagadas. Acepta ambos aliases de "saldada":
+  // we_inst_paid (4454, legacy) y we_payment_status_paid (2471, nuevo).
   const { rows: cancelledInstallments } = await pool.query(`
     UPDATE payment_installments SET cat_status = 4456
-    WHERE enrollment_id = $1 AND cat_status != 4454
+    WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)
     RETURNING installment_id, installment_number, amount
   `, [enrollmentId])
 
@@ -2013,7 +2057,9 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
   const retiredChildren = []
   for (const child of childEnrollments) {
     await pool.query('UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2', [retId, child.enrollment_id])
-    await pool.query(`DELETE FROM payment_installments WHERE enrollment_id = $1 AND cat_status != 4454`, [child.enrollment_id])
+    // No borrar cuotas pagadas (legacy 4454 ni nuevo 2471). Si una cuota fue
+    // pagada con el alias nuevo, el filtro != 4454 antes la borraba: bug silencioso.
+    await pool.query(`DELETE FROM payment_installments WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)`, [child.enrollment_id])
     await logAudit({
       enrollmentId: child.enrollment_id,
       action: 'retired',
@@ -2415,10 +2461,12 @@ async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, us
     const diffDays = Math.round((newStart - oldStart) / (1000 * 60 * 60 * 24))
 
     if (diffDays !== 0) {
+      // Solo desplazar cuotas pendientes. No tocar pagadas (we_inst_paid 4454
+      // ni we_payment_status_paid 2471) — alterar su due_date confunde reportes.
       const { rows: updatedCuotas } = await pool.query(`
         UPDATE payment_installments
         SET due_date = due_date + INTERVAL '${diffDays} days'
-        WHERE enrollment_id = $1 AND cat_status != 4454
+        WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)
         RETURNING installment_number, due_date
       `, [enrollmentId])
 
@@ -3073,7 +3121,10 @@ async function rescheduleInstallments ({ enrollmentId, changes, justificacion, r
     const inst = byId.get(id)
     if (!inst) throw new Error(`Cuota ${id} no pertenece a la inscripcion`)
     if (inst.installment_number === 0) throw new Error('El pago inicial no se reprograma')
-    if (inst.cat_status === 4454) throw new Error(`La cuota ${inst.installment_number} ya esta pagada`)
+    // Acepta ambos namespaces: legacy (4454) y nuevo (2471 = we_payment_status_paid).
+    if (inst.cat_status === 4454 || inst.cat_status === 2471) {
+      throw new Error(`La cuota ${inst.installment_number} ya esta pagada`)
+    }
 
     const newDate = new Date(raw.new_due_date)
     if (isNaN(newDate.getTime())) throw new Error(`Fecha invalida para cuota ${inst.installment_number}`)
@@ -3178,6 +3229,131 @@ async function rescheduleInstallments ({ enrollmentId, changes, justificacion, r
   }
 }
 
+async function getClassroomExportOptions () {
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id, e.program_version_id, e.program_edition_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+        LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+        LEFT JOIN public.programs prog ON prog.program_id = pv.program_id
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND e.program_edition_id IS NOT NULL
+         AND COALESCE(prog.is_membership, false) = false
+         AND (
+              e.parent_enrollment_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
+         )
+    )
+    SELECT
+      pv.program_version_id,
+      pv.version_code,
+      pv.abbreviation,
+      a.program_edition_id   AS edition_num_id,
+      pe.start_date,
+      COUNT(*)::int          AS students_count
+      FROM approved a
+      JOIN public.program_versions pv ON pv.program_version_id = a.program_version_id
+      LEFT JOIN public.program_editions pe ON pe.edition_num_id = a.program_edition_id
+     GROUP BY pv.program_version_id, pv.version_code, pv.abbreviation,
+              a.program_edition_id, pe.start_date
+     ORDER BY pv.version_code, pe.start_date NULLS LAST
+  `)
+
+  const programsMap = new Map()
+  for (const r of rows) {
+    if (!programsMap.has(r.program_version_id)) {
+      programsMap.set(r.program_version_id, {
+        program_version_id: r.program_version_id,
+        version_code: r.version_code,
+        abbreviation: r.abbreviation,
+        editions: []
+      })
+    }
+    programsMap.get(r.program_version_id).editions.push({
+      edition_num_id: r.edition_num_id,
+      start_date: r.start_date,
+      students_count: r.students_count
+    })
+  }
+  return Array.from(programsMap.values())
+}
+
+async function exportClassroomCsv ({ programVersionId, editionNumId }) {
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND e.program_version_id = $1
+         AND e.program_edition_id = $2
+         AND (
+              e.parent_enrollment_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
+         )
+    )
+    SELECT
+      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres_apellidos,
+      COALESCE(pv_parent.version_code, '')                       AS cat_prog,
+      CASE c_mod.alias
+        WHEN 'we_insc_modality_flexible' THEN 'FLEX'
+        ELSE 'REGULAR'
+      END                                                        AS modalidad,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                          AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                          AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END                                                        AS ocup
+      FROM public.enrollments e
+      JOIN approved a ON a.enrollment_id = e.enrollment_id
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per   ON per.person_id   = cust.person_id
+      LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
+      LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
+      LEFT JOIN public."catalog" c_mod  ON c_mod.catalog_id  = e.cat_inscription_modality
+      LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
+      LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+     ORDER BY per.last_name, per.first_name
+  `, [programVersionId, editionNumId])
+
+  const headers = ['Nombres y Apellidos', 'N° Grp', 'Cat Prog', 'Usuario', 'Contraseña', 'Modalidad', 'Celular', 'Correo', 'Ocup']
+  const escape = v => {
+    const s = v == null ? '' : String(v)
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = [headers.map(escape).join(',')]
+  for (const r of rows) {
+    lines.push([
+      r.nombres_apellidos || '',
+      '',
+      r.cat_prog || '',
+      '',
+      '',
+      r.modalidad || '',
+      r.celular || '',
+      r.correo || '',
+      r.ocup || ''
+    ].map(escape).join(','))
+  }
+  return '﻿' + lines.join('\r\n')
+}
+
 export default {
   enrollmentList,
   paymentDetailGet,
@@ -3210,5 +3386,7 @@ export default {
   saveValidations,
   getProgramChildren,
   rescheduleInstallments,
-  validateChildEnrollmentSetup
+  validateChildEnrollmentSetup,
+  getClassroomExportOptions,
+  exportClassroomCsv
 }
