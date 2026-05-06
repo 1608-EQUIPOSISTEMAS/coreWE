@@ -289,6 +289,7 @@ export const leadListSchema = {
     properties: {
       user_id:             { type: ['integer', 'null'] },
       q:                   { type: ['string', 'null'] },
+      origin_seller_phone: { type: ['string', 'null'] },
       page:                { type: ['integer', 'null'], default: 1 },
       size:                { type: ['integer', 'null'], default: 25 },
       from_date:           { type: ['string', 'null'] },

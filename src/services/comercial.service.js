@@ -143,6 +143,7 @@ async function enrollmentRegister(payload) {
 async function leadList(payload = {}) {
   const {
     q = null,
+    origin_seller_phone = null,
     user_id,
     page = 1,
     size = 25,
@@ -216,6 +217,7 @@ payment_channel_ids,
   const filters = {
     current_user_id: user_id,
     q,
+    origin_seller_phone,
     page,
     size,
     order_by,
