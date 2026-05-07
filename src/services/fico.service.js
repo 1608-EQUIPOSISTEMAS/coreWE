@@ -1967,6 +1967,62 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
   return result
 }
 
+async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion, userId }) {
+  // Caso de uso: una inscripcion entro como WEB (sin user asesor) y comercial
+  // luego informa que un asesor concreto guio al cliente al pago. FICO asocia
+  // ese asesor sin tocar el canal (agent_origin sigue siendo 'WEB').
+  // Resultado visual: 'WEB - AE30' (canal-asesor) en seller_agent_name.
+  const { rows: oldRows } = await pool.query(`
+    SELECT
+      e.enrollment_id,
+      e.seller_agent_id            AS old_agent_id,
+      e.agent_origin               AS origin,
+      u_old.alias                  AS old_alias,
+      cf.alias                     AS fico_status_alias
+    FROM enrollments e
+    LEFT JOIN users u_old ON u_old.user_id = e.seller_agent_id
+    LEFT JOIN catalog cf ON cf.catalog_id = e.cat_fico_status
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  const old = oldRows?.[0]
+  if (!old) throw new Error('Inscripcion no encontrada')
+  if (old.fico_status_alias !== 'we_enrollment_status_checked') {
+    throw new Error('Solo se puede editar el asesor en inscripciones aprobadas')
+  }
+  if (Number(old.old_agent_id) === Number(newSellerAgentId)) {
+    throw new Error('El asesor seleccionado es el mismo que el actual')
+  }
+
+  const { rows: newRows } = await pool.query(
+    'SELECT alias FROM users WHERE user_id = $1', [newSellerAgentId]
+  )
+  if (!newRows?.[0]) throw new Error('Asesor seleccionado no existe')
+
+  await pool.query(
+    'UPDATE enrollments SET seller_agent_id = $1 WHERE enrollment_id = $2',
+    [newSellerAgentId, enrollmentId]
+  )
+
+  const changes = {
+    'Asesor': {
+      old: old.old_alias || '(sin asesor)',
+      new: newRows[0].alias
+    }
+  }
+
+  await logAudit({
+    enrollmentId,
+    action: 'seller_agent_changed',
+    userId,
+    justificacion,
+    changes,
+    details: `Asesor: ${changes['Asesor'].old} → ${changes['Asesor'].new} (canal: ${old.origin || '---'})`
+  })
+
+  return { result: 1, message: 'Asesor actualizado correctamente' }
+}
+
 async function changeModality ({ enrollmentId, newModalityId, justificacion, userId }) {
   const { rows: oldRows } = await pool.query(`
     SELECT e.cat_inscription_modality, c_old.description AS old_modality
@@ -3372,6 +3428,7 @@ export default {
   courseChange,
   changeModality,
   editStudent,
+  editSellerAgent,
   confirmInstallment,
   previewConfirmationEmail,
   retireEnrollment,

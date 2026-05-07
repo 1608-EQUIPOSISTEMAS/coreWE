@@ -435,6 +435,35 @@ export default async function ficoRoutes (fastify) {
     }
   })
 
+  fastify.post('/editselleragent', {
+    preHandler: [authenticate, hasRole(['ADMIN', 'FICO', 'LIDER_FICO'])],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'new_seller_agent_id', 'justificacion'],
+        additionalProperties: true,
+        properties: {
+          enrollment_id:        { type: 'integer' },
+          new_seller_agent_id:  { type: 'integer' },
+          justificacion:        { type: 'string', minLength: 1 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.editSellerAgent({
+        enrollmentId:     req.body.enrollment_id,
+        newSellerAgentId: req.body.new_seller_agent_id,
+        justificacion:    req.body.justificacion,
+        userId:           req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[editSellerAgent ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/coursechange', {
     schema: {
       body: {
