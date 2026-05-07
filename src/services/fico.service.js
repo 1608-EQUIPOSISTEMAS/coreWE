@@ -107,6 +107,154 @@ async function enrollmentList (payload = {}) {
 }
 
 
+// Cobranzas: cuotas pendientes de inscripciones aprobadas que vencen en el mes
+// indicado. Excluye el inicial (installment_number = 0) — en aprobada el inicial
+// ya esta pagado por definicion. Devuelve items + KPIs aggregadas del mes.
+async function getCollections ({ year, month, q, state, advisorIds }) {
+  const yearN = Number(year)
+  const monthN = Number(month)
+  if (!Number.isInteger(yearN) || yearN < 2020 || yearN > 2100) throw new Error('year invalido')
+  if (!Number.isInteger(monthN) || monthN < 1 || monthN > 12) throw new Error('month invalido')
+
+  const search = (q || '').trim() || null
+  const stateFilter = ['overdue', 'today', 'upcoming'].includes(state) ? state : 'all'
+  const advisorIdsArr = Array.isArray(advisorIds) ? advisorIds.filter(n => Number.isInteger(Number(n))) : []
+  const advisorJson = JSON.stringify(advisorIdsArr.map(Number))
+
+  // Query unica que trae todas las cuotas pendientes del mes seleccionado.
+  // Usamos un CTE para los aliases de "cuota saldada / cancelada" — el sistema
+  // maneja dos namespaces (legacy we_inst_* y nuevo we_payment_status_*),
+  // ambos validos como "ya no se cobra esta cuota".
+  const sql = `
+    WITH paid_aliases AS (
+      SELECT catalog_id FROM public."catalog"
+       WHERE alias IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
+    ),
+    bounds AS (
+      SELECT
+        make_date($1::int, $2::int, 1)                                              AS from_date,
+        (make_date($1::int, $2::int, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date AS to_date
+    )
+    SELECT
+      pi.installment_id,
+      pi.installment_number,
+      pi.amount::numeric                       AS amount,
+      pi.due_date,
+      (pi.due_date - CURRENT_DATE)             AS days_to_due,
+      CASE
+        WHEN pi.due_date < CURRENT_DATE THEN 'overdue'
+        WHEN pi.due_date = CURRENT_DATE THEN 'today'
+        ELSE 'upcoming'
+      END                                      AS state_label,
+      e.enrollment_id,
+      TRIM(per.first_name || ' ' || COALESCE(per.last_name, '')) AS student_full_name,
+      per.document_number,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+           JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+          WHERE pc.person_id = per.person_id AND c.alias = 'we_way_contact_email' AND pc.active='Y'
+          ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS email,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+           JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+          WHERE pc.person_id = per.person_id AND c.alias = 'we_way_contact_phone' AND pc.active='Y'
+          ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS phone,
+      pv.abbreviation AS program_name,
+      pe.global_code  AS edition_code,
+      e.agent_origin,
+      u.alias         AS seller_agent_alias,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND u.alias IS NOT NULL THEN e.agent_origin || ' - ' || u.alias
+        WHEN e.agent_origin IS NOT NULL THEN e.agent_origin
+        ELSE u.alias
+      END AS seller_agent_name
+    FROM public.payment_installments pi
+    JOIN public.enrollments e ON e.enrollment_id = pi.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    JOIN public."catalog" cf  ON cf.catalog_id   = e.cat_fico_status
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u  ON u.user_id = e.seller_agent_id
+    LEFT JOIN public.leads l  ON l.enrollment_id = e.enrollment_id
+    JOIN bounds b ON TRUE
+    WHERE
+      cf.alias = 'we_enrollment_status_checked'
+      AND e.active = 'Y'
+      AND pi.installment_number > 0
+      AND pi.cat_status NOT IN (SELECT catalog_id FROM paid_aliases)
+      AND pi.due_date BETWEEN b.from_date AND b.to_date
+      AND ($3::text IS NULL OR (
+        per.first_name      ILIKE '%' || $3 || '%' OR
+        per.last_name       ILIKE '%' || $3 || '%' OR
+        per.document_number ILIKE '%' || $3 || '%' OR
+        l.origin_email      ILIKE '%' || $3 || '%'
+      ))
+      AND (
+        $4::text = 'all'
+        OR ($4::text = 'overdue'  AND pi.due_date < CURRENT_DATE)
+        OR ($4::text = 'today'    AND pi.due_date = CURRENT_DATE)
+        OR ($4::text = 'upcoming' AND pi.due_date > CURRENT_DATE)
+      )
+      AND (
+        jsonb_array_length($5::jsonb) = 0
+        OR e.seller_agent_id IN (SELECT (value)::int FROM jsonb_array_elements_text($5::jsonb))
+      )
+    ORDER BY pi.due_date ASC, e.enrollment_id ASC, pi.installment_number ASC
+  `
+
+  const { rows } = await pool.query(sql, [yearN, monthN, search, stateFilter, advisorJson])
+
+  // KPIs siempre del MES (independientes de q/state/asesor) — el usuario ve el
+  // panorama del mes mientras filtra la tabla.
+  const kpiSql = `
+    WITH paid_aliases AS (
+      SELECT catalog_id FROM public."catalog"
+       WHERE alias IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
+    ),
+    bounds AS (
+      SELECT
+        make_date($1::int, $2::int, 1)                                              AS from_date,
+        (make_date($1::int, $2::int, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date AS to_date
+    ),
+    rows_month AS (
+      SELECT pi.amount::numeric AS amount, pi.due_date
+        FROM public.payment_installments pi
+        JOIN public.enrollments e ON e.enrollment_id = pi.enrollment_id
+        JOIN public."catalog" cf  ON cf.catalog_id   = e.cat_fico_status
+        JOIN bounds b ON TRUE
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND pi.installment_number > 0
+         AND pi.cat_status NOT IN (SELECT catalog_id FROM paid_aliases)
+         AND pi.due_date BETWEEN b.from_date AND b.to_date
+    )
+    SELECT
+      COUNT(*)::int                                                            AS total_count,
+      COALESCE(SUM(amount), 0)::numeric                                        AS total_amount,
+      COUNT(*) FILTER (WHERE due_date < CURRENT_DATE)::int                     AS overdue_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date < CURRENT_DATE), 0)::numeric AS overdue_amount,
+      COUNT(*) FILTER (WHERE due_date = CURRENT_DATE)::int                     AS today_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date = CURRENT_DATE), 0)::numeric AS today_amount,
+      COUNT(*) FILTER (WHERE due_date > CURRENT_DATE)::int                     AS upcoming_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date > CURRENT_DATE), 0)::numeric AS upcoming_amount
+      FROM rows_month
+  `
+  const { rows: kpiRows } = await pool.query(kpiSql, [yearN, monthN])
+  const kpis = kpiRows[0] || {
+    total_count: 0, total_amount: 0,
+    overdue_count: 0, overdue_amount: 0,
+    today_count: 0, today_amount: 0,
+    upcoming_count: 0, upcoming_amount: 0
+  }
+
+  return { items: rows, kpis }
+}
+
 async function paymentDetailGet ({ enrollment_id }) {
   const rows = await callProcedureReturningRows(
     pool,
@@ -3429,6 +3577,7 @@ export default {
   changeModality,
   editStudent,
   editSellerAgent,
+  getCollections,
   confirmInstallment,
   previewConfirmationEmail,
   retireEnrollment,

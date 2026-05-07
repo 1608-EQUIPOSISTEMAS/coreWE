@@ -435,6 +435,38 @@ export default async function ficoRoutes (fastify) {
     }
   })
 
+  fastify.post('/collections', {
+    preHandler: [authenticate, hasRole(['ADMIN', 'FICO', 'LIDER_FICO', 'GERENCIA'])],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['year', 'month'],
+        additionalProperties: true,
+        properties: {
+          year:        { type: 'integer', minimum: 2020, maximum: 2100 },
+          month:       { type: 'integer', minimum: 1, maximum: 12 },
+          q:           { type: ['string', 'null'] },
+          state:       { type: ['string', 'null'], enum: ['all', 'overdue', 'today', 'upcoming', null] },
+          advisor_ids: { type: ['array', 'null'], items: { type: 'integer' } }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.getCollections({
+        year:        req.body.year,
+        month:       req.body.month,
+        q:           req.body.q || null,
+        state:       req.body.state || 'all',
+        advisorIds:  req.body.advisor_ids || []
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[getCollections ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/editselleragent', {
     preHandler: [authenticate, hasRole(['ADMIN', 'FICO', 'LIDER_FICO'])],
     schema: {
