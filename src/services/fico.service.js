@@ -110,11 +110,20 @@ async function enrollmentList (payload = {}) {
 // Cobranzas: cuotas pendientes de inscripciones aprobadas que vencen en el mes
 // indicado. Excluye el inicial (installment_number = 0) — en aprobada el inicial
 // ya esta pagado por definicion. Devuelve items + KPIs aggregadas del mes.
-async function getCollections ({ year, month, q, state, advisorIds }) {
+async function getCollections ({ year, month, day, q, state, advisorIds }) {
   const yearN = Number(year)
   const monthN = Number(month)
   if (!Number.isInteger(yearN) || yearN < 2020 || yearN > 2100) throw new Error('year invalido')
   if (!Number.isInteger(monthN) || monthN < 1 || monthN > 12) throw new Error('month invalido')
+
+  // day es opcional: null = todo el mes, 1-31 = solo ese dia.
+  // No validamos contra dias-en-mes porque si el cliente pasa 31 en Feb,
+  // Postgres rechaza make_date y el error es claro.
+  let dayN = null
+  if (day !== undefined && day !== null && day !== '') {
+    dayN = Number(day)
+    if (!Number.isInteger(dayN) || dayN < 1 || dayN > 31) throw new Error('day invalido')
+  }
 
   const search = (q || '').trim() || null
   const stateFilter = ['overdue', 'today', 'upcoming'].includes(state) ? state : 'all'
@@ -125,25 +134,34 @@ async function getCollections ({ year, month, q, state, advisorIds }) {
   // Usamos un CTE para los aliases de "cuota saldada / cancelada" — el sistema
   // maneja dos namespaces (legacy we_inst_* y nuevo we_payment_status_*),
   // ambos validos como "ya no se cobra esta cuota".
+  // today_lima fija la nocion de "hoy" en zona Lima — independiente del TZ del
+  // servidor de produccion (que puede correr en UTC y desfasar el filtro Hoy).
   const sql = `
     WITH paid_aliases AS (
       SELECT catalog_id FROM public."catalog"
        WHERE alias IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
     ),
+    today_lima AS (
+      SELECT (NOW() AT TIME ZONE 'America/Lima')::date AS d
+    ),
     bounds AS (
       SELECT
-        make_date($1::int, $2::int, 1)                                              AS from_date,
-        (make_date($1::int, $2::int, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date AS to_date
+        CASE WHEN $6::int IS NULL THEN make_date($1::int, $2::int, 1)
+             ELSE make_date($1::int, $2::int, $6::int)
+        END AS from_date,
+        CASE WHEN $6::int IS NULL THEN (make_date($1::int, $2::int, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date
+             ELSE make_date($1::int, $2::int, $6::int)
+        END AS to_date
     )
     SELECT
       pi.installment_id,
       pi.installment_number,
       pi.amount::numeric                       AS amount,
       pi.due_date,
-      (pi.due_date - CURRENT_DATE)             AS days_to_due,
+      (pi.due_date - tl.d)                     AS days_to_due,
       CASE
-        WHEN pi.due_date < CURRENT_DATE THEN 'overdue'
-        WHEN pi.due_date = CURRENT_DATE THEN 'today'
+        WHEN pi.due_date < tl.d THEN 'overdue'
+        WHEN pi.due_date = tl.d THEN 'today'
         ELSE 'upcoming'
       END                                      AS state_label,
       e.enrollment_id,
@@ -182,6 +200,7 @@ async function getCollections ({ year, month, q, state, advisorIds }) {
     LEFT JOIN public.users u  ON u.user_id = e.seller_agent_id
     LEFT JOIN public.leads l  ON l.enrollment_id = e.enrollment_id
     JOIN bounds b ON TRUE
+    JOIN today_lima tl ON TRUE
     WHERE
       cf.alias = 'we_enrollment_status_checked'
       AND e.active = 'Y'
@@ -196,9 +215,9 @@ async function getCollections ({ year, month, q, state, advisorIds }) {
       ))
       AND (
         $4::text = 'all'
-        OR ($4::text = 'overdue'  AND pi.due_date < CURRENT_DATE)
-        OR ($4::text = 'today'    AND pi.due_date = CURRENT_DATE)
-        OR ($4::text = 'upcoming' AND pi.due_date > CURRENT_DATE)
+        OR ($4::text = 'overdue'  AND pi.due_date < tl.d)
+        OR ($4::text = 'today'    AND pi.due_date = tl.d)
+        OR ($4::text = 'upcoming' AND pi.due_date > tl.d)
       )
       AND (
         jsonb_array_length($5::jsonb) = 0
@@ -207,14 +226,18 @@ async function getCollections ({ year, month, q, state, advisorIds }) {
     ORDER BY pi.due_date ASC, e.enrollment_id ASC, pi.installment_number ASC
   `
 
-  const { rows } = await pool.query(sql, [yearN, monthN, search, stateFilter, advisorJson])
+  const { rows } = await pool.query(sql, [yearN, monthN, search, stateFilter, advisorJson, dayN])
 
   // KPIs siempre del MES (independientes de q/state/asesor) — el usuario ve el
-  // panorama del mes mientras filtra la tabla.
+  // panorama del mes mientras filtra la tabla. today_lima ancla "hoy" a Lima
+  // para que el conteo de Vencidas/Hoy/Por vencer no dependa del TZ del host.
   const kpiSql = `
     WITH paid_aliases AS (
       SELECT catalog_id FROM public."catalog"
        WHERE alias IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
+    ),
+    today_lima AS (
+      SELECT (NOW() AT TIME ZONE 'America/Lima')::date AS d
     ),
     bounds AS (
       SELECT
@@ -236,12 +259,12 @@ async function getCollections ({ year, month, q, state, advisorIds }) {
     SELECT
       COUNT(*)::int                                                            AS total_count,
       COALESCE(SUM(amount), 0)::numeric                                        AS total_amount,
-      COUNT(*) FILTER (WHERE due_date < CURRENT_DATE)::int                     AS overdue_count,
-      COALESCE(SUM(amount) FILTER (WHERE due_date < CURRENT_DATE), 0)::numeric AS overdue_amount,
-      COUNT(*) FILTER (WHERE due_date = CURRENT_DATE)::int                     AS today_count,
-      COALESCE(SUM(amount) FILTER (WHERE due_date = CURRENT_DATE), 0)::numeric AS today_amount,
-      COUNT(*) FILTER (WHERE due_date > CURRENT_DATE)::int                     AS upcoming_count,
-      COALESCE(SUM(amount) FILTER (WHERE due_date > CURRENT_DATE), 0)::numeric AS upcoming_amount
+      COUNT(*) FILTER (WHERE due_date < (SELECT d FROM today_lima))::int                     AS overdue_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date < (SELECT d FROM today_lima)), 0)::numeric AS overdue_amount,
+      COUNT(*) FILTER (WHERE due_date = (SELECT d FROM today_lima))::int                     AS today_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date = (SELECT d FROM today_lima)), 0)::numeric AS today_amount,
+      COUNT(*) FILTER (WHERE due_date > (SELECT d FROM today_lima))::int                     AS upcoming_count,
+      COALESCE(SUM(amount) FILTER (WHERE due_date > (SELECT d FROM today_lima)), 0)::numeric AS upcoming_amount
       FROM rows_month
   `
   const { rows: kpiRows } = await pool.query(kpiSql, [yearN, monthN])
@@ -1059,7 +1082,7 @@ async function bankAccountList () {
   return rows || []
 }
 
-async function previewConfirmationEmail ({ enrollmentId }) {
+async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null }) {
   // Si es membresia, derivar al preview de membresia (otra plantilla, otros datos).
   const { rows: checkRows } = await pool.query(`
     SELECT pv.abbreviation, prog.is_membership FROM enrollments e
@@ -1068,9 +1091,13 @@ async function previewConfirmationEmail ({ enrollmentId }) {
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
   if (checkRows?.[0] && isMembership(checkRows[0].abbreviation, checkRows[0].is_membership)) {
-    return previewMembershipEmail({ enrollmentId })
+    return previewMembershipEmail({ enrollmentId, overrideEditionId })
   }
 
+  // overrideEditionId proyecta el preview sobre una edicion futura (reprogramacion / cambio de curso)
+  // antes de comprometer el cambio en BD. start_date, whatsapp_link y schedule se leen de la edicion
+  // destino; el resto de datos (alumno, plan de pago, banner) sigue dependiendo del enrollment.
+  const editionId = overrideEditionId || null
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
            per.first_name, per.last_name, per.document_number,
@@ -1090,11 +1117,11 @@ async function previewConfirmationEmail ({ enrollmentId }) {
     LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN programs prog ON prog.program_id = pv.program_id
-    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = COALESCE($2::integer, e.program_edition_id)
     LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
     LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
     WHERE e.enrollment_id = $1
-  `, [enrollmentId])
+  `, [enrollmentId, editionId])
 
   const data = rows?.[0]
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
@@ -1106,9 +1133,9 @@ async function previewConfirmationEmail ({ enrollmentId }) {
     SELECT c.description AS day_name, es.start_time, es.end_time
     FROM edition_schedules es
     LEFT JOIN catalog c ON es.cat_day_id = c.catalog_id
-    WHERE es.edition_num_id = (SELECT program_edition_id FROM enrollments WHERE enrollment_id = $1)
+    WHERE es.edition_num_id = COALESCE($2::integer, (SELECT program_edition_id FROM enrollments WHERE enrollment_id = $1))
     ORDER BY es.schedule_id
-  `, [enrollmentId])
+  `, [enrollmentId, editionId])
 
   const sched = schedRows || []
   const frequency = sched.map(s => s.day_name).filter(Boolean).join(', ')
@@ -1173,7 +1200,8 @@ async function previewConfirmationEmail ({ enrollmentId }) {
   }
 }
 
-async function previewMembershipEmail ({ enrollmentId }) {
+async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null }) {
+  const editionId = overrideEditionId || null
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
@@ -1186,11 +1214,11 @@ async function previewMembershipEmail ({ enrollmentId }) {
     JOIN persons per ON per.person_id = cust.person_id
     LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
     LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-    LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN program_editions pe ON pe.edition_num_id = COALESCE($2::integer, e.program_edition_id)
     LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
     LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
     WHERE e.enrollment_id = $1
-  `, [enrollmentId])
+  `, [enrollmentId, editionId])
 
   const data = rows?.[0]
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
@@ -2116,15 +2144,22 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
 }
 
 async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion, userId }) {
-  // Caso de uso: una inscripcion entro como WEB (sin user asesor) y comercial
-  // luego informa que un asesor concreto guio al cliente al pago. FICO asocia
-  // ese asesor sin tocar el canal (agent_origin sigue siendo 'WEB').
-  // Resultado visual: 'WEB - AE30' (canal-asesor) en seller_agent_name.
+  // Casos:
+  //  1) WEB (sin asesor) -> CA36: setea seller_agent_id, mantiene agent_origin='WEB'.
+  //     Resultado: 'WEB - CA36'.
+  //  2) AE30 -> S/A:     limpia seller_agent_id, setea agent_origin='SA'.
+  //     Resultado: 'SA' (Sin Asesor).
+  //  3) S/A -> CA36:     setea seller_agent_id, limpia agent_origin (era 'SA',
+  //     ya no aplica porque ahora SI hay asesor). Resultado: 'CA36'.
+  // newSellerAgentId === null significa "Sin Asesor (S/A)".
+  const isSinAsesor = newSellerAgentId === null || newSellerAgentId === undefined
+  const newAgentIdN = isSinAsesor ? null : Number(newSellerAgentId)
+
   const { rows: oldRows } = await pool.query(`
     SELECT
       e.enrollment_id,
       e.seller_agent_id            AS old_agent_id,
-      e.agent_origin               AS origin,
+      e.agent_origin               AS old_origin,
       u_old.alias                  AS old_alias,
       cf.alias                     AS fico_status_alias
     FROM enrollments e
@@ -2138,24 +2173,50 @@ async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion,
   if (old.fico_status_alias !== 'we_enrollment_status_checked') {
     throw new Error('Solo se puede editar el asesor en inscripciones aprobadas')
   }
-  if (Number(old.old_agent_id) === Number(newSellerAgentId)) {
+
+  const oldAgentIdN = old.old_agent_id == null ? null : Number(old.old_agent_id)
+  const oldIsSA = (old.old_origin === 'SA') && oldAgentIdN === null
+  const newIsSA = isSinAsesor
+
+  if (oldAgentIdN === newAgentIdN && oldIsSA === newIsSA) {
     throw new Error('El asesor seleccionado es el mismo que el actual')
   }
 
-  const { rows: newRows } = await pool.query(
-    'SELECT alias FROM users WHERE user_id = $1', [newSellerAgentId]
-  )
-  if (!newRows?.[0]) throw new Error('Asesor seleccionado no existe')
+  let newAlias = null
+  if (!isSinAsesor) {
+    const { rows: newRows } = await pool.query(
+      'SELECT alias FROM users WHERE user_id = $1', [newAgentIdN]
+    )
+    if (!newRows?.[0]) throw new Error('Asesor seleccionado no existe')
+    newAlias = newRows[0].alias
+  }
+
+  // Calcular nuevo agent_origin segun el caso:
+  // - Si pasa a S/A: forzar 'SA'.
+  // - Si pasa a un asesor real y el origen era 'SA': limpiar a NULL (ya no es SA).
+  // - En cualquier otro caso: dejar el origen como estaba (preserva 'WEB', 'B2B', etc.).
+  let newOrigin = old.old_origin
+  if (isSinAsesor) {
+    newOrigin = 'SA'
+  } else if (old.old_origin === 'SA') {
+    newOrigin = null
+  }
 
   await pool.query(
-    'UPDATE enrollments SET seller_agent_id = $1 WHERE enrollment_id = $2',
-    [newSellerAgentId, enrollmentId]
+    'UPDATE enrollments SET seller_agent_id = $1, agent_origin = $2 WHERE enrollment_id = $3',
+    [newAgentIdN, newOrigin, enrollmentId]
   )
 
+  const fmtAgent = (alias, origin) => {
+    if (alias && origin) return `${origin} - ${alias}`
+    if (alias) return alias
+    if (origin) return origin
+    return '(sin asesor)'
+  }
   const changes = {
     'Asesor': {
-      old: old.old_alias || '(sin asesor)',
-      new: newRows[0].alias
+      old: fmtAgent(old.old_alias, old.old_origin),
+      new: fmtAgent(newAlias, newOrigin)
     }
   }
 
@@ -2165,7 +2226,7 @@ async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion,
     userId,
     justificacion,
     changes,
-    details: `Asesor: ${changes['Asesor'].old} → ${changes['Asesor'].new} (canal: ${old.origin || '---'})`
+    details: `Asesor: ${changes['Asesor'].old} → ${changes['Asesor'].new}`
   })
 
   return { result: 1, message: 'Asesor actualizado correctamente' }
@@ -2757,43 +2818,6 @@ async function getProgramPrice ({ programVersionId }) {
 
 // Clona el lead del enrollment original para asociarlo a la nueva inscripcion del cambio de curso.
 // Mantiene todos los campos originales pero apunta al nuevo programa/edicion y resetea fechas.
-async function _ccCloneLeadForChange ({ enrollmentId, newProgramVersionId, newEditionId, userId }) {
-  const { rows: leadCols } = await pool.query(`
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'leads' AND table_schema = 'public'
-      AND column_name NOT IN ('lead_id')
-    ORDER BY ordinal_position
-  `)
-  const allCols = leadCols.map(r => r.column_name)
-  const overrides = {
-    program_version_id: newProgramVersionId,
-    program_edition_id: newEditionId,
-    pay_date: 'NOW()::DATE',
-    registration_date: 'NOW()',
-    modification_date: 'NOW()',
-    active: "'Y'",
-    user_registration_id: userId,
-    user_modification_id: userId,
-    enrollment_id: 'NULL'
-  }
-  const selectParts = allCols.map(col => {
-    if (overrides[col] !== undefined) return `${overrides[col]} AS "${col}"`
-    return `l."${col}"`
-  })
-
-  const { rows } = await pool.query(`
-    INSERT INTO leads (${allCols.map(c => `"${c}"`).join(', ')})
-    SELECT ${selectParts.join(', ')}
-    FROM leads l
-    WHERE l.enrollment_id = $1
-    RETURNING lead_id
-  `, [enrollmentId])
-
-  const newLeadId = rows?.[0]?.lead_id
-  if (!newLeadId) throw new Error('Error al crear el lead para el cambio de curso')
-  return newLeadId
-}
-
 // Registra la fila en course_changes con metadata del cambio.
 async function _ccRecordCourseChangeRow ({ old, newEid, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, oldAmount }) {
   await pool.query(`
@@ -2844,7 +2868,10 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
            e.total_amount, e.discount_amount,
            e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
            per.first_name, per.last_name, per.document_number, per.cat_type_document,
-           l.lead_id, ${STUDENT_EMAIL_SQL} AS origin_email, l.cat_code_country,
+           l.lead_id,
+           ${STUDENT_EMAIL_SQL} AS origin_email,
+           ${STUDENT_PHONE_SQL} AS origin_phone,
+           l.cat_code_country,
            pv.abbreviation AS old_program_name,
            prog.odoo_activation AS old_odoo_activation,
            pe.global_code AS old_edition_code, pe.start_date AS old_start_date
@@ -2882,9 +2909,10 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
 
   const ccNote = `Cambio de curso desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
 
-  const newLeadId = await _ccCloneLeadForChange({ enrollmentId, newProgramVersionId, newEditionId, userId })
-
-  const ccCertCatId    = await getCatalogIdByAlias(ALIAS.CERTIFICATE_STATUS_PAID)
+  // CC ya NO clona el lead. La consulta original queda intacta vinculada a la
+  // inscripcion origen (que tiene su asesor + cat_type_status='course_changed').
+  // La nueva inscripcion entra como FICO directa: sin lead, sin asesor (S/A),
+  // misma persona reusada por document_number.
   const ccContadoCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_SINGLE)
   const { rows: oldPayment } = await pool.query(
     `SELECT cat_method_payment FROM payments WHERE enrollment_id = $1 AND active = 'Y' ORDER BY payment_id DESC LIMIT 1`,
@@ -2896,35 +2924,43 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   }
 
   const inscription = {
-    lead_id: newLeadId,
+    document_number: old.document_number,
+    cat_type_document: old.cat_type_document,
+    first_name: old.first_name,
+    last_name: old.last_name,
+    email: old.origin_email,
+    phone: old.origin_phone,
     program_version_id: newProgramVersionId,
     program_edition_id: newEditionId,
     cat_insc_modality: old.cat_inscription_modality,
     cat_payment_channel: old.cat_payment_channel,
-    cat_currency: old.cat_currency,
-    cat_payment_way: ccContadoCatId || old.cat_payment_plan,
-    cat_type_payment: ccContadoCatId || old.cat_payment_plan,
-    cat_method_payment: cat_method_payment || methodPayment,
-    cat_certificate_status: ccCertCatId || null,
     cat_currency: cat_currency || old.cat_currency,
+    cat_payment_way: ccContadoCatId || old.cat_payment_plan,
+    cat_payment_medium: cat_method_payment || methodPayment,
+    cat_business_entity: cat_business_entity || null,
+    bank_account_id: bank_account_id || null,
+    transaction_code: transaction_code || null,
+    payment_date: new Date().toISOString().slice(0, 10),
     list_price: totalAmount || 0,
     total_amount: totalAmount,
     saved_money: 0,
-    ticket_payment_urls: ticket_payment_urls || [],
+    is_scholarship: false,
+    cat_b2b_doctype: null,
+    // Caso de uso: en CC la nueva venta NO se acredita a ningun asesor — la
+    // venta original ya quedo registrada (asesor + status=course_changed).
+    // Convencion del codebase para "Sin Asesor": agent_origin='SA', seller_agent_id=null.
+    seller_agent_id: null,
+    agent_origin: 'SA',
+    client_profile: null,
     observations: ccNote,
-    installment_plan: null,
-    document: old.document_number,
-    cat_type_document: old.cat_type_document,
-    full_name: old.first_name,
-    last_name: old.last_name,
-    email: old.origin_email,
-    cat_country: old.cat_code_country
+    ticket_payment_urls: ticket_payment_urls || [],
+    installment_plan: null
   }
 
   const enrollRows = await callProcedureReturningRows(
     pool,
-    'public.sp_comercial_enrollment_register',
-    [newLeadId, userId, JSON.stringify({ inscription })],
+    'public.sp_fico_enrollment_register_direct',
+    [userId, JSON.stringify({ inscription })],
     { statementTimeoutMs: 25000 }
   )
 
@@ -2935,6 +2971,8 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
 
   const newEid = newEnroll.enrollment_id
 
+  // El SP directo ya marca cat_fico_status=checked (Aprobado), pero lo
+  // garantizamos por si la implementacion del SP cambia.
   const ccCheckedCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_CHECKED)
   if (ccCheckedCatId && newEid) {
     await pool.query('UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2', [ccCheckedCatId, newEid])
@@ -2988,13 +3026,19 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   })
 
   if (newEid) {
+    // Audit del nuevo eid: mostramos origen Y destino para que la trazabilidad
+    // sea explicita en ambos lados (mirror del audit que se hace en el viejo).
     await logAudit({
       enrollmentId: newEid,
       action: 'created_from_cc',
       userId,
       justificacion,
-      changes: { 'Enrollment original': { old: '---', new: `#${enrollmentId} (${old.old_program_name} ${old.old_edition_code})` } },
-      details: `Creado por cambio de curso desde inscripcion #${enrollmentId}`
+      changes: {
+        'Programa origen':  { old: '---', new: `${old.old_program_name || '---'} - ${old.old_edition_code || '---'} (${fmtDate(old.old_start_date)})` },
+        'Programa destino': { old: '---', new: `${newEd.new_program_name || '---'} - ${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})` },
+        'Enrollment origen': { old: '---', new: `#${enrollmentId}` }
+      },
+      details: `Cambio de curso: ${old.old_program_name} ${old.old_edition_code} → ${newEd.new_program_name} ${newEd.global_code}`
     })
   }
 
