@@ -319,10 +319,20 @@ export default async function ficoRoutes (fastify) {
 
   fastify.post('/previewemail', {
     schema: {
-      body: { type: 'object', required: ['enrollment_id'], properties: { enrollment_id: { type: 'integer' } } }
+      body: {
+        type: 'object',
+        required: ['enrollment_id'],
+        properties: {
+          enrollment_id: { type: 'integer' },
+          override_edition_id: { type: ['integer', 'null'] }
+        }
+      }
     }
   }, async (req, reply) => {
-    const data = await ficoService.previewConfirmationEmail({ enrollmentId: req.body.enrollment_id })
+    const data = await ficoService.previewConfirmationEmail({
+      enrollmentId: req.body.enrollment_id,
+      overrideEditionId: req.body.override_edition_id || null
+    })
     return reply.code(200).send({ ok: true, data })
   })
 
@@ -445,6 +455,7 @@ export default async function ficoRoutes (fastify) {
         properties: {
           year:        { type: 'integer', minimum: 2020, maximum: 2100 },
           month:       { type: 'integer', minimum: 1, maximum: 12 },
+          day:         { type: ['integer', 'null'], minimum: 1, maximum: 31 },
           q:           { type: ['string', 'null'] },
           state:       { type: ['string', 'null'], enum: ['all', 'overdue', 'today', 'upcoming', null] },
           advisor_ids: { type: ['array', 'null'], items: { type: 'integer' } }
@@ -456,6 +467,7 @@ export default async function ficoRoutes (fastify) {
       const data = await ficoService.getCollections({
         year:        req.body.year,
         month:       req.body.month,
+        day:         req.body.day ?? null,
         q:           req.body.q || null,
         state:       req.body.state || 'all',
         advisorIds:  req.body.advisor_ids || []
@@ -472,11 +484,12 @@ export default async function ficoRoutes (fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['enrollment_id', 'new_seller_agent_id', 'justificacion'],
+        required: ['enrollment_id', 'justificacion'],
         additionalProperties: true,
         properties: {
           enrollment_id:        { type: 'integer' },
-          new_seller_agent_id:  { type: 'integer' },
+          // null o ausente = Sin Asesor (S/A)
+          new_seller_agent_id:  { type: ['integer', 'null'] },
           justificacion:        { type: 'string', minLength: 1 }
         }
       }
@@ -485,7 +498,7 @@ export default async function ficoRoutes (fastify) {
     try {
       const data = await ficoService.editSellerAgent({
         enrollmentId:     req.body.enrollment_id,
-        newSellerAgentId: req.body.new_seller_agent_id,
+        newSellerAgentId: req.body.new_seller_agent_id ?? null,
         justificacion:    req.body.justificacion,
         userId:           req.user?.id ?? req.body.user_id
       })
