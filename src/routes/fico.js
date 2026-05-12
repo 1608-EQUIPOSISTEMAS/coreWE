@@ -1,5 +1,5 @@
 import ficoService from '../services/fico.service.js'
-import { authenticate, hasRole } from '../middlewares/auth.hooks.js'
+import { authenticate, hasRole, ADMIN_ONLY } from '../middlewares/auth.hooks.js'
 
 const RESCHEDULE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
@@ -47,6 +47,8 @@ export default async function ficoRoutes (fastify) {
           advisors:                 { type: ['array', 'null'], items: { type: 'string' } },
           program_types:            { type: ['array', 'null'], items: { type: 'string' } },
           modalities:               { type: ['array', 'null'], items: { type: 'string' } },
+          program_version_ids:      { type: ['array', 'null'], items: { type: 'integer' } },
+          edition_num_ids:          { type: ['array', 'null'], items: { type: 'integer' } },
           payment_channels:         { type: ['array', 'null'], items: { type: 'string' } }
         }
       }
@@ -368,6 +370,31 @@ export default async function ficoRoutes (fastify) {
     }
   })
 
+  fastify.post('/deleteenrollment', {
+    preHandler: [authenticate, ADMIN_ONLY],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id'],
+        additionalProperties: false,
+        properties: {
+          enrollment_id: { type: 'integer' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.deleteEnrollment({
+        enrollmentId: req.body.enrollment_id,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[deleteEnrollment ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/enrollmentflags', {
     schema: {
       body: { type: 'object', required: ['enrollment_id'], properties: { enrollment_id: { type: 'integer' } } }
@@ -414,6 +441,66 @@ export default async function ficoRoutes (fastify) {
     } catch (err) {
       console.error('[editStudent ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.post('/addinstallment', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'amount', 'due_date', 'justificacion'],
+        additionalProperties: true,
+        properties: {
+          enrollment_id: { type: 'integer' },
+          amount:        { type: 'number' },
+          due_date:      { type: 'string', minLength: 1 },
+          justificacion: { type: 'string', minLength: 1 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.addInstallment({
+        enrollmentId:  req.body.enrollment_id,
+        amount:        req.body.amount,
+        dueDate:       req.body.due_date,
+        justificacion: req.body.justificacion,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[addInstallment ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.post('/editinstallmentamount', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'installment_id', 'new_amount', 'justificacion'],
+        additionalProperties: true,
+        properties: {
+          enrollment_id:  { type: 'integer' },
+          installment_id: { type: 'integer' },
+          new_amount:     { type: 'number' },
+          justificacion:  { type: 'string', minLength: 1 }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.editInstallmentAmount({
+        enrollmentId:   req.body.enrollment_id,
+        installmentId:  req.body.installment_id,
+        newAmount:      req.body.new_amount,
+        justificacion:  req.body.justificacion,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[editInstallmentAmount ERROR]', err.message)
+      return reply.code(400).send({ ok: false, error: err.message })
     }
   })
 

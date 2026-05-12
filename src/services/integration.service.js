@@ -625,18 +625,7 @@ async function syncFicoSalesToSheet () {
            ELSE COALESCE(pe.global_code, '')
       END                                                  AS ed,
       to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
-      to_char(
-        COALESCE(
-          l.pay_date,
-          (SELECT py.payment_date
-             FROM public.payments py
-            WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
-            ORDER BY py.payment_date ASC
-            LIMIT 1),
-          e.registration_date::date
-        ),
-        'DD/MM/YYYY'
-      )                                                    AS f_pago,
+      to_char(pay_eff.f_pago_date, 'DD/MM/YYYY')           AS f_pago,
       per.document_number                                  AS dni,
       TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
       COALESCE(
@@ -732,7 +721,16 @@ async function syncFicoSalesToSheet () {
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
-    ORDER BY l.pay_date NULLS LAST, e.enrollment_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        l.pay_date,
+        (SELECT py.payment_date::date FROM public.payments py
+          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          ORDER BY py.payment_date ASC LIMIT 1),
+        e.registration_date::date
+      ) AS f_pago_date
+    ) pay_eff ON TRUE
+    ORDER BY pay_eff.f_pago_date NULLS LAST, e.enrollment_id
   `)
 
   const values = (rows || []).map(r => [
@@ -879,7 +877,16 @@ async function syncFicoAulaToSheet () {
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
-    ORDER BY pe.start_date NULLS LAST, per.last_name
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        l.pay_date,
+        (SELECT py.payment_date::date FROM public.payments py
+          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          ORDER BY py.payment_date ASC LIMIT 1),
+        e.registration_date::date
+      ) AS f_pago_date
+    ) pay_eff ON TRUE
+    ORDER BY pay_eff.f_pago_date NULLS LAST, pe.start_date NULLS LAST, per.last_name
   `)
 
   const values = (rows || []).map(r => [
@@ -1142,7 +1149,7 @@ async function syncFicoConsolidadoToSheet () {
         AND pi.installment_number BETWEEN 1 AND 5
         AND cs.alias <> 'we_inst_cancelled'
     ) cuotas ON TRUE
-    ORDER BY l.pay_date NULLS LAST, e.enrollment_id
+    ORDER BY COALESCE(l.pay_date, first_pay.payment_date::date, e.registration_date::date) NULLS LAST, e.enrollment_id
   `)
 
   const values = (rows || []).map(r => [

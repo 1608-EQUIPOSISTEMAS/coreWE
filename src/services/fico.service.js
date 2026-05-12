@@ -2397,6 +2397,98 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
   return { result: 1, message: 'Alumno retirado correctamente' }
 }
 
+// Hard delete fisico de una inscripcion (admin-only). Borra padre + hijos en
+// cascada junto con todas las tablas dependientes. NO toca Odoo: la sale.order
+// y la matricula en aula online quedan intactas (limpieza manual del admin).
+// El lead asociado se desvincula (enrollment_id = NULL) y se reabre como
+// consulta activa para no perder el contacto comercial.
+async function deleteEnrollment ({ enrollmentId, userId }) {
+  const client = await pool.connect()
+  try {
+    const { rows: target } = await client.query(
+      `SELECT e.enrollment_id,
+              CONCAT(per.first_name, ' ', per.last_name) AS student_name,
+              per.document_number,
+              pv.abbreviation AS program_name,
+              pe.global_code AS edition_code
+       FROM enrollments e
+       JOIN customers cust ON cust.customer_id = e.customer_id
+       JOIN persons per ON per.person_id = cust.person_id
+       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+       WHERE e.enrollment_id = $1`,
+      [enrollmentId]
+    )
+    if (!target?.[0]) throw new Error('Inscripcion no encontrada')
+
+    const { rows: children } = await client.query(
+      'SELECT enrollment_id FROM enrollments WHERE parent_enrollment_id = $1',
+      [enrollmentId]
+    )
+    const allIds = [enrollmentId, ...children.map(r => r.enrollment_id)]
+
+    await client.query('BEGIN')
+
+    // payments.installment_id apunta a payment_installments (fk_payment_installment),
+    // asi que payments DEBE borrarse antes que payment_installments. Las demas
+    // tablas solo referencian enrollment_id directo.
+    await client.query('DELETE FROM payments WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM payment_installments WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM enrollment_validations WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM enrollment_attachments WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM enrollment_audit_log WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM email_logs WHERE enrollment_id = ANY($1::int[])', [allIds])
+    await client.query('DELETE FROM payment_tokens WHERE enrollment_id = ANY($1::int[])', [allIds])
+
+    // El lead se conserva para no perder rastro comercial; se devuelve al pool
+    // de consultas activas desvinculando la inscripcion. cat_status_lead es
+    // NOT NULL, asi que se reasigna al status "atendido" (consulta abierta).
+    // Si el alias no existiera se mantiene el status actual.
+    await client.query(
+      `UPDATE leads
+          SET enrollment_id = NULL,
+              cat_status_lead = COALESCE(
+                (SELECT catalog_id FROM catalog WHERE alias = 'we_lead_status_atendido' LIMIT 1),
+                cat_status_lead
+              )
+        WHERE enrollment_id = ANY($1::int[])`,
+      [allIds]
+    )
+
+    // Primero los hijos para no violar la FK self-referencial parent_enrollment_id.
+    if (children.length > 0) {
+      await client.query(
+        'DELETE FROM enrollments WHERE enrollment_id = ANY($1::int[])',
+        [children.map(r => r.enrollment_id)]
+      )
+    }
+    const { rowCount } = await client.query(
+      'DELETE FROM enrollments WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+
+    await client.query('COMMIT')
+
+    console.warn(
+      `[deleteEnrollment] HARD DELETE userId=${userId} enrollmentId=${enrollmentId} ` +
+      `student="${target[0].student_name}" doc=${target[0].document_number || '---'} ` +
+      `program="${target[0].program_name || '---'} ${target[0].edition_code || ''}" ` +
+      `children=${children.length}`
+    )
+
+    return {
+      result: 1,
+      message: 'Inscripcion eliminada permanentemente',
+      deleted: { enrollment_id: enrollmentId, child_count: children.length, rowCount }
+    }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
 async function getEnrollmentFlags ({ enrollmentId }) {
   const { rows } = await pool.query(`
     SELECT e.cat_profile_id, e.cat_inscription_modality, e.odoo_user_id, e.odoo_password,
@@ -2480,14 +2572,41 @@ async function editStudent ({ enrollmentId, firstName, lastName, documentNumber,
     await pool.query(`UPDATE persons SET ${updFields.join(', ')} WHERE person_id = $${idx}`, updValues)
   }
 
+  // Email/telefono: rutear el UPDATE a la misma fuente que alimenta STUDENT_EMAIL_SQL.
+  // Inscripciones FICO directas (B2B/walk-in/web) no tienen lead — los datos viven solo
+  // en person_contacts. Sin este branch, el UPDATE a leads con lead_id=NULL no afecta
+  // ninguna fila y el cambio queda registrado en historial pero no en la BD real.
   if (changes['Email'] || changes['Telefono']) {
-    const updFields = []
-    const updValues = []
-    let idx = 1
-    if (changes['Email'])    { updFields.push(`origin_email = $${idx++}`); updValues.push(originEmail) }
-    if (changes['Telefono']) { updFields.push(`origin_phone = $${idx++}`); updValues.push(originPhone) }
-    updValues.push(current.lead_id)
-    await pool.query(`UPDATE leads SET ${updFields.join(', ')} WHERE lead_id = $${idx}`, updValues)
+    if (current.lead_id) {
+      const updFields = []
+      const updValues = []
+      let idx = 1
+      if (changes['Email'])    { updFields.push(`origin_email = $${idx++}`); updValues.push(originEmail) }
+      if (changes['Telefono']) { updFields.push(`origin_phone = $${idx++}`); updValues.push(originPhone) }
+      updValues.push(current.lead_id)
+      await pool.query(`UPDATE leads SET ${updFields.join(', ')} WHERE lead_id = $${idx}`, updValues)
+    } else {
+      if (changes['Email']) {
+        await pool.query(
+          `UPDATE person_contacts
+              SET value = $1
+            WHERE person_id = $2
+              AND cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_email' LIMIT 1)
+              AND active = 'Y'`,
+          [originEmail, current.person_id]
+        )
+      }
+      if (changes['Telefono']) {
+        await pool.query(
+          `UPDATE person_contacts
+              SET value = $1
+            WHERE person_id = $2
+              AND cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_phone' LIMIT 1)
+              AND active = 'Y'`,
+          [originPhone, current.person_id]
+        )
+      }
+    }
   }
 
   if (changes['Perfil'] || changes['Correo Odoo']) {
@@ -2533,6 +2652,117 @@ async function editStudent ({ enrollmentId, firstName, lastName, documentNumber,
   })
 
   return { result: 1, message: 'Datos del alumno actualizados' }
+}
+
+// Edita el monto de UNA cuota pendiente. Audita old -> new con justificacion.
+// Rechaza si la cuota esta pagada o si pertenece a otra inscripcion (defensa).
+async function editInstallmentAmount ({ enrollmentId, installmentId, newAmount, justificacion, userId }) {
+  const amt = Number(newAmount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Monto invalido')
+  if (!justificacion || !justificacion.trim()) throw new Error('Justificacion obligatoria')
+
+  const { rows } = await pool.query(`
+    SELECT pi.installment_id, pi.installment_number, pi.amount, pi.enrollment_id, cs.alias AS status_alias
+      FROM payment_installments pi
+      JOIN catalog cs ON cs.catalog_id = pi.cat_status
+     WHERE pi.installment_id = $1 AND pi.enrollment_id = $2
+  `, [installmentId, enrollmentId])
+
+  const inst = rows?.[0]
+  if (!inst) throw new Error('Cuota no encontrada para esta inscripcion')
+  if (inst.installment_number === 0) throw new Error('Usa el flujo de pago inicial para esa fila')
+  if (['we_inst_paid', 'we_payment_status_paid'].includes(inst.status_alias)) {
+    throw new Error('No se puede editar el monto de una cuota ya pagada')
+  }
+
+  const oldAmount = Number(inst.amount || 0)
+  if (Math.abs(oldAmount - amt) < 0.001) throw new Error('El monto nuevo es igual al actual')
+
+  await pool.query(
+    'UPDATE payment_installments SET amount = $1 WHERE installment_id = $2',
+    [amt, installmentId]
+  )
+
+  const fmtMoney = n => `S/. ${Number(n).toFixed(2)}`
+  const changes = {
+    [`Monto cuota #${inst.installment_number}`]: { old: fmtMoney(oldAmount), new: fmtMoney(amt) }
+  }
+  const details = `Monto cuota #${inst.installment_number}: ${fmtMoney(oldAmount)} → ${fmtMoney(amt)}`
+
+  await logAudit({
+    enrollmentId,
+    action: 'installment_amount_edited',
+    userId,
+    justificacion,
+    changes,
+    details
+  })
+
+  return { result: 1, message: 'Monto actualizado', old_amount: oldAmount, new_amount: amt }
+}
+
+// Agrega UNA cuota a una inscripcion ya aprobada. Calcula el siguiente
+// installment_number automaticamente y la deja en estado Pendiente.
+// Audita con detalle de monto + vencimiento + justificacion.
+async function addInstallment ({ enrollmentId, amount, dueDate, justificacion, userId }) {
+  const amt = Number(amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Monto invalido')
+  if (!dueDate) throw new Error('Fecha de vencimiento obligatoria')
+  if (!justificacion || !justificacion.trim()) throw new Error('Justificacion obligatoria')
+
+  const isoDate = String(dueDate).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) throw new Error('Fecha invalida (formato YYYY-MM-DD)')
+
+  const { rows: enrRows } = await pool.query(
+    'SELECT enrollment_id FROM enrollments WHERE enrollment_id = $1 AND active = $2',
+    [enrollmentId, 'Y']
+  )
+  if (!enrRows.length) throw new Error('Inscripcion no encontrada')
+
+  const { rows: pendingCat } = await pool.query(
+    "SELECT catalog_id FROM catalog WHERE alias = 'we_inst_pending' LIMIT 1"
+  )
+  const pendingStatusId = pendingCat?.[0]?.catalog_id
+  if (!pendingStatusId) throw new Error('Catalogo we_inst_pending no encontrado')
+
+  // Siguiente installment_number = MAX(actuales > 0) + 1. Excluye el 0 (inicial/reserva).
+  const { rows: maxRows } = await pool.query(
+    `SELECT COALESCE(MAX(installment_number), 0) AS max_num
+       FROM payment_installments
+      WHERE enrollment_id = $1 AND installment_number > 0`,
+    [enrollmentId]
+  )
+  const nextNum = Number(maxRows[0].max_num) + 1
+
+  const { rows: inserted } = await pool.query(
+    `INSERT INTO payment_installments (enrollment_id, installment_number, amount, due_date, cat_status)
+     VALUES ($1, $2, $3, $4::date, $5)
+     RETURNING installment_id`,
+    [enrollmentId, nextNum, amt, isoDate, pendingStatusId]
+  )
+
+  const fmtMoney = n => `S/. ${Number(n).toFixed(2)}`
+  const fmtFecha = iso => iso.split('-').reverse().join('/')
+  const changes = {
+    [`Cuota #${nextNum}`]: { old: '---', new: `${fmtMoney(amt)} · vence ${fmtFecha(isoDate)}` }
+  }
+  const details = `Cuota #${nextNum} agregada: ${fmtMoney(amt)}, vence ${fmtFecha(isoDate)}`
+
+  await logAudit({
+    enrollmentId,
+    action: 'installment_added',
+    userId,
+    justificacion,
+    changes,
+    details
+  })
+
+  return {
+    result: 1,
+    message: 'Cuota agregada',
+    installment_id: inserted[0].installment_id,
+    installment_number: nextNum
+  }
 }
 
 async function ficoEnrollmentRegister ({ data, userId }) {
@@ -3620,11 +3850,14 @@ export default {
   courseChange,
   changeModality,
   editStudent,
+  editInstallmentAmount,
+  addInstallment,
   editSellerAgent,
   getCollections,
   confirmInstallment,
   previewConfirmationEmail,
   retireEnrollment,
+  deleteEnrollment,
   rejectEnrollment,
   resubmitEnrollment,
   getEnrollmentFlags,
