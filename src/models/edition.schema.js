@@ -180,6 +180,57 @@ export const editionListSchema = {
   }
 }
 
+export const classroomStudentsListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' }
+    }
+  }
+}
+
+export const classroomAuditGetSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' }
+    }
+  }
+}
+
+export const classroomAuditSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id', 'session_number', 'criteria'],
+    properties: {
+      edition_id: { type: 'integer' },
+      session_number: { type: 'integer', minimum: 1 },
+      criteria: { type: 'object', additionalProperties: { type: 'boolean' } },
+      user_id: { type: ['integer', 'null'] }
+    }
+  }
+}
+
+export const classroomMetricsListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_ids'],
+    properties: {
+      edition_ids: {
+        type: 'array',
+        items: { type: 'integer' },
+        maxItems: 1000
+      }
+    }
+  }
+}
+
 export const editionByWeekListSchema = {
   body: {
     type: 'object',

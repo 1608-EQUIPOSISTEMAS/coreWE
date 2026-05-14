@@ -106,6 +106,31 @@ async function enrollmentList (payload = {}) {
   }
 }
 
+// Lista distinta de "Asesor" tal y como aparece en la columna del listado FICO.
+// Replica la misma expresion CASE WHEN que arma sp_fico_enrollment_list para
+// `seller_agent_name`, de modo que el dropdown del filtro Asesor matchee
+// exactamente los strings que el SP usa para comparar el array `advisors`.
+// Incluye canales (B2B, WEB, SA), asesores solos (AE30) y combinaciones
+// (B2B - AE30, WEB - AE30). Scope: solo inscripciones activas.
+async function enrollmentAdvisorsList () {
+  const sql = `
+    SELECT DISTINCT
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND u.alias IS NOT NULL
+          THEN e.agent_origin || ' - ' || u.alias
+        WHEN e.agent_origin IS NOT NULL THEN e.agent_origin
+        ELSE u.alias
+      END AS seller_agent_name
+    FROM public.enrollments e
+    LEFT JOIN public.users u ON u.user_id = e.seller_agent_id
+    WHERE e.active = 'Y'
+      AND (e.agent_origin IS NOT NULL OR u.alias IS NOT NULL)
+    ORDER BY 1
+  `
+  const { rows } = await pool.query(sql)
+  return rows.map(r => r.seller_agent_name).filter(Boolean)
+}
+
 
 // Cobranzas: cuotas pendientes de inscripciones aprobadas que vencen en el mes
 // indicado. Excluye el inicial (installment_number = 0) — en aprobada el inicial
@@ -703,28 +728,33 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
     const editionId = item.editionId
 
     try {
+      // Los hijos SEG nunca llevan vendedor: agent_origin='SA', seller_agent_id=NULL.
+      // FICO no vende — confirma. Heredar seller_agent_id del padre contaminaria el
+      // listado si el padre tuviera (por bug aguas arriba) un usuario FICO asignado,
+      // y aun en el caso sano el negocio quiere que los modulos de seguimiento
+      // figuren como "Sin Asesor" para no inflar comisiones por venta del padre.
       const { rows: newEnroll } = await pool.query(`
         INSERT INTO enrollments (
           customer_id, program_version_id, program_edition_id,
           parent_enrollment_id, total_amount, discount_amount, list_price,
           cat_currency, cat_inscription_modality, cat_payment_channel, cat_payment_plan,
           cat_fico_status, cat_type_status, cat_certificate_status, cat_profile_id,
-          seller_agent_id, active, user_registration_id, registration_date,
+          seller_agent_id, agent_origin, active, user_registration_id, registration_date,
           notes
         ) VALUES (
           $1, $2, $3,
           $4, 0, 0, 0,
           $5, $6, $7, $8,
-          $9, $10, $11, $15,
-          $12, 'Y', $13, NOW(),
-          $14
+          $9, $10, $11, $14,
+          NULL, 'SA', 'Y', $12, NOW(),
+          $13
         ) RETURNING enrollment_id
       `, [
         parent.customer_id, childPvId, editionId,
         enrollmentId,
         parent.cat_currency, parent.cat_inscription_modality, parent.cat_payment_channel, contadoCatId || parent.cat_payment_plan,
         checkedCatId || null, segCatId || null, certCatId || null,
-        parent.seller_agent_id, userId || 9,
+        userId || 9,
         `Seguimiento (${item.sortOrder}/${totalChildren}) de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`.trim(),
         parent.cat_profile_id
       ])
@@ -3832,8 +3862,61 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
   return '﻿' + lines.join('\r\n')
 }
 
+// Aprueba una inscripcion en estado "pendiente a revisar" creada por
+// migracion A5. El SP transfiere cuotas pendientes y convalidaciones; aqui
+// hacemos los side effects externos (Odoo + correo + crear hijos si es padre).
+async function approvePendingReview ({ enrollmentId, userId }) {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_enrollment_pending_review_approve',
+    [JSON.stringify({ enrollment_id: enrollmentId }), userId],
+    { statementTimeoutMs: 30000 }
+  )
+  const summary = rows?.[0]
+  if (!summary || summary.result !== 1) {
+    return summary || { result: 0, message: 'Sin respuesta del SP' }
+  }
+
+  // Si el origen era padre (ESP/Diplomado), crear hijos en la nueva edicion
+  // respetando convalidaciones que el SP ya copio.
+  if (summary.is_parent) {
+    await safeAsync('[A5Approve][Children] create', () => createChildEnrollments({ enrollmentId, userId }))
+  }
+
+  // Odoo: si el programa tiene odoo_activation, desinscribir el slide_group viejo
+  // del origen y reinscribir en el nuevo. Idempotente respecto al estado actual.
+  const { rows: progRows } = await pool.query(`
+    SELECT prog.odoo_activation
+      FROM enrollments e
+      JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+      JOIN programs prog ON prog.program_id = pv.program_id
+     WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  if (progRows?.[0]?.odoo_activation) {
+    await safeAsync('[A5Approve][Odoo] enroll new', async () => {
+      const res = await enrollInOdoo({ enrollmentId })
+      if (res?.success) {
+        await logAudit({ enrollmentId, action: 'odoo_enrolled', userId, details: `Inscrito en Odoo por aprobacion de migracion A5` })
+      } else {
+        await logAudit({ enrollmentId, action: 'odoo_enrolled', userId, details: `Pendiente inscripcion Odoo: ${res?.error || 'desconocido'}` })
+      }
+    })
+  }
+
+  await safeAsync('[A5Approve][Email] send', async () => {
+    const res = await sendConfirmationEmail({ enrollmentId })
+    if (!res?.success) {
+      await logAudit({ enrollmentId, action: 'email_sent', userId, details: `Error enviando correo: ${res?.error || 'desconocido'}` })
+    }
+  })
+
+  return summary
+}
+
 export default {
   enrollmentList,
+  enrollmentAdvisorsList,
   paymentDetailGet,
   confirmPayment,
   bankAccountList,
@@ -3871,5 +3954,6 @@ export default {
   rescheduleInstallments,
   validateChildEnrollmentSetup,
   getClassroomExportOptions,
-  exportClassroomCsv
+  exportClassroomCsv,
+  approvePendingReview
 }

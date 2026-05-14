@@ -1,0 +1,225 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 4,
+      "comentario": "La sesión cubre los temas centrales del syllabus de la Sesión 2, como la creación, exportación e importación de soluciones. El docente explica conceptos como soluciones administradas vs. no administradas. Sin embargo, el tema de 'Uso de pipeline' se pospuso explícitamente para una futura revisión.",
+      "evidencia_timestamps": [
+        "[36:00]",
+        "[42:59]",
+        "[01:02:08]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La estructura es deficiente. La sesión carece de una apertura con agenda y motivación, dedicando los primeros 36 minutos a resolver problemas administrativos de la clase anterior. El cierre tampoco incluye una síntesis de los aprendizajes clave, finalizando con logística de una encuesta.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[36:00]",
+        "[03:14:29]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 4,
+      "comentario": "El docente demuestra un dominio profundo de los temas. Explica el 'qué' y el 'porqué' de las soluciones y, a pesar de los fallos técnicos, detalla la lógica de funciones complejas como 'Patch', 'SendEmail' y 'RandBetween'. La profundidad es buena, aunque la aplicación práctica se vio limitada por factores externos.",
+      "evidencia_timestamps": [
+        "[38:18]",
+        "[02:45:33]",
+        "[03:03:19]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 5,
+      "comentario": "Se utilizan dos casos de uso de alto valor y muy relevantes para el entorno profesional: la migración de una aplicación entre entornos de desarrollo y la construcción de una pantalla de login completa con recuperación de contraseña. Estos ejemplos son prácticos y directamente aplicables.",
+      "evidencia_timestamps": [
+        "[20:43]",
+        "[49:50]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 2,
+      "comentario": "La sesión se basa en una demostración guiada por el docente, no en un taller con práctica autónoma. Los alumnos observan y replican los pasos del instructor. La actividad principal del login se convirtió en una explicación teórica debido a una caída del servicio, impidiendo la práctica real.",
+      "evidencia_timestamps": [
+        "[53:26]",
+        "[02:31:23]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 5,
+      "comentario": "La comunicación del docente es excepcional. Explica conceptos técnicos de forma clara y maneja una falla técnica generalizada con calma y profesionalismo, adaptando la sesión sobre la marcha para seguir entregando valor. Su lenguaje es preciso y supo gestionar la frustración del momento.",
+      "evidencia_timestamps": [
+        "[01:38:45]",
+        "[02:30:09]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 4,
+      "comentario": "El docente mantiene una buena interacción a través de preguntas directas y solicitudes de confirmación. Responde de manera exhaustiva a múltiples preguntas de los alumnos, tanto administrativas como técnicas, demostrando disposición y fomentando un diálogo abierto.",
+      "evidencia_timestamps": [
+        "[36:53]",
+        "[01:13:13]",
+        "[02:50:30]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más crítico de la sesión. Se dedicaron los primeros 36 minutos a resolver temas administrativos de la clase anterior, un uso ineficiente del tiempo síncrono. Esto desbalanceó por completo la estructura y el ritmo de la clase.",
+      "evidencia_timestamps": [
+        "[03:19]",
+        "[36:00]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "A pesar de los problemas, el valor entregado es muy alto. Los participantes recibieron la lógica y el código para implementar dos componentes cruciales: un sistema de login seguro y el proceso de migración de aplicaciones. Estas son herramientas directamente aplicables y reutilizables en sus proyectos.",
+      "evidencia_timestamps": [
+        "[01:10:11]",
+        "[02:58:55]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 3.6,
+    "temas_cubiertos": 6,
+    "temas_totales": 8,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Entregar alto valor práctico y aplicable",
+      "detalle": "La sesión se enfoca en componentes reutilizables como un login y la gestión de soluciones (ALM)."
+    },
+    {
+      "titulo": "Comunicar con claridad y adaptabilidad excepcionales",
+      "detalle": "El docente explicó lógica compleja y manejó una falla técnica generalizada con gran profesionalismo."
+    },
+    {
+      "titulo": "Utilizar casos de uso profesionales y relevantes",
+      "detalle": "Migrar aplicaciones y construir logins seguros son tareas centrales en el desarrollo de software profesional."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Gestionar el tiempo de la sesión eficientemente",
+      "detalle": "Más de 30 minutos se perdieron en tareas administrativas que debieron resolverse fuera de clase."
+    },
+    {
+      "titulo": "Estructurar el inicio y cierre de la sesión",
+      "detalle": "La clase carece de una agenda inicial y una síntesis final de los aprendizajes clave."
+    },
+    {
+      "titulo": "Diseñar talleres con práctica autónoma del alumno",
+      "detalle": "Las actividades fueron demostraciones guiadas, limitando la oportunidad de que los alumnos resuelvan problemas."
+    },
+    {
+      "titulo": "Resolver logística de grupos fuera del horario lectivo",
+      "detalle": "La formación de grupos y la resolución de dudas sobre ello debe hacerse por canales asíncronos."
+    },
+    {
+      "titulo": "Establecer un plan de contingencia técnico",
+      "detalle": "Tener un set de datos local o un video pregrabado puede salvar una práctica."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Explicar la lógica del código detalladamente",
+      "detalle": "La explicación de funciones como 'Patch' o el centrado dinámico de objetos fue excelente."
+    },
+    {
+      "titulo": "Responder a fondo las preguntas de los alumnos",
+      "detalle": "El docente dedicó tiempo a resolver dudas complejas sobre licenciamiento, CRM y extranets."
+    },
+    {
+      "titulo": "Mantener la calma y adaptarse ante imprevistos",
+      "detalle": "La gestión de la caída de los servicios de Microsoft fue un ejemplo de profesionalismo."
+    },
+    {
+      "titulo": "Usar analogías del mundo real",
+      "detalle": "Comparar el ejercicio de login con el proceso real de Microsoft ayudó a clarificar el objetivo."
+    },
+    {
+      "titulo": "Fomentar la interacción con preguntas directas",
+      "detalle": "Las constantes verificaciones de comprensión y preguntas abiertas mantuvieron a la clase conectada."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Eliminar la gestión administrativa al inicio",
+      "detalle": "La logística de grupos debe manejarse 100% fuera del tiempo de clase síncrono."
+    },
+    {
+      "titulo": "Reemplazar demos guiadas con talleres prácticos",
+      "detalle": "El formato debe evolucionar de 'mírame hacerlo' a 'inténtalo tú mismo con mi apoyo'."
+    },
+    {
+      "titulo": "Añadir una agenda visible al inicio siempre",
+      "detalle": "Los alumnos deben saber qué se cubrirá en la sesión desde el primer minuto."
+    },
+    {
+      "titulo": "Incorporar una síntesis de aprendizajes al cierre",
+      "detalle": "Finalizar con un resumen de 3 puntos clave refuerza el conocimiento y da cierre a la sesión."
+    },
+    {
+      "titulo": "Establecer el canal de WhatsApp como único medio logístico",
+      "detalle": "Centralizar todas las comunicaciones administrativas fuera de la sesión en vivo para proteger el tiempo lectivo."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Añadir una slide de agenda al inicio",
+      "detalle": "Presentar los 3-4 bloques de la sesión en el primer minuto para establecer expectativas claras."
+    },
+    {
+      "titulo": "Crear una slide de resumen para el cierre",
+      "detalle": "Listar los 3 conceptos clave aprendidos y los próximos pasos antes de la despedida final."
+    },
+    {
+      "titulo": "Mover toda la logística de grupos a WhatsApp",
+      "detalle": "Anunciar los grupos y resolver dudas por chat horas antes de que comience la sesión."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar talleres para incluir práctica autónoma",
+      "detalle": "Estructurar actividades con 5 minutos de demostración y 15 minutos de trabajo individual o grupal."
+    },
+    {
+      "titulo": "Crear un protocolo de incidencias técnicas",
+      "detalle": "Tener un plan B (ej. video corto, dataset local) si un servicio en la nube falla."
+    },
+    {
+      "titulo": "Implementar un modelo de 'aula invertida'",
+      "detalle": "Enviar videos cortos con la teoría para maximizar el tiempo de práctica y Q&A en vivo."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "SÓLIDO",
+    "titular": "3.6/5 — Sólido contenido técnico opacado por una deficiente gestión del tiempo.",
+    "cuerpo": "La sesión destaca por la **excelente calidad del contenido y la notable habilidad comunicativa del docente**. Se abordaron temas de alta complejidad y relevancia profesional, como la gestión del ciclo de vida de aplicaciones y la creación de un sistema de login seguro. El instructor manejó una falla técnica generalizada con un profesionalismo ejemplar, adaptando la clase para continuar entregando valor a pesar de las circunstancias. Su claridad para explicar la lógica detrás del código es una fortaleza fundamental.\n\nSin embargo, el gran potencial de la sesión se ve severamente limitado por dos problemas estructurales. El más crítico es la **pésima gestión del tiempo**, perdiendo los primeros 36 minutos en resolver asuntos administrativos de la sesión anterior. Este tiempo es irrecuperable y desequilibra por completo el flujo de aprendizaje, denotando una falta de planificación para manejar la logística fuera del aula.\n\nEl segundo problema es el diseño de las actividades prácticas. La sesión se configura como una **demostración guiada en lugar de un taller práctico**. Los alumnos siguen al docente en lugar de enfrentarse a los problemas de forma autónoma, lo que limita la profundidad de la asimilación y la capacidad de resolución de problemas.\n\nEl núcleo de la sesión es muy fuerte gracias al docente y al contenido. Si se resuelven los problemas de estructura y gestión del tiempo, y se rediseñan las actividades para fomentar la autonomía, esta sesión tiene el potencial de ser excelente.",
+    "potencial_score": 4.6
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-13T23:34:26.849892+00:00"
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 3,
+      "comentario": "El docente cubre los temas centrales del syllabus de la Sesión 2 (conceptos de soluciones, exportación e importación). Sin embargo, dedica casi la mitad de la sesión a un taller detallado sobre el proyecto parcial (pantalla de login), que no forma parte del temario oficial de esta sesión, desbalanceando el foco pedagógico.",
+      "evidencia_timestamps": [
+        "[36:00]",
+        "[48:06]",
+        "[01:27:45]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 1,
+      "comentario": "La estructura es críticamente deficiente. La sesión inicia con 35 minutos de temas administrativos desorganizados, sin una agenda clara. No hay transiciones lógicas entre los bloques de contenido y la sesión termina abruptamente sin una síntesis o resumen de los conceptos clave aprendidos.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[36:00]",
+        "[03:18:50]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 3,
+      "comentario": "Los conceptos de 'Soluciones' se explican y se demuestran con un caso práctico de migración entre entornos. Sin embargo, la profundidad es principalmente procedimental ('cómo hacerlo') y carece de un análisis más profundo del 'porqué' o de la comparación con métodos alternativos, manteniéndose en un nivel superficial.",
+      "evidencia_timestamps": [
+        "[38:13]",
+        "[42:41]",
+        "[53:26]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 4,
+      "comentario": "Se utilizan ejemplos muy relevantes y prácticos del entorno profesional. El caso principal de migrar una aplicación entre entornos y el desarrollo de una pantalla de login con recuperación de contraseña son escenarios realistas y de alto valor para los participantes, superando los demos genéricos.",
+      "evidencia_timestamps": [
+        "[33:35]",
+        "[48:06]",
+        "[02:20:22]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 2,
+      "comentario": "La sesión se basa en demostraciones guiadas por el docente, donde los alumnos observan en lugar de ejecutar de forma autónoma. Aunque es práctico, carece de un verdadero taller que fomente la práctica independiente. Las métricas pre-calculadas indican 0% de práctica, lo cual es incorrecto, pero refleja esta falta de autonomía del alumno.",
+      "evidencia_timestamps": [
+        "[49:50]",
+        "[01:31:12]",
+        "[02:37:38]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 3,
+      "comentario": "El docente demuestra dominio técnico y explica los conceptos de forma clara. Sin embargo, la comunicación general de la sesión es caótica debido a la pobre estructura y la mezcla constante de temas administrativos con contenido técnico, lo que dificulta seguir un hilo conductor claro.",
+      "evidencia_timestamps": [
+        "[14:11]",
+        "[36:00]",
+        "[02:31:31]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 4,
+      "comentario": "El nivel de interacción es alto. El docente responde constantemente a las preguntas de los alumnos, tanto técnicas como administrativas, llamándolos por su nombre y fomentando un diálogo abierto. Aunque no se usan herramientas interactivas, la sesión es muy participativa a través de preguntas y respuestas.",
+      "evidencia_timestamps": [
+        "[16:52]",
+        "[33:27]",
+        "[01:13:13]",
+        "[03:08:38]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más débil de la sesión. Se pierden más de 30 minutos al inicio en temas administrativos. El tiempo restante se divide de forma desproporcionada entre el temario oficial y la ayuda para el parcial, sin un plan visible, culminando en un final apresurado y sin cierre.",
+      "evidencia_timestamps": [
+        "[03:19]",
+        "[35:51]",
+        "[01:27:45]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "A pesar de los problemas estructurales, el valor práctico entregado es muy alto. Los alumnos aprenden a migrar aplicaciones y reciben un tutorial detallado para su proyecto parcial, incluyendo funcionalidades avanzadas como pop-ups y envío de correos. Salen con herramientas directamente aplicables.",
+      "evidencia_timestamps": [
+        "[01:10:11]",
+        "[02:53:31]",
+        "[03:03:15]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 2.9,
+    "temas_cubiertos": 6,
+    "temas_totales": 8,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Entregar alto valor práctico y aplicable",
+      "detalle": "El contenido sobre 'Solutions' y el taller de login son directamente útiles para los alumnos."
+    },
+    {
+      "titulo": "Fomentar la interacción y responder dudas",
+      "detalle": "El docente atiende constantemente las preguntas de los alumnos, tanto técnicas como administrativas."
+    },
+    {
+      "titulo": "Utilizar casos y ejemplos profesionales relevantes",
+      "detalle": "La migración de entornos y la pantalla de login son escenarios del mundo real."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Reestructurar radicalmente el inicio de la sesión",
+      "detalle": "Los primeros 35 minutos de caos administrativo deben ser eliminados o gestionados asincrónicamente."
+    },
+    {
+      "titulo": "Gestionar el tiempo de forma planificada",
+      "detalle": "La asignación de tiempo entre syllabus y ayuda para el proyecto debe ser balanceada y deliberada."
+    },
+    {
+      "titulo": "Diseñar talleres para práctica autónoma del alumno",
+      "detalle": "Cambiar el formato de demostración a actividades donde los alumnos ejecutan por sí mismos."
+    },
+    {
+      "titulo": "Implementar una agenda y cierre con síntesis",
+      "detalle": "La sesión carece de un marco estructural claro, lo que confunde el flujo de aprendizaje."
+    },
+    {
+      "titulo": "Alinear el contenido estrictamente al syllabus oficial",
+      "detalle": "El tiempo dedicado al parcial, aunque útil, desvió el foco de los objetivos de la sesión."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder preguntas de los alumnos directamente",
+      "detalle": "Mantener la accesibilidad y la disposición para aclarar dudas en tiempo real es muy valioso."
+    },
+    {
+      "titulo": "Usar ejemplos del entorno laboral",
+      "detalle": "Continuar basando las demostraciones en problemas y escenarios que los alumnos enfrentarán profesionalmente."
+    },
+    {
+      "titulo": "Explicar la lógica detrás del código",
+      "detalle": "Seguir detallando el propósito de las funciones y variables utilizadas en las demostraciones prácticas."
+    },
+    {
+      "titulo": "Demostrar procesos complejos paso a paso",
+      "detalle": "La metodología de mostrar en vivo cómo se construye una funcionalidad es efectiva para la comprensión."
+    },
+    {
+      "titulo": "Mantener una actitud accesible y abierta",
+      "detalle": "La disposición a ayudar y la paciencia con las preguntas fomentan un ambiente de aprendizaje seguro."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Resolver temas administrativos al inicio de clase",
+      "detalle": "Estos temas deben gestionarse de forma asíncrona o en un espacio designado fuera del tiempo lectivo."
+    },
+    {
+      "titulo": "Dedicar más del 50% del tiempo a temas no listados",
+      "detalle": "El foco principal debe permanecer en los objetivos de aprendizaje definidos en el syllabus de la sesión."
+    },
+    {
+      "titulo": "Omitir la agenda y la síntesis de la sesión",
+      "detalle": "Es crucial enmarcar el aprendizaje con una estructura clara de inicio y un resumen de cierre."
+    },
+    {
+      "titulo": "Realizar talleres como una demostración unilateral",
+      "detalle": "Las actividades prácticas deben diseñarse para que el alumno sea el protagonista activo."
+    },
+    {
+      "titulo": "No tener un plan de tiempos por bloque",
+      "detalle": "La gestión del tiempo debe ser intencional y visible para asegurar la cobertura de todos los puntos."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Publicar una agenda al inicio de la sesión",
+      "detalle": "Mostrar un slide con los 3-4 bloques de la clase y sus tiempos estimados."
+    },
+    {
+      "titulo": "Gestionar dudas administrativas por WhatsApp antes de clase",
+      "detalle": "Crear un espacio asíncrono para resolver problemas de grupos y accesos antes de la sesión."
+    },
+    {
+      "titulo": "Reservar los últimos 5 minutos para una síntesis",
+      "detalle": "Resumir verbalmente los 3 conceptos clave aprendidos y anunciar los siguientes pasos."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar el taller como actividad autónoma",
+      "detalle": "Proveer un caso y dejar que los alumnos lo resuelvan en grupos por 20 minutos."
+    },
+    {
+      "titulo": "Crear un video tutorial para el parcial",
+      "detalle": "Grabar la explicación del login screen y compartirlo asincrónicamente para liberar tiempo de clase."
+    },
+    {
+      "titulo": "Estructurar la sesión en bloques cronometrados",
+      "detalle": "Dividir la clase en Descubre-Aprende-Crea con tiempos fijos para cada etapa metodológica."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "2.9/5 — Contenido práctico valioso opacado por una estructura y gestión del tiempo críticas.",
+    "cuerpo": "La principal fortaleza de la sesión es el **alto valor práctico** de su contenido. El docente demuestra habilidades directamente aplicables como la migración de aplicaciones con 'Solutions' y la construcción de una pantalla de login compleja, respondiendo además de forma constante a las dudas de los alumnos.\n\nSin embargo, estos puntos positivos se ven severamente opacados por **fallos estructurales críticos**. La sesión carece de un marco claro, comenzando con 35 minutos de desorganización administrativa que anulan cualquier impulso inicial. No hay una agenda visible, las transiciones son abruptas y se omite por completo un cierre que sintetice lo aprendido.\n\nEl problema más grave es la **gestión del tiempo inexistente**. El tema oficial de la sesión compite por la atención con un extenso tutorial no planificado para el proyecto parcial. Esta falta de planificación resulta en una experiencia de aprendizaje fragmentada y desbalanceada, donde el valioso contenido técnico no logra su máximo impacto por la falta de un vehículo pedagógico adecuado.\n\nCon un rediseño enfocado en la estructura y la gestión del tiempo, el potencial de esta sesión es muy alto. El contenido es relevante y el docente es competente, pero se necesita urgentemente un marco metodológico que ordene la entrega.",
+    "potencial_score": 4.2
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-14T15:52:43.030531+00:00"
+  }
+}

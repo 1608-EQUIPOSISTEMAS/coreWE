@@ -316,6 +316,42 @@ async function editionextrainfocaller (payload = {}) {
 }
 
 
+/**
+ * Lista enrollments vigentes en una edicion que pasara a A5.
+ * Devuelve los datos necesarios para que el operador asigne edicion destino.
+ */
+async function a5PendingEnrollments ({ edition_num_id }) {
+  const editionId = Number(edition_num_id)
+  if (!editionId) return []
+
+  return callProcedureReturningRows(
+    pool,
+    'public.sp_edition_a5_pending_enrollments',
+    [editionId],
+    { statementTimeoutMs: 20000 }
+  )
+}
+
+/**
+ * Ejecuta migracion masiva + cancelacion A5 en transaccion atomica.
+ * payload: { edition_num_id, migrations: [{enrollment_id, target_edition_id}], justificacion, a5_segment_id }
+ */
+async function a5MigrationExecute ({ payload = {}, user_id }) {
+  const rows = await callProcedureReturningRows(
+    pool,
+    'public.sp_edition_a5_migration_execute',
+    [JSON.stringify(payload || {}), user_id],
+    { statementTimeoutMs: 60000 }
+  )
+
+  const row = rows?.[0] || {}
+  return {
+    result: row.result ?? 0,
+    message: row.message || 'Sin respuesta del SP',
+    migrated_count: row.migrated_count ?? 0
+  }
+}
+
 async function bulkUpdateWhatsapp (items) {
   let updated = 0
   let notFound = []
@@ -350,6 +386,270 @@ async function bulkUpdateWhatsapp (items) {
   return { updated, not_found: notFound }
 }
 
+// Conteo de alumnos por edicion (aula).
+// Reproduce la misma logica de "1. Aula Sistemas" (syncFicoAulaToSheet):
+// inscripciones FICO-aprobadas (cat_fico_status = checked), activas, y solo
+// hojas del arbol (hijos de programa estructurado OR cursos standalone sin
+// hijos). Las marcas visuales SEG/RP/CC pertenecen a cat_type_status y no
+// afectan el conteo — un alumno aprobado por FICO esta en el aula sin importar
+// si su inscripcion fue luego reprogramada o cambiada de curso (esos badges
+// solo indican el origen de la inscripcion).
+async function classroomMetricsList ({ edition_ids = [] } = {}) {
+  const ids = (edition_ids || []).map(Number).filter(Number.isFinite)
+  if (!ids.length) return []
+
+  const { rows } = await pool.query(`
+    SELECT e.program_edition_id AS edition_num_id,
+           COUNT(*)::int        AS students
+      FROM public.enrollments e
+      JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+     WHERE e.program_edition_id = ANY($1::int[])
+       AND e.active = 'Y'
+       AND cf.alias = 'we_enrollment_status_checked'
+       AND (
+            e.parent_enrollment_id IS NOT NULL
+         OR NOT EXISTS (
+              SELECT 1 FROM public.enrollments c
+               WHERE c.parent_enrollment_id = e.enrollment_id
+            )
+       )
+     GROUP BY e.program_edition_id
+  `, [ids])
+
+  return rows
+}
+
+// Listado de alumnos matriculados (FICO-aprobados) en una edicion/aula.
+// Misma logica de elegibilidad que classroomMetricsList: solo hojas del arbol
+// (modulos hijos o cursos standalone sin hijos). Ordenado por apellido para
+// presentacion estable en la matriz de asistencia. Incluye un contacto de
+// telefono/email vigente y la modalidad de inscripcion (FLEX/REGULAR).
+async function classroomStudentsList ({ edition_id } = {}) {
+  const id = Number(edition_id)
+  if (!Number.isFinite(id)) return []
+
+  const { rows } = await pool.query(`
+    SELECT e.enrollment_id,
+           per.person_id,
+           per.document_number                          AS dni,
+           TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS full_name,
+           per.first_name,
+           per.last_name,
+           cts.alias                                    AS type_status_alias,
+           cts.description                              AS type_status_label,
+           cim.alias                                    AS modality_alias,
+           cim.description                              AS modality_label,
+           contact_phone.value                          AS phone,
+           contact_email.value                          AS email,
+           e.registration_date::date                    AS enrolled_on
+      FROM public.enrollments e
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per    ON per.person_id    = cust.person_id
+      JOIN public."catalog" cf   ON cf.catalog_id    = e.cat_fico_status
+ LEFT JOIN public."catalog" cts  ON cts.catalog_id   = e.cat_type_status
+ LEFT JOIN public."catalog" cim  ON cim.catalog_id   = e.cat_inscription_modality
+ LEFT JOIN LATERAL (
+        SELECT pc.value
+          FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+                                 AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1
+      ) contact_phone ON TRUE
+ LEFT JOIN LATERAL (
+        SELECT pc.value
+          FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+                                 AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1
+      ) contact_email ON TRUE
+     WHERE e.program_edition_id = $1
+       AND e.active = 'Y'
+       AND cf.alias = 'we_enrollment_status_checked'
+       AND (
+            e.parent_enrollment_id IS NOT NULL
+         OR NOT EXISTS (
+              SELECT 1 FROM public.enrollments c
+               WHERE c.parent_enrollment_id = e.enrollment_id
+            )
+       )
+     ORDER BY per.last_name, per.first_name
+  `, [id])
+
+  return rows
+}
+
+// Auto-bootstrap idempotente: la rubrica vive en su propia tabla y queremos
+// que el deploy no requiera correr migraciones manuales. La primera llamada
+// que toque la tabla la crea si no existe; siguientes llamadas saltan el
+// CREATE gracias al flag en memoria. Si el proceso reinicia, se re-verifica
+// una sola vez con costo despreciable (~1ms).
+let _rubricTableReady = false
+async function ensureRubricTable () {
+  if (_rubricTableReady) return
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.classroom_audit_rubric (
+      rubric_id          SERIAL PRIMARY KEY,
+      program_edition_id INTEGER NOT NULL REFERENCES public.program_editions(edition_num_id) ON DELETE CASCADE,
+      session_number     INTEGER NOT NULL CHECK (session_number > 0),
+      criteria           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ai_report          JSONB,
+      ai_metadata        JSONB,
+      ai_generated_at    TIMESTAMPTZ,
+      updated_by         INTEGER REFERENCES public.users(user_id),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (program_edition_id, session_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_car_edition
+      ON public.classroom_audit_rubric (program_edition_id);
+    -- Migracion idempotente: agrega columnas IA si la tabla ya existia
+    ALTER TABLE public.classroom_audit_rubric
+      ADD COLUMN IF NOT EXISTS ai_report JSONB,
+      ADD COLUMN IF NOT EXISTS ai_metadata JSONB,
+      ADD COLUMN IF NOT EXISTS ai_generated_at TIMESTAMPTZ;
+  `)
+  _rubricTableReady = true
+}
+
+// Carga toda la rubrica de evaluacion al docente para una edicion (aula).
+// Devuelve una fila por sesion ya evaluada; las sesiones sin evaluar no
+// aparecen y el frontend asume criterios vacios.
+async function classroomAuditGet ({ edition_id } = {}) {
+  const id = Number(edition_id)
+  if (!Number.isFinite(id)) return []
+  await ensureRubricTable()
+  const { rows } = await pool.query(`
+    SELECT session_number, criteria, ai_report, ai_metadata, ai_generated_at,
+           updated_by, updated_at
+      FROM public.classroom_audit_rubric
+     WHERE program_edition_id = $1
+     ORDER BY session_number
+  `, [id])
+  return rows
+}
+
+// URL del servicio Python (FastAPI). Convivimos con el backend Node como
+// sidecar — el operador arranca el FastAPI con `npm run ai:start` y este
+// proxy se encarga de reenviar el multipart al puerto local.
+const AI_AUDITOR_URL = process.env.AI_AUDITOR_URL || 'http://127.0.0.1:8090'
+
+// Ejecuta el analisis IA pasando transcript + imagen del syllabus, persiste
+// el reporte completo en la fila (edicion, sesion) correspondiente. El upsert
+// preserva los criterios manuales ya marcados — la IA solo agrega/reemplaza
+// las columnas ai_report, ai_metadata y ai_generated_at.
+async function classroomAuditRunAi ({
+  edition_id, session_number, transcript_text, syllabus_image, syllabus_filename,
+} = {}) {
+  const eid = Number(edition_id)
+  const sn = Number(session_number)
+  if (!Number.isFinite(eid) || !Number.isFinite(sn) || sn < 1) {
+    return { ok: false, message: 'Parametros invalidos' }
+  }
+  if (!transcript_text || !String(transcript_text).trim()) {
+    return { ok: false, message: 'transcript_text vacio' }
+  }
+  if (!syllabus_image) {
+    return { ok: false, message: 'Falta imagen del syllabus' }
+  }
+
+  await ensureRubricTable()
+
+  // FormData nativa en Node 18+: el proxy reenvia el multipart al FastAPI
+  // sin descomprimir/recomprimir, lo unico que paga es el TCP loopback.
+  const form = new FormData()
+  form.append('sesion_numero', String(sn))
+  form.append('transcript_text', String(transcript_text))
+  const blob = new Blob([syllabus_image], { type: 'application/octet-stream' })
+  form.append('syllabus_image', blob, syllabus_filename || 'syllabus.png')
+
+  // 10 min de timeout: Gemini con AFC (Automatic Function Calling) puede
+  // iterar hasta 10 veces para auto-corregir el output. Sin AbortController
+  // el fetch nativo de Node 20 no tiene timeout por defecto y la conexion
+  // queda colgada si Gemini muere a media respuesta.
+  const aiController = new AbortController()
+  const aiTimeoutId = setTimeout(() => aiController.abort(), 10 * 60 * 1000)
+
+  let aiJson
+  try {
+    const resp = await fetch(`${AI_AUDITOR_URL}/api/audit`, {
+      method: 'POST',
+      body: form,
+      signal: aiController.signal,
+    })
+    const text = await resp.text()
+    console.log('[AI] FastAPI respondio', resp.status, 'body:', text.slice(0, 2000))
+    if (!resp.ok) {
+      let detail = text.slice(0, 400)
+      try {
+        const parsed = JSON.parse(text)
+        const tb = Array.isArray(parsed.traceback) ? parsed.traceback.join(' | ') : ''
+        detail = `${parsed.error || ''}: ${parsed.message || parsed.detail || text}${tb ? ' || ' + tb : ''}`.slice(0, 800)
+      } catch { /* no es JSON, usar text crudo */ }
+      console.error('[AI] FastAPI error', resp.status, detail)
+      return { ok: false, message: `IA respondio ${resp.status}: ${detail}` }
+    }
+    aiJson = JSON.parse(text)
+  } catch (err) {
+    const isAbort = err?.name === 'AbortError'
+    return {
+      ok: false,
+      message: isAbort
+        ? 'La IA tardo mas de 10 min en responder. Reintenta con un transcript mas corto o revisa que Gemini este disponible.'
+        : `No se pudo contactar al servicio IA (${AI_AUDITOR_URL}). Verifica que el FastAPI este corriendo (npm run ai:start). Detalle: ${err.message}`,
+    }
+  } finally {
+    clearTimeout(aiTimeoutId)
+  }
+
+  const report = aiJson?.report || null
+  const metadata = aiJson?.metadata || null
+  if (!report) return { ok: false, message: 'La IA no devolvio reporte' }
+
+  const { rows } = await pool.query(`
+    INSERT INTO public.classroom_audit_rubric
+      (program_edition_id, session_number, ai_report, ai_metadata, ai_generated_at, updated_at)
+    VALUES ($1, $2, $3::jsonb, $4::jsonb, NOW(), NOW())
+    ON CONFLICT (program_edition_id, session_number) DO UPDATE
+       SET ai_report = EXCLUDED.ai_report,
+           ai_metadata = EXCLUDED.ai_metadata,
+           ai_generated_at = NOW(),
+           updated_at = NOW()
+    RETURNING session_number, criteria, ai_report, ai_metadata, ai_generated_at, updated_at
+  `, [eid, sn, JSON.stringify(report), JSON.stringify(metadata)])
+
+  return { ok: true, row: rows[0] }
+}
+
+// Upsert atomico de la rubrica de una sesion especifica. Reemplaza el JSONB
+// `criteria` completo (no hace merge) — el frontend envia el estado total
+// de la sesion, no deltas. Asi evitamos race conditions entre evaluadores.
+async function classroomAuditSave ({ edition_id, session_number, criteria, user_id = null } = {}) {
+  const eid = Number(edition_id)
+  const sn = Number(session_number)
+  if (!Number.isFinite(eid) || !Number.isFinite(sn) || sn < 1) {
+    return { ok: false, message: 'Parametros invalidos' }
+  }
+  const payload = criteria && typeof criteria === 'object' ? criteria : {}
+  const uid = Number.isFinite(Number(user_id)) ? Number(user_id) : null
+  await ensureRubricTable()
+  // RETURNING incluye ai_report y ai_metadata para que el frontend mantenga
+  // el panel de analisis IA visible despues de guardar criterios manuales.
+  // La query no toca esas columnas en el UPDATE, asi que conserva su valor.
+  const { rows } = await pool.query(`
+    INSERT INTO public.classroom_audit_rubric
+      (program_edition_id, session_number, criteria, updated_by, updated_at)
+    VALUES ($1, $2, $3::jsonb, $4, NOW())
+    ON CONFLICT (program_edition_id, session_number) DO UPDATE
+       SET criteria = EXCLUDED.criteria,
+           updated_by = EXCLUDED.updated_by,
+           updated_at = NOW()
+    RETURNING session_number, criteria, ai_report, ai_metadata, ai_generated_at,
+              updated_by, updated_at
+  `, [eid, sn, JSON.stringify(payload), uid])
+  return { ok: true, row: rows[0] }
+}
+
 export default {
   editionRegister,
   editionTreeRegister,
@@ -359,7 +659,14 @@ export default {
   editionUpdate,
   editionCaller,
   editionByWeeklist,
+  classroomMetricsList,
+  classroomStudentsList,
+  classroomAuditGet,
+  classroomAuditSave,
+  classroomAuditRunAi,
   auditLogsGet,
   editionextrainfocaller,
-  bulkUpdateWhatsapp
+  bulkUpdateWhatsapp,
+  a5PendingEnrollments,
+  a5MigrationExecute
 }

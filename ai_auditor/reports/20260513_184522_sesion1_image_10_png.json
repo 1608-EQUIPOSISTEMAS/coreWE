@@ -1,0 +1,228 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 3,
+      "comentario": "El docente cubre 4 de los 5 temas del syllabus de la Sesión 2 (Soluciones en Power Platform, Organización, Agregar componentes, Exportar/Importar). Sin embargo, omite el tema de 'Uso de pipeline' [36:34] y dedica una parte muy extensa de la sesión (más de 90 minutos) a un taller práctico sobre la creación de una pantalla de login, que corresponde al trabajo parcial y no al temario específico de la sesión.",
+      "evidencia_timestamps": [
+        "36:10",
+        "41:09",
+        "58:19",
+        "01:27:41"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La sesión carece de una estructura sólida. El inicio se retrasa significativamente por 36 minutos de gestión administrativa sobre grupos y ausencias [03:25]. Aunque se presenta una agenda [36:00], la segunda mitad de la clase se desvía hacia el proyecto parcial. El cierre es abrupto, con una mención muy breve de las conclusiones [03:18:32] sin una síntesis adecuada de los conceptos clave.",
+      "evidencia_timestamps": [
+        "03:25",
+        "36:00",
+        "03:18:32"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 3,
+      "comentario": "Los conceptos de 'Soluciones' se explican y se demuestran con un caso práctico de migración entre entornos. Sin embargo, la profundidad es intermedia, sin explorar las implicaciones estratégicas de ALM. En contraste, el taller sobre la pantalla de login es muy detallado, cubriendo funciones como Patch, RandBetween y pop-ups, demostrando un buen nivel de profundidad en ese tema específico.",
+      "evidencia_timestamps": [
+        "42:41",
+        "02:35:41",
+        "02:45:33"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 4,
+      "comentario": "Se utilizan ejemplos muy relevantes y profesionales. El caso principal de migrar una aplicación entre un entorno 'default' y uno de 'desarrollo' [49:50] es un escenario laboral real. Asimismo, la construcción de una pantalla de login con recuperación de contraseña [20:47] es una necesidad común y de alto valor en el desarrollo de aplicaciones.",
+      "evidencia_timestamps": [
+        "20:47",
+        "49:50"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 2,
+      "comentario": "La sesión se basa en demostraciones en vivo donde el docente ejecuta todos los pasos y los alumnos observan. No hay segmentos de práctica autónoma. La calidad de la demostración se vio afectada por un fallo técnico que impidió la conexión a SharePoint y Outlook [02:17:50], obligando al docente a usar una aplicación pre-construida. Las métricas automáticas indican 0% de práctica, lo cual es inconsistente con la transcripción que muestra una extensa demostración.",
+      "evidencia_timestamps": [
+        "01:31:36",
+        "02:17:50"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 4,
+      "comentario": "El docente se comunica con claridad, domina los temas y responde a las preguntas de los alumnos de forma detallada y precisa. Explica conceptos complejos como las posiciones relativas en el diseño de manera efectiva [01:37:37]. El único punto de mejora es que el ritmo durante las demostraciones de código puede ser demasiado rápido para que los participantes lo sigan en tiempo real.",
+      "evidencia_timestamps": [
+        "01:13:15",
+        "01:37:37",
+        "02:40:07"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 4,
+      "comentario": "El nivel de interacción es alto. El docente gestiona activamente el Q&A a lo largo de toda la sesión, respondiendo a más de 10 preguntas de fondo de los alumnos [36:53, 01:05:50, 01:10:19]. Además, utiliza constantemente sondeos informales pidiendo reacciones para verificar la comprensión y mantener al grupo atento [13:31, 56:22].",
+      "evidencia_timestamps": [
+        "13:31",
+        "56:22",
+        "01:10:19"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más débil de la sesión. Los primeros 36 minutos se pierden en tareas administrativas [03:25-36:00]. Posteriormente, más de la mitad del tiempo de contenido se dedica a un taller para el proyecto parcial, desviándose del temario planificado. Esto resulta en una cobertura apresurada de los temas centrales y un cierre sin recapitulación.",
+      "evidencia_timestamps": [
+        "03:25",
+        "01:27:41",
+        "03:18:32"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "A pesar de los problemas estructurales, el valor práctico de la sesión es muy alto. Los participantes aprenden a gestionar el ciclo de vida de sus aplicaciones con 'Soluciones' y, adicionalmente, reciben un taller detallado sobre cómo construir una pantalla de login segura y funcional [27:57], una herramienta directamente aplicable y reutilizable en múltiples proyectos profesionales.",
+      "evidencia_timestamps": [
+        "27:57",
+        "41:09"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 3.1,
+    "temas_cubiertos": 4,
+    "temas_totales": 5,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Entregar alto valor práctico y aplicable",
+      "detalle": "El taller de login y las técnicas de diseño responsivo son herramientas de uso inmediato."
+    },
+    {
+      "titulo": "Fomentar alta interacción con los alumnos",
+      "detalle": "El docente responde numerosas preguntas detalladamente y mantiene al grupo conectado con confirmaciones constantes."
+    },
+    {
+      "titulo": "Utilizar casos de uso profesionales y relevantes",
+      "detalle": "Los ejemplos de migración de entornos y control de acceso son escenarios laborales comunes."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Optimizar drásticamente la gestión del tiempo inicial",
+      "detalle": "Dedicar los primeros 36 minutos a logística retrasa innecesariamente el inicio del contenido académico."
+    },
+    {
+      "titulo": "Alinear el contenido práctico al syllabus oficial",
+      "detalle": "El taller de login consumió tiempo destinado a profundizar en el tema central de 'Soluciones'."
+    },
+    {
+      "titulo": "Implementar una estructura de sesión formal",
+      "detalle": "La sesión carece de un cierre con síntesis clara, dejando conceptos clave sin recapitular."
+    },
+    {
+      "titulo": "Transformar demostraciones en talleres de práctica autónoma",
+      "detalle": "Los alumnos observan al docente resolver en lugar de aplicar los conceptos por sí mismos."
+    },
+    {
+      "titulo": "Profundizar en la relevancia estratégica de los temas",
+      "detalle": "Explicar el 'porqué' del ALM más allá del 'cómo' técnico aumentaría la profundidad."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder preguntas de forma exhaustiva",
+      "detalle": "Sostener la práctica de atender todas las dudas genera un ambiente de confianza y aprendizaje."
+    },
+    {
+      "titulo": "Usar analogías para explicar conceptos",
+      "detalle": "El concepto de 'contenedor' para las soluciones es una buena práctica para simplificar ideas."
+    },
+    {
+      "titulo": "Demostrar paso a paso procesos técnicos",
+      "detalle": "La guía visual para exportar e importar soluciones es efectiva para el aprendizaje procedimental."
+    },
+    {
+      "titulo": "Verificar la comprensión con sondeos rápidos",
+      "detalle": "Pedir 'likes' o confirmaciones mantiene a la clase atenta y permite medir el ritmo."
+    },
+    {
+      "titulo": "Compartir código y lógica funcional",
+      "detalle": "Proveer ejemplos de código funcionales para el parcial acelera la aplicación del aprendizaje."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Gestionar la logística de grupos asincrónicamente",
+      "detalle": "Utilizar WhatsApp o email para organizar grupos antes de que inicie la clase en vivo."
+    },
+    {
+      "titulo": "Separar el taller del parcial del contenido",
+      "detalle": "Dedicar sesiones de tutoría o crear material de apoyo en video para los proyectos."
+    },
+    {
+      "titulo": "Iniciar siempre con una agenda visible",
+      "detalle": "Mostrar los temas y tiempos al principio para establecer expectativas y seguir una estructura."
+    },
+    {
+      "titulo": "Finalizar con una recapitulación de 5 minutos",
+      "detalle": "Sintetizar los 2-3 conceptos más importantes de la sesión y anunciar los próximos pasos."
+    },
+    {
+      "titulo": "Preparar un plan de contingencia técnico",
+      "detalle": "Tener una alternativa lista en caso de fallos de conexión para no interrumpir la práctica."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Publicar la agenda en el chat al inicio",
+      "detalle": "Compartir una imagen o texto con los bloques y tiempos esperados de la sesión."
+    },
+    {
+      "titulo": "Usar un cronómetro visible para los bloques",
+      "detalle": "Proyectar un temporizador en pantalla para autogestionar el tiempo y mantener el ritmo planificado."
+    },
+    {
+      "titulo": "Crear un slide de cierre con puntos clave",
+      "detalle": "Preparar una diapositiva final que resuma los 3 aprendizajes más importantes para la recapitulación."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la sesión con práctica autónoma",
+      "detalle": "Estructurar el taller para que los alumnos trabajen en sus soluciones por 15-20 minutos."
+    },
+    {
+      "titulo": "Grabar un video tutorial para el parcial",
+      "detalle": "Crear un recurso asíncrono que explique el desarrollo del login, liberando tiempo de clase."
+    },
+    {
+      "titulo": "Coordinar la logística de grupos pre-clase",
+      "detalle": "El área de coordinación debe asegurar que los grupos estén formados antes del inicio."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "3.1/5 — Sesión con contenido práctico valioso pero afectada por graves problemas de estructura y gestión del tiempo.",
+    "cuerpo": "La sesión destaca por entregar **contenido de alto valor práctico y aplicable**. El detallado taller sobre la creación de una pantalla de login con recuperación de contraseña y las técnicas de diseño responsivo son herramientas de uso inmediato para los participantes. Adicionalmente, el docente fomenta un **ambiente de alta interacción**, respondiendo de manera exhaustiva y clara a numerosas preguntas, lo que mantiene a la clase conectada y comprometida.\n\nSin embargo, la sesión presenta dos problemas estructurales críticos. El primero es una **gestión del tiempo deficiente**, con los primeros 36 minutos dedicados a tareas administrativas que retrasaron el inicio del contenido académico. El segundo es un **desvío significativo del temario**, ya que más de la mitad de la clase se centró en un taller para el proyecto parcial, en lugar de profundizar en el tema central de 'Soluciones' como dicta el syllabus.\n\nLa estructura pedagógica también es mejorable. La sesión carece de un cierre formal con una síntesis de los aprendizajes clave, y las actividades prácticas son demostraciones del docente en lugar de talleres que promuevan la práctica autónoma del alumno. Un fallo técnico con los conectores de la plataforma también interrumpió el flujo de la demostración, evidenciando la necesidad de un plan de contingencia.\n\nA pesar de estas fallas, el conocimiento del docente y la relevancia del contenido son indiscutibles. Con ajustes significativos en la planificación, gestión del tiempo y un enfoque en la práctica autónoma, el potencial de esta sesión es muy alto.",
+    "potencial_score": 4.4
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-13T23:45:22.256629+00:00"
+  }
+}

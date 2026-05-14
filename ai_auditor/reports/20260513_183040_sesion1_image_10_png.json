@@ -1,0 +1,226 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 3,
+      "comentario": "El docente cubre los conceptos teóricos clave del syllabus de la Sesión 2 (soluciones, organización, exportación/importación). Sin embargo, dedica una parte desproporcionada de la sesión (más de la mitad) a la construcción de una pantalla de login, que corresponde al proyecto parcial y no es un tema central del syllabus de escalabilidad. El tema de 'pipeline' se menciona pero no se desarrolla, dejándolo como material de revisión.",
+      "evidencia_timestamps": [
+        "[36:00]",
+        "[36:34]",
+        "[01:27:41]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La sesión carece de una estructura clara y profesional. Los primeros 35 minutos se dedican a resolver problemas administrativos de los alumnos (grupos, pagos, ausencias), lo cual debió manejarse fuera de clase. No hay una apertura motivacional ni una agenda clara al inicio. El cierre consiste en más logística (encuestas) sin una síntesis de los aprendizajes clave sobre soluciones.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[13:50]",
+        "[03:14:29]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 3,
+      "comentario": "El docente demuestra un alto dominio técnico en los temas que presenta, tanto en la migración de soluciones como en la creación del login. Explica el 'cómo' de forma detallada. Sin embargo, falla en conectar conceptualmente los dos grandes bloques de la clase, dejando la sesión como dos tutoriales técnicos desarticulados en lugar de una experiencia de aprendizaje cohesionada.",
+      "evidencia_timestamps": [
+        "[38:13]",
+        "[02:37:41]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 4,
+      "comentario": "Se utilizan dos casos prácticos y muy relevantes para el entorno profesional: la migración de una aplicación entre entornos de desarrollo y la construcción de un sistema de login y recuperación de contraseña. Ambos ejemplos son realistas y de aplicación directa, superando las demos genéricas. El valor sería mayor si ambos casos estuvieran integrados en una narrativa única.",
+      "evidencia_timestamps": [
+        "[48:06]",
+        "[01:27:41]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 1,
+      "comentario": "La sesión es enteramente una demostración del docente. No existen talleres donde los alumnos practiquen de forma autónoma. Las métricas confirman un 0% de tiempo de práctica, lo cual es crítico y no cumple con la metodología WE que se enfoca en el 'Aprende' y 'Crea' a través de la acción del estudiante. Los alumnos son espectadores pasivos durante toda la sesión.",
+      "evidencia_timestamps": [
+        "[49:50]",
+        "[01:31:16]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 3,
+      "comentario": "El docente es claro en sus explicaciones técnicas y utiliza un lenguaje preciso. Sin embargo, la comunicación se ve perjudicada por la caótica gestión del tiempo y la falta de estructura, especialmente durante el largo segmento administrativo inicial, que resulta confuso y desorganizado para la audiencia.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[35:51]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 4,
+      "comentario": "A pesar de los problemas estructurales, el docente mantiene un buen nivel de interacción. Responde constantemente a las preguntas de los alumnos, tanto administrativas como técnicas, y utiliza solicitudes de reacción ('like') para verificar la comprensión y mantener a la audiencia conectada. Hay un diálogo fluido durante toda la sesión.",
+      "evidencia_timestamps": [
+        "[14:11]",
+        "[31:12]",
+        "[01:10:19]",
+        "[03:08:38]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es deficiente. Se dedican más de 30 minutos al inicio a temas administrativos que no aportan valor pedagógico. El tiempo restante se divide de forma desbalanceada, dedicando más tiempo a un taller para el proyecto parcial que al tema central de la sesión según el syllabus. No hay un cierre planificado, terminando abruptamente con logística.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[35:51]",
+        "[03:14:29]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "El valor práctico de la sesión es muy alto. Los alumnos reciben instrucciones detalladas para construir dos componentes de alta aplicabilidad profesional: un sistema de despliegue de soluciones y una pantalla de login robusta. El docente afirma que es una pantalla que él mismo reutiliza en la mayoría de sus aplicaciones, lo que subraya su relevancia.",
+      "evidencia_timestamps": [
+        "[28:22]",
+        "[48:06]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 2.9,
+    "temas_cubiertos": 4,
+    "temas_totales": 5,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Entregar herramientas de alto valor profesional",
+      "detalle": "El taller de login y recuperación de contraseña es directamente aplicable y reutilizable por los alumnos."
+    },
+    {
+      "titulo": "Fomentar la participación activa con preguntas",
+      "detalle": "El docente mantiene a la clase atenta mediante preguntas técnicas y confirmaciones de comprensión constantes."
+    },
+    {
+      "titulo": "Utilizar casos de uso realistas y prácticos",
+      "detalle": "La migración de soluciones entre entornos simula un ciclo de vida de desarrollo de software real."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Eliminar la gestión administrativa durante la clase",
+      "detalle": "Resolver problemas de grupos y pagos fuera del horario de sesión para no consumir tiempo lectivo."
+    },
+    {
+      "titulo": "Implementar talleres de práctica autónoma del alumno",
+      "detalle": "Cambiar el formato de demostración a uno donde los alumnos ejecutan las tareas para aprender haciendo."
+    },
+    {
+      "titulo": "Diseñar una estructura de sesión coherente",
+      "detalle": "Iniciar con una agenda clara y finalizar con una síntesis de los aprendizajes clave del día."
+    },
+    {
+      "titulo": "Alinear el tiempo de clase al temario oficial",
+      "detalle": "Dedicar la mayor parte del tiempo a los temas del syllabus, no al proyecto parcial."
+    },
+    {
+      "titulo": "Conectar explícitamente los bloques de contenido",
+      "detalle": "Justificar pedagógicamente por qué se pasa de un tema a otro para construir un aprendizaje cohesionado."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder preguntas técnicas de los alumnos",
+      "detalle": "Continuar aclarando dudas puntuales sobre implementación y capacidades de la plataforma con ejemplos claros."
+    },
+    {
+      "titulo": "Usar ejemplos de su experiencia profesional",
+      "detalle": "Seguir compartiendo cómo aplica los conceptos en sus propios proyectos para anclar el aprendizaje."
+    },
+    {
+      "titulo": "Realizar chequeos de comprensión frecuentes",
+      "detalle": "Mantener la práctica de pedir confirmación con 'likes' para medir el ritmo de la clase."
+    },
+    {
+      "titulo": "Explicar el 'cómo' con demos en vivo",
+      "detalle": "Seguir mostrando paso a paso la implementación de funcionalidades complejas en la herramienta."
+    },
+    {
+      "titulo": "Proveer material de apoyo detallado",
+      "detalle": "Continuar compartiendo rúbricas y ejemplos de código que guíen los proyectos de los alumnos."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Gestionar la logística de grupos fuera de clase",
+      "detalle": "Coordinar la formación de equipos y temas administrativos por correo o WhatsApp antes de la sesión."
+    },
+    {
+      "titulo": "Convertir demos en talleres prácticos para alumnos",
+      "detalle": "Rediseñar las actividades para que los alumnos construyan, no solo observen al docente trabajar."
+    },
+    {
+      "titulo": "Iniciar la sesión con la agenda y objetivos",
+      "detalle": "Reemplazar el inicio administrativo con un encuadre pedagógico claro, motivador y enfocado en el tema."
+    },
+    {
+      "titulo": "Finalizar con una recapitulación de conceptos clave",
+      "detalle": "Dedicar los últimos 5 minutos a sintetizar lo aprendido sobre el tema central de la sesión."
+    },
+    {
+      "titulo": "Priorizar el temario sobre el avance del proyecto",
+      "detalle": "El tiempo de clase debe usarse para enseñar conceptos nuevos, no para hacer el proyecto parcial."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Publicar la agenda al inicio de la sesión",
+      "detalle": "Mostrar una diapositiva con los 3-4 bloques temáticos y sus tiempos estimados para marcar el ritmo."
+    },
+    {
+      "titulo": "Crear un canal asíncrono para dudas administrativas",
+      "detalle": "Dirigir todas las consultas sobre grupos y pagos al chat de WhatsApp para resolverlas fuera de clase."
+    },
+    {
+      "titulo": "Insertar pausas de 2 minutos para preguntas",
+      "detalle": "Después de cada concepto clave, detenerse explícitamente y preguntar '¿Qué dudas hay sobre esto?'."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la sesión con un taller práctico central",
+      "detalle": "Estructurar la clase en torno a un desafío que los alumnos resuelvan en grupos pequeños."
+    },
+    {
+      "titulo": "Crear un caso de estudio que unifique los temas",
+      "detalle": "Diseñar un proyecto que requiera aplicar 'Soluciones' para poder desplegar la pantalla de 'Login'."
+    },
+    {
+      "titulo": "Implementar la metodología Descubre-Aprende-Crea",
+      "detalle": "Reestructurar el flujo de la sesión para seguir las etapas pedagógicas definidas por WE."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "2.9/5 — Contenido práctico valioso opacado por graves fallas estructurales y de gestión.",
+    "cuerpo": "La sesión destaca por la **alta aplicabilidad y valor práctico** de su contenido. El docente demuestra un profundo dominio técnico y guía a los alumnos en la construcción de dos componentes cruciales para cualquier desarrollador de Power Platform: la gestión de soluciones para despliegue y un sistema de login robusto. La interacción constante con los alumnos también es un punto fuerte, manteniendo la clase conectada a pesar de los problemas.\n\nSin embargo, estos puntos positivos se ven severamente mermados por dos problemas estructurales críticos. Primero, una **pésima gestión del tiempo**, dedicando los primeros 35 minutos a resolver problemas administrativos que debieron manejarse de forma asíncrona. Esto no solo consume un tiempo valioso, sino que establece un tono caótico desde el inicio.\n\nSegundo, la sesión **no cumple con el pilar práctico de la metodología WE**. Las actividades son demostraciones del docente, no talleres donde los alumnos construyen y aprenden haciendo. Las métricas lo confirman con un 0% de tiempo de práctica. La sesión se convierte en un monólogo técnico donde los alumnos son meros espectadores.\n\nCon ajustes significativos en la estructura, la gestión del tiempo y, fundamentalmente, en el enfoque pedagógico para pasar de la demostración a la práctica activa, esta sesión tiene el potencial de mejorar drásticamente su calificación. El contenido es excelente, pero la entrega necesita un rediseño completo.",
+    "potencial_score": 4.2
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-13T23:30:40.586486+00:00"
+  }
+}

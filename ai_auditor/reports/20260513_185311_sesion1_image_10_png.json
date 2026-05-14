@@ -1,0 +1,230 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 2,
+      "comentario": "La sesión cubre 4 de los 5 temas teóricos del syllabus sobre soluciones. Sin embargo, omite el tema de 'Uso de pipeline' y dedica una parte muy significativa de la clase (más de 45 minutos) a explicar y demostrar el proyecto parcial (pantalla de login), que no forma parte del temario de la Sesión 2. Esta desviación consume tiempo valioso y desenfoca el objetivo principal de la sesión.",
+      "evidencia_timestamps": [
+        "[36:00]",
+        "[36:34]",
+        "[01:27:41]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La estructura es deficiente. La sesión inicia con más de 30 minutos de gestión administrativa sobre la formación de grupos y la explicación del parcial, retrasando el inicio del contenido académico. No se presenta una agenda al inicio y el cierre carece de una síntesis de los conceptos clave aprendidos, finalizando con la solicitud de llenar una encuesta.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[13:54]",
+        "[36:00]",
+        "[03:14:29]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 3,
+      "comentario": "Los conceptos sobre soluciones (qué son, tipos, por qué usarlas) se explican con claridad y se demuestran con un caso práctico de migración. Sin embargo, la profundidad se ve comprometida por la mala gestión del tiempo. Temas como 'pipeline' se omiten y la resolución de problemas técnicos consume tiempo que podría haberse dedicado a profundizar en los componentes avanzados de las soluciones.",
+      "evidencia_timestamps": [
+        "[38:13]",
+        "[42:59]",
+        "[53:26]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 4,
+      "comentario": "El docente utiliza un caso central muy relevante y práctico: desplegar una aplicación de un entorno a otro (default a desarrollo). Este ejemplo es directamente aplicable al trabajo diario de un desarrollador de Power Platform y sirve como un excelente vehículo para enseñar el concepto de soluciones. No se utilizan demos genéricas, sino un flujo de trabajo realista.",
+      "evidencia_timestamps": [
+        "[48:06]",
+        "[01:06:45]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 1,
+      "comentario": "La sesión carece por completo de un taller práctico autónomo, lo cual es un punto crítico en la metodología WE. La actividad principal es una demostración guiada por el docente donde los alumnos observan y replican. Las métricas confirman un 0% de tiempo de práctica, indicando que los alumnos no tuvieron la oportunidad de aplicar los conceptos para resolver un problema por sí mismos.",
+      "evidencia_timestamps": [
+        "[49:50]",
+        "[01:27:45]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 4,
+      "comentario": "El docente demuestra un sólido dominio del tema y comunica los conceptos técnicos de forma clara y precisa. Maneja adecuadamente las preguntas de los alumnos y se adapta profesionalmente a los problemas técnicos imprevistos, explicando la lógica del código aunque no pudiera ejecutar la demo completa debido a la caída de los conectores.",
+      "evidencia_timestamps": [
+        "[38:13]",
+        "[02:18:06]",
+        "[02:31:23]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 3,
+      "comentario": "El docente fomenta la participación a través de preguntas directas y una gestión activa del Q&A, respondiendo múltiples dudas de los estudiantes a lo largo de la sesión. Sin embargo, no se utilizan herramientas interactivas como Kahoots, pizarras virtuales o ruletas para dinamizar la participación, dependiendo exclusivamente de la interacción verbal.",
+      "evidencia_timestamps": [
+        "[31:12]",
+        "[36:53]",
+        "[01:10:19]",
+        "[01:59:02]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más débil de la sesión. Más de 30 minutos iniciales se dedican a tareas administrativas. Un bloque extenso se desvía para cubrir el proyecto parcial, que no corresponde al temario. Como resultado, se omite un tema del syllabus y el cierre es apresurado y sin síntesis, lo que evidencia una planificación deficiente.",
+      "evidencia_timestamps": [
+        "[03:08]",
+        "[36:00]",
+        "[01:27:41]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 4,
+      "comentario": "A pesar de los problemas estructurales, el contenido cubierto es de alto valor práctico. Los alumnos aprenden el proceso fundamental de empaquetar y migrar aplicaciones con soluciones, una habilidad esencial. La explicación de la lógica de la pantalla de login, aunque fuera de temario, también aporta una herramienta muy útil y reutilizable para sus proyectos.",
+      "evidencia_timestamps": [
+        "[48:06]",
+        "[02:37:26]",
+        "[03:05:39]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 2.7,
+    "temas_cubiertos": 4,
+    "temas_totales": 5,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Enseñar habilidades de alto valor profesional",
+      "detalle": "La gestión de soluciones y la lógica de login son competencias directamente aplicables y demandadas en el mercado."
+    },
+    {
+      "titulo": "Utilizar un caso de despliegue realista",
+      "detalle": "La migración de una aplicación entre entornos simula un proceso de trabajo real, aportando gran relevancia práctica."
+    },
+    {
+      "titulo": "Comunicar conceptos técnicos con claridad",
+      "detalle": "El docente explica eficazmente temas complejos como soluciones administradas vs. no administradas y la lógica del código."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Eliminar la gestión administrativa de la clase",
+      "detalle": "Dedicar los primeros 35 minutos a organizar grupos debe hacerse de forma asíncrona para no sacrificar tiempo lectivo."
+    },
+    {
+      "titulo": "Implementar talleres prácticos, no solo demos",
+      "detalle": "El 0% de práctica es una falla metodológica; los alumnos deben construir soluciones, no solo observar al docente."
+    },
+    {
+      "titulo": "Alinear la sesión estrictamente al syllabus oficial",
+      "detalle": "El desvío para explicar el proyecto parcial consumió tiempo valioso y desplazó temas oficiales de la sesión."
+    },
+    {
+      "titulo": "Estructurar la sesión con agenda y síntesis",
+      "detalle": "La clase necesita un mapa de ruta al inicio y un resumen de los aprendizajes clave al final."
+    },
+    {
+      "titulo": "Verificar conectores y tener un plan B",
+      "detalle": "La caída de los conectores detuvo una parte clave; se necesita un plan de contingencia con datos locales."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder preguntas de alumnos en detalle",
+      "detalle": "La disposición a pausar y aclarar dudas técnicas de los participantes es un punto fuerte a conservar."
+    },
+    {
+      "titulo": "Usar analogías de negocio relevantes",
+      "detalle": "El ejemplo de proyectos de Finanzas vs. RRHH ayudó a clarificar la necesidad de usar múltiples soluciones."
+    },
+    {
+      "titulo": "Explicar la lógica detrás del código",
+      "detalle": "Desglosar el funcionamiento de funciones como `Patch` y `Lookup` es fundamental para el aprendizaje profundo."
+    },
+    {
+      "titulo": "Adaptarse a problemas técnicos en vivo",
+      "detalle": "La capacidad de pivotar y explicar la lógica conceptualmente cuando la demo falla es una habilidad valiosa."
+    },
+    {
+      "titulo": "Demostrar el 'porqué' de las buenas prácticas",
+      "detalle": "Explicar la razón de estandarizar nombres de soluciones fomenta un desarrollo de software más profesional."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "La gestión de grupos debe ser asincrónica",
+      "detalle": "Utilizar WhatsApp o el foro para organizar equipos y resolver dudas logísticas fuera del horario de clase."
+    },
+    {
+      "titulo": "La explicación de proyectos debe ser pre-grabada",
+      "detalle": "Un video corto explicando el parcial es más eficiente y permite usar el tiempo en vivo para dudas."
+    },
+    {
+      "titulo": "El formato de demo debe ser taller autónomo",
+      "detalle": "La sesión debe incluir bloques donde los alumnos trabajen en un desafío práctico sin seguir al docente."
+    },
+    {
+      "titulo": "El tiempo de clase es para el syllabus",
+      "detalle": "No se debe utilizar tiempo de una sesión para explicar o avanzar en proyectos de evaluación de otra."
+    },
+    {
+      "titulo": "La sesión debe iniciar con una agenda visible",
+      "detalle": "Mostrar los objetivos y temas al principio establece un marco claro y gestiona las expectativas de los alumnos."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Enviar un video de 5 min explicando el parcial",
+      "detalle": "Grabar la explicación del entregable y compartirla antes de la clase para usar el tiempo en vivo para dudas."
+    },
+    {
+      "titulo": "Iniciar la sesión mostrando la agenda de temas",
+      "detalle": "Dedicar el primer minuto a presentar un slide con los 3-4 puntos clave que se cubrirán en la sesión."
+    },
+    {
+      "titulo": "Finalizar con un slide de 3 puntos clave",
+      "detalle": "Cerrar la clase con una diapositiva que resuma las ideas más importantes para reforzar el aprendizaje."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la sesión en bloques teóricos y prácticos",
+      "detalle": "Estructurar la clase con 20 min de teoría seguidos de 30 min de taller autónomo para aplicar lo aprendido."
+    },
+    {
+      "titulo": "Crear un plan B para fallos de conectores",
+      "detalle": "Tener preparado un archivo de Excel o una tabla de Dataverse para usar como fuente de datos alternativa."
+    },
+    {
+      "titulo": "Mover toda la logística a canales asíncronos",
+      "detalle": "Establecer como política que la organización de grupos y dudas administrativas se gestionan exclusivamente por WhatsApp o email."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "2.7/5 — Contenido valioso opacado por una gestión crítica del tiempo y falta de práctica.",
+    "cuerpo": "La sesión demuestra un **sólido dominio técnico por parte del docente**, quien aborda temas de alta relevancia profesional como la gestión de soluciones y la creación de pantallas de login. La comunicación es clara y el uso de un caso de despliegue realista es un acierto pedagógico que conecta directamente con las necesidades laborales de los participantes.\n\nSin embargo, estos puntos fuertes se ven severamente opacados por dos problemas estructurales críticos. El primero es una **gestión del tiempo y del temario deficiente**. Dedicar los primeros 35 minutos a tareas administrativas y desviarse extensamente para cubrir el proyecto parcial es inaceptable. Esto no solo consumió casi un tercio de la sesión, sino que también forzó la omisión de temas del syllabus y eliminó cualquier posibilidad de un cierre con síntesis.\n\nEl segundo problema, igualmente grave, es el **incumplimiento de la metodología práctica de WE**. La sesión se limitó a ser una demostración guiada, sin asignar tiempo para que los alumnos trabajaran de forma autónoma. La métrica de 0% de tiempo de práctica es una clara evidencia de que no se fomentaron las etapas de 'Aprende' y 'Crea' a través de la ejecución, sino que se permaneció en una observación pasiva.\n\nEl potencial de esta sesión es alto, dado el valor del contenido y la claridad del docente. Si se reestructura para eliminar por completo la gestión administrativa, se adhiere estrictamente al syllabus y se transforman las demostraciones en talleres prácticos, el score podría mejorar sustancialmente.",
+    "potencial_score": 4.5
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-13T23:53:11.181089+00:00"
+  }
+}

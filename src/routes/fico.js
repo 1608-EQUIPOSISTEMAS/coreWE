@@ -58,6 +58,16 @@ export default async function ficoRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  fastify.get('/enrollmentadvisors', async (req, reply) => {
+    try {
+      const data = await ficoService.enrollmentAdvisorsList()
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[enrollmentAdvisorsList ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.get('/bankaccounts', async (req, reply) => {
     const data = await ficoService.bankAccountList()
     return reply.code(200).send({ ok: true, data })
@@ -658,6 +668,31 @@ export default async function ficoRoutes (fastify) {
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[reprogramEdition ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  fastify.post('/approvependingreview', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id'],
+        additionalProperties: false,
+        properties: {
+          enrollment_id: { type: 'integer' },
+          user_id:       { type: ['integer', 'null'] }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.approvePendingReview({
+        enrollmentId: req.body.enrollment_id,
+        userId: req.user?.id ?? req.body.user_id
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[approvePendingReview ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })

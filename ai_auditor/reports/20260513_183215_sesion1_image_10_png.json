@@ -1,0 +1,231 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 4,
+      "comentario": "El docente cubre la mayoría de los temas clave del syllabus de la Sesión 2, como la definición de soluciones, organización de componentes, y el proceso de exportación e importación entre entornos. La sesión se centra en estos aspectos prácticos. Se omite la cobertura en vivo del 'Uso de pipeline para migración', que se deja como material de revisión, lo cual es una decisión razonable por tiempo pero incompleta.",
+      "evidencia_timestamps": [
+        "[36:00]",
+        "[38:18]",
+        "[41:09]",
+        "[01:02:08]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La estructura de la sesión es deficiente. Los primeros 35 minutos se dedican a resolver problemas administrativos de grupos y a explicar el proyecto parcial, sin una agenda clara ni un gancho motivacional. La sesión termina abruptamente con la gestión de una encuesta, sin una síntesis de los aprendizajes clave ni próximos pasos claros. Faltan las fases de Descubre y un cierre formal.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[36:00]",
+        "[03:14:29]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 4,
+      "comentario": "El docente demuestra un buen nivel de profundidad en los temas tratados. Explica el concepto de 'solución' [38:18], lo ilustra con analogías (proyectos de finanzas vs. RRHH [39:30]), y lo aplica en una demostración práctica detallada. Además, contrasta conceptos clave como soluciones administradas vs. no administradas [42:59], aportando el 'porqué' detrás de las acciones.",
+      "evidencia_timestamps": [
+        "[38:18]",
+        "[42:59]",
+        "[53:26]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 4,
+      "comentario": "Se utilizan ejemplos muy relevantes y prácticos. El caso principal es el despliegue de una aplicación entre entornos, un escenario profesional real. Además, se utiliza la propia aplicación del proyecto parcial de los alumnos como el activo a gestionar, lo que conecta directamente la práctica con su evaluación y futuro trabajo.",
+      "evidencia_timestamps": [
+        "[33:35]",
+        "[50:50]",
+        "[01:06:45]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 3,
+      "comentario": "La sesión incluye una extensa práctica guiada donde los alumnos deben seguir los pasos del docente para crear, exportar e importar una solución. Aunque se fomenta la ejecución por parte del alumno, no hay un taller con instrucciones claras para la práctica autónoma. Es un formato 'follow the leader' que es mejor que una simple demo, pero no maximiza el aprendizaje autónomo. Las métricas pre-calculadas indican 0% de práctica, lo cual es incorrecto según el transcript.",
+      "evidencia_timestamps": [
+        "[49:07]",
+        "[55:34]",
+        "[01:23:12]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 3,
+      "comentario": "El docente es claro en sus explicaciones técnicas sobre soluciones y el proceso de despliegue. Sin embargo, la comunicación general se ve perjudicada por la desorganización inicial, con casi 35 minutos de idas y vueltas sobre la conformación de grupos. Esto genera confusión y resta profesionalismo al inicio de la sesión.",
+      "evidencia_timestamps": [
+        "[14:11]",
+        "[17:32]",
+        "[38:18]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 4,
+      "comentario": "El nivel de interacción es alto y efectivo. El docente responde a numerosas preguntas de los alumnos a lo largo de toda la sesión, llamándolos por su nombre y resolviendo dudas técnicas relevantes (ej. límites de SharePoint, compartir entre tenants). Utiliza constantemente sondeos informales pidiendo reacciones para confirmar el seguimiento de la clase.",
+      "evidencia_timestamps": [
+        "[31:57]",
+        "[36:50]",
+        "[01:13:13]",
+        "[01:59:07]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más débil de la sesión. Se dedican aproximadamente 35 minutos iniciales a tareas administrativas que debieron resolverse de forma asíncrona. Este bloque consume casi el 18% del tiempo total, un desbalance crítico que retrasa el inicio del contenido pedagógico y demuestra una planificación deficiente.",
+      "evidencia_timestamps": [
+        "[03:25]",
+        "[35:51]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "A pesar de los problemas estructurales, el valor para el alumno es muy alto. Aprenden un proceso de despliegue de aplicaciones fundamental y directamente aplicable. Además, la explicación detallada del proyecto parcial, incluyendo la lógica y fragmentos de código, les proporciona una guía clara y reduce la incertidumbre, equipándolos para el éxito en su evaluación.",
+      "evidencia_timestamps": [
+        "[20:10]",
+        "[02:37:26]",
+        "[03:03:15]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 3.3,
+    "temas_cubiertos": 6,
+    "temas_totales": 8,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Conectar la teoría con el proyecto parcial",
+      "detalle": "Explica el parcial y usa sus componentes como ejemplo práctico para la gestión de 'soluciones'."
+    },
+    {
+      "titulo": "Fomentar la interacción con preguntas y respuestas",
+      "detalle": "Responde a numerosas dudas técnicas de los alumnos, llamándolos por su nombre y generando diálogo."
+    },
+    {
+      "titulo": "Enseñar un proceso profesional de despliegue",
+      "detalle": "El taller de exportar e importar soluciones es una habilidad clave directamente aplicable al trabajo."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Gestionar la administración de grupos fuera de clase",
+      "detalle": "Los primeros 35 minutos se perdieron en logística que debió resolverse asincrónicamente antes de la sesión."
+    },
+    {
+      "titulo": "Implementar una estructura de sesión WE formal",
+      "detalle": "La sesión carece de una apertura con agenda y un cierre con síntesis de aprendizajes."
+    },
+    {
+      "titulo": "Diseñar talleres para práctica autónoma del alumno",
+      "detalle": "La práctica fue un 'siga al docente', sin tiempo para que los alumnos resuelvan problemas solos."
+    },
+    {
+      "titulo": "Preparar un plan de contingencia para fallas técnicas",
+      "detalle": "La caída del conector de SharePoint detuvo el flujo; tener un plan B es crucial."
+    },
+    {
+      "titulo": "Establecer un gancho motivacional al inicio",
+      "detalle": "La clase comenzó con problemas administrativos, perdiendo la oportunidad de motivar a los alumnos."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder preguntas técnicas de los alumnos directamente",
+      "detalle": "Esta práctica mantiene a los alumnos enganchados y resuelve bloqueos en tiempo real."
+    },
+    {
+      "titulo": "Utilizar el proyecto de los alumnos como caso práctico",
+      "detalle": "Aumenta la relevancia y aplicabilidad inmediata de los conceptos enseñados."
+    },
+    {
+      "titulo": "Explicar conceptos complejos con analogías simples",
+      "detalle": "Ayuda a que los estudiantes comprendan temas abstractos como las soluciones de software."
+    },
+    {
+      "titulo": "Demostrar procesos paso a paso en vivo",
+      "detalle": "Permite a los alumnos seguir el proceso y replicarlo en sus propios entornos."
+    },
+    {
+      "titulo": "Pedir confirmación de entendimiento a los alumnos",
+      "detalle": "El uso de reacciones rápidas ayuda a medir el pulso de la clase."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Eliminar la gestión de grupos del tiempo de clase",
+      "detalle": "Toda la logística de equipos debe ser manejada por email o WhatsApp antes de la sesión."
+    },
+    {
+      "titulo": "Instituir una agenda visible al inicio siempre",
+      "detalle": "Un slide con los 3-4 puntos a cubrir establece expectativas y estructura."
+    },
+    {
+      "titulo": "Finalizar siempre con un resumen de 3 puntos clave",
+      "detalle": "Un cierre formal refuerza el aprendizaje y asegura que los mensajes principales queden claros."
+    },
+    {
+      "titulo": "Convertir las demostraciones en talleres con entregables",
+      "detalle": "Asignar una tarea pequeña al final de la práctica para verificar la comprensión."
+    },
+    {
+      "titulo": "Mover la explicación del parcial a un video corto",
+      "detalle": "Grabar un video asíncrono de 10 min sobre el parcial liberaría tiempo valioso de clase."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Crear un slide de agenda y objetivos",
+      "detalle": "Mostrarlo en los primeros 2 minutos para establecer el mapa de la sesión."
+    },
+    {
+      "titulo": "Resolver dudas de grupos por WhatsApp/email",
+      "detalle": "Comunicar a los alumnos que la logística se manejará fuera del horario de clase."
+    },
+    {
+      "titulo": "Preparar un slide de cierre con 3 ideas clave",
+      "detalle": "Usarlo en los últimos 5 minutos para reforzar el aprendizaje y dar próximos pasos."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la práctica como un taller autónomo",
+      "detalle": "Proveer un PDF con instrucciones y un objetivo para que los alumnos trabajen 20 minutos solos."
+    },
+    {
+      "titulo": "Grabar un video explicativo del proyecto parcial",
+      "detalle": "Publicar un video de 10 minutos detallando el parcial para liberar tiempo de clase."
+    },
+    {
+      "titulo": "Desarrollar un caso de negocio para la sesión",
+      "detalle": "Iniciar con un problema de negocio que justifique el uso de soluciones para el despliegue."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "3.3/5 — Contenido práctico y valioso opacado por una gestión de tiempo y estructura deficientes.",
+    "cuerpo": "La sesión destaca por su **alto valor práctico y relevancia directa** para los alumnos. El docente demuestra un sólido dominio técnico, conectando eficazmente la teoría sobre 'Soluciones' con el proyecto parcial de los estudiantes. La interacción es un punto fuerte, con un manejo excelente de las preguntas y respuestas que resuelve dudas reales y mantiene a la clase enganchada.\n\nSin embargo, estos puntos positivos se ven seriamente comprometidos por **problemas estructurales críticos**. El principal es la deficiente gestión del tiempo: dedicar los primeros 35 minutos a logística de grupos es inaceptable y denota una falta de planificación previa. Este tiempo es crucial y debería haberse destinado a la enseñanza.\n\nLa sesión carece de la estructura metodológica WE. No hay una apertura formal con agenda y objetivos (fase Descubre), ni un cierre con una síntesis de los aprendizajes. La clase comienza de forma caótica y termina abruptamente, lo que debilita la experiencia de aprendizaje a pesar de la calidad del contenido técnico.\n\nCon ajustes significativos en la planificación y estructura, esta sesión tiene un gran potencial. Al mover toda la gestión administrativa fuera del horario de clase e implementar rigurosamente la estructura de inicio y cierre de WE, el score podría aumentar considerablemente, reflejando mejor la calidad del conocimiento del docente.",
+    "potencial_score": 4.5
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 199.2,
+    "fecha_auditoria": "2026-05-13T23:32:15.924923+00:00"
+  }
+}
