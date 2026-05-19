@@ -11,6 +11,7 @@ import {
   classroomStudentsListSchema,
   classroomAuditGetSchema,
   classroomAuditSaveSchema,
+  classroomAuditSummaryListSchema,
   editionByWeekListSchema,
   editionGetSchema,
   editionUpdateSchema,
@@ -20,6 +21,7 @@ import {
 } from '../models/edition.schema.js'
 
 export default async function editionRoutes(fastify) {
+  fastify.addHook('preHandler', authenticate)
 
   fastify.post('/editionregister', {
     schema: editionRegisterSchema,
@@ -83,6 +85,14 @@ export default async function editionRoutes(fastify) {
     // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await editionService.classroomAuditGet(req.body)
+    return reply.code(200).send({ ok: true, data })
+  })
+
+  fastify.post('/classroomauditsummarylist', {
+    schema: classroomAuditSummaryListSchema,
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, async (req, reply) => {
+    const data = await editionService.classroomAuditSummaryList(req.body)
     return reply.code(200).send({ ok: true, data })
   })
 

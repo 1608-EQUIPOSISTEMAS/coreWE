@@ -231,6 +231,21 @@ export const classroomMetricsListSchema = {
   }
 }
 
+export const classroomAuditSummaryListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_ids'],
+    properties: {
+      edition_ids: {
+        type: 'array',
+        items: { type: 'integer' },
+        maxItems: 1000
+      }
+    }
+  }
+}
+
 export const editionByWeekListSchema = {
   body: {
     type: 'object',

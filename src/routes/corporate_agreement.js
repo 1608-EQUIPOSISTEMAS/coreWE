@@ -1,8 +1,10 @@
 // src/routes/corporate_agreements.js
 import agreementService from '../services/corporate_agreement.service.js'
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 export default async function corporateAgreementRoutes (fastify) {
-  
+  fastify.addHook('preHandler', authenticate)
+
   // REGISTRAR CONVENIO (Agreement)
   fastify.post('/agreementregister', {
     schema: {

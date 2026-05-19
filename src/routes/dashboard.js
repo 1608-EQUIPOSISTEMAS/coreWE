@@ -1,8 +1,10 @@
 // src/routes/dashboard.js
 import dashboardService from '../services/dashboard.service.js'
 import { pool } from '../config/db.js' // Asegúrate de importar pool si vas a usarlo directo aquí
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 export default async function dashboardRoutes (fastify) {
+  fastify.addHook('preHandler', authenticate)
 
 fastify.post('/dashboardlist', {
   schema: {
@@ -78,27 +80,33 @@ fastify.post('/dashboardlist', {
     schema: {
       body: {
         type: 'object',
+        additionalProperties: false,
+        required: ['date'],
         properties: {
           cod_asesor: { type: ['integer', 'string', 'null'] },
-          date: { type: 'string' }
+          date:       { type: 'string', format: 'date' },
+          page:       { type: 'integer', minimum: 1, default: 1 },
+          size:       { type: 'integer', minimum: 1, maximum: 500, default: 100 }
         }
       }
     }
   }, async (req, reply) => {
-    const { cod_asesor, date } = req.body
-    
+    const { cod_asesor, date, page = 1, size = 100 } = req.body
+    const offset = (page - 1) * size
+
     let sql = `SELECT * FROM public.v_dashboard_detail_leads WHERE fecha_registro = $1`
     const params = [date]
 
     if (cod_asesor && cod_asesor !== 'ALL') {
-        sql += ` AND cod_asesor = $2`
-        params.push(cod_asesor)
+      params.push(cod_asesor)
+      sql += ` AND cod_asesor = $${params.length}`
     }
 
-    sql += ` ORDER BY hora_registro DESC`
+    params.push(size, offset)
+    sql += ` ORDER BY hora_registro DESC LIMIT $${params.length - 1} OFFSET $${params.length}`
 
     const { rows } = await pool.query(sql, params)
-    return reply.send({ ok: true, data: rows })
+    return reply.send({ ok: true, data: rows, page, size })
   })
 
   // 5. CONTACTABILIDAD
@@ -214,26 +222,32 @@ fastify.post('/available-weeks', {
     schema: {
       body: {
         type: 'object',
+        additionalProperties: false,
+        required: ['date'],
         properties: {
           cod_asesor: { type: ['integer', 'string', 'null'] },
-          date: { type: 'string' }
+          date:       { type: 'string', format: 'date' },
+          page:       { type: 'integer', minimum: 1, default: 1 },
+          size:       { type: 'integer', minimum: 1, maximum: 500, default: 100 }
         }
       }
     }
   }, async (req, reply) => {
-    const { cod_asesor, date } = req.body
-    
+    const { cod_asesor, date, page = 1, size = 100 } = req.body
+    const offset = (page - 1) * size
+
     let sql = `SELECT * FROM public.v_dashboard_detail_sales WHERE fecha_venta = $1`
     const params = [date]
 
     if (cod_asesor && cod_asesor !== 'ALL') {
-        sql += ` AND cod_asesor = $2`
-        params.push(cod_asesor)
+      params.push(cod_asesor)
+      sql += ` AND cod_asesor = $${params.length}`
     }
 
-    sql += ` ORDER BY hora_venta DESC`
+    params.push(size, offset)
+    sql += ` ORDER BY hora_venta DESC LIMIT $${params.length - 1} OFFSET $${params.length}`
 
     const { rows } = await pool.query(sql, params)
-    return reply.send({ ok: true, data: rows })
+    return reply.send({ ok: true, data: rows, page, size })
   })
 }

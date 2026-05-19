@@ -512,6 +512,59 @@ async function ensureRubricTable () {
   _rubricTableReady = true
 }
 
+// Resumen agregado de auditoria por aula. Una fila por edition_id con la
+// cobertura de evaluacion (cuantas sesiones tienen rubrica marcada / cuantas
+// fueron analizadas por IA) y los promedios en escala /20 listos para que el
+// frontend calcule la nota consolidada y el veredicto.
+//
+// La rubrica manual tiene 20 items totales (5 interaction + 6 content +
+// 3 environment + 6 communication). Si la rubrica cambia de tamano, este
+// numero y RUBRIC en el frontend deben moverse juntos.
+//
+// El score IA viene en escala 1-5 dentro del JSON del reporte y se convierte
+// a /20 multiplicando por 4 (misma transformacion que toScore20Num en frontend).
+// La consolidacion 0.7*IA + 0.3*Manual se hace en frontend para no congelar
+// la formula en SQL.
+async function classroomAuditSummaryList ({ edition_ids = [] } = {}) {
+  const ids = (edition_ids || []).map(Number).filter(Number.isFinite)
+  if (!ids.length) return []
+  await ensureRubricTable()
+
+  const { rows } = await pool.query(`
+    WITH per_session AS (
+      SELECT
+        car.program_edition_id,
+        car.session_number,
+        car.updated_at,
+        car.ai_generated_at,
+        (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
+          AS manual_marked,
+        CASE
+          WHEN car.ai_report IS NOT NULL
+           AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
+          THEN (car.ai_report #>> '{metricas_rapidas,puntuacion_global}')::numeric * 4
+          ELSE NULL
+        END AS ai_score20
+      FROM public.classroom_audit_rubric car
+      WHERE car.program_edition_id = ANY($1::int[])
+    )
+    SELECT
+      program_edition_id                                                       AS edition_num_id,
+      COUNT(*) FILTER (WHERE manual_marked > 0)::int                            AS sessions_manual,
+      COUNT(*) FILTER (WHERE ai_score20 IS NOT NULL)::int                       AS sessions_ai,
+      ROUND(AVG((manual_marked::numeric / 20.0) * 20.0)
+        FILTER (WHERE manual_marked > 0)::numeric, 2)                           AS manual_avg_20,
+      ROUND(AVG(ai_score20)
+        FILTER (WHERE ai_score20 IS NOT NULL)::numeric, 2)                      AS ai_avg_20,
+      MAX(GREATEST(updated_at, COALESCE(ai_generated_at, '-infinity'::timestamptz)))
+                                                                                AS last_activity_at
+    FROM per_session
+    GROUP BY program_edition_id
+  `, [ids])
+
+  return rows
+}
+
 // Carga toda la rubrica de evaluacion al docente para una edicion (aula).
 // Devuelve una fila por sesion ya evaluada; las sesiones sin evaluar no
 // aparecen y el frontend asume criterios vacios.
@@ -532,7 +585,28 @@ async function classroomAuditGet ({ edition_id } = {}) {
 // URL del servicio Python (FastAPI). Convivimos con el backend Node como
 // sidecar — el operador arranca el FastAPI con `npm run ai:start` y este
 // proxy se encarga de reenviar el multipart al puerto local.
-const AI_AUDITOR_URL = process.env.AI_AUDITOR_URL || 'http://127.0.0.1:8090'
+// Validacion anti-SSRF: solo se aceptan hosts locales o explicitamente
+// permitidos. Una URL arbitraria via env permitiria exfiltrar el contenido
+// del syllabus a un servidor externo controlado por un atacante.
+const AI_AUDITOR_ALLOWED_HOSTS = new Set([
+  '127.0.0.1', 'localhost', '::1',
+  ...(process.env.AI_AUDITOR_ALLOWED_HOSTS || '').split(',').map(s => s.trim()).filter(Boolean)
+])
+
+function resolveAiAuditorUrl () {
+  const raw = process.env.AI_AUDITOR_URL || 'http://127.0.0.1:8090'
+  try {
+    const u = new URL(raw)
+    if (!AI_AUDITOR_ALLOWED_HOSTS.has(u.hostname)) {
+      throw new Error(`AI_AUDITOR_URL host no permitido: ${u.hostname}. Agregalo a AI_AUDITOR_ALLOWED_HOSTS.`)
+    }
+    return raw
+  } catch (err) {
+    throw new Error(`AI_AUDITOR_URL invalida: ${err.message}`)
+  }
+}
+
+const AI_AUDITOR_URL = resolveAiAuditorUrl()
 
 // Ejecuta el analisis IA pasando transcript + imagen del syllabus, persiste
 // el reporte completo en la fila (edicion, sesion) correspondiente. El upsert
@@ -662,6 +736,7 @@ export default {
   classroomMetricsList,
   classroomStudentsList,
   classroomAuditGet,
+  classroomAuditSummaryList,
   classroomAuditSave,
   classroomAuditRunAi,
   auditLogsGet,

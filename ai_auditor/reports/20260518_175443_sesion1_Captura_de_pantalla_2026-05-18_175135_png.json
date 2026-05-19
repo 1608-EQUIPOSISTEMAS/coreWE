@@ -1,0 +1,220 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 1,
+      "comentario": "La sesión omite por completo los dos talleres prácticos, que constituyen una parte fundamental del syllabus. Si bien se mencionan superficialmente los cinco temas teóricos, la falta de aplicación práctica y la omisión de los talleres designados resulta en un incumplimiento crítico del temario oficial.",
+      "evidencia_timestamps": [
+        "[01:40:18]",
+        "[01:53:54]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 1,
+      "comentario": "La estructura es deficiente y no sigue la metodología WE. Más de la mitad de la sesión se dedica a tareas administrativas y logísticas, sin una apertura motivacional (Descubre). No hay transiciones claras entre bloques de contenido, y el cierre se enfoca en la evaluación del curso en lugar de sintetizar el aprendizaje.",
+      "evidencia_timestamps": [
+        "[14:16]",
+        "[03:01:33]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 1,
+      "comentario": "El contenido se aborda de manera extremadamente superficial. Las explicaciones se limitan a la función básica de los botones (ej. importar datos, promover encabezados) sin explorar el porqué, los casos de uso o las alternativas. No se alcanza la profundidad necesaria para un aprendizaje significativo.",
+      "evidencia_timestamps": [
+        "[01:53:54]",
+        "[02:08:21]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 1,
+      "comentario": "No se utilizan casos de negocio reales. La demostración se realiza con datasets genéricos y descontextualizados ('Esperanza de Vida', 'Países'). A pesar de que el syllabus exige 'aterrizar un caso empresarial', la sesión se mantiene en un nivel de demostración técnica abstracta.",
+      "evidencia_timestamps": [
+        "[01:49:05]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 1,
+      "comentario": "No se realizó ningún taller ni actividad práctica, en directa contradicción con el syllabus. La sesión consistió en una demostración pasiva por parte del docente, donde los alumnos actuaron como meros espectadores. La métrica de 0% de tiempo de práctica confirma esta ausencia total de actividad.",
+      "evidencia_timestamps": [
+        "[01:53:54]",
+        "[02:35:59]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 2,
+      "comentario": "La comunicación del docente fue severamente obstaculizada por persistentes problemas técnicos de audio. Aunque su lenguaje es claro cuando se le escucha, los cortes y la mala calidad del sonido interrumpieron el flujo de la clase y generaron confusión entre los participantes.",
+      "evidencia_timestamps": [
+        "[01:22:33]",
+        "[01:25:51]",
+        "[01:29:09]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 2,
+      "comentario": "La interacción se limitó casi exclusivamente a la gestión logística: formar grupos, responder una encuesta de nivel y resolver dudas administrativas. No hubo engagement pedagógico, como debates, preguntas sobre el contenido o actividades colaborativas de aprendizaje.",
+      "evidencia_timestamps": [
+        "[39:13]",
+        "[47:02]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es críticamente deficiente. Más del 50% de la sesión se consumió en tareas administrativas, presentación del curso y formación de grupos. Esto forzó a que el contenido se tratara de forma superficial y se omitieran por completo los talleres planificados.",
+      "evidencia_timestamps": [
+        "[00:00]",
+        "[01:31:45]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 1,
+      "comentario": "El valor entregado es mínimo. Los participantes aprendieron a abrir el software e importar un archivo, habilidades de muy bajo nivel para una sesión de tres horas. No se entregaron herramientas o conceptos que puedan aplicar de forma inmediata y significativa en su entorno profesional.",
+      "evidencia_timestamps": [
+        "[01:42:58]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 1.2,
+    "temas_cubiertos": 5,
+    "temas_totales": 7,
+    "porcentaje_practica": 0.0,
+    "porcentaje_teoria": 0.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Establecer un canal de comunicación directo",
+      "detalle": "El docente promovió activamente el uso de WhatsApp y se mostró accesible para consultas internas."
+    },
+    {
+      "titulo": "Conocer el nivel inicial del grupo",
+      "detalle": "Se aplicó una encuesta para entender el background y las expectativas de los participantes al inicio."
+    },
+    {
+      "titulo": "Fomentar el trabajo en equipo desde el inicio",
+      "detalle": "Se dedicó tiempo a la formación de grupos para el proyecto, enfatizando su importancia profesional."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Ejecutar los talleres prácticos del syllabus",
+      "detalle": "La sesión omitió por completo los dos talleres, componentes centrales de la metodología WE."
+    },
+    {
+      "titulo": "Priorizar el contenido sobre la administración",
+      "detalle": "Más de la mitad de la clase se dedicó a logística, dejando el contenido superficial y apurado."
+    },
+    {
+      "titulo": "Estructurar la sesión con la metodología WE",
+      "detalle": "Faltó la secuencia Descubre-Aprende-Crea, resultando en una clase desarticulada y sin flujo pedagógico."
+    },
+    {
+      "titulo": "Utilizar casos de negocio para enseñar",
+      "detalle": "Se usaron datasets genéricos en lugar de ejemplos empresariales que conecten con la realidad del alumno."
+    },
+    {
+      "titulo": "Asegurar la calidad del equipo técnico",
+      "detalle": "Múltiples y prolongados problemas de audio interrumpieron la comunicación y el ritmo de la sesión."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Usar encuestas para diagnosticar al grupo",
+      "detalle": "La encuesta inicial es una buena práctica para adaptar el contenido a las necesidades del alumnado."
+    },
+    {
+      "titulo": "Promover la formación de grupos de trabajo",
+      "detalle": "Facilitar la creación de equipos desde el inicio sienta las bases para el proyecto final."
+    },
+    {
+      "titulo": "Mantener accesibilidad para consultas fuera de clase",
+      "detalle": "Ofrecerse a responder dudas por WhatsApp o de forma interna genera confianza y apoya el aprendizaje."
+    },
+    {
+      "titulo": "Explicar claramente la estructura de evaluación",
+      "detalle": "Detallar la rúbrica y las expectativas para los entregables ayuda a los alumnos a organizarse."
+    },
+    {
+      "titulo": "Compartir recursos y materiales de forma organizada",
+      "detalle": "Proveer un enlace con carpetas estructuradas por sesión facilita el acceso a los materiales de clase."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Eliminar el bloque administrativo inicial extendido",
+      "detalle": "La logística debe ser breve o manejarse asincrónicamente para no consumir tiempo de aprendizaje valioso."
+    },
+    {
+      "titulo": "Integrar talleres prácticos con tiempo de ejecución",
+      "detalle": "La sesión debe incluir bloques donde los alumnos apliquen lo aprendido de forma autónoma."
+    },
+    {
+      "titulo": "Adoptar la estructura metodológica Descubre-Aprende-Crea",
+      "detalle": "La clase debe seguir un flujo pedagógico que motive, enseñe y permita aplicar los conocimientos."
+    },
+    {
+      "titulo": "Basar la enseñanza en casos y no solo en clics",
+      "detalle": "El foco debe pasar de la demostración de funciones a la resolución de problemas con la herramienta."
+    },
+    {
+      "titulo": "Reemplazar la demostración pasiva por práctica activa",
+      "detalle": "Los alumnos deben ejecutar las acciones en sus propios equipos, no solo observar al docente."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Iniciar la sesión con un caso motivador",
+      "detalle": "Presentar un dashboard finalizado en los primeros 5 minutos para generar interés y establecer el objetivo."
+    },
+    {
+      "titulo": "Realizar una prueba de audio completa antes",
+      "detalle": "Conectarse 15 minutos antes para verificar que el micrófono y la conexión funcionen correctamente."
+    },
+    {
+      "titulo": "Mover la formación de grupos al final",
+      "detalle": "Dedicar los primeros 90 minutos al contenido y dejar la logística de grupos para el cierre."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la sesión en bloques Descubre-Aprende-Crea",
+      "detalle": "Asignar tiempos específicos para la introducción del problema, la enseñanza de la herramienta y la práctica."
+    },
+    {
+      "titulo": "Convertir la demostración en un taller guiado",
+      "detalle": "Preparar un caso base y guiar a los alumnos para que ellos mismos realicen las importaciones."
+    },
+    {
+      "titulo": "Incorporar un mini-caso empresarial como hilo conductor",
+      "detalle": "Usar un único dataset de negocio (ej. ventas) para todas las demostraciones de la sesión."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "CRÍTICO",
+    "titular": "1.2/5 — Sesión introductoria fallida por desbalance crítico hacia la administración.",
+    "cuerpo": "La sesión muestra buenas intenciones en aspectos comunicacionales, como la creación de un grupo de WhatsApp y el uso de una encuesta inicial para conocer al grupo. El docente también enfatiza correctamente la importancia del trabajo en equipo, sentando una base para el proyecto del curso.\n\nSin embargo, la ejecución de la sesión presenta **dos fallas estructurales críticas**. La primera es una **gestión del tiempo severamente deficiente**. Más de la mitad de la clase, superando los 90 minutos, se dedicó a tareas administrativas, presentaciones y logística de grupos. Esto relegó el contenido académico a un espacio mínimo, impidiendo cualquier tipo de profundidad y contraviniendo el propósito de la sesión.\n\nLa segunda falla, consecuencia directa de la primera, es la **omisión total de la práctica**. Los dos talleres estipulados en el syllabus, que son el corazón de la metodología práctica de WE, fueron completamente eliminados. La sesión se convirtió en una demostración pasiva de software, donde los alumnos solo observaron al docente. La métrica de **0% de tiempo de práctica** es un indicador irrefutable de que no se cumplió con el enfoque de aprendizaje activo de la institución.\n\nEn su estado actual, la sesión no cumple con los estándares mínimos de calidad de WE. Requiere una reestructuración urgente para priorizar el contenido, integrar la práctica activa y gestionar el tiempo de manera efectiva. Con estos ajustes, el potencial de mejora es muy alto.",
+    "potencial_score": 3.9
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 189.6,
+    "fecha_auditoria": "2026-05-18T22:54:43.191172+00:00"
+  }
+}

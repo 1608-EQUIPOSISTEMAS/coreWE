@@ -1,7 +1,9 @@
 
 import integrationService from '../services/integration.service.js'
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 export default async function integrationRoutes (fastify) {
+  fastify.addHook('preHandler', authenticate)
 
   // =================================================================
   // SINCRONIZACIÓN ODS -> GOOGLE SHEETS

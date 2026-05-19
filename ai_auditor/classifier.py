@@ -23,6 +23,10 @@ from prompts import CLASSIFIER_INSTRUCTIONS, CLASSIFIER_RESPONSE_SCHEMA
 from transcription import TranscriptSegment, _seconds_to_hms
 
 
+class ClassifierError(RuntimeError):
+    """Falla del clasificador Gemini Flash. Distinguible de errores del auditor Pro."""
+
+
 Label = Literal["TEORIA", "PRACTICA", "MIXTO", "ADMIN"]
 
 
@@ -69,34 +73,105 @@ def chunk_transcript(
     return blocks
 
 
+# Tamaño del batch para chunking. Gemini 2.5 Flash usa "thinking" interno que
+# consume tokens del mismo presupuesto que el output: con 190 bloques en una
+# sola llamada, el thinking se comía 31K de 32K tokens y truncaba el JSON.
+# Con 30 bloques por batch (≈30 min de video), el output crudo son ~3K tokens
+# y queda headroom amplio (~29K) para el thinking. La clasificacion no necesita
+# contexto cruzado entre bloques, asi que partir no degrada la calidad.
+CLASSIFIER_BATCH_SIZE = 30
+
+
 def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
-    """Llama a Gemini UNA vez con todos los bloques. Devuelve clasificación."""
+    """Clasifica todos los bloques llamando a Gemini en lotes de CLASSIFIER_BATCH_SIZE.
+
+    Para sesiones largas (≥1h), una sola llamada agota max_output_tokens porque
+    el thinking del modelo 2.5 consume tokens del mismo presupuesto. Chunking
+    resuelve el limite y ademas permite identificar fallas a nivel de batch.
+
+    Lanza ClassifierError si CUALQUIER batch falla — preferimos abortar entero
+    que entregar un ratio incompleto que el auditor Pro use como verdad.
+    """
     if not blocks:
         return []
 
     client = genai.Client(api_key=GEMINI_API_KEY)
+    total = len(blocks)
+    out: list[ClassifiedBlock] = []
+    batch_num = 0
+    total_batches = (total + CLASSIFIER_BATCH_SIZE - 1) // CLASSIFIER_BATCH_SIZE
+
+    for start in range(0, total, CLASSIFIER_BATCH_SIZE):
+        batch_num += 1
+        batch = blocks[start:start + CLASSIFIER_BATCH_SIZE]
+        try:
+            classified = _classify_one_batch(client, batch, batch_num, total_batches)
+        except ClassifierError as e:
+            raise ClassifierError(
+                f"Batch {batch_num}/{total_batches} ({len(batch)} bloques, "
+                f"offset {start}): {e}"
+            ) from e
+        out.extend(classified)
+
+    return out
+
+
+def _classify_one_batch(
+    client: "genai.Client",
+    blocks: list[dict],
+    batch_num: int,
+    total_batches: int,
+) -> list[ClassifiedBlock]:
+    """Una sola llamada a Gemini para un batch. Garantiza len(out) == len(blocks)."""
     blocks_text = "\n\n".join(
         f"BLOQUE {i+1} [{_seconds_to_hms(b['inicio_seg'])} - {_seconds_to_hms(b['fin_seg'])}]:\n"
         f"{b['transcript_excerpt'] or '(silencio o sin transcripción)'}"
         for i, b in enumerate(blocks)
     )
-
-    prompt = f"Clasificá estos {len(blocks)} bloques:\n\n{blocks_text}"
-
-    response = client.models.generate_content(
-        model=GEMINI_CLASSIFIER_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=CLASSIFIER_INSTRUCTIONS,
-            response_mime_type="application/json",
-            response_schema=CLASSIFIER_RESPONSE_SCHEMA,
-            max_output_tokens=8000,
-            temperature=0,
-        ),
+    prompt = (
+        f"Clasificá estos {len(blocks)} bloques "
+        f"(batch {batch_num}/{total_batches}):\n\n{blocks_text}"
     )
 
-    parsed = _extract_json(response.text or "")
-    classified = parsed.get("segmentos", [])
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_CLASSIFIER_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=CLASSIFIER_INSTRUCTIONS,
+                response_mime_type="application/json",
+                response_schema=CLASSIFIER_RESPONSE_SCHEMA,
+                # 32000 con batches de 30 bloques: ~3K tokens de output real
+                # dejan ~29K para thinking. Headroom amplio.
+                max_output_tokens=32000,
+                temperature=0,
+            ),
+        )
+    except Exception as e:
+        raise ClassifierError(
+            f"Gemini {GEMINI_CLASSIFIER_MODEL} no respondió: {type(e).__name__}: {e}"
+        ) from e
+
+    finish_reason = _extract_finish_reason(response)
+    raw = response.text or ""
+    if finish_reason == "MAX_TOKENS":
+        raise ClassifierError(
+            f"Gemini cortó la respuesta por límite de tokens "
+            f"(output={len(raw)} chars). Reducí CLASSIFIER_BATCH_SIZE en classifier.py."
+        )
+
+    parsed = _extract_json(raw)
+    classified = parsed.get("segmentos") or []
+    if not classified:
+        raise ClassifierError(
+            f"Gemini devolvió 0 segmentos clasificados para {len(blocks)} bloques. "
+            f"Respuesta cruda (primeros 500 chars): {raw[:500]!r}"
+        )
+    if len(classified) < len(blocks):
+        print(
+            f"[classifier] WARN batch {batch_num}/{total_batches}: "
+            f"clasificación parcial {len(classified)}/{len(blocks)} bloques."
+        )
 
     out: list[ClassifiedBlock] = []
     for i, b in enumerate(blocks):
@@ -114,20 +189,45 @@ def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
     return out
 
 
+def _extract_finish_reason(response) -> str:
+    """Devuelve el finish_reason del primer candidato como string ('STOP', 'MAX_TOKENS', ...).
+
+    Espeja la helper de auditor.py para diagnosticar truncamientos por límite
+    de tokens de output, que en Gemini 2.5 incluye los thinking tokens internos.
+    """
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return "UNKNOWN"
+    fr = getattr(candidates[0], "finish_reason", None)
+    return getattr(fr, "name", str(fr)) if fr is not None else "UNKNOWN"
+
+
 def _extract_json(text: str) -> dict:
-    """Extrae JSON de la respuesta del LLM, tolerando markdown wrappers."""
+    """Extrae JSON de la respuesta del LLM, tolerando markdown wrappers.
+
+    Lanza ClassifierError si no se puede parsear; ningún fallback silencioso
+    porque el caller necesita saber que la respuesta de Gemini fue invalida.
+    """
     text = text.strip()
+    if not text:
+        raise ClassifierError("Gemini clasificador devolvió respuesta vacía")
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1)
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1:
-        return {"segmentos": []}
+        raise ClassifierError(
+            f"No se encontró JSON en la respuesta del clasificador. "
+            f"Primeros 300 chars: {text[:300]!r}"
+        )
     try:
         return json.loads(text[start:end + 1])
-    except json.JSONDecodeError:
-        return {"segmentos": []}
+    except json.JSONDecodeError as e:
+        raise ClassifierError(
+            f"JSON inválido en respuesta del clasificador: {e}. "
+            f"Primeros 300 chars: {text[start:end + 1][:300]!r}"
+        ) from e
 
 
 def compute_ratio(blocks: list[ClassifiedBlock]) -> dict:

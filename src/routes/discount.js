@@ -10,6 +10,7 @@ import {
 } from '../models/discount.schema.js'
 
 export default async function discountRoutes(fastify) {
+  fastify.addHook('preHandler', authenticate)
 
   fastify.post('/discountregister', {
     schema: discountRegisterSchema,

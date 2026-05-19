@@ -7,13 +7,32 @@ import cron from 'node-cron';
 import { pool } from '../config/db.js';
 import { sseClients } from '../routes/notifications.js'; // ← NUEVO
 
+// Lock distribuido por nombre de funcion: si la ejecucion previa aun corre, la
+// siguiente se salta el turno en vez de duplicarlo. Critico para rule5 y rule7
+// que corren cada minuto y procesan filas con UPDATE.
+function hashLockKey(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
 async function runCrmRule(functionName) {
   let client;
+  const lockKey = hashLockKey(functionName);
   try {
     client = await pool.connect();
-    console.log(`[CRM CRON] Iniciando ${functionName} a las ${new Date().toLocaleTimeString()}...`);
-    await client.query(`SELECT public.${functionName}()`);
-    console.log(`[CRM CRON] ✅ ${functionName} completado con éxito.`);
+    const { rows } = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+    if (!rows[0]?.acquired) {
+      console.warn(`[CRM CRON] ⏭ ${functionName} ya esta en ejecucion, se omite este turno.`);
+      return;
+    }
+    try {
+      console.log(`[CRM CRON] Iniciando ${functionName} a las ${new Date().toLocaleTimeString()}...`);
+      await client.query(`SELECT public.${functionName}()`);
+      console.log(`[CRM CRON] ✅ ${functionName} completado con éxito.`);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+    }
   } catch (err) {
     console.error(`[CRM CRON] ❌ Error en ${functionName}:`, err.message);
   } finally {

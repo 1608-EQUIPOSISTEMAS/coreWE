@@ -1,8 +1,26 @@
-import { pool } from '../config/db.js'
+import { pool, withTransaction } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
 import { ALIAS } from '../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../utils/catalog-helper.js'
 import { safeAsync } from '../utils/safe-async.js'
+import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../utils/student-contacts.sql.js'
+import { parseEmailCc } from '../utils/email-cc.js'
+import {
+  MEMBERSHIP_DURATION_MONTHS,
+  formatCalendarDate,
+  addMonthsCalendar,
+  isMembership
+} from '../utils/fico-formatters.js'
+import {
+  generatePassword,
+  buildOdooEmailBase,
+  buildUniqueOdooEmail
+} from '../utils/fico-odoo.helper.js'
+import {
+  getEnrollmentOdoo,
+  getEnrollmentProgramIds,
+  getProgramPrice as queryProgramPrice
+} from '../utils/fico-queries.sql.js'
 import odooClient from '../config/odooClient.js'
 import { sendEmail, sendFicoEmail } from '../config/zeptomail.js'
 import { buildConfirmacionHTML } from '../templates/confirmacion-inscripcion.js'
@@ -11,82 +29,8 @@ import { buildConfirmacionPagoHTML } from '../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from './pdf.service.js'
 import slackClient from '../config/slack.js'
-
-// =============================================================================
-// MEMBRESIA: helpers de fechas
-// =============================================================================
-// La membresia siempre es de 12 meses (regla de negocio actual). Si el dia de
-// manana se hace configurable por programa, este es el unico punto a tocar.
-const MEMBERSHIP_DURATION_MONTHS = 12
-
-// Formato dd/mm/yyyy usando getters UTC. Postgres parsea columnas DATE como
-// UTC-medianoche en JS; usar getDate()/toLocaleDateString aplicaria la TZ del
-// proceso Node y restaria 1 dia en prod (UTC) frente a local (Lima). UTC
-// getters leen los componentes "tal cual los puso pg".
-function formatCalendarDate (raw) {
-  if (!raw) return '---'
-  const d = raw instanceof Date ? raw : new Date(raw)
-  if (isNaN(d)) return '---'
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${dd}/${mm}/${d.getUTCFullYear()}`
-}
-
-// Suma meses preservando "ultimo dia del mes" cuando el destino es mas corto
-// (31 ene + 1 mes = 28/29 feb, no 3 mar). setUTCMonth puro causa overflow al
-// mes siguiente, asi que detectamos el cambio de dia y rebobinamos a fin de mes.
-function addMonthsCalendar (raw, months) {
-  if (!raw) return null
-  const base = raw instanceof Date ? new Date(raw.getTime()) : new Date(raw)
-  if (isNaN(base)) return null
-  const originalDay = base.getUTCDate()
-  base.setUTCMonth(base.getUTCMonth() + months)
-  if (base.getUTCDate() !== originalDay) base.setUTCDate(0)
-  return base
-}
-
-// =============================================================================
-// SQL FRAGMENTS REUSABLES
-// =============================================================================
-// Source of Truth para resolver datos de contacto del alumno.
-// Las inscripciones FICO directas no crean lead, por lo que `leads.origin_email`
-// es NULL — el correo y telefono viven solo en `person_contacts`.
-// Cualquier query que necesite estos datos DEBE usar estos fragmentos.
-
-// Resuelve email del alumno: lead.origin_email -> person_contacts (way_email)
-// Requiere alias `l` (leads) y `per` (persons) en la query base.
-const STUDENT_EMAIL_SQL = `
-  COALESCE(
-    l.origin_email,
-    (SELECT pc.value FROM person_contacts pc
-       WHERE pc.person_id = per.person_id
-         AND pc.cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_email' LIMIT 1)
-         AND pc.active = 'Y'
-       ORDER BY pc.registration_date DESC LIMIT 1)
-  )`
-
-// Resuelve telefono del alumno: lead.origin_phone -> person_contacts (way_phone)
-const STUDENT_PHONE_SQL = `
-  COALESCE(
-    l.origin_phone,
-    (SELECT pc.value FROM person_contacts pc
-       WHERE pc.person_id = per.person_id
-         AND pc.cat_way_contact = (SELECT catalog_id FROM catalog WHERE alias = 'we_way_contact_phone' LIMIT 1)
-         AND pc.active = 'Y'
-       ORDER BY pc.registration_date DESC LIMIT 1)
-  )`
-
-// Parsea un string de CCs a array de emails validos. Acepta separadores `,` y `;`.
-// Solo emails con formato basico pasan; los invalidos se descartan silenciosamente
-// (el frontend ya valida antes de enviar; este parser es defensa en profundidad).
-function parseEmailCc (raw) {
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw.filter(Boolean).map(e => String(e).trim()).filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
-  return String(raw)
-    .split(/[,;]/)
-    .map(e => e.trim())
-    .filter(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
-}
+import { refreshEnrollmentMv } from './fico-mv-refresh.cron.js'
+import { enqueue as enqueueJob } from './job-queue.service.js'
 
 async function enrollmentList (payload = {}) {
   const rows = await callProcedureReturningRows(
@@ -106,13 +50,62 @@ async function enrollmentList (payload = {}) {
   }
 }
 
+// KPIs diarios (hoy vs ayer) usados por el header del modulo FICO.
+// Reemplaza el patron previo de llamar a enrollmentList(size=200) x2 — que
+// reusaba el SP del listado (5-7s c/u) solo para contar y sumar. Esta funcion
+// agrega con COUNT FILTER + SUM en una sola query (~250ms en prod).
+//
+// _today y _yesterday deben venir como DATE en zona Lima (el frontend ya las
+// calcula con la misma logica). El SP de BD asume registration_date en TZ del
+// servidor y filtra por rango [_yesterday, _today + 1 day).
+async function getKpisDaily ({ today, yesterday }) {
+  if (!today || !yesterday) {
+    throw new Error('getKpisDaily requiere today y yesterday en formato YYYY-MM-DD')
+  }
+  const { rows } = await pool.query(
+    'SELECT day_label, total, confirmed, pending, amount FROM public.sp_fico_kpis_daily($1::date, $2::date)',
+    [today, yesterday]
+  )
+  // Aplanar a { today: {...}, yesterday: {...} } para que el frontend no tenga
+  // que rebuscar por day_label.
+  const out = { today: null, yesterday: null }
+  for (const r of rows) {
+    const bucket = {
+      total: Number(r.total),
+      confirmed: Number(r.confirmed),
+      pending: Number(r.pending),
+      amount: Number(r.amount)
+    }
+    if (r.day_label === 'today') out.today = bucket
+    else if (r.day_label === 'yesterday') out.yesterday = bucket
+  }
+  return out
+}
+
 // Lista distinta de "Asesor" tal y como aparece en la columna del listado FICO.
 // Replica la misma expresion CASE WHEN que arma sp_fico_enrollment_list para
 // `seller_agent_name`, de modo que el dropdown del filtro Asesor matchee
 // exactamente los strings que el SP usa para comparar el array `advisors`.
 // Incluye canales (B2B, WEB, SA), asesores solos (AE30) y combinaciones
 // (B2B - AE30, WEB - AE30). Scope: solo inscripciones activas.
+//
+// Cache in-memory con TTL 5 min: la lista cambia solo cuando se crea/edita una
+// inscripcion con un asesor nuevo (raro). Invalidar con invalidateAdvisorsCache()
+// desde flujos que muten enrollments.seller_agent_id.
+const ADVISORS_TTL_MS = 5 * 60 * 1000
+let _advisorsCache = null
+let _advisorsCachedAt = 0
+
+function invalidateAdvisorsCache () {
+  _advisorsCache = null
+  _advisorsCachedAt = 0
+}
+
 async function enrollmentAdvisorsList () {
+  const now = Date.now()
+  if (_advisorsCache && (now - _advisorsCachedAt) < ADVISORS_TTL_MS) {
+    return _advisorsCache
+  }
   const sql = `
     SELECT DISTINCT
       CASE
@@ -128,7 +121,9 @@ async function enrollmentAdvisorsList () {
     ORDER BY 1
   `
   const { rows } = await pool.query(sql)
-  return rows.map(r => r.seller_agent_name).filter(Boolean)
+  _advisorsCache = rows.map(r => r.seller_agent_name).filter(Boolean)
+  _advisorsCachedAt = now
+  return _advisorsCache
 }
 
 
@@ -335,57 +330,67 @@ async function paymentDetailGet ({ enrollment_id }) {
 }
 
 
-async function confirmPayment (payload) {
-  // Validacion previa: si la inscripcion es padre con hijos, todos los hijos no convalidados
-  // deben tener una edicion asignable (en el arbol del padre o custom). Si falta, abortar.
-  if (payload.enrollment_id) {
-    try {
-      const validation = await validateChildEnrollmentSetup({ enrollmentId: payload.enrollment_id })
-      if (!validation.ok) {
-        return {
-          result: 2,
-          message: 'Faltan ediciones por configurar antes de confirmar el pago',
-          validation_errors: validation.errors
-        }
+// Si la inscripcion es padre con hijos, todos los hijos no convalidados deben
+// tener una edicion asignable (en el arbol del padre o custom) antes de
+// confirmar el pago. Devuelve una respuesta de error (result=2) si falta algo
+// o null si la validacion paso (o no aplica por no tener hijos).
+async function _confirmPaymentValidateChildren (enrollmentId) {
+  if (!enrollmentId) return null
+  try {
+    const validation = await validateChildEnrollmentSetup({ enrollmentId })
+    if (!validation.ok) {
+      return {
+        result: 2,
+        message: 'Faltan ediciones por configurar antes de confirmar el pago',
+        validation_errors: validation.errors
       }
-    } catch (vErr) {
-      console.error('[confirmPayment] validateChildEnrollmentSetup falló:', vErr.message, vErr.stack)
-      // No abortamos: los enrollments sin estructura de hijos no requieren validacion.
     }
+  } catch (vErr) {
+    console.error('[confirmPayment] validateChildEnrollmentSetup falló:', vErr.message, vErr.stack)
+    // No abortamos: los enrollments sin estructura de hijos no requieren validacion.
   }
+  return null
+}
 
-  // Guard de idempotencia: el SP `sp_fico_confirm_payment` no deduplica — cada
-  // llamada hace INSERT en `payments`. Si el operador re-cliquea Confirmar (o
-  // dos ventanas de FICO confirman a la vez), terminamos con filas duplicadas
-  // que distorsionan reportes financieros (ej. saldo del Sheets sync).
-  // Si la cuota objetivo del action ya esta en estado 'paid' (cualquier alias),
-  // retornamos exito idempotente sin tocar payments ni efectos posteriores.
-  if (payload.enrollment_id && ['confirm_contado', 'confirm_plan'].includes(payload.action)) {
-    // confirm_contado paga en una sola cuota (installment_number=1).
-    // confirm_plan paga la cuota inicial / reserva (installment_number=0).
-    const targetInstNum = payload.action === 'confirm_contado' ? 1 : 0
-    try {
-      const { rows: chk } = await pool.query(`
-        SELECT c.alias AS status_alias
-          FROM payment_installments pi
-          LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
-         WHERE pi.enrollment_id = $1 AND pi.installment_number = $2
-         LIMIT 1
-      `, [payload.enrollment_id, targetInstNum])
-      const alreadyPaid = chk?.[0] && ['we_inst_paid', 'we_payment_status_paid'].includes(chk[0].status_alias)
-      if (alreadyPaid) {
-        console.warn(`[confirmPayment] Idempotente: enrollment=${payload.enrollment_id} action=${payload.action} ya estaba confirmado`)
-        return {
-          result: 1,
-          message: 'El pago ya fue confirmado previamente',
-          already_confirmed: true
-        }
+// Guard de idempotencia: si la cuota objetivo del action ya esta en estado
+// 'paid' (cualquier alias), retorna exito idempotente sin tocar payments ni
+// efectos posteriores. Cubre re-click de FICO o concurrencia de ventanas.
+async function _confirmPaymentIdempotencyGuard (enrollmentId, action) {
+  if (!enrollmentId || !['confirm_contado', 'confirm_plan'].includes(action)) return null
+
+  // confirm_contado paga en una sola cuota (installment_number=1).
+  // confirm_plan paga la cuota inicial / reserva (installment_number=0).
+  const targetInstNum = action === 'confirm_contado' ? 1 : 0
+  try {
+    const { rows: chk } = await pool.query(`
+      SELECT c.alias AS status_alias
+        FROM payment_installments pi
+        LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = $1 AND pi.installment_number = $2
+       LIMIT 1
+    `, [enrollmentId, targetInstNum])
+    const alreadyPaid = chk?.[0] && ['we_inst_paid', 'we_payment_status_paid'].includes(chk[0].status_alias)
+    if (alreadyPaid) {
+      console.warn(`[confirmPayment] Idempotente: enrollment=${enrollmentId} action=${action} ya estaba confirmado`)
+      return {
+        result: 1,
+        message: 'El pago ya fue confirmado previamente',
+        already_confirmed: true
       }
-    } catch (chkErr) {
-      console.error('[confirmPayment] Error chequeando idempotencia:', chkErr.message)
-      // Si el chequeo falla por algo raro, dejamos que el SP corra (comportamiento previo).
     }
+  } catch (chkErr) {
+    console.error('[confirmPayment] Error chequeando idempotencia:', chkErr.message)
+    // Si el chequeo falla por algo raro, dejamos que el SP corra (comportamiento previo).
   }
+  return null
+}
+
+async function confirmPayment (payload) {
+  const childErr = await _confirmPaymentValidateChildren(payload.enrollment_id)
+  if (childErr) return childErr
+
+  const idemHit = await _confirmPaymentIdempotencyGuard(payload.enrollment_id, payload.action)
+  if (idemHit) return idemHit
 
   // Capturamos el max payment_id ANTES del SP. Cualquier payment activo con id <= a este
   // valor es un placeholder previo creado por sp_comercial_enrollment_register cuando el
@@ -479,11 +484,7 @@ async function confirmPayment (payload) {
     }
 
     try {
-      const { rows: enrollOdoo } = await pool.query(
-        'SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1',
-        [payload.enrollment_id]
-      )
-      let odooOrderId = enrollOdoo?.[0]?.odoo_order_id
+      let odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
 
       if (!odooOrderId) {
         const odooResult = await enrollInOdoo({ enrollmentId: payload.enrollment_id })
@@ -495,11 +496,7 @@ async function confirmPayment (payload) {
             userId: payload.user_id,
             details: `Odoo user ${odooResult.odoo_user_id} - ${cursoLabel}`
           })
-          const { rows: updated } = await pool.query(
-            'SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1',
-            [payload.enrollment_id]
-          )
-          odooOrderId = updated?.[0]?.odoo_order_id
+          odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
         }
       }
 
@@ -812,64 +809,93 @@ async function createChildEnrollments ({ enrollmentId, userId }) {
   return { isE0, createdChildren }
 }
 
-function generatePassword (length = 8) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-  let pwd = ''
-  for (let i = 0; i < length; i++) pwd += chars[Math.floor(Math.random() * chars.length)]
-  return pwd
-}
+// Pre-chequea si el enrollment ya esta en Odoo (idempotencia) o si es de
+// membresia (otro flujo). Devuelve `{ skip: true, result }` para hacer early
+// return desde enrollInOdoo, o `null` cuando hay que continuar con el sync.
+async function _enrollInOdooPreCheck (enrollmentId) {
+  const { rows: chk } = await pool.query(`
+    SELECT pv.abbreviation, prog.is_membership,
+           e.odoo_order_id, e.odoo_user_id, e.odoo_student_id, e.odoo_email
+    FROM enrollments e
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
 
-function buildOdooEmailBase (firstName, lastName) {
-  const normalize = s => (s || '').toLowerCase().trim()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z\s]/g, '').trim()
-  const first = normalize(firstName).split(/\s+/)[0] || ''
-  const last = normalize(lastName).split(/\s+/)[0] || ''
-  return { base: `${last}.${first}`, domain: '@weeducacion.edu.pe' }
-}
-
-async function buildUniqueOdooEmail (firstName, lastName, documentNumber) {
-  const { base, domain } = buildOdooEmailBase(firstName, lastName)
-  const candidateEmail = `${base}${domain}`
-
-  const { rows: ownEnroll } = await pool.query(`
-    SELECT odoo_email FROM enrollments
-    WHERE odoo_email = $1
-    AND enrollment_id IN (
-      SELECT e.enrollment_id FROM enrollments e
-      JOIN customers c ON c.customer_id = e.customer_id
-      JOIN persons p ON p.person_id = c.person_id
-      WHERE p.document_number = $2
-    )
-    LIMIT 1
-  `, [candidateEmail, documentNumber])
-
-  if (ownEnroll?.length > 0) return candidateEmail
-
-  const isEmailAvailable = async (email) => {
-    const { rows: inDb } = await pool.query(
-      'SELECT enrollment_id FROM enrollments WHERE odoo_email = $1 LIMIT 1',
-      [email]
-    )
-    if (inDb?.length) return false
-    try {
-      const odooUser = await odooClient.searchUserByEmail(email)
-      if (odooUser) return false
-    } catch (err) {
-      console.warn('[buildUniqueOdooEmail] Odoo lookup failed, assuming available:', err.message)
+  if (chk?.[0] && isMembership(chk[0].abbreviation, chk[0].is_membership)) {
+    return { skip: true, result: await enrollMembershipInOdoo({ enrollmentId }) }
+  }
+  if (chk?.[0]?.odoo_order_id) {
+    console.log(`[enrollInOdoo] Skip — enrollment ${enrollmentId} ya tiene odoo_order_id=${chk[0].odoo_order_id}`)
+    return {
+      skip: true,
+      result: {
+        success: true,
+        skipped: true,
+        odoo_user_id: chk[0].odoo_user_id,
+        odoo_student_id: chk[0].odoo_student_id,
+        odoo_email: chk[0].odoo_email,
+        order_id: chk[0].odoo_order_id
+      }
     }
-    return true
   }
+  return null
+}
 
-  if (await isEmailAvailable(candidateEmail)) return candidateEmail
+// Crea la sale order Odoo con las cuotas planificadas y activa los fees.
+// Se ejecuta despues del sync del usuario. Si falla la creacion de la orden,
+// loguea pero no revierte el sync — el alumno queda en Odoo, solo le falta
+// la cobranza, que FICO puede crear manualmente.
+async function _createOdooOrderAndActivate ({ enrollmentId, result, odooActivation, slideGroupId, createEmail }) {
+  try {
+    const { rows: instRows } = await pool.query(`
+      SELECT installment_number, amount, due_date FROM payment_installments
+      WHERE enrollment_id = $1 AND installment_number > 0 ORDER BY installment_number
+    `, [enrollmentId])
 
-  for (let i = 2; i <= 20; i++) {
-    const altEmail = `${base}${i}${domain}`
-    if (await isEmailAvailable(altEmail)) return altEmail
+    const { rows: enrollData } = await pool.query(`
+      SELECT e.total_amount, e.discount_amount, e.list_price, c.alias AS currency_alias
+      FROM enrollments e
+      LEFT JOIN catalog c ON c.catalog_id = e.cat_currency
+      WHERE e.enrollment_id = $1
+    `, [enrollmentId])
+    const netAmount = Number(enrollData?.[0]?.total_amount) || 0
+    const currencyCode = enrollData?.[0]?.currency_alias === 'we_currency_usd' ? 'USD' : 'PEN'
+
+    const orderResult = await odooClient.createSaleOrderWithFees({
+      partnerId: result.odoo_partner_id,
+      productName: odooActivation,
+      slideGroupId,
+      amount: netAmount,
+      currency: currencyCode,
+      partnerEmail: createEmail,
+      installments: instRows.length > 0 ? instRows.map(i => ({
+        amount: Number(i.amount),
+        due_date: i.due_date ? new Date(i.due_date).toISOString().slice(0, 10) : null
+      })) : null
+    })
+
+    if (orderResult.success) {
+      await pool.query(`UPDATE enrollments SET odoo_order_id = $1 WHERE enrollment_id = $2`, [orderResult.order_id, enrollmentId])
+
+      // Activar cuotas: pasar de 'borrador' a 'pendiente' inmediatamente.
+      // Aplica para TODOS los flujos (FICO directo, courseChange, E0 children, etc.)
+      // sin esperar a confirmPayment.
+      await safeAsync('[enrollInOdoo][Odoo] activateFees', async () => {
+        const activated = await odooClient.activateFees(orderResult.order_id)
+        if (activated?.activated > 0) {
+          await logAudit({
+            enrollmentId,
+            action: 'odoo_fees_activated',
+            userId: null,
+            details: `${activated.activated} cuota(s) Odoo activadas (Borrador -> Pendiente)`
+          })
+        }
+      })
+    }
+  } catch (orderErr) {
+    console.error('[enrollInOdoo] Error creando orden de venta:', orderErr.message, orderErr.data || '')
   }
-
-  const suffix = documentNumber ? documentNumber.slice(-3) : String(Date.now()).slice(-4)
-  return `${base}.${suffix}${domain}`
 }
 
 async function enrollInOdoo ({ enrollmentId }) {
@@ -887,28 +913,8 @@ async function enrollInOdoo ({ enrollmentId }) {
     return { success: true, skipped: true, reason: 'e0_parent', odoo_user_id: null }
   }
 
-  const { rows: chk } = await pool.query(`
-    SELECT pv.abbreviation, prog.is_membership,
-           e.odoo_order_id, e.odoo_user_id, e.odoo_student_id, e.odoo_email
-    FROM enrollments e
-    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-    LEFT JOIN programs prog ON prog.program_id = pv.program_id
-    WHERE e.enrollment_id = $1
-  `, [enrollmentId])
-  if (chk?.[0] && isMembership(chk[0].abbreviation, chk[0].is_membership)) {
-    return enrollMembershipInOdoo({ enrollmentId })
-  }
-  if (chk?.[0]?.odoo_order_id) {
-    console.log(`[enrollInOdoo] Skip — enrollment ${enrollmentId} ya tiene odoo_order_id=${chk[0].odoo_order_id}`)
-    return {
-      success: true,
-      skipped: true,
-      odoo_user_id: chk[0].odoo_user_id,
-      odoo_student_id: chk[0].odoo_student_id,
-      odoo_email: chk[0].odoo_email,
-      order_id: chk[0].odoo_order_id
-    }
-  }
+  const preCheck = await _enrollInOdooPreCheck(enrollmentId)
+  if (preCheck) return preCheck.result
 
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.program_edition_id,
@@ -1040,58 +1046,8 @@ async function enrollInOdoo ({ enrollmentId }) {
       WHERE enrollment_id = $4
     `, [result.odoo_user_id, result.odoo_student_id, result.password_set || null, enrollmentId, odooEmailFinal])
 
-    try {
-      const { rows: instRows } = await pool.query(`
-        SELECT installment_number, amount, due_date FROM payment_installments
-        WHERE enrollment_id = $1 AND installment_number > 0 ORDER BY installment_number
-      `, [enrollmentId])
+    await _createOdooOrderAndActivate({ enrollmentId, result, odooActivation, slideGroupId, createEmail })
 
-      const { rows: enrollData } = await pool.query(`
-        SELECT e.total_amount, e.discount_amount, e.list_price, c.alias AS currency_alias
-        FROM enrollments e
-        LEFT JOIN catalog c ON c.catalog_id = e.cat_currency
-        WHERE e.enrollment_id = $1
-      `, [enrollmentId])
-      const netAmount = Number(enrollData?.[0]?.total_amount) || 0
-      const currencyCode = enrollData?.[0]?.currency_alias === 'we_currency_usd' ? 'USD' : 'PEN'
-
-      const orderResult = await odooClient.createSaleOrderWithFees({
-        partnerId: result.odoo_partner_id,
-        productName: odooActivation,
-        slideGroupId,
-        amount: netAmount,
-        currency: currencyCode,
-        partnerEmail: createEmail,
-        installments: instRows.length > 0 ? instRows.map(i => ({
-          amount: Number(i.amount),
-          due_date: i.due_date ? new Date(i.due_date).toISOString().slice(0, 10) : null
-        })) : null
-      })
-
-      if (orderResult.success) {
-        await pool.query(`UPDATE enrollments SET odoo_order_id = $1 WHERE enrollment_id = $2`, [orderResult.order_id, enrollmentId])
-
-        // Activar cuotas: pasar de 'borrador' a 'pendiente' inmediatamente.
-        // Aplica para TODOS los flujos (FICO directo, courseChange, E0 children, etc.)
-        // sin esperar a confirmPayment.
-        await safeAsync('[enrollInOdoo][Odoo] activateFees', async () => {
-          const activated = await odooClient.activateFees(orderResult.order_id)
-          if (activated?.activated > 0) {
-            await logAudit({
-              enrollmentId,
-              action: 'odoo_fees_activated',
-              userId: null,
-              details: `${activated.activated} cuota(s) Odoo activadas (Borrador -> Pendiente)`
-            })
-          }
-        })
-      }
-    } catch (orderErr) {
-      console.error('[enrollInOdoo] Error creando orden de venta:', orderErr.message, orderErr.data || '')
-    }
-  }
-
-  if (result.success) {
     await logAudit({ enrollmentId, action: 'odoo_enrolled', userId: null, details: `Inscrito en Odoo: user ${result.odoo_user_id}, curso ${searchName}` })
   }
 
@@ -1325,6 +1281,64 @@ async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null 
   }
 }
 
+// Resuelve si el correo de confirmacion debe ir como "alumno nuevo" (con
+// credenciales 1234567) o como "alumno antiguo" (con bloque "recupera tu
+// password"). Combina dos senales: si ya hubo un envio previo exitoso, y si
+// el alumno tiene un odoo_user_id en otro enrollment (o si el odoo_email es
+// su correo personal, no el sintetico del dominio interno).
+async function _resolveConfirmationEmailMode ({ enrollmentId, odooEmail }) {
+  const { rows: priorSends } = await pool.query(`
+    SELECT 1 FROM public.email_logs
+    WHERE enrollment_id = $1 AND template_type = 'confirmacion' AND status = 'sent'
+    LIMIT 1
+  `, [enrollmentId])
+  const isFirstSend = !priorSends?.[0]
+
+  const { rows: priorOdoo } = await pool.query(`
+    SELECT 1
+    FROM enrollments e
+    WHERE e.customer_id = (SELECT customer_id FROM enrollments WHERE enrollment_id = $1)
+      AND e.enrollment_id <> $1
+      AND e.odoo_user_id IS NOT NULL
+    LIMIT 1
+  `, [enrollmentId])
+  const hasPriorEnrollment = !!priorOdoo?.[0]
+  const SYNTHETIC_DOMAIN = '@weeducacion.edu.pe'
+  const linkedToExistingOdoo = !!odooEmail && !String(odooEmail).toLowerCase().endsWith(SYNTHETIC_DOMAIN)
+  const isReturningStudent = hasPriorEnrollment || linkedToExistingOdoo
+  const isNew = isFirstSend && !isReturningStudent
+
+  return { isFirstSend, isReturningStudent, isNew }
+}
+
+// Genera el PDF de cronograma para inscripciones de programa padre (ESP/PEE/
+// Diplomado) en modalidad no-online. Devuelve `{ attachments: [...] }` en
+// exito o `{ error: '...' }` si el PDF fallo o salio vacio. El caller debe
+// abortar el envio en caso de error: preferimos no entregar al alumno un
+// correo de padre sin su cronograma adjunto.
+async function _buildCronogramaAttachment ({ enrollmentId, programName }) {
+  let pdfBuffer
+  try {
+    pdfBuffer = await generateCronogramaPdf({ enrollmentId })
+  } catch (pdfErr) {
+    console.error(`[sendConfirmationEmail] Error generando PDF cronograma para enrollment #${enrollmentId}:`, pdfErr.message, pdfErr.stack)
+    return { error: `No se pudo generar el PDF de cronograma (${pdfErr.message}). El correo NO fue enviado para evitar entregar al alumno un correo de programa padre sin su cronograma adjunto.` }
+  }
+  if (!pdfBuffer || pdfBuffer.length === 0) {
+    console.error(`[sendConfirmationEmail] PDF cronograma vacio para enrollment #${enrollmentId}`)
+    return { error: 'El PDF de cronograma se genero vacio (0 bytes). El correo NO fue enviado.' }
+  }
+  const safeName = (programName || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+  console.log(`[sendConfirmationEmail] PDF cronograma generado OK (${pdfBuffer.length} bytes) para enrollment #${enrollmentId}`)
+  return {
+    attachments: [{
+      filename: `Cronograma-${safeName}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }]
+  }
+}
+
 async function sendConfirmationEmail ({ enrollmentId, cc }) {
   // Reintento manual: dejar la timeline limpia. Si el envio nuevo falla, solo
   // veremos esa falla; si tiene exito, no queda rastro de intentos previos
@@ -1433,43 +1447,10 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
   const firstName = (data.first_name || '').trim().split(/\s+/)[0] || ''
   const lastName = (data.last_name || '').trim().split(/\s+/)[0] || ''
 
-  const { rows: freshEnroll } = await pool.query(
-    'SELECT odoo_user_id, odoo_email, odoo_password FROM enrollments WHERE enrollment_id = $1', [enrollmentId]
-  )
-  const odooEmail = freshEnroll?.[0]?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
+  const freshEnroll = await getEnrollmentOdoo(enrollmentId)
+  const odooEmail = freshEnroll?.odoo_email || data.odoo_email || `${lastName.toLowerCase()}.${firstName.toLowerCase()}@weeducacion.edu.pe`
 
-  // Resend detection: si ya hubo un envio exitoso ('confirmacion' status='sent')
-  // para esta inscripcion, lo tratamos como reenvio -> bloque "ya estas registrado,
-  // recupera password aqui" en lugar de exponer credenciales otra vez.
-  const { rows: priorSends } = await pool.query(`
-    SELECT 1 FROM public.email_logs
-    WHERE enrollment_id = $1 AND template_type = 'confirmacion' AND status = 'sent'
-    LIMIT 1
-  `, [enrollmentId])
-  const isFirstSend = !priorSends?.[0]
-
-  // `isNew` controla si el correo lleva credenciales (USUARIO + 1234567) o el
-  // bloque "tu cuenta ya existe, recupera tu password". Dos vias para detectar
-  // alumno antiguo:
-  //   1) Tiene OTRO enrollment previo en NUESTRA BD con odoo_user_id seteado.
-  //   2) El odoo_email del enrollment actual es el correo personal del alumno
-  //      (no el synthetic apellido.nombre@weeducacion.edu.pe). Eso pasa cuando
-  //      enrollInOdoo enlazo a un res.users que ya existia en Odoo desde antes
-  //      (creado por flujo viejo / GAS / manual). En ese caso el alumno ya
-  //      tiene su contraseña real, mandar 1234567 lo confunde.
-  const { rows: priorOdoo } = await pool.query(`
-    SELECT 1
-    FROM enrollments e
-    WHERE e.customer_id = (SELECT customer_id FROM enrollments WHERE enrollment_id = $1)
-      AND e.enrollment_id <> $1
-      AND e.odoo_user_id IS NOT NULL
-    LIMIT 1
-  `, [enrollmentId])
-  const hasPriorEnrollment = !!priorOdoo?.[0]
-  const SYNTHETIC_DOMAIN = '@weeducacion.edu.pe'
-  const linkedToExistingOdoo = !!odooEmail && !String(odooEmail).toLowerCase().endsWith(SYNTHETIC_DOMAIN)
-  const isReturningStudent = hasPriorEnrollment || linkedToExistingOdoo
-  const isNew = isFirstSend && !isReturningStudent
+  const { isNew } = await _resolveConfirmationEmailMode({ enrollmentId, odooEmail })
 
   const { rows: childCheck } = await pool.query(`
     SELECT 1 FROM program_version_structure pvs
@@ -1488,30 +1469,9 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
   const attachments = []
   if (isParentProgram && !isOnlineSend) {
     console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
-    let pdfBuffer
-    try {
-      pdfBuffer = await generateCronogramaPdf({ enrollmentId })
-    } catch (pdfErr) {
-      console.error(`[sendConfirmationEmail] Error generando PDF cronograma para enrollment #${enrollmentId}:`, pdfErr.message, pdfErr.stack)
-      return {
-        success: false,
-        error: `No se pudo generar el PDF de cronograma (${pdfErr.message}). El correo NO fue enviado para evitar entregar al alumno un correo de programa padre sin su cronograma adjunto.`
-      }
-    }
-    if (!pdfBuffer || pdfBuffer.length === 0) {
-      console.error(`[sendConfirmationEmail] PDF cronograma vacio para enrollment #${enrollmentId}`)
-      return {
-        success: false,
-        error: 'El PDF de cronograma se genero vacio (0 bytes). El correo NO fue enviado.'
-      }
-    }
-    const safeName = (data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
-    attachments.push({
-      filename: `Cronograma-${safeName}.pdf`,
-      content: pdfBuffer,
-      contentType: 'application/pdf'
-    })
-    console.log(`[sendConfirmationEmail] PDF cronograma generado OK (${pdfBuffer.length} bytes) para enrollment #${enrollmentId}`)
+    const pdfResult = await _buildCronogramaAttachment({ enrollmentId, programName: data.program_name })
+    if (pdfResult.error) return { success: false, error: pdfResult.error }
+    attachments.push(...pdfResult.attachments)
   }
 
   // Para programas padre (ESP/PEE/DIPLOMADO), siempre ocultamos el bloque de WhatsApp
@@ -1718,31 +1678,36 @@ async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, c
     throw new Error('Esta cuota ya esta pagada')
   }
 
-  await pool.query(
-    'UPDATE payment_installments SET cat_status = 4454 WHERE installment_id = $1',
-    [installmentId]
-  )
-
   const paidAt = paymentDate ? new Date(paymentDate) : new Date()
 
-  await pool.query(`
-    INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
-      cat_method_payment, cat_payment_type, cat_settlement_status,
-      settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
-    VALUES ($1, $2, $3, $4, $5, $6, 3115, 2573, $7, $8, 'Y', $9, NOW())
-  `, [enrollmentId, installmentId, inst.amount, paidAt, transactionCode || '', catPaymentMedium || null, bankAccountId || null, voucherUrl || null, userId])
+  // Las cuatro escrituras (estado de cuota, registro de pago, moneda y token)
+  // deben aplicarse de forma atomica: si una falla a media operacion, no podemos
+  // dejar la cuota marcada como pagada sin la fila en payments correspondiente.
+  await withTransaction(async client => {
+    await client.query(
+      'UPDATE payment_installments SET cat_status = 4454 WHERE installment_id = $1',
+      [installmentId]
+    )
 
-  if (catCurrency) {
-    await pool.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])
-  }
+    await client.query(`
+      INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
+        cat_method_payment, cat_payment_type, cat_settlement_status,
+        settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
+      VALUES ($1, $2, $3, $4, $5, $6, 3115, 2573, $7, $8, 'Y', $9, NOW())
+    `, [enrollmentId, installmentId, inst.amount, paidAt, transactionCode || '', catPaymentMedium || null, bankAccountId || null, voucherUrl || null, userId])
 
-  try {
-    await pool.query(
+    if (catCurrency) {
+      await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])
+    }
+
+    await client.query(
       "UPDATE payment_tokens SET status = 'confirmed', confirmed_by = $1, updated_at = NOW() WHERE enrollment_id = $2 AND status != 'confirmed'",
       [userId, enrollmentId]
     )
-  } catch (e) {}
+  })
 
+  // Audit y sync con Odoo viven fuera de la transaccion: son side-effects que
+  // no deben revertir el cobro si fallan.
   await logAudit({
     enrollmentId,
     action: 'approved',
@@ -1783,6 +1748,42 @@ async function resolveBusinessEntityFromAccount (accountId) {
   return rows?.[0]?.description || null
 }
 
+async function _insertPrePaymentPlaceholder ({ enrollmentId, fields, userId }) {
+  const { rows: instRows } = await pool.query(
+    `SELECT installment_id, amount FROM payment_installments
+      WHERE enrollment_id = $1 AND installment_number = 0
+      LIMIT 1`,
+    [enrollmentId]
+  )
+  const inst = instRows?.[0]
+  if (!inst) return
+
+  const [typeId, statusId] = await Promise.all([
+    getCatalogIdByAlias(ALIAS.PAYMENT_TYPE_INITIAL),
+    getCatalogIdByAlias(ALIAS.SETTLEMENT_STATUS_PENDING)
+  ])
+
+  await pool.query(`
+    INSERT INTO payments (
+      enrollment_id, installment_id, amount, payment_date,
+      transaction_code, cat_method_payment, settled_in_account_id,
+      cat_payment_type, cat_settlement_status, active,
+      user_registration_id, registration_date
+    ) VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, 'Y', $10, NOW())
+  `, [
+    enrollmentId,
+    inst.installment_id,
+    inst.amount,
+    fields.payment_date || null,
+    fields.transaction_code || '',
+    fields.cat_payment_medium || null,
+    fields.bank_account_id || null,
+    typeId,
+    statusId,
+    userId || 9
+  ])
+}
+
 async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }) {
   const changes = {}
 
@@ -1820,25 +1821,32 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
       pIdx++
     }
   }
-  if (pSets.length > 0 && oldP.payment_id) {
-    pParams.push(oldP.payment_id)
-    await pool.query(`UPDATE payments SET ${pSets.join(', ')} WHERE payment_id = $${pIdx}`, pParams)
+  if (pSets.length > 0) {
+    if (oldP.payment_id) {
+      pParams.push(oldP.payment_id)
+      await pool.query(`UPDATE payments SET ${pSets.join(', ')} WHERE payment_id = $${pIdx}`, pParams)
+    } else {
+      // Sin fila previa en payments: la edicion pre-pago se persiste como placeholder
+      // (cat_settlement_status=pending) anclado a la cuota inicial. No cuenta como pagado
+      // y sera reemplazado por la fila definitiva cuando FICO confirme el pago real.
+      await _insertPrePaymentPlaceholder({ enrollmentId, fields, userId })
+    }
   }
 
   if (fields.cat_currency !== undefined && fields.cat_currency !== oldE.cat_currency) {
     const oldLabel = await resolveLabel(oldE.cat_currency)
     const newLabel = await resolveLabel(fields.cat_currency)
-    changes['Tipo Moneda'] = { old: oldLabel || '---', new: newLabel }
+    changes['Tipo Moneda'] = { old: oldLabel || '---', new: newLabel || '---' }
   }
   if (fields.cat_payment_medium !== undefined && fields.cat_payment_medium !== oldP.cat_method_payment) {
     const oldLabel = await resolveLabel(oldP.cat_method_payment)
     const newLabel = await resolveLabel(fields.cat_payment_medium)
-    changes['Medio de Pago'] = { old: oldLabel || '---', new: newLabel }
+    changes['Medio de Pago'] = { old: oldLabel || '---', new: newLabel || '---' }
   }
   if (fields.bank_account_id !== undefined && fields.bank_account_id !== oldP.settled_in_account_id) {
     const oldLabel = await resolveBankLabel(oldP.settled_in_account_id)
     const newLabel = await resolveBankLabel(fields.bank_account_id)
-    changes['Cuenta Bancaria'] = { old: oldLabel || '---', new: newLabel }
+    changes['Cuenta Bancaria'] = { old: oldLabel || '---', new: newLabel || '---' }
 
     // La Entidad va emparejada con la cuenta. Solo la incluimos en el diff si
     // efectivamente cambia — picking de la misma entidad pero distinta cuenta
@@ -1942,14 +1950,6 @@ async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }
  * @param {boolean|null} isMembershipFlag - flag desde programs.is_membership
  * @returns {boolean}
  */
-function isMembership (programName, isMembershipFlag = null) {
-  if (isMembershipFlag === true) return true
-  if (isMembershipFlag === false) return false
-  // Fallback heuristico cuando no viene el flag desde la query.
-  const name = (programName || '').toUpperCase()
-  return name.includes('MEMB') || name.includes('PLUS') || name.includes('PLAT') || name.includes('BLACK') || name.includes('GOLD')
-}
-
 async function enrollMembershipInOdoo ({ enrollmentId }) {
   try {
     return await _enrollMembershipInOdooInner({ enrollmentId })
@@ -2795,7 +2795,83 @@ async function addInstallment ({ enrollmentId, amount, dueDate, justificacion, u
   }
 }
 
+// Bloquea registros duplicados antes de invocar al SP. Un duplicado es la misma
+// edicion (program_edition_id) con la misma persona — identificada por documento
+// si existe o por email (FICO suele inscribir B2B sin DNI). Solo cuentan
+// inscripciones activas; las retiradas no impiden una re-inscripcion legitima.
+async function _findFicoDuplicateEnrollment ({ programEditionId, documentNumber, email }) {
+  if (!programEditionId) return null
+  const doc = documentNumber && String(documentNumber).trim() ? String(documentNumber).trim() : null
+  const mail = email && String(email).trim() ? String(email).trim() : null
+  if (!doc && !mail) return null
+
+  const { rows } = await pool.query(`
+    SELECT
+      e.enrollment_id,
+      e.registration_date,
+      e.agent_origin,
+      pv.abbreviation                                     AS program_name,
+      pe.global_code                                      AS edition_code,
+      per.document_number                                 AS existing_document,
+      TRIM(per.first_name || ' ' || per.last_name)        AS existing_student_name,
+      u_s.alias                                           AS seller_agent_alias
+    FROM public.enrollments e
+    JOIN public.customers       cust ON cust.customer_id = e.customer_id
+    JOIN public.persons         per  ON per.person_id    = cust.person_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id     = e.program_edition_id
+    LEFT JOIN public.leads             l ON l.enrollment_id        = e.enrollment_id
+    LEFT JOIN public.users           u_s ON u_s.user_id            = e.seller_agent_id
+    WHERE e.active = 'Y'
+      AND e.program_edition_id = $1
+      AND (
+        ($2::text IS NOT NULL AND per.document_number = $2)
+        OR ($3::text IS NOT NULL AND (
+          LOWER(COALESCE(l.origin_email, '')) = LOWER($3)
+          OR EXISTS (
+            SELECT 1
+              FROM public.person_contacts pc
+              JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+             WHERE pc.person_id = per.person_id
+               AND c.alias      = 'we_way_contact_email'
+               AND pc.active    = 'Y'
+               AND LOWER(pc.value) = LOWER($3)
+          )
+        ))
+      )
+    ORDER BY e.registration_date DESC
+    LIMIT 1
+  `, [programEditionId, doc, mail])
+
+  return rows?.[0] || null
+}
+
 async function ficoEnrollmentRegister ({ data, userId }) {
+  const duplicate = await _findFicoDuplicateEnrollment({
+    programEditionId: data.program_edition_id,
+    documentNumber: data.document_number,
+    email: data.email
+  })
+  if (duplicate) {
+    const who = [duplicate.seller_agent_alias, duplicate.agent_origin].filter(Boolean).join(' - ') || 'otro asesor'
+    const when = duplicate.registration_date
+      ? new Date(duplicate.registration_date).toLocaleDateString('es-PE', { timeZone: 'America/Lima' })
+      : 'fecha no registrada'
+    return {
+      result: 2,
+      message: `No se puede registrar: ${duplicate.existing_student_name || 'el alumno'} ya esta inscrito en ${duplicate.program_name || 'este programa'} ${duplicate.edition_code || ''} (registrado por ${who} el ${when}).`,
+      duplicate_info: {
+        enrollment_id:   duplicate.enrollment_id,
+        student_name:    duplicate.existing_student_name,
+        document_number: duplicate.existing_document,
+        program_name:    duplicate.program_name,
+        edition_code:    duplicate.edition_code,
+        registration_date: duplicate.registration_date,
+        registered_by:   who
+      }
+    }
+  }
+
   const inscription = {
     document_number: data.document_number,
     cat_type_document: data.cat_type_document,
@@ -2824,7 +2900,13 @@ async function ficoEnrollmentRegister ({ data, userId }) {
     client_profile: data.client_profile || null,
     observations: data.observations || 'Registro directo FICO',
     ticket_payment_urls: Array.isArray(data.ticket_payment_urls) ? data.ticket_payment_urls : [],
-    installment_plan: data.installment_plan || null
+    installment_plan: data.installment_plan || null,
+    // Descuentos: el SP los procesa en cascada (porcentaje -> promocion stick
+    // -> beneficios) e inserta en enrollment_discounts. Si no vienen, el SP
+    // respeta el total_amount tal cual y discount_amount queda en 0.
+    dsct_porcent_id: data.dsct_porcent_id ?? null,
+    dsct_stick_id: data.dsct_stick_id ?? null,
+    dsct_benefit_ids: Array.isArray(data.dsct_benefit_ids) ? data.dsct_benefit_ids : []
   }
 
   const enrollRows = await callProcedureReturningRows(
@@ -2871,28 +2953,28 @@ async function ficoEnrollmentRegister ({ data, userId }) {
       })
     }
 
-    const odoo = await safeAsync('[FICO][Odoo] auto-enroll', () => enrollInOdoo({ enrollmentId: eid }))
-    if (odoo?.success) {
-      const cursoLabel = odoo.course_search || 'Curso no especificado'
-      await logAudit({ enrollmentId: eid, action: 'odoo_enrolled', userId, details: `Odoo user ${odoo.odoo_user_id} - ${cursoLabel}` })
-    }
+    // Refresh inmediato de la MV: el operador ya ve el padre en el listado
+    // mientras Odoo/email/hijos corren en background. Fire-and-forget.
+    refreshEnrollmentMv('on-register-sync')
 
-    const emailRes = await safeAsync('[FICO][Email] auto-send', () => sendConfirmationEmail({ enrollmentId: eid }))
-    if (emailRes?.success) {
-      await logAudit({ enrollmentId: eid, action: 'email_sent', userId, details: `Correo confirmacion: ${emailRes.messageId}` })
-    } else {
-      console.error('[FICO][Email] auto-send no exitoso:', emailRes?.error || 'sin respuesta')
+    // Encolamos hijos + Odoo + email para ejecutar en background. El worker los
+    // procesa en orden topologico (children -> odoo -> email) respetando las
+    // dependencias documentadas en job-worker.cron.js. Esto baja el tiempo de
+    // respuesta de ~15s a ~3s y permite retries con backoff ante fallos de
+    // Odoo o email — antes esos errores quedaban silenciados en safeAsync.
+    let registerJobId = null
+    try {
+      const job = await enqueueJob({
+        jobType: 'register_followup',
+        enrollmentId: eid,
+        payload: { userId }
+      })
+      registerJobId = job.job_id
+    } catch (qErr) {
+      console.error('[ficoEnrollmentRegister] enqueue register_followup fallo:', qErr.message)
     }
-    // Adjuntamos el estado del envio en la respuesta para que la UI pueda informar
-    // si el correo de bienvenida (membresias) o confirmacion (cursos) llego.
-    enrollResp.email_sent = !!emailRes?.success
-    enrollResp.email_error = emailRes?.success ? null : (emailRes?.error || 'No se pudo enviar el correo')
-
-    // Crear enrollments hijos si el programa es padre (diplomado/especializacion).
-    // Para FICO directo, todavia no hay convalidaciones en BD, asi que esto inscribe
-    // a TODOS los hijos del arbol de la edicion. El operador puede convalidar despues
-    // desde el detalle de la inscripcion.
-    await safeAsync('[FICO][Children] create', () => createChildEnrollments({ enrollmentId: eid, userId }))
+    enrollResp.email_pending = true
+    enrollResp.job_id = registerJobId
   }
 
   return enrollResp
@@ -3012,10 +3094,7 @@ async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, us
 
   if (old.odoo_activation) {
     try {
-      const { rows: odooData } = await pool.query(
-        `SELECT odoo_user_id, odoo_order_id FROM enrollments WHERE enrollment_id = $1`, [enrollmentId]
-      ).catch(() => ({ rows: [] }))
-      const od = odooData?.[0]
+      const od = await getEnrollmentOdoo(enrollmentId).catch(() => null)
 
       if (od?.odoo_user_id) {
         const user = await odooClient.searchUserByEmail(old.origin_email)
@@ -3065,22 +3144,14 @@ async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, us
 }
 
 async function getProgramPrice ({ programVersionId }) {
-  const { rows } = await pool.query(`
-    SELECT pp.price_student_soles, pp.price_student_dollars,
-           pp.price_profesional_soles, pp.price_profesional_dollars,
-           pp.reservation_price_soles, pp.reservation_price_dollars
-    FROM program_price pp
-    WHERE pp.program_version_id = $1 AND pp.active = 'Y'
-    ORDER BY pp.program_price_id DESC LIMIT 1
-  `, [programVersionId])
-  return rows?.[0] || null
+  return queryProgramPrice(programVersionId)
 }
 
 // Clona el lead del enrollment original para asociarlo a la nueva inscripcion del cambio de curso.
 // Mantiene todos los campos originales pero apunta al nuevo programa/edicion y resetea fechas.
 // Registra la fila en course_changes con metadata del cambio.
-async function _ccRecordCourseChangeRow ({ old, newEid, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, oldAmount }) {
-  await pool.query(`
+async function _ccRecordCourseChangeRow ({ old, newEid, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, oldAmount, executor = pool }) {
+  await executor.query(`
     INSERT INTO course_changes (
       customer_id, enrollment_origin_id, enrollment_destination_id,
       program_origin_id, program_destination_id,
@@ -3102,10 +3173,7 @@ async function _ccRecordCourseChangeRow ({ old, newEid, newProgramVersionId, new
 async function _ccUnenrollFromOldOdoo ({ enrollmentId, old }) {
   if (!old.old_odoo_activation) return
   await safeAsync('[courseChange][Odoo] unenroll old', async () => {
-    const { rows: odooData } = await pool.query(
-      `SELECT odoo_user_id, odoo_order_id FROM enrollments WHERE enrollment_id = $1`, [enrollmentId]
-    )
-    const od = odooData?.[0]
+    const od = await getEnrollmentOdoo(enrollmentId)
     if (!od?.odoo_user_id) return
 
     const user = await odooClient.searchUserByEmail(old.origin_email)
@@ -3119,6 +3187,57 @@ async function _ccUnenrollFromOldOdoo ({ enrollmentId, old }) {
       await odooClient.cancelSaleOrder(od.odoo_order_id)
     }
   })
+}
+
+// Arma el payload de inscripcion para el SP `sp_fico_enrollment_register_direct`
+// en el contexto de un cambio de curso. Reusa identidad y modalidad de la
+// inscripcion origen, fija "Sin Asesor" (SA) en la nueva venta porque la
+// comision ya quedo registrada en la inscripcion previa, y aplica los nuevos
+// datos de cobranza (metodo, banco, transaccion) si vienen en el payload.
+async function _buildCourseChangeInscription ({ old, newProgramVersionId, newEditionId, totalAmount, ccNote, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
+  const ccContadoCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_SINGLE)
+  const { rows: oldPayment } = await pool.query(
+    `SELECT cat_method_payment FROM payments WHERE enrollment_id = $1 AND active = 'Y' ORDER BY payment_id DESC LIMIT 1`,
+    [old.enrollment_id]
+  )
+  let methodPayment = oldPayment?.[0]?.cat_method_payment || null
+  if (!methodPayment) {
+    methodPayment = await getCatalogIdByAlias(ALIAS.PAYMENT_METHOD_TRANSFER)
+  }
+
+  return {
+    document_number: old.document_number,
+    cat_type_document: old.cat_type_document,
+    first_name: old.first_name,
+    last_name: old.last_name,
+    email: old.origin_email,
+    phone: old.origin_phone,
+    program_version_id: newProgramVersionId,
+    program_edition_id: newEditionId,
+    cat_insc_modality: old.cat_inscription_modality,
+    cat_payment_channel: old.cat_payment_channel,
+    cat_currency: cat_currency || old.cat_currency,
+    cat_payment_way: ccContadoCatId || old.cat_payment_plan,
+    cat_payment_medium: cat_method_payment || methodPayment,
+    cat_business_entity: cat_business_entity || null,
+    bank_account_id: bank_account_id || null,
+    transaction_code: transaction_code || null,
+    payment_date: new Date().toISOString().slice(0, 10),
+    list_price: totalAmount || 0,
+    total_amount: totalAmount,
+    saved_money: 0,
+    is_scholarship: false,
+    cat_b2b_doctype: null,
+    // En CC la nueva venta NO se acredita a ningun asesor — la venta original
+    // ya quedo registrada (asesor + status=course_changed). Convencion del
+    // codebase para "Sin Asesor": agent_origin='SA', seller_agent_id=null.
+    seller_agent_id: null,
+    agent_origin: 'SA',
+    client_profile: null,
+    observations: ccNote,
+    ticket_payment_urls: ticket_payment_urls || [],
+    installment_plan: null
+  }
 }
 
 async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
@@ -3173,49 +3292,11 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
   // inscripcion origen (que tiene su asesor + cat_type_status='course_changed').
   // La nueva inscripcion entra como FICO directa: sin lead, sin asesor (S/A),
   // misma persona reusada por document_number.
-  const ccContadoCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_SINGLE)
-  const { rows: oldPayment } = await pool.query(
-    `SELECT cat_method_payment FROM payments WHERE enrollment_id = $1 AND active = 'Y' ORDER BY payment_id DESC LIMIT 1`,
-    [enrollmentId]
-  )
-  let methodPayment = oldPayment?.[0]?.cat_method_payment || null
-  if (!methodPayment) {
-    methodPayment = await getCatalogIdByAlias(ALIAS.PAYMENT_METHOD_TRANSFER)
-  }
-
-  const inscription = {
-    document_number: old.document_number,
-    cat_type_document: old.cat_type_document,
-    first_name: old.first_name,
-    last_name: old.last_name,
-    email: old.origin_email,
-    phone: old.origin_phone,
-    program_version_id: newProgramVersionId,
-    program_edition_id: newEditionId,
-    cat_insc_modality: old.cat_inscription_modality,
-    cat_payment_channel: old.cat_payment_channel,
-    cat_currency: cat_currency || old.cat_currency,
-    cat_payment_way: ccContadoCatId || old.cat_payment_plan,
-    cat_payment_medium: cat_method_payment || methodPayment,
-    cat_business_entity: cat_business_entity || null,
-    bank_account_id: bank_account_id || null,
-    transaction_code: transaction_code || null,
-    payment_date: new Date().toISOString().slice(0, 10),
-    list_price: totalAmount || 0,
-    total_amount: totalAmount,
-    saved_money: 0,
-    is_scholarship: false,
-    cat_b2b_doctype: null,
-    // Caso de uso: en CC la nueva venta NO se acredita a ningun asesor — la
-    // venta original ya quedo registrada (asesor + status=course_changed).
-    // Convencion del codebase para "Sin Asesor": agent_origin='SA', seller_agent_id=null.
-    seller_agent_id: null,
-    agent_origin: 'SA',
-    client_profile: null,
-    observations: ccNote,
-    ticket_payment_urls: ticket_payment_urls || [],
-    installment_plan: null
-  }
+  const inscription = await _buildCourseChangeInscription({
+    old, newProgramVersionId, newEditionId, totalAmount, ccNote,
+    cat_currency, cat_method_payment, cat_business_entity,
+    bank_account_id, transaction_code, ticket_payment_urls
+  })
 
   const enrollRows = await callProcedureReturningRows(
     pool,
@@ -3231,42 +3312,49 @@ async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, 
 
   const newEid = newEnroll.enrollment_id
 
-  // El SP directo ya marca cat_fico_status=checked (Aprobado), pero lo
-  // garantizamos por si la implementacion del SP cambia.
+  // Bloque atomico: una vez creado el nuevo enrollment via el SP, las cuatro
+  // operaciones que siguen (estado FICO, vinculo al padre, ajuste de payment,
+  // registro en course_changes) deben aplicarse en bloque. Si fallan a medio
+  // camino quedaria un enrollment huerfano sin parent_enrollment_id o un
+  // course_change no registrado.
   const ccCheckedCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_CHECKED)
-  if (ccCheckedCatId && newEid) {
-    await pool.query('UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2', [ccCheckedCatId, newEid])
-  }
+  const oldAmount = Number(old.total_amount || 0) - Number(old.discount_amount || 0)
 
   if (newEid) {
-    await pool.query(
-      'UPDATE enrollments SET parent_enrollment_id = $1 WHERE enrollment_id = $2',
-      [enrollmentId, newEid]
-    )
+    await withTransaction(async client => {
+      if (ccCheckedCatId) {
+        await client.query('UPDATE enrollments SET cat_fico_status = $1 WHERE enrollment_id = $2', [ccCheckedCatId, newEid])
+      }
 
-    const payUpdates = []
-    const payParams = []
-    let pIdx = 1
-    if (cat_business_entity) { payUpdates.push(`settled_in_account_id = $${pIdx}`); payParams.push(bank_account_id); pIdx++ }
-    if (cat_method_payment) { payUpdates.push(`cat_method_payment = $${pIdx}`); payParams.push(cat_method_payment); pIdx++ }
-    if (transaction_code) { payUpdates.push(`transaction_code = $${pIdx}`); payParams.push(transaction_code); pIdx++ }
-    if (payUpdates.length > 0) {
-      payParams.push(newEid)
-      await pool.query(
-        `UPDATE payments SET ${payUpdates.join(', ')} WHERE enrollment_id = $${pIdx} AND active = 'Y'`,
-        payParams
+      await client.query(
+        'UPDATE enrollments SET parent_enrollment_id = $1 WHERE enrollment_id = $2',
+        [enrollmentId, newEid]
       )
-    }
-  }
 
-  const oldAmount = Number(old.total_amount || 0) - Number(old.discount_amount || 0)
-  await _ccRecordCourseChangeRow({
-    old: { ...old, enrollment_id: enrollmentId },
-    newEid,
-    newProgramVersionId, newEditionId,
-    totalAmount, justificacion, userId,
-    oldAmount
-  })
+      const payUpdates = []
+      const payParams = []
+      let pIdx = 1
+      if (cat_business_entity) { payUpdates.push(`settled_in_account_id = $${pIdx}`); payParams.push(bank_account_id); pIdx++ }
+      if (cat_method_payment) { payUpdates.push(`cat_method_payment = $${pIdx}`); payParams.push(cat_method_payment); pIdx++ }
+      if (transaction_code) { payUpdates.push(`transaction_code = $${pIdx}`); payParams.push(transaction_code); pIdx++ }
+      if (payUpdates.length > 0) {
+        payParams.push(newEid)
+        await client.query(
+          `UPDATE payments SET ${payUpdates.join(', ')} WHERE enrollment_id = $${pIdx} AND active = 'Y'`,
+          payParams
+        )
+      }
+
+      await _ccRecordCourseChangeRow({
+        old: { ...old, enrollment_id: enrollmentId },
+        newEid,
+        newProgramVersionId, newEditionId,
+        totalAmount, justificacion, userId,
+        oldAmount,
+        executor: client
+      })
+    })
+  }
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'
 
@@ -3917,6 +4005,8 @@ async function approvePendingReview ({ enrollmentId, userId }) {
 export default {
   enrollmentList,
   enrollmentAdvisorsList,
+  invalidateAdvisorsCache,
+  getKpisDaily,
   paymentDetailGet,
   confirmPayment,
   bankAccountList,
@@ -3953,6 +4043,8 @@ export default {
   getProgramChildren,
   rescheduleInstallments,
   validateChildEnrollmentSetup,
+  createChildEnrollments,
+  enrollInOdoo,
   getClassroomExportOptions,
   exportClassroomCsv,
   approvePendingReview

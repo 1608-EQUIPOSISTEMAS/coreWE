@@ -8,7 +8,7 @@ export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: isSSL ? { rejectUnauthorized: false } : false,
   // Ajustes opcionales del pool:
-  max: Number(process.env.PG_POOL_MAX ?? 10),
+  max: Number(process.env.PG_POOL_MAX ?? 20),
   idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT ?? 30000),
   connectionTimeoutMillis: Number(process.env.PG_CONN_TIMEOUT ?? 10000),
 });

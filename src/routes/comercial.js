@@ -27,7 +27,7 @@ export default async function comercialRoutes (fastify) {
     preHandler: [authenticate, ALL_COMERCIAL]
   }, async (req, reply) => {
     const payload = req.body
-    console.log('INSCRIPCIÒN:\n', payload)
+    req.log.info({ docNumber: payload?.document_number, userId: req.user?.id }, 'leadRegister')
     const response = await comercialService.leadRegister(payload)
     return reply.code(200).send(response)
   })
@@ -136,13 +136,15 @@ export default async function comercialRoutes (fastify) {
   })
 
 
-fastify.post('/enrollment-slack-web', async (request, reply) => {
-  const { enrollment_id } = request.body;
-  if (!enrollment_id) return reply.status(400).send({ ok: false, message: 'enrollment_id requerido' });
+  fastify.post('/enrollment-slack-web', {
+    preHandler: [authenticate, ALL_COMERCIAL]
+  }, async (request, reply) => {
+    const { enrollment_id } = request.body;
+    if (!enrollment_id) return reply.status(400).send({ ok: false, message: 'enrollment_id requerido' });
 
-  const result = await integrationService.sendEnrollmentWebToSlack({ enrollment_id });
-  return result;
-});
+    const result = await integrationService.sendEnrollmentWebToSlack({ enrollment_id });
+    return result;
+  });
 
   fastify.post('/searchcontact', {
     schema: searchContactSchema,

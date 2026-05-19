@@ -83,8 +83,16 @@ async function discountList(payload = {}) {
 // ... discountGet y discountUpdate siguen igual ...
 
 /**
- * CALLER (Nuevo)
- * CALL public.sp_discount_caller(p_q text, p_cat_discount_type int, p_active bool)
+ * CALLER
+ * CALL public.sp_discount_caller(
+ *   p_q text,                  -- busqueda libre en description/alias
+ *   p_cat_discount_type int,   -- catalog_id del tipo (porcentaje/fijo/beneficio)
+ *   p_cat_currency int,        -- catalog_id de la moneda (NO el alias). NULL = todas.
+ *   p_active bool,             -- filtra por vigencia y active=true
+ *   p_cur refcursor
+ * )
+ * Importante: p_cat_currency es INTEGER. Si se le pasa un string como
+ * 'we_currency_soles', Postgres falla con "invalid input syntax for type integer".
  */
 async function discountCaller(payload = {}) {
   const {

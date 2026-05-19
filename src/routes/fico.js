@@ -1,9 +1,12 @@
 import ficoService from '../services/fico.service.js'
 import { authenticate, hasRole, ADMIN_ONLY } from '../middlewares/auth.hooks.js'
+import { getLatestJobByEnrollment } from '../services/job-queue.service.js'
 
 const RESCHEDULE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
 export default async function ficoRoutes (fastify) {
+  fastify.addHook('preHandler', authenticate)
+
   fastify.post('/enrollmentregister', {
     schema: {
       body: {
@@ -64,6 +67,60 @@ export default async function ficoRoutes (fastify) {
       return reply.code(200).send({ ok: true, data })
     } catch (err) {
       console.error('[enrollmentAdvisorsList ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  // Estado del job asincrono mas reciente para una inscripcion. El frontend lo
+  // polea cada 3s despues de un register exitoso para mostrar el progreso de
+  // Odoo + email + hijos sin bloquear la respuesta inicial.
+  fastify.get('/job-status/:enrollmentId', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['enrollmentId'],
+        properties: { enrollmentId: { type: 'string', pattern: '^\\d+$' } }
+      },
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { jobType: { type: 'string' } }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const enrollmentId = parseInt(req.params.enrollmentId)
+      const job = await getLatestJobByEnrollment(enrollmentId, req.query.jobType || null)
+      if (!job) return reply.code(200).send({ ok: true, data: null })
+      return reply.code(200).send({ ok: true, data: job })
+    } catch (err) {
+      console.error('[job-status ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
+  // KPIs diarios (hoy/ayer) en una sola query. Reemplaza el patron de llamar
+  // enrollmentList(size=200) x2 que sumaba ~13s en cada carga del modulo.
+  fastify.get('/kpisdaily', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['today', 'yesterday'],
+        properties: {
+          today:     { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+          yesterday: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const data = await ficoService.getKpisDaily({
+        today: req.query.today,
+        yesterday: req.query.yesterday
+      })
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[getKpisDaily ERROR]', err.message)
       return reply.code(500).send({ ok: false, error: err.message })
     }
   })

@@ -77,12 +77,15 @@ ESTILO DE PUNTOS — fortalezas, oportunidades, quick wins, mejoras
 # ¿se cita evidencia adentro del bullet o queda solo en el criterio?
 # ¿ejemplo de un punto MAL escrito vs uno BIEN escrito?
 
-• PUNTUACIÓN GLOBAL: promedio simple de los 9 scores con 1 decimal.
-  Veredicto:
-    • EXCELENTE: ≥ 4.3
-    • SÓLIDO:    3.6 – 4.2
-    • OBSERVADO: 2.6 – 3.5
-    • CRÍTICO:   ≤ 2.5
+• PUNTUACIÓN GLOBAL: promedio simple de los 9 scores con 1 decimal (escala interna 1-5).
+  El frontend la mostrará al usuario escalada a /20 (multiplicando por 4).
+  En `veredicto.titular` y `veredicto.cuerpo` usá DIRECTAMENTE la nota /20
+  (ej. "16/20", no "4.0/5"), porque ese campo es texto literal que llega al usuario.
+  Umbrales (equivalentes en ambas escalas):
+    • EXCELENTE: ≥ 4.3/5  (≥ 17/20)
+    • SÓLIDO:    3.6 – 4.2/5  (14 – 16/20)
+    • OBSERVADO: 2.6 – 3.5/5  (10 – 13/20)
+    • CRÍTICO:   ≤ 2.5/5  (≤ 9/20)
 • VEREDICTO en prosa: 3-4 párrafos en `veredicto.cuerpo`. Primer párrafo:
   qué funciona muy bien. Siguientes: los 2-3 problemas estructurales más
   importantes. Cierre: cuánto puede crecer este score con ajustes.
@@ -196,7 +199,7 @@ RESPONSE_SCHEMA: dict = {
                 "etiqueta": {"type": "string",
                     "description": "EXCELENTE | SOLIDO | OBSERVADO | CRITICO"},
                 "titular":  {"type": "string",
-                    "description": "Una línea: '3.2/5 — Sesión funcional con optimización urgente necesaria'."},
+                    "description": "Una línea en escala /20: '13/20 — Sesión funcional con optimización urgente necesaria'."},
                 "cuerpo":   {"type": "string",
                     "description": "3-4 párrafos en prosa. Markdown sutil permitido (**bold** inline)."},
                 "potencial_score": {"type": "number",

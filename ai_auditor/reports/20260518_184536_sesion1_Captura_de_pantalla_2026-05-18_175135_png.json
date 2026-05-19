@@ -1,0 +1,227 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 3,
+      "comentario": "El docente cubre superficialmente los 5 temas teóricos del syllabus, pero omite por completo los 2 talleres prácticos. La sesión se enfoca en la introducción y la importación de datos, dejando la transformación (Power Query) con una cobertura muy básica, lo cual no se alinea con la profundidad esperada para un tema completo.",
+      "evidencia_timestamps": [
+        "[58:22]",
+        "[01:32:11]",
+        "[01:45:22]",
+        "[01:53:55]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La estructura es deficiente. La primera hora se dedica casi en su totalidad a tareas administrativas, video institucional y formación de grupos, lo que retrasa el inicio del contenido académico. No hay un gancho motivacional al inicio ni una síntesis de aprendizajes al cierre; la sesión termina abruptamente tras explicar el parcial.",
+      "evidencia_timestamps": [
+        "[09:26]",
+        "[14:16]",
+        "[03:06:51]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 3,
+      "comentario": "El nivel es introductorio. Se explican conceptos clave como los tipos de análisis y la interfaz de la herramienta. Sin embargo, la aplicación práctica no profundiza en la resolución de problemas complejos; se limita a la mecánica de importación y transformaciones muy básicas, sin llegar a la etapa 'Crea' de la metodología.",
+      "evidencia_timestamps": [
+        "[01:32:11]",
+        "[02:35:14]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 3,
+      "comentario": "El docente menciona ejemplos de su experiencia profesional y de proyectos de alumnos anteriores, lo cual es positivo para contextualizar. No obstante, la actividad práctica utiliza datasets genéricos (países, esperanza de vida) y no un caso de negocio real e integrador como estipula la metodología WE.",
+      "evidencia_timestamps": [
+        "[22:45]",
+        "[30:20]",
+        "[01:49:05]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 1,
+      "comentario": "No se realizan los talleres indicados en el syllabus. La sección práctica es una demostración guiada por el docente donde los alumnos son observadores pasivos. No hay evidencia de práctica autónoma, instrucciones claras para una actividad, ni tiempo asignado para que los alumnos ejecuten por su cuenta, incumpliendo el enfoque práctico de WE.",
+      "evidencia_timestamps": [
+        "[02:51:12]",
+        "[01:41:00]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 2,
+      "comentario": "La comunicación se ve severamente afectada por problemas técnicos de audio que duraron varios minutos, con múltiples alumnos reportando que no podían entender al docente. Cuando el audio funciona, su explicación es funcional, aunque con un uso excesivo de muletillas y un tono demasiado informal.",
+      "evidencia_timestamps": [
+        "[01:25:47]",
+        "[01:26:05]",
+        "[01:29:09]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 3,
+      "comentario": "La interacción es mixta. El docente utiliza una encuesta inicial para conocer al grupo y responde detalladamente las preguntas de los alumnos. Sin embargo, el largo monólogo administrativo inicial limita las oportunidades de participación durante casi una hora, concentrando la interacción en la segunda mitad de la clase.",
+      "evidencia_timestamps": [
+        "[47:02]",
+        "[52:25]",
+        "[02:50:07]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 1,
+      "comentario": "La gestión del tiempo es el punto más crítico de la sesión. Se dedican aproximadamente 58 minutos a tareas administrativas, lo que representa un 30% del tiempo total. Este desbalance impacta directamente en la cobertura del temario, forzando la omisión de los talleres y una explicación superficial de temas clave.",
+      "evidencia_timestamps": [
+        "[14:16]",
+        "[58:00]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 3,
+      "comentario": "Los participantes aprenden a instalar e importar datos en Power BI, una habilidad directamente aplicable. El docente conecta exitosamente el curso con oportunidades laborales. Sin embargo, la falta de un taller práctico sobre un caso de negocio real limita el valor, ya que aprenden a usar la herramienta pero no a resolver un problema con ella.",
+      "evidencia_timestamps": [
+        "[54:46]",
+        "[01:53:29]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 2.3,
+    "temas_cubiertos": 5,
+    "temas_totales": 7,
+    "porcentaje_practica": 41.3,
+    "porcentaje_teoria": 58.7,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Conectar el aprendizaje con la empleabilidad",
+      "detalle": "El docente vincula explícitamente las habilidades del curso con ascensos, salarios y oportunidades laborales reales."
+    },
+    {
+      "titulo": "Demostrar disposición para resolver dudas complejas",
+      "detalle": "Responde preguntas a fondo, incluso si implica mostrar conceptos avanzados no planificados para la sesión."
+    },
+    {
+      "titulo": "Usar encuestas para nivelar y conocer al grupo",
+      "detalle": "La encuesta inicial es una buena práctica para adaptar el contenido al nivel real de los participantes."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Reestructurar radicalmente la gestión del tiempo",
+      "detalle": "El bloque administrativo de una hora debe reducirse a menos de 10 minutos para priorizar el contenido."
+    },
+    {
+      "titulo": "Implementar talleres prácticos en lugar de demostraciones",
+      "detalle": "Los alumnos deben ejecutar tareas de forma autónoma para cumplir con la metodología WE."
+    },
+    {
+      "titulo": "Asegurar la calidad y estabilidad del audio",
+      "detalle": "Los problemas técnicos de sonido interrumpieron gravemente el flujo de la clase y el aprendizaje."
+    },
+    {
+      "titulo": "Iniciar la sesión con un gancho motivacional",
+      "detalle": "Reemplazar el inicio administrativo con un caso o anécdota que genere interés inmediato."
+    },
+    {
+      "titulo": "Basar la práctica en un caso de negocio",
+      "detalle": "Utilizar un dataset empresarial unificado en lugar de ejemplos genéricos para aumentar la relevancia."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Fomentar la creación de redes profesionales",
+      "detalle": "La invitación a conectar en LinkedIn y la oferta de compartir oportunidades laborales es muy valiosa."
+    },
+    {
+      "titulo": "Ofrecer apoyo y disponibilidad fuera de clase",
+      "detalle": "La comunicación abierta por WhatsApp para resolver dudas es una excelente práctica de seguimiento."
+    },
+    {
+      "titulo": "Utilizar encuestas iniciales de diagnóstico",
+      "detalle": "Esta herramienta permite entender el perfil del grupo y ajustar la enseñanza a sus necesidades."
+    },
+    {
+      "titulo": "Explicar la relevancia profesional de las herramientas",
+      "detalle": "Conectar cada concepto con su aplicación en el mundo laboral aumenta la motivación del alumno."
+    },
+    {
+      "titulo": "Mostrar empatía y flexibilidad con los alumnos",
+      "detalle": "La disposición a quedarse tiempo extra o a repetir explicaciones demuestra un compromiso con el aprendizaje."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Eliminar el bloque administrativo de una hora",
+      "detalle": "La logística, reglas y videos institucionales deben ser asincrónicos o resumirse en 5 minutos."
+    },
+    {
+      "titulo": "Convertir las demostraciones en talleres activos",
+      "detalle": "El formato debe pasar de 'miren cómo lo hago' a 'ahora háganlo ustedes'."
+    },
+    {
+      "titulo": "Basar la práctica en un caso de negocio",
+      "detalle": "Se debe usar un dataset y un problema empresarial para dar contexto y propósito a la práctica."
+    },
+    {
+      "titulo": "Priorizar el temario sobre la logística",
+      "detalle": "El foco de la sesión debe ser el aprendizaje del syllabus, no la gestión administrativa del curso."
+    },
+    {
+      "titulo": "Formalizar el lenguaje y la comunicación",
+      "detalle": "Reducir el uso de muletillas y coloquialismos para mantener un tono profesional y claro."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Enviar reglas y logística por correo previamente",
+      "detalle": "Comunica toda la información administrativa de forma asíncrona antes de la primera clase."
+    },
+    {
+      "titulo": "Realizar una prueba de audio completa antes",
+      "detalle": "Verifica la configuración de micrófono y conexión 15 minutos antes para evitar problemas técnicos."
+    },
+    {
+      "titulo": "Iniciar con una pregunta o problema real",
+      "detalle": "Comienza la sesión con un caso breve que despierte la curiosidad y conecte con el tema."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la sesión en bloques Descubre-Aprende-Crea",
+      "detalle": "Alinear la estructura de la clase con las tres etapas fundamentales de la metodología WE."
+    },
+    {
+      "titulo": "Crear un taller con instrucciones para práctica autónoma",
+      "detalle": "Diseña una actividad con un entregable claro para que los alumnos trabajen de forma independiente."
+    },
+    {
+      "titulo": "Desarrollar un dataset de caso de negocio",
+      "detalle": "Prepara un conjunto de datos que simule un problema empresarial real para usar en los talleres."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "CRÍTICO",
+    "titular": "9.2/20 — Sesión crítica por fallas estructurales y de gestión del tiempo.",
+    "cuerpo": "La sesión muestra a un docente con fortalezas notables en la conexión con los alumnos y una clara vocación de apoyo, respondiendo dudas de forma exhaustiva y vinculando el aprendizaje con la empleabilidad. Estas cualidades son una base sólida para construir una experiencia de aprendizaje de alta calidad.\n\nSin embargo, la sesión presenta dos problemas estructurales críticos que la desvían por completo de la metodología WE. El más grave es la **pésima gestión del tiempo**: dedicar la primera hora a tareas administrativas es inaceptable. Este error de planificación consume un tercio de la clase, impide cubrir el temario oficial y agota la atención de los participantes antes de que el contenido académico comience.\n\nEl segundo problema es la **falla en la ejecución de la práctica**. La sesión se limita a una demostración pasiva por parte del docente, omitiendo los talleres donde los alumnos deberían aplicar lo aprendido de forma autónoma. Esto incumple directamente las etapas 'Aprende' y 'Crea' del modelo WE, reduciendo la sesión a una introducción teórica y un tutorial guiado que no fomenta el pensamiento crítico ni la resolución de problemas.\n\nEl bajo puntaje es un reflejo directo de estas fallas fundamentales en la estructura y metodología. No obstante, el potencial de mejora es muy alto. Con un rediseño completo que priorice el contenido, transforme las demos en talleres activos y optimice el tiempo, esta misma sesión podría alcanzar un nivel de excelencia.",
+    "potencial_score": 4.2
+  },
+  "sesion_evaluada": {
+    "numero": 1,
+    "duracion_total_min": 189.6,
+    "fecha_auditoria": "2026-05-18T23:45:36.924048+00:00"
+  }
+}

@@ -50,8 +50,8 @@ export default async function programRoutes(fastify) {
   })
 
   fastify.post('/programversioncaller', {
-    schema: programVersionCallerSchema
-    // preHandler: [authenticate, ALL_PRODUCTO, ALL_COMERCIAL]
+    schema: programVersionCallerSchema,
+    preHandler: [authenticate, ALL_PRODUCTO, ALL_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programVersionCaller(req.body)
     return reply.code(200).send({ ok: true, data })

@@ -2,11 +2,28 @@
 import fs from 'fs'
 import path from 'path'
 import util from 'util'
+import crypto from 'crypto'
 import { pipeline } from 'stream'
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 const pump = util.promisify(pipeline)
 
+const SAFE_FILENAME_RE = /[^a-zA-Z0-9._-]+/g
+const MAX_STEM_LENGTH = 80
+
+function sanitizeUploadName (rawName) {
+  // Elimina cualquier componente de path antes del nombre
+  const base = path.basename(rawName || 'archivo')
+  // Reemplaza caracteres no seguros y normaliza puntos iniciales (evita .htaccess y similares)
+  const cleaned = base.replace(SAFE_FILENAME_RE, '_').replace(/^\.+/, '')
+  if (!cleaned) return null
+  const ext = path.extname(cleaned).toLowerCase()
+  const stem = path.basename(cleaned, ext).slice(0, MAX_STEM_LENGTH)
+  return `${Date.now()}_${crypto.randomUUID()}_${stem}${ext}`
+}
+
 export default async function uploadRoutes(fastify, options) {
+  fastify.addHook('preHandler', authenticate)
 
   // Definir carpeta de destino (Usamos process.cwd() para ir a la raíz del proyecto)
   const UPLOAD_FOLDER = path.join(process.cwd(), 'uploads')
@@ -38,10 +55,15 @@ export default async function uploadRoutes(fastify, options) {
         return reply.code(400).send({ message: 'Formato no permitido. Solo PDF o Imágenes.' })
       }
 
-      // Generar nombre único: TIMESTAMP_NOMBRE_LIMPIO
-      const cleanName = data.filename.replace(/\s+/g, '_')
-      const uniqueFileName = `${Date.now()}_${cleanName}`
-      const savePath = path.join(UPLOAD_FOLDER, uniqueFileName)
+      const uniqueFileName = sanitizeUploadName(data.filename)
+      if (!uniqueFileName) {
+        return reply.code(400).send({ message: 'Nombre de archivo inválido' })
+      }
+      const savePath = path.resolve(UPLOAD_FOLDER, uniqueFileName)
+      // Defensa adicional: el path resuelto debe seguir dentro de UPLOAD_FOLDER
+      if (!savePath.startsWith(path.resolve(UPLOAD_FOLDER) + path.sep)) {
+        return reply.code(400).send({ message: 'Ruta de archivo inválida' })
+      }
 
       // Guardar el archivo
       await pump(data.file, fs.createWriteStream(savePath))

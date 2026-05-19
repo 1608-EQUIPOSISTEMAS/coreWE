@@ -1,8 +1,10 @@
 // src/routes/customers.js
 import customerService from '../services/customer.service.js'
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 export default async function customerRoutes (fastify) {
-  
+  fastify.addHook('preHandler', authenticate)
+
   // registrar cliente
   fastify.post('/customerregister', {
     schema: {
@@ -141,11 +143,15 @@ fastify.post('/customerupdate', {
 
   //SUNATGET
   fastify.post('/sunatget', async (req, reply) => {
-    const { document } = req.body // Suponiendo que el document viene en el body
-    const token = '0d2b243a-9ff4-437a-aa6c-5dc2d209269e-f36a909e-caac-4018-a125-560262c9cb3f' // Tu token
+    const { document } = req.body
+    const token = process.env.SUNAT_API_TOKEN
+    if (!token) {
+      req.log.error('SUNAT_API_TOKEN no esta configurado en el entorno')
+      return reply.code(500).send({ ok: false, message: 'Servicio de consulta no disponible' })
+    }
 
     const payload = {
-      token: token,
+      token,
       ...(String(document).length === 11 ? { ruc: document } : { dni: document })
     }
 

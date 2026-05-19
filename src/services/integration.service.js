@@ -1043,8 +1043,8 @@ async function syncFicoConsolidadoToSheet () {
       END AS ingreso,
       CASE WHEN (e.total_amount) = 0 THEN ''
            ELSE CASE curr.alias
-                  WHEN 'we_currency_soles'   THEN 'PEN'
-                  WHEN 'we_currency_dollars' THEN 'USD'
+                  WHEN 'we_currency_soles' THEN 'PEN'
+                  WHEN 'we_currency_usd'   THEN 'USD'
                   ELSE COALESCE(curr.variable_2, '')
                 END
            END AS tipo_moneda,

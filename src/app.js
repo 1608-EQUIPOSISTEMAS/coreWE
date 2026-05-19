@@ -10,6 +10,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import fastifyJwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
 //  import './services/crm-auto-attempts.cron.js'
+import './services/fico-mv-refresh.cron.js'
+import './services/job-worker.cron.js'
 // Rutas
 import catalogRoutes from './routes/catalog.js'
 import comercialRoutes from './routes/comercial.js'
@@ -37,8 +39,20 @@ const app = Fastify({
 
 // --- 1. CORS Y RATE LIMIT ---
 
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
 await app.register(cors, {
-  origin: true,
+  origin (origin, cb) {
+    // Peticiones server-to-server / curl / health (sin header Origin)
+    if (!origin) return cb(null, true)
+    // En desarrollo se permite cualquier origen para no bloquear el flow local
+    if (process.env.NODE_ENV !== 'production') return cb(null, true)
+    if (corsOrigins.includes(origin)) return cb(null, true)
+    return cb(new Error(`Origin no permitido por CORS: ${origin}`), false)
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 })
@@ -66,39 +80,50 @@ await app.register(fastifyMultipart, {
 })
 
 // --- 3. SWAGGER ---
-await app.register(swagger, {
-  openapi: {
-    openapi: '3.1.0',
-    info: {
-      title: 'Mi API del Sistema',
-      description: 'Documentación interactiva de todos los módulos',
-      version: '1.0.0'
-    },
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT'
-        }
-      }
-    },
-    security: [{ bearerAuth: [] }] 
-  }
-})
+// Swagger UI revela la estructura completa del API. En produccion solo se
+// expone cuando SWAGGER_ENABLED=true. En desarrollo siempre esta disponible.
+const swaggerEnabled = process.env.NODE_ENV !== 'production' || process.env.SWAGGER_ENABLED === 'true'
 
-await app.register(swaggerUi, {
-  routePrefix: '/docs', 
-  uiConfig: {
-    docExpansion: 'list',
-    deepLinking: false
-  }
-})
+if (swaggerEnabled) {
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.1.0',
+      info: {
+        title: 'Mi API del Sistema',
+        description: 'Documentación interactiva de todos los módulos',
+        version: '1.0.0'
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT'
+          }
+        }
+      },
+      security: [{ bearerAuth: [] }]
+    }
+  })
+
+  await app.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: false
+    }
+  })
+}
 
 // --- 4. JWT Y AUTENTICACIÓN ---
-await app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET || 'mi_secreto_super_seguro_cambialo' 
-})
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error(
+    'JWT_SECRET es obligatorio y debe tener al menos 32 caracteres. ' +
+    'Define la variable en .env antes de arrancar el servidor.'
+  )
+}
+await app.register(fastifyJwt, { secret: JWT_SECRET })
 
 // Decorador para proteger rutas (en caso de que lo uses directo en app)
 app.decorate('authenticate', async function (request, reply) {
@@ -142,6 +167,23 @@ await app.register(botRoutes,          { prefix: '/api/bot' })
 
 
 app.get('/health', async () => ({ ok: true }))
+
+// Defensa en profundidad: cualquier error no manejado pasa por aqui. En produccion
+// no devolvemos stack ni mensajes internos. El log interno conserva todo para debug.
+app.setErrorHandler((err, request, reply) => {
+  const status = err.statusCode || err.validation ? (err.statusCode || 400) : 500
+  request.log.error({ err, reqId: request.id, userId: request.user?.id }, 'Unhandled error')
+
+  if (err.validation) {
+    return reply.code(400).send({ ok: false, message: 'Datos invalidos', details: err.validation })
+  }
+
+  if (status >= 500 && process.env.NODE_ENV === 'production') {
+    return reply.code(status).send({ ok: false, message: 'Error interno del servidor' })
+  }
+
+  return reply.code(status).send({ ok: false, message: err.message || 'Error' })
+})
 
 // --- 6. ARCHIVOS ESTÁTICOS ---
 if (process.env.NODE_ENV !== 'production') {

@@ -1,6 +1,11 @@
 
 export async function authenticate (request, reply) {
   try {
+    // SSE no puede enviar headers via EventSource, asi que se permite ?token=
+    // como alternativa al header Authorization.
+    if (!request.headers.authorization && request.query?.token) {
+      request.headers.authorization = `Bearer ${request.query.token}`
+    }
     await request.jwtVerify()
   } catch (err) {
     return reply.code(401).send({ ok: false, message: 'Token inválido o expirado' })

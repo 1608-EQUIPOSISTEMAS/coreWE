@@ -1,7 +1,10 @@
 // src/routes/catalog.js
 import { getCatalog, getMembershipList } from '../services/catalog.service.js'
+import { authenticate } from '../middlewares/auth.hooks.js'
 
 async function catalogRoutes (fastify) {
+  fastify.addHook('preHandler', authenticate)
+
   fastify.post('/cataloglist', async (req, reply) => {
     try {
       const data = await getCatalog()

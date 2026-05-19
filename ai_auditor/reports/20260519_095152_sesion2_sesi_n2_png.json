@@ -1,0 +1,231 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 5,
+      "comentario": "La sesión cubre de manera exhaustiva los tres temas del syllabus (Extracción, Transformación y Carga) y el taller práctico. Se inicia con un repaso de la extracción [18:03], se dedica la mayor parte del tiempo a la transformación y depuración de datos [56:20] y se concluye con la carga [03:05:11], cumpliendo con el objetivo de dominar el proceso ETL en Power Query.",
+      "evidencia_timestamps": [
+        "18:03",
+        "20:49",
+        "56:20",
+        "03:05:11"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 3,
+      "comentario": "La sesión tiene una estructura funcional pero con debilidades en el inicio y cierre. El comienzo se retrasa por temas administrativos [12:11], careciendo de una apertura motivacional. El cierre se enfoca en la logística del próximo parcial [03:07:52] en lugar de una síntesis de los aprendizajes, lo cual es una desviación de la metodología WE.",
+      "evidencia_timestamps": [
+        "12:11",
+        "17:49",
+        "03:07:52"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 5,
+      "comentario": "El docente demuestra un dominio profundo del tema. Cada concepto de ETL y transformación se explica teóricamente [21:46], se ilustra con una analogía [39:56] y se aplica en un taller práctico. Las respuestas a las preguntas de los alumnos son detalladas, explicando el 'porqué' de las buenas prácticas, como la diferencia entre limpiar en Power Query vs. Power BI [33:44].",
+      "evidencia_timestamps": [
+        "21:46",
+        "33:44",
+        "39:56"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 5,
+      "comentario": "Se utiliza un caso de negocio muy relevante y realista ('Base de Yaperos') con datos intencionadamente sucios, lo que simula un desafío profesional auténtico. El docente conecta constantemente la herramienta con el entorno laboral de los alumnos, mencionando SAP, SQL y otros sistemas [35:40], lo que aumenta la aplicabilidad del contenido.",
+      "evidencia_timestamps": [
+        "35:40",
+        "39:56",
+        "46:51"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 5,
+      "comentario": "El taller práctico es el eje central de la sesión y está excelentemente ejecutado. Los alumnos descargan los archivos [46:47] y trabajan en simultáneo con el docente, lo que se evidencia en sus preguntas específicas sobre errores que encuentran en tiempo real [01:59:01]. El 55.6% de tiempo práctico demuestra un fuerte enfoque en el 'aprender haciendo'.",
+      "evidencia_timestamps": [
+        "46:47",
+        "56:54",
+        "01:59:01"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 4,
+      "comentario": "El docente se comunica con claridad y utiliza un lenguaje preciso y accesible. La analogía del restaurante para explicar ETL es muy efectiva [39:56]. Aunque la comunicación es buena, el ritmo a veces es rápido, lo que hace que algunos alumnos se pierdan y requieran que se repitan los pasos [02:22:04], lo que indica una pequeña área de mejora en la gestión del ritmo.",
+      "evidencia_timestamps": [
+        "39:56",
+        "02:22:04"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 5,
+      "comentario": "La sesión es altamente interactiva y participativa. El docente utiliza preguntas directas, llama a los alumnos por su nombre [26:49] y fomenta la participación a través de un ejercicio de detección de errores [56:54]. Se registran más de 20 intervenciones de alumnos, demostrando un nivel de engagement excelente.",
+      "evidencia_timestamps": [
+        "26:26",
+        "26:49",
+        "56:54"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 2,
+      "comentario": "La gestión del tiempo es el punto más débil. La sesión comienza con un retraso de casi 17 minutos [12:11-17:49] y dedica un 44.4% a la teoría, superando el rango aceptable del 10-30%. Esto obligó a saltarse el break y un Kahoot planificado [03:04:22], y el cierre se dedicó a logística en lugar de síntesis.",
+      "evidencia_timestamps": [
+        "12:11",
+        "17:49",
+        "02:13:10",
+        "03:04:22"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 5,
+      "comentario": "El valor para el participante es muy alto. La sesión se centra en una habilidad fundamental y de alta demanda: la limpieza de datos. El docente resuelve dudas directamente relacionadas con los trabajos de los alumnos (PDFs, SAP) [29:43, 35:40] y proporciona herramientas de productividad como el código M [02:26:56], asegurando que los alumnos se lleven herramientas aplicables inmediatamente.",
+      "evidencia_timestamps": [
+        "29:43",
+        "35:40",
+        "02:26:56"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 4.3,
+    "temas_cubiertos": 3,
+    "temas_totales": 3,
+    "porcentaje_practica": 55.6,
+    "porcentaje_teoria": 44.4,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Implementar un taller práctico y profundo",
+      "detalle": "El taller de limpieza de datos fue el eje central, permitiendo la aplicación inmediata de conceptos."
+    },
+    {
+      "titulo": "Fomentar alta interacción y engagement",
+      "detalle": "El docente usó preguntas directas y resolución de problemas en vivo, logrando más de 20 intervenciones."
+    },
+    {
+      "titulo": "Utilizar un caso de negocio relevante",
+      "detalle": "La base de 'Yaperos' con datos sucios simuló un desafío profesional real y aplicable."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Ajustar el balance teórico-práctico al 30%",
+      "detalle": "La sesión excedió el 44% de teoría, reduciendo tiempo para una práctica más pausada o extensa."
+    },
+    {
+      "titulo": "Iniciar la sesión puntualmente con la agenda",
+      "detalle": "La clase comenzó con 17 minutos de demoras administrativas, perdiendo el impulso inicial del aprendizaje."
+    },
+    {
+      "titulo": "Incorporar un cierre con síntesis de aprendizajes",
+      "detalle": "La sesión terminó con logística del parcial, omitiendo un resumen de los conceptos clave de ETL."
+    },
+    {
+      "titulo": "Estandarizar la estructura de apertura y cierre",
+      "detalle": "Faltó la apertura motivacional y el cierre con síntesis, elementos clave de la metodología WE."
+    },
+    {
+      "titulo": "Planificar y ejecutar herramientas de engagement",
+      "detalle": "Se mencionó un Kahoot que no se ejecutó, probablemente por una gestión de tiempo deficiente."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder dudas con profundidad y contexto",
+      "detalle": "Las respuestas conectan la herramienta con el ecosistema profesional (SQL, SAP) y explican el 'porqué'."
+    },
+    {
+      "titulo": "Usar archivos de trabajo para práctica simultánea",
+      "detalle": "Proporcionar los datasets permite que los alumnos ejecuten las tareas en tiempo real junto al docente."
+    },
+    {
+      "titulo": "Llamar a los alumnos por su nombre",
+      "detalle": "Esta práctica personaliza la interacción y mantiene a la audiencia atenta y responsable durante la sesión."
+    },
+    {
+      "titulo": "Utilizar la técnica de 'identificar el error'",
+      "detalle": "Pedir a los alumnos que encuentren fallas en la data es una excelente forma de aprendizaje activo."
+    },
+    {
+      "titulo": "Explicar conceptos con analogías claras",
+      "detalle": "La analogía del restaurante para el proceso ETL fue muy efectiva para simplificar un concepto complejo."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Eliminar la espera pasiva al inicio",
+      "detalle": "Comenzar a tiempo con una actividad corta mientras llegan los demás, en lugar de esperar pasivamente."
+    },
+    {
+      "titulo": "Separar la logística de la clase principal",
+      "detalle": "Comunicar temas administrativos (grupos, entregas) por escrito o en un video corto, no en tiempo síncrono."
+    },
+    {
+      "titulo": "Reducir la exposición teórica inicial",
+      "detalle": "Condensar la explicación del ETL y pasar más rápido a la aplicación práctica en la herramienta."
+    },
+    {
+      "titulo": "Reintegrar el break en la planificación",
+      "detalle": "Eliminar el descanso afecta la concentración; es mejor ajustar el contenido para que el break sea viable."
+    },
+    {
+      "titulo": "Asignar tiempo protegido para el cierre",
+      "detalle": "Dedicar los últimos 5 minutos exclusivamente a resumir los 3-4 aprendizajes clave de la sesión."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Iniciar con una agenda visual de 3 puntos",
+      "detalle": "Mostrar en el primer minuto qué se cubrirá para establecer expectativas claras y un marco de trabajo."
+    },
+    {
+      "titulo": "Usar un cronómetro visible para el break",
+      "detalle": "Proyectar un temporizador en pantalla para asegurar que el descanso no exceda los 5 minutos planificados."
+    },
+    {
+      "titulo": "Finalizar con una slide de 'Key Takeaways'",
+      "detalle": "Preparar una diapositiva final que resuma las 3 habilidades o conceptos más importantes vistos en clase."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar el bloque teórico en micro-lecciones",
+      "detalle": "En lugar de 20 min de teoría, dar 5 min de teoría seguidos de 15 de práctica, repetido."
+    },
+    {
+      "titulo": "Crear un video asíncrono para la logística",
+      "detalle": "Grabar un video de 5 minutos explicando la tarea parcial y compartirlo antes o después de la clase."
+    },
+    {
+      "titulo": "Implementar un 'warm-up' al inicio",
+      "detalle": "Empezar con una pregunta o encuesta rápida mientras los alumnos se conectan para no perder tiempo valioso."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "EXCELENTE",
+    "titular": "17/20 — Sesión práctica y profunda con fallas críticas en gestión del tiempo.",
+    "cuerpo": "Esta es una sesión pedagógicamente muy sólida en su núcleo. El docente demuestra un **dominio excepcional del contenido** y lo transmite a través de un taller práctico, relevante y altamente interactivo. La calidad de la actividad central, el nivel de engagement de los alumnos y la profundidad de las explicaciones son de primer nivel y se alinean perfectamente con la metodología WE de 'aprender haciendo'.\n\nSin embargo, la sesión se ve empañada por una **gestión del tiempo y una estructura deficientes**. El inicio tardío, el desbalance crítico entre teoría y práctica (44% vs. el máximo de 30% recomendado) y la ausencia de un cierre con síntesis de aprendizajes son problemas estructurales que impactan la experiencia global. Estos elementos, aunque no afectan la calidad del contenido técnico, sí merman la efectividad del flujo de aprendizaje y el profesionalismo de la entrega.\n\nEl punto fuerte de la sesión es tan alto que compensa las debilidades, resultando en una calificación excelente. No obstante, es crucial abordar las fallas de gestión del tiempo. Con ajustes relativamente sencillos en la estructura y el manejo de los bloques, esta sesión tiene el potencial de convertirse en un modelo ejemplar para la institución.",
+    "potencial_score": 4.8
+  },
+  "sesion_evaluada": {
+    "numero": 2,
+    "duracion_total_min": 192.4,
+    "fecha_auditoria": "2026-05-19T14:51:52.334847+00:00"
+  }
+}
