@@ -1,6 +1,6 @@
 // src/routes/programs.js
 import programService from '../services/program.service.js'
-import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL } from '../middlewares/auth.hooks.js'
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL, PRODUCTO_COMERCIAL } from '../middlewares/auth.hooks.js'
 import {
   programRegisterSchema,
   programListSchema,
@@ -27,7 +27,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programlist', {
     schema: programListSchema,
-    preHandler: [authenticate, ALL_PRODUCTO,ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -35,7 +35,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programget', {
     schema: programGetSchema,
-    preHandler: [authenticate, ALL_PRODUCTO,ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const { data } = await programService.programGet(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -51,7 +51,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programversioncaller', {
     schema: programVersionCallerSchema,
-    preHandler: [authenticate, ALL_PRODUCTO, ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programVersionCaller(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -59,7 +59,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/pricelist', {
     schema: priceListSchema,
-    preHandler: [authenticate, ALL_PRODUCTO,ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.priceList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -67,7 +67,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programversionlist', {
     schema: programVersionListSchema,
-    preHandler: [authenticate, ALL_PRODUCTO,ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programVersionList(req.body)
     return reply.code(200).send({ ok: true, data })
@@ -83,7 +83,7 @@ export default async function programRoutes(fastify) {
 
   fastify.post('/programcaller', {
     schema: programCallerSchema,
-    preHandler: [authenticate, ALL_PRODUCTO,ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const data = await programService.programCaller(req.body)
     return reply.code(200).send({ ok: true, data })

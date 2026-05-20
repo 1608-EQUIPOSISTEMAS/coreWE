@@ -1,6 +1,6 @@
 // src/routes/instructors.js
 import instructorService from '../services/instructor.service.js'
-import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL} from '../middlewares/auth.hooks.js'
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL, PRODUCTO_COMERCIAL } from '../middlewares/auth.hooks.js'
 import {
   instructorRegisterSchema,
   instructorListSchema,
@@ -48,7 +48,7 @@ export default async function instructorRoutes(fastify) {
 
   fastify.post('/instructorcaller', {
     schema: instructorCallerSchema,
-    preHandler: [authenticate, ALL_PRODUCTO, ALL_COMERCIAL]
+    preHandler: [authenticate, PRODUCTO_COMERCIAL]
   }, async (req, reply) => {
     const items = await instructorService.instructorCaller(req.body)
     return reply.code(200).send({ ok: true, items })

@@ -37,3 +37,22 @@ export const ADMIN_PRODUCTO  = hasRole(['ADMIN', 'LIDER_PRODUCTO'])
 export const ALL_PRODUCTO    = hasRole(['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO'])
 export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO'])
 export const ALL_B2B      = hasRole(['ADMIN', 'B2B', 'GERENCIA'])
+
+// Gates combinados (OR) — usar uno solo en preHandler.
+// Apilar varios hasRole en preHandler los AND-ea (todos deben pasar), por eso
+// se exportan estas uniones explícitas.
+export const PRODUCTO_COMERCIAL = hasRole([
+  'ADMIN',
+  'PRODUCTO', 'LIDER_PRODUCTO',
+  'COMERCIAL', 'LIDER_COMERCIAL',
+  'FICO', 'LIDER_FICO'
+])
+export const ADMIN_PRODUCTO_COMERCIAL = PRODUCTO_COMERCIAL
+export const ALL_INTERNAL = hasRole([
+  'ADMIN',
+  'COMERCIAL', 'LIDER_COMERCIAL',
+  'FICO', 'LIDER_FICO',
+  'ACADEMICA', 'LIDER_ACADEMICA',
+  'PRODUCTO', 'LIDER_PRODUCTO',
+  'B2B', 'GERENCIA'
+])

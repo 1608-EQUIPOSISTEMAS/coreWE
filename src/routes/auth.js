@@ -1,6 +1,6 @@
 // src/routes/auth.js
 import authService from '../services/auth.service.js'
-import { authenticate, ADMIN_ONLY } from '../middlewares/auth.hooks.js'
+import { authenticate, ADMIN_ONLY, ALL_INTERNAL } from '../middlewares/auth.hooks.js'
 
 import {
   loginSchema
@@ -38,7 +38,7 @@ export default async function authRoutes (fastify) {
   })
 
   
-  fastify.post('/userlist', { preHandler: [authenticate, ADMIN_ONLY] }, async (req, reply) => {
+  fastify.post('/userlist', { preHandler: [authenticate, ALL_INTERNAL] }, async (req, reply) => {
     try {
       const data = await authService.userList()
       return reply.code(200).send({ ok: true, data })
