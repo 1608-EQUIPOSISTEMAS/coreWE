@@ -1742,7 +1742,7 @@ async function resolveBusinessEntityFromAccount (accountId) {
   const { rows } = await pool.query(`
     SELECT c.description
     FROM bank_accounts ba
-    LEFT JOIN catalog c ON c.catalog_id = ba.cat_business_entity
+    LEFT JOIN catalog c ON c.catalog_id = ba.business_entity_catalog_id
     WHERE ba.account_id = $1
   `, [accountId])
   return rows?.[0]?.description || null
@@ -1890,6 +1890,151 @@ async function enrollmentUpdate ({ enrollmentId, fields, justificacion, userId }
       }
     }
     changes['Cuotas'] = { updated: fields.installments.length }
+  }
+
+  // Edicion de cuotas pagadas (tab Cuotas con "Editar datos" activo).
+  // El diff llega ya pre-computado desde el front (before/after) para mantener
+  // este endpoint declarativo y evitar otro round-trip. Se persiste de forma
+  // atomica: si una cuota falla, todo el bloque se revierte.
+  if (fields.paid_installments && Array.isArray(fields.paid_installments) && fields.paid_installments.length > 0) {
+    const amountDeltas = []
+    await withTransaction(async client => {
+      for (const row of fields.paid_installments) {
+        if (!row.installment_id || !row.before || !row.after) continue
+        const { installment_id, installment_number, before, after } = row
+
+        // payment_installments: monto y vencimiento son las dos columnas de pago
+        // que vive en esta tabla (las demas son metadata en `payments`).
+        const piSets = []
+        const piParams = []
+        let piIdx = 1
+        if (Number(after.amount) !== Number(before.amount)) {
+          piSets.push(`amount = $${piIdx++}`); piParams.push(after.amount)
+          amountDeltas.push({ installmentNumber: installment_number, before: Number(before.amount), after: Number(after.amount) })
+        }
+        const beforeDue = before.due_date ? String(before.due_date).slice(0, 10) : null
+        const afterDue = after.due_date ? String(after.due_date).slice(0, 10) : null
+        if (afterDue !== beforeDue) {
+          piSets.push(`due_date = $${piIdx++}::date`); piParams.push(afterDue)
+        }
+        if (piSets.length > 0) {
+          piParams.push(installment_id, enrollmentId)
+          await client.query(
+            `UPDATE payment_installments SET ${piSets.join(', ')} WHERE installment_id = $${piIdx++} AND enrollment_id = $${piIdx}`,
+            piParams
+          )
+        }
+
+        // payments: medio, cuenta, n. operacion, fecha y monto. Si la fila no llego
+        // resuelta desde el front, la buscamos por installment_id activa.
+        let paymentId = row.payment_id || before.payment_id || null
+        if (!paymentId) {
+          const { rows: pRows } = await client.query(
+            "SELECT payment_id FROM payments WHERE installment_id = $1 AND enrollment_id = $2 AND active = 'Y' ORDER BY payment_date DESC LIMIT 1",
+            [installment_id, enrollmentId]
+          )
+          paymentId = pRows?.[0]?.payment_id || null
+        }
+
+        if (paymentId) {
+          const pSets = []
+          const pParams = []
+          let pIdx = 1
+          if ((after.cat_payment_medium || null) !== (before.cat_payment_medium || null)) {
+            pSets.push(`cat_method_payment = $${pIdx++}`); pParams.push(after.cat_payment_medium || null)
+          }
+          if ((after.bank_account_id || null) !== (before.bank_account_id || null)) {
+            pSets.push(`settled_in_account_id = $${pIdx++}`); pParams.push(after.bank_account_id || null)
+          }
+          if ((after.transaction_code || '') !== (before.transaction_code || '')) {
+            pSets.push(`transaction_code = $${pIdx++}`); pParams.push(after.transaction_code || '')
+          }
+          const beforePay = before.payment_date ? String(before.payment_date).slice(0, 10) : ''
+          const afterPay = after.payment_date ? String(after.payment_date).slice(0, 10) : ''
+          if (afterPay !== beforePay) {
+            pSets.push(`payment_date = $${pIdx++}::date`); pParams.push(afterPay || null)
+          }
+          if (Number(after.amount) !== Number(before.amount)) {
+            pSets.push(`amount = $${pIdx++}`); pParams.push(after.amount)
+          }
+          if (pSets.length > 0) {
+            pParams.push(paymentId)
+            await client.query(
+              `UPDATE payments SET ${pSets.join(', ')} WHERE payment_id = $${pIdx}`,
+              pParams
+            )
+          }
+        }
+
+        // cat_currency vive en `enrollments` (es global). Si la cuota lo movio,
+        // lo propagamos a la inscripcion entera — comportamiento simetrico al
+        // path del inicial mas arriba.
+        if ((after.cat_currency || null) !== (before.cat_currency || null) && after.cat_currency) {
+          await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [after.cat_currency, enrollmentId])
+        }
+      }
+
+      // Si algun monto cambio, recalcular total_amount y list_price a partir de
+      // la suma actualizada de cuotas. Mantiene total = inicial + suma(cuotas)
+      // como el sistema espera (saldo, vistas, Odoo).
+      if (amountDeltas.length > 0) {
+        const { rows: sumRows } = await client.query(
+          'SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM payment_installments WHERE enrollment_id = $1',
+          [enrollmentId]
+        )
+        const newTotal = Number(sumRows[0]?.total) || 0
+        const { rows: eRows } = await client.query(
+          'SELECT list_price, discount_amount FROM enrollments WHERE enrollment_id = $1',
+          [enrollmentId]
+        )
+        const oldList = Number(eRows[0]?.list_price) || 0
+        const oldDisc = Number(eRows[0]?.discount_amount) || 0
+        // list_price - discount = total: mantenemos esa invariante al ajustar.
+        const newList = newTotal + oldDisc
+        await client.query(
+          'UPDATE enrollments SET total_amount = $1, list_price = $2 WHERE enrollment_id = $3',
+          [newTotal, newList, enrollmentId]
+        )
+        changes['Total Recalculado'] = { old: `S/. ${oldList - oldDisc}`, new: `S/. ${newTotal}` }
+      }
+    })
+
+    // Etiquetas legibles para audit: una linea agregada por cada cuota tocada.
+    for (const row of fields.paid_installments) {
+      const lines = []
+      const { before, after, installment_number } = row
+      if (Number(after.amount) !== Number(before.amount)) {
+        lines.push(`monto S/. ${before.amount} → S/. ${after.amount}`)
+      }
+      if ((after.due_date || null) !== (before.due_date || null)) {
+        const fmtD = d => d ? d.split('-').reverse().join('/') : '---'
+        lines.push(`vencimiento ${fmtD(before.due_date)} → ${fmtD(after.due_date)}`)
+      }
+      if ((after.cat_currency || null) !== (before.cat_currency || null)) {
+        const o = await resolveLabel(before.cat_currency); const n = await resolveLabel(after.cat_currency)
+        lines.push(`moneda ${o || '---'} → ${n || '---'}`)
+      }
+      if ((after.cat_payment_medium || null) !== (before.cat_payment_medium || null)) {
+        const o = await resolveLabel(before.cat_payment_medium); const n = await resolveLabel(after.cat_payment_medium)
+        lines.push(`medio ${o || '---'} → ${n || '---'}`)
+      }
+      if ((after.bank_account_id || null) !== (before.bank_account_id || null)) {
+        const o = await resolveBankLabel(before.bank_account_id); const n = await resolveBankLabel(after.bank_account_id)
+        lines.push(`cuenta ${o || '---'} → ${n || '---'}`)
+      }
+      if ((after.transaction_code || '') !== (before.transaction_code || '')) {
+        lines.push(`n.op ${before.transaction_code || '---'} → ${after.transaction_code || '---'}`)
+      }
+      const beforePay = before.payment_date ? String(before.payment_date).slice(0, 10) : ''
+      const afterPay = after.payment_date ? String(after.payment_date).slice(0, 10) : ''
+      if (afterPay !== beforePay) {
+        const fmtD = d => d ? d.split('-').reverse().join('/') : '---'
+        lines.push(`fecha pago ${fmtD(beforePay)} → ${fmtD(afterPay)}`)
+      }
+      if (lines.length) {
+        changes[`Cuota #${installment_number}`] = { old: '(pagada)', new: lines.join(', ') }
+      }
+    }
   }
 
   const detailLines = Object.entries(changes)
@@ -2173,17 +2318,18 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
   return result
 }
 
-async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion, userId }) {
-  // Casos:
-  //  1) WEB (sin asesor) -> CA36: setea seller_agent_id, mantiene agent_origin='WEB'.
-  //     Resultado: 'WEB - CA36'.
-  //  2) AE30 -> S/A:     limpia seller_agent_id, setea agent_origin='SA'.
-  //     Resultado: 'SA' (Sin Asesor).
-  //  3) S/A -> CA36:     setea seller_agent_id, limpia agent_origin (era 'SA',
-  //     ya no aplica porque ahora SI hay asesor). Resultado: 'CA36'.
-  // newSellerAgentId === null significa "Sin Asesor (S/A)".
+async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgentOrigin, justificacion, userId }) {
+  // Hay dos modos de invocacion:
+  //  - Legacy (sin newAgentOrigin): solo cambia el asesor, el canal se deriva
+  //    segun reglas heuristicas (asesor null -> 'SA', salida de 'SA' -> null,
+  //    resto preserva). Se mantiene por compatibilidad con clientes antiguos.
+  //  - Nuevo (con newAgentOrigin): el cliente eligio canal explicito desde el
+  //    selector UI (categorias comercial/b2b/web/we/sa). El backend persiste
+  //    tal cual lo recibe; null/'' = comercial sin canal.
   const isSinAsesor = newSellerAgentId === null || newSellerAgentId === undefined
   const newAgentIdN = isSinAsesor ? null : Number(newSellerAgentId)
+  const useExplicitOrigin = newAgentOrigin !== undefined
+  const explicitOrigin = (newAgentOrigin === '' || newAgentOrigin === null) ? null : newAgentOrigin
 
   const { rows: oldRows } = await pool.query(`
     SELECT
@@ -2205,11 +2351,22 @@ async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion,
   }
 
   const oldAgentIdN = old.old_agent_id == null ? null : Number(old.old_agent_id)
-  const oldIsSA = (old.old_origin === 'SA') && oldAgentIdN === null
-  const newIsSA = isSinAsesor
+  const oldOrigin = old.old_origin
 
-  if (oldAgentIdN === newAgentIdN && oldIsSA === newIsSA) {
-    throw new Error('El asesor seleccionado es el mismo que el actual')
+  // Calcular newOrigin antes de detectar no-op para que el chequeo cubra tambien
+  // cambios solo-de-canal (mismo asesor, distinto canal).
+  let newOrigin
+  if (useExplicitOrigin) {
+    newOrigin = explicitOrigin
+  } else {
+    // Logica legacy: SA si no hay asesor, limpia SA al volver a un asesor real.
+    if (isSinAsesor) newOrigin = 'SA'
+    else if (oldOrigin === 'SA') newOrigin = null
+    else newOrigin = oldOrigin
+  }
+
+  if (oldAgentIdN === newAgentIdN && (oldOrigin || null) === (newOrigin || null)) {
+    throw new Error('No hay cambios: el canal y el asesor son los mismos que los actuales')
   }
 
   let newAlias = null
@@ -2221,21 +2378,15 @@ async function editSellerAgent ({ enrollmentId, newSellerAgentId, justificacion,
     newAlias = newRows[0].alias
   }
 
-  // Calcular nuevo agent_origin segun el caso:
-  // - Si pasa a S/A: forzar 'SA'.
-  // - Si pasa a un asesor real y el origen era 'SA': limpiar a NULL (ya no es SA).
-  // - En cualquier otro caso: dejar el origen como estaba (preserva 'WEB', 'B2B', etc.).
-  let newOrigin = old.old_origin
-  if (isSinAsesor) {
-    newOrigin = 'SA'
-  } else if (old.old_origin === 'SA') {
-    newOrigin = null
-  }
-
   await pool.query(
     'UPDATE enrollments SET seller_agent_id = $1, agent_origin = $2 WHERE enrollment_id = $3',
     [newAgentIdN, newOrigin, enrollmentId]
   )
+
+  // El cambio puede introducir un nuevo string compuesto (ej. 'B2B - AE30')
+  // en el universo de seller_agent_name; descartamos la cache para que el
+  // proximo enrollmentAdvisorsList lo recoja sin esperar el TTL de 5 min.
+  invalidateAdvisorsCache()
 
   const fmtAgent = (alias, origin) => {
     if (alias && origin) return `${origin} - ${alias}`

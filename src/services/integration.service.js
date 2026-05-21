@@ -1184,14 +1184,250 @@ async function syncFicoConsolidadoToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME }
 }
 
-// Sincroniza las 3 hojas (Ventas + Aula + Consolidado) en una sola llamada.
-// Es lo que el boton "Sincronizar ventas" del frontend dispara para minimizar
-// clicks del operador FICO.
+// Verifica que la hoja exista en el spreadsheet; si no, la crea y escribe la
+// fila de headers. Necesario para hojas generadas por codigo (no pre-armadas
+// manualmente en Drive). Idempotente: si ya existe, no hace nada.
+async function ensureSheetExists (googleSheets, spreadsheetId, sheetName, headersRow) {
+  const meta = await googleSheets.spreadsheets.get({ spreadsheetId })
+  const exists = (meta.data?.sheets || []).some(s => s.properties?.title === sheetName)
+  if (exists) return false
+
+  await googleSheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    resource: { requests: [{ addSheet: { properties: { title: sheetName } } }] }
+  })
+
+  if (headersRow && headersRow.length > 0) {
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${sheetName}'!A1`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: [headersRow] }
+    })
+  }
+  return true
+}
+
+// Hoja "3. Cuotas": una fila por inscripcion con PLAN DE CUOTAS (PP) aprobada
+// por FICO. Las cuotas se pivotan a lo ancho: 10 columnas base + 8 grupos de 6
+// columnas (FCn, Cn, MEDIO, ENTIDAD EMPRESA, ENTIDAD FINANCIERA, N. OPERACION).
+//
+// Reglas:
+//  - Solo PP (cat_payment_plan='we_payment_way_installments') aprobados FICO.
+//  - Se incluyen cuotas pagadas Y pendientes:
+//      paid    -> FCn = payment_date real, Cn = monto cobrado, metadata del payments.
+//      pending -> FCn = due_date,         Cn = monto programado, metadata vacia.
+//  - Anuladas (we_inst_cancelled) se excluyen.
+//  - Cuota 0 (inicial/reserva) NO se incluye: solo las cuotas reales del plan.
+//  - Si una inscripcion tiene > 8 cuotas, se trunca y se loguea cuantas se omiten.
+async function syncFicoCuotasToSheet () {
+  const SPREADSHEET_ID = '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
+  const SHEET_NAME = '3. Cuotas'
+  const MAX_CUOTAS = 8
+
+  const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(process.cwd(), 'credentials/service.json'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+  const authClient = await auth.getClient()
+  const googleSheets = google.sheets({ version: 'v4', auth: authClient })
+
+  const { rows } = await pool.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         AND e.parent_enrollment_id IS NULL
+    )
+    SELECT
+      e.enrollment_id,
+      pv.version_code AS cod,
+      CASE WHEN e.program_edition_id IS NULL THEN 'E0'
+           ELSE COALESCE(pe.global_code, '')
+      END AS ed,
+      to_char(pe.start_date, 'DD/MM/YYYY') AS f_inicio,
+      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END AS ocup,
+      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
+      CASE
+        WHEN COALESCE(pay_agg.total_paid, 0) >= e.total_amount THEN 'Saldado'
+        WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
+        ELSE 'Al dia'
+      END AS estado,
+      CASE curr.alias
+        WHEN 'we_currency_soles' THEN 'PEN'
+        WHEN 'we_currency_usd'   THEN 'USD'
+        ELSE COALESCE(curr.variable_2, '')
+      END AS moneda,
+      (
+        SELECT jsonb_agg(cuota_row ORDER BY cuota_row.num ASC)
+        FROM (
+          SELECT
+            pi.installment_number AS num,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AND p.payment_date IS NOT NULL
+                 THEN to_char(p.payment_date, 'DD/MM/YYYY')
+                 ELSE to_char(pi.due_date, 'DD/MM/YYYY')
+            END AS fc,
+            replace(to_char(pi.amount, 'FM999990.00'), '.', ',') AS monto,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+                 THEN COALESCE(c_meth.description, '')
+                 ELSE ''
+            END AS medio_pago,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+                 THEN COALESCE(c_be.description, '')
+                 ELSE ''
+            END AS entidad_empresa,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+                 THEN COALESCE(ba.bank_name, '')
+                 ELSE ''
+            END AS entidad_financiera,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+                 THEN COALESCE(p.transaction_code, '')
+                 ELSE ''
+            END AS n_operacion
+          FROM public.payment_installments pi
+          JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+          LEFT JOIN public.payments p     ON p.installment_id = pi.installment_id AND p.active = 'Y'
+          LEFT JOIN public.bank_accounts ba ON ba.account_id = p.settled_in_account_id
+          LEFT JOIN public."catalog" c_meth ON c_meth.catalog_id = p.cat_method_payment
+          LEFT JOIN public."catalog" c_be   ON c_be.catalog_id = ba.business_entity_catalog_id
+          WHERE pi.enrollment_id = e.enrollment_id
+            AND pi.installment_number > 0
+            AND cs.alias <> 'we_inst_cancelled'
+        ) cuota_row
+      ) AS cuotas_json
+    FROM public.enrollments e
+    JOIN approved a ON a.enrollment_id = e.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
+    LEFT JOIN public."catalog" c_prof    ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" curr      ON curr.catalog_id   = e.cat_currency
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC LIMIT 1
+    ) ag_token ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
+    ) pay_agg ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND pi.installment_number > 0
+         AND pi.due_date < CURRENT_DATE
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+    ) inst_overdue ON TRUE
+    WHERE c_plan.alias = 'we_payment_way_installments'
+    ORDER BY e.enrollment_id
+  `)
+
+  let truncatedCuotas = 0
+  let truncatedEnrollments = 0
+  const values = (rows || []).map(r => {
+    const baseCols = [
+      r.cod || '', r.ed || '', r.f_inicio || '',
+      r.nombres || '', r.celular || '', r.correo || '',
+      r.ocup || '', r.asesor || '', r.estado || '', r.moneda || ''
+    ]
+    const cuotas = Array.isArray(r.cuotas_json) ? r.cuotas_json : []
+    if (cuotas.length > MAX_CUOTAS) {
+      truncatedCuotas += cuotas.length - MAX_CUOTAS
+      truncatedEnrollments++
+      console.warn(`[syncFicoCuotasToSheet] enrollment_id=${r.enrollment_id} truncado: ${cuotas.length} cuotas -> mostrando primeras ${MAX_CUOTAS}`)
+    }
+    const cuotaCols = []
+    for (let i = 0; i < MAX_CUOTAS; i++) {
+      const cuota = cuotas[i]
+      if (cuota) {
+        cuotaCols.push(
+          cuota.fc || '',
+          cuota.monto || '',
+          cuota.medio_pago || '',
+          cuota.entidad_empresa || '',
+          cuota.entidad_financiera || '',
+          cuota.n_operacion || ''
+        )
+      } else {
+        cuotaCols.push('', '', '', '', '', '')
+      }
+    }
+    return [...baseCols, ...cuotaCols]
+  })
+
+  if (truncatedEnrollments > 0) {
+    console.warn(`[syncFicoCuotasToSheet] Total: ${truncatedEnrollments} enrollments con mas de ${MAX_CUOTAS} cuotas, ${truncatedCuotas} cuotas omitidas`)
+  }
+
+  // 10 base + 8 * 6 = 58 columnas. Columna 58 = BF.
+  const HEADER_ROW = ['COD', 'ED', 'F. INICIO', 'NOMBRES Y APELLIDOS', 'CELULAR', 'CORREO', 'OCUP', 'AS', 'ESTADO', 'MONEDA']
+  for (let i = 1; i <= MAX_CUOTAS; i++) {
+    HEADER_ROW.push(`FC${i}`, `C${i}`, 'MEDIO DE PAGO', 'ENTIDAD EMPRESA', 'ENTIDAD FINANCIERA', 'N° OPERACION')
+  }
+  const created = await ensureSheetExists(googleSheets, SPREADSHEET_ID, SHEET_NAME, HEADER_ROW)
+
+  await googleSheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHEET_NAME}'!A2:BF`
+  }).catch((e) => { console.warn(`Advertencia al limpiar ${SHEET_NAME}:`, e.message) })
+
+  if (values.length > 0) {
+    await googleSheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values }
+    })
+  }
+
+  return {
+    rows_synced: values.length,
+    sheet: SHEET_NAME,
+    sheet_created: created,
+    truncated_cuotas: truncatedCuotas,
+    truncated_enrollments: truncatedEnrollments
+  }
+}
+
+// Sincroniza las hojas FICO (Ventas + Aula + Consolidado + Cuotas) en una
+// sola llamada. Es lo que el boton "Sincronizar ventas" del frontend dispara
+// para minimizar clicks del operador FICO.
 async function syncFicoToSheets () {
   const ventas = await syncFicoSalesToSheet()
   const aula = await syncFicoAulaToSheet()
   const consolidado = await syncFicoConsolidadoToSheet()
-  return { ventas, aula, consolidado }
+  const cuotas = await syncFicoCuotasToSheet()
+  return { ventas, aula, consolidado, cuotas }
 }
 
 export default {
@@ -1203,6 +1439,7 @@ export default {
   syncFicoSalesToSheet,
   syncFicoAulaToSheet,
   syncFicoConsolidadoToSheet,
+  syncFicoCuotasToSheet,
   syncFicoToSheets,
   sendReportToSlack,
   sendEnrollmentWebToSlack,

@@ -25,6 +25,11 @@ async function logTokenEvent ({ tokenId, tokenIds, action, userId, details = nul
   }
 }
 
+// Bandera B2B del token: el lead asociado (lead vinculado a la inscripcion o el
+// lead directo del token) tiene situacion 'we_prospect_situation_corporate'.
+// Cuando es B2B, los nombres de asesor se muestran con prefijo 'B2B - ' para
+// que el operador identifique el canal sin abrir el detalle. Sigue la misma
+// convencion que `enrollmentAdvisorsList` en fico.service.js.
 const BASE_SELECT = `
   SELECT pt.*,
     CASE WHEN e.enrollment_id IS NOT NULL
@@ -41,17 +46,26 @@ const BASE_SELECT = `
     COALESCE(pe.global_code, pe_dir.global_code) AS edition_code,
     COALESCE(pe.start_date, pe_dir.start_date) AS edition_start_date,
     c_prov.description AS provider_name,
-    u_req.alias AS requested_by_name,
-    u_cre.alias AS created_by_name,
-    u_conf.alias AS confirmed_by_name
+    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate' AND u_req.alias IS NOT NULL
+         THEN 'B2B - ' || u_req.alias
+         ELSE u_req.alias
+    END AS requested_by_name,
+    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate' AND u_cre.alias IS NOT NULL
+         THEN 'B2B - ' || u_cre.alias
+         ELSE u_cre.alias
+    END AS created_by_name,
+    u_conf.alias AS confirmed_by_name,
+    (COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate') AS is_b2b
   FROM payment_tokens pt
   LEFT JOIN enrollments e ON e.enrollment_id = pt.enrollment_id
   LEFT JOIN customers cust ON cust.customer_id = e.customer_id
   LEFT JOIN persons per ON per.person_id = cust.person_id
   LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+  LEFT JOIN catalog c_sit ON c_sit.catalog_id = l.cat_prospect_situation
   LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
   LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
   LEFT JOIN leads l_dir ON l_dir.lead_id = pt.lead_id
+  LEFT JOIN catalog c_sit_dir ON c_sit_dir.catalog_id = l_dir.cat_prospect_situation
   LEFT JOIN program_versions pv_dir ON pv_dir.program_version_id = l_dir.program_version_id
   LEFT JOIN program_editions pe_dir ON pe_dir.edition_num_id = l_dir.program_edition_id
   LEFT JOIN catalog c_prov ON c_prov.catalog_id = pt.cat_provider

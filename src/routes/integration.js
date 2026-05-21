@@ -99,7 +99,7 @@ export default async function integrationRoutes (fastify) {
     }
   })
 
-  // FICO -> ambas hojas (Ventas + Aula) en una sola llamada
+  // FICO -> las 4 hojas (Ventas + Aula + Consolidado + Cuotas) en una sola llamada
   fastify.post('/syncFicoToSheets', async (req, reply) => {
     try {
       const result = await integrationService.syncFicoToSheets()

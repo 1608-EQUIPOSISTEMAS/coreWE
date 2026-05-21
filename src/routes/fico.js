@@ -644,6 +644,9 @@ export default async function ficoRoutes (fastify) {
           enrollment_id:        { type: 'integer' },
           // null o ausente = Sin Asesor (S/A)
           new_seller_agent_id:  { type: ['integer', 'null'] },
+          // Canal explicito: 'B2B','WEB','WE','SA' o null (=comercial sin canal).
+          // Si no llega, el backend infiere segun la regla legacy.
+          new_agent_origin:     { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'SA', null] },
           justificacion:        { type: 'string', minLength: 1 }
         }
       }
@@ -653,6 +656,7 @@ export default async function ficoRoutes (fastify) {
       const data = await ficoService.editSellerAgent({
         enrollmentId:     req.body.enrollment_id,
         newSellerAgentId: req.body.new_seller_agent_id ?? null,
+        newAgentOrigin:   req.body.new_agent_origin === undefined ? undefined : req.body.new_agent_origin,
         justificacion:    req.body.justificacion,
         userId:           req.user?.id ?? req.body.user_id
       })
