@@ -1225,15 +1225,22 @@ async function ensureSheetExists (googleSheets, spreadsheetId, sheetName, header
 }
 
 // Hoja "3. Cuotas": una fila por inscripcion con PLAN DE CUOTAS (PP) aprobada
-// por FICO. Las cuotas se pivotan a lo ancho: 10 columnas base + 8 grupos de 6
-// columnas (FCn, Cn, MEDIO, ENTIDAD EMPRESA, ENTIDAD FINANCIERA, N. OPERACION).
+// por FICO. Las cuotas se pivotan a lo ancho en dos bloques:
+//   - Pago real (A..BF): 10 cols base + 8 grupos de 6 cols
+//     (FCn, Cn, MEDIO, ENTIDAD EMPRESA, ENTIDAD FINANCIERA, N. OPERACION).
+//   - Proyeccion  (BG..BV): 8 grupos de 2 cols (F.PAGO Cn, Cn).
 //
 // Reglas:
 //  - Solo PP (cat_payment_plan='we_payment_way_installments') aprobados FICO.
-//  - Se incluyen cuotas pagadas Y pendientes:
+//  - Bloque PAGO REAL — refleja caja efectivamente cobrada:
 //      paid    -> FCn = payment_date real, Cn = monto cobrado, metadata del payments.
-//      pending -> FCn = due_date,         Cn = monto programado, metadata vacia.
-//  - Anuladas (we_inst_cancelled) se excluyen.
+//      pending -> FCn = due_date,          Cn vacio, metadata vacia. El monto
+//                 solo se publica al confirmar el pago para evitar inflar el
+//                 saldo aparente cuando aun no ingresa caja.
+//  - Bloque PROYECCION — refleja el plan original tal como se acordo:
+//      F.PAGO Cn = due_date siempre, Cn = pi.amount siempre. Sirve para
+//      comparar plan vs ejecucion lado a lado sin perder el cronograma.
+//  - Anuladas (we_inst_cancelled) se excluyen de ambos bloques.
 //  - Cuota 0 (inicial/reserva) NO se incluye: solo las cuotas reales del plan.
 //  - Si una inscripcion tiene > 8 cuotas, se trunca y se loguea cuantas se omiten.
 async function syncFicoCuotasToSheet () {
@@ -1312,7 +1319,10 @@ async function syncFicoCuotasToSheet () {
                  THEN to_char(p.payment_date, 'DD/MM/YYYY')
                  ELSE to_char(pi.due_date, 'DD/MM/YYYY')
             END AS fc,
-            replace(to_char(pi.amount, 'FM999990.00'), '.', ',') AS monto,
+            CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+                 THEN replace(to_char(pi.amount, 'FM999990.00'), '.', ',')
+                 ELSE ''
+            END AS monto,
             CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
                  THEN COALESCE(c_meth.description, '')
                  ELSE ''
@@ -1328,7 +1338,9 @@ async function syncFicoCuotasToSheet () {
             CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
                  THEN COALESCE(p.transaction_code, '')
                  ELSE ''
-            END AS n_operacion
+            END AS n_operacion,
+            to_char(pi.due_date, 'DD/MM/YYYY') AS fc_proyeccion,
+            replace(to_char(pi.amount, 'FM999990.00'), '.', ',') AS monto_proyeccion
           FROM public.payment_installments pi
           JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
           LEFT JOIN public.payments p     ON p.installment_id = pi.installment_id AND p.active = 'Y'
@@ -1392,6 +1404,7 @@ async function syncFicoCuotasToSheet () {
       console.warn(`[syncFicoCuotasToSheet] enrollment_id=${r.enrollment_id} truncado: ${cuotas.length} cuotas -> mostrando primeras ${MAX_CUOTAS}`)
     }
     const cuotaCols = []
+    const proyeccionCols = []
     for (let i = 0; i < MAX_CUOTAS; i++) {
       const cuota = cuotas[i]
       if (cuota) {
@@ -1403,28 +1416,39 @@ async function syncFicoCuotasToSheet () {
           cuota.entidad_financiera || '',
           cuota.n_operacion || ''
         )
+        proyeccionCols.push(
+          cuota.fc_proyeccion || '',
+          cuota.monto_proyeccion || ''
+        )
       } else {
         cuotaCols.push('', '', '', '', '', '')
+        proyeccionCols.push('', '')
       }
     }
-    return [...baseCols, ...cuotaCols]
+    return [...baseCols, ...cuotaCols, ...proyeccionCols]
   })
 
   if (truncatedEnrollments > 0) {
     console.warn(`[syncFicoCuotasToSheet] Total: ${truncatedEnrollments} enrollments con mas de ${MAX_CUOTAS} cuotas, ${truncatedCuotas} cuotas omitidas`)
   }
 
-  // 10 base + 8 * 6 = 58 columnas. Columna 58 = BF.
+  // 10 base + 8 * 6 = 58 cols pago real (A..BF) + 8 * 2 = 16 cols proyeccion
+  // (BG..BV). Total = 74 cols. Las proyecciones repiten fecha+monto siempre,
+  // sin importar si la cuota esta pagada — sirven a Finanzas para comparar
+  // plan vs ejecucion sin perder el cronograma original.
   const HEADER_ROW = ['COD', 'ED', 'F. INICIO', 'NOMBRES Y APELLIDOS', 'CELULAR', 'CORREO', 'OCUP', 'AS', 'ESTADO', 'MONEDA']
   for (let i = 1; i <= MAX_CUOTAS; i++) {
     HEADER_ROW.push(`FC${i}`, `C${i}`, 'MEDIO DE PAGO', 'ENTIDAD EMPRESA', 'ENTIDAD FINANCIERA', 'N° OPERACION')
+  }
+  for (let i = 1; i <= MAX_CUOTAS; i++) {
+    HEADER_ROW.push(`F.PAGO C${i}`, `C${i}`)
   }
   const created = await ensureSheetExists(googleSheets, SPREADSHEET_ID, SHEET_NAME, HEADER_ROW)
 
   // Ver nota en syncFicoSalesToSheet sobre por que el clear no puede fallar en silencio.
   await googleSheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${SHEET_NAME}'!A2:BF`
+    range: `'${SHEET_NAME}'!A2:BV`
   })
 
   if (values.length > 0) {

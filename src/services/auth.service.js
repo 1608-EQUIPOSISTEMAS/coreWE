@@ -45,8 +45,18 @@ export async function userList() {
   }
 }
 
+export async function userListByRole(roleAlias) {
+  try {
+    const rows = await callProcedureReturningRows(pool, 'public.sp_user_list_by_role', [roleAlias]);
+    return rows;
+  } catch (error) {
+    console.error('Error in userListByRole service:', error);
+    throw error;
+  }
+}
+
 export default {
   login,
-  userList
-  
+  userList,
+  userListByRole
 }

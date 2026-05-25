@@ -48,4 +48,18 @@ export default async function authRoutes (fastify) {
     }
   })
 
+  fastify.post('/userlist-by-role', { preHandler: [authenticate, ALL_INTERNAL] }, async (req, reply) => {
+    try {
+      const roleAlias = (req.body?.role_alias || '').trim()
+      if (!roleAlias) {
+        return reply.code(400).send({ ok: false, message: 'role_alias es obligatorio' })
+      }
+      const data = await authService.userListByRole(roleAlias)
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      req.log.error(err)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
 }

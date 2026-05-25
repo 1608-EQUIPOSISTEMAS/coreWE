@@ -25,11 +25,14 @@ async function logTokenEvent ({ tokenId, tokenIds, action, userId, details = nul
   }
 }
 
-// Bandera B2B del token: el lead asociado (lead vinculado a la inscripcion o el
-// lead directo del token) tiene situacion 'we_prospect_situation_corporate'.
-// Cuando es B2B, los nombres de asesor se muestran con prefijo 'B2B - ' para
-// que el operador identifique el canal sin abrir el detalle. Sigue la misma
-// convencion que `enrollmentAdvisorsList` en fico.service.js.
+// Aliases de situacion del lead que marcan canal B2B. Cualquiera de los dos
+// activa: (a) prefijo 'B2B - ' en los nombres de asesor del token, (b) flag
+// is_b2b=true. Legacy 'we_prospect_situation_corporate' (Inscripcion corporativa)
+// y nuevo 'we_prospect_situation_convenios' (CONVENIOS desde 2026-05-25, ver
+// memoria simplify-prospect-situations). El SP sp_comercial_enrollment_register
+// propaga la misma lista a enrollments.agent_origin.
+const B2B_SITUATION_ALIASES = "('we_prospect_situation_corporate','we_prospect_situation_convenios')"
+
 const BASE_SELECT = `
   SELECT pt.*,
     CASE WHEN e.enrollment_id IS NOT NULL
@@ -46,16 +49,16 @@ const BASE_SELECT = `
     COALESCE(pe.global_code, pe_dir.global_code) AS edition_code,
     COALESCE(pe.start_date, pe_dir.start_date) AS edition_start_date,
     c_prov.description AS provider_name,
-    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate' AND u_req.alias IS NOT NULL
+    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) IN ${B2B_SITUATION_ALIASES} AND u_req.alias IS NOT NULL
          THEN 'B2B - ' || u_req.alias
          ELSE u_req.alias
     END AS requested_by_name,
-    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate' AND u_cre.alias IS NOT NULL
+    CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) IN ${B2B_SITUATION_ALIASES} AND u_cre.alias IS NOT NULL
          THEN 'B2B - ' || u_cre.alias
          ELSE u_cre.alias
     END AS created_by_name,
     u_conf.alias AS confirmed_by_name,
-    (COALESCE(c_sit.alias, c_sit_dir.alias) = 'we_prospect_situation_corporate') AS is_b2b
+    (COALESCE(c_sit.alias, c_sit_dir.alias) IN ${B2B_SITUATION_ALIASES}) AS is_b2b
   FROM payment_tokens pt
   LEFT JOIN enrollments e ON e.enrollment_id = pt.enrollment_id
   LEFT JOIN customers cust ON cust.customer_id = e.customer_id
