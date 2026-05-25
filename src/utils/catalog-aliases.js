@@ -52,6 +52,9 @@ export const ALIAS = Object.freeze({
   // Modalidad del programa
   MODALITY_ONLINE:                  'we_modality_online',
 
+  // Categoria del programa (programs.cat_category)
+  PROGRAM_CATEGORY_SAP:             'we_program_category_sap',
+
   // Perfiles del alumno (enrollments.cat_profile_id)
   PROFILE_PROFESSIONAL:             'we_profile_professional',
   PROFILE_STUDENT:                  'we_profile_student',

@@ -14,12 +14,33 @@ export function buildConfirmacionOnlineHTML (data) {
     studentName,
     programName,
     email,
-    isNew
+    isNew,
+    sapUser,
+    sapPassword
   } = data
 
   const nombre = capitalizeName(studentName)
   const upperName = (programName || '').toUpperCase()
   const courseTitle = upperName.endsWith('ONLINE') ? upperName : `${upperName} - ONLINE`
+
+  const sapBlock = sapUser
+    ? `<br>
+        <table align="center" border="2" cellpadding="2" cellspacing="-1" style="border-collapse:collapse;margin:1 auto;width:420px;border-color:#052467">
+          <tr style="background-color:#052467;color:white;text-align:center"><td>
+            <font face="Tahoma" size="4"><strong>ACCESO AL SERVIDOR SAP</strong></font>
+          </td></tr>
+          <tr style="color:black;text-align:center;max-height:50px"><td>
+            <font face="Tahoma" size="4"><strong>USUARIO: </strong>${sapUser}</font>
+            <br>
+            <font face="Tahoma" size="4"><strong>CONTRASEÑA: </strong>${sapPassword || '1234567'}</font>
+          </td></tr>
+        </table>
+        <table align="center" style="width:450px">
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="3" color="#052467"><i>Estas credenciales son personales y te dan acceso al servidor SAP durante tu curso.</i></font>
+          </td></tr>
+        </table>`
+    : ''
 
   const accessBlock = isNew
     ? `<table align="center" border="2" cellpadding="2" cellspacing="-1" style="border-collapse:collapse;margin:1 auto;width:420px">
@@ -110,6 +131,8 @@ export function buildConfirmacionOnlineHTML (data) {
       <!-- ACCESO PERSONAL -->
       <br>
       ${accessBlock}
+
+      ${sapBlock}
 
       <!-- Botón video tutorial (naranja) -->
       <br>

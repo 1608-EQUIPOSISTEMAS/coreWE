@@ -1091,6 +1091,7 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
            pv.abbreviation AS program_name,
            prog.banner_link,
            prog.cat_model_modality,
+           prog.cat_category,
            pe.start_date, pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
            e.odoo_user_id,
@@ -1114,6 +1115,17 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
 
   const onlineModalityIdPreview = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
   const isOnlinePreview = data.cat_model_modality === onlineModalityIdPreview
+  const sapCategoryIdPreview = await getCatalogIdByAlias(ALIAS.PROGRAM_CATEGORY_SAP)
+  const isSapOnlinePreview = isOnlinePreview && sapCategoryIdPreview && data.cat_category === sapCategoryIdPreview
+
+  let sapCredentialsPreview = null
+  if (isSapOnlinePreview) {
+    const { rows: sapRows } = await pool.query(
+      'SELECT sap_username, sap_password FROM public.enrollment_sap_credentials WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+    sapCredentialsPreview = sapRows?.[0] || { sap_username: 'SAP_XXXX', sap_password: '1234567' }
+  }
 
   const { rows: schedRows } = await pool.query(`
     SELECT c.description AS day_name, es.start_time, es.end_time
@@ -1161,7 +1173,9 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
         studentName: `${firstName} ${lastName}`,
         programName: data.program_name,
         email: odooEmail,
-        isNew
+        isNew,
+        sapUser: sapCredentialsPreview?.sap_username || null,
+        sapPassword: sapCredentialsPreview?.sap_password || null
       })
     : buildConfirmacionHTML({
         studentName: `${firstName} ${lastName}`,
@@ -1388,6 +1402,7 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
            pv.abbreviation AS program_name,
            prog.banner_link,
            prog.cat_model_modality,
+           prog.cat_category,
            pe.start_date,
            pe.whatsapp_link,
            curr.variable_2 AS currency_symbol,
@@ -1413,6 +1428,17 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
 
   const onlineModalityIdSend = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
   const isOnlineSend = data.cat_model_modality === onlineModalityIdSend
+  const sapCategoryIdSend = await getCatalogIdByAlias(ALIAS.PROGRAM_CATEGORY_SAP)
+  const isSapOnlineSend = isOnlineSend && sapCategoryIdSend && data.cat_category === sapCategoryIdSend
+
+  let sapCredentials = null
+  if (isSapOnlineSend) {
+    const { rows: sapRows } = await pool.query(
+      'SELECT sap_username, sap_password FROM public.sp_assign_sap_credentials($1)',
+      [enrollmentId]
+    )
+    sapCredentials = sapRows?.[0] || null
+  }
 
   const toEmail = data.origin_email
   if (!toEmail) {
@@ -1483,7 +1509,9 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
         studentName: `${firstName} ${lastName}`,
         programName: data.program_name,
         email: odooEmail,
-        isNew
+        isNew,
+        sapUser: sapCredentials?.sap_username || null,
+        sapPassword: sapCredentials?.sap_password || null
       })
     : buildConfirmacionHTML({
         studentName: `${firstName} ${lastName}`,

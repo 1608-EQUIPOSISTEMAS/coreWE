@@ -646,12 +646,11 @@ async function syncFicoSalesToSheet () {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END                                                  AS ocup,
-      COALESCE(
-        ag_token.alias,
-        u.alias,
-        e.agent_origin,
-        'S/A'
-      )                                                    AS asesor,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
+      END                                                  AS asesor,
       CASE c_plan.alias
         WHEN 'we_payment_way_single'        THEN 'PT'
         WHEN 'we_payment_way_installments'  THEN 'PP'
@@ -742,11 +741,13 @@ async function syncFicoSalesToSheet () {
     r.membresia || '', r.flex || ''
   ])
 
-  // Limpiar desde A2 hasta T (preserva fila 1 con headers que el usuario maneja en sheet)
+  // Limpiar desde A2 hasta T (preserva fila 1 con headers que el usuario maneja en sheet).
+  // El clear es obligatorio: si falla, el update siguiente solo sobrescribe las primeras N
+  // filas y deja las filas viejas debajo, mezclando datos de corridas distintas.
   await googleSheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${SHEET_NAME}'!A2:T`
-  }).catch((e) => { console.warn('Advertencia al limpiar Ventas Sistemas:', e.message) })
+  })
 
   if (values.length > 0) {
     await googleSheets.spreadsheets.values.update({
@@ -817,7 +818,11 @@ async function syncFicoAulaToSheet () {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END                                                  AS ocup,
-      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
+      END AS asesor,
       'ACT'                                                AS estado_alumno,
       CASE
         WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
@@ -896,10 +901,11 @@ async function syncFicoAulaToSheet () {
     r.estado_pago || '', r.descuento || '', r.tipo_cliente || '', r.es_member || ''
   ])
 
+  // Ver nota en syncFicoSalesToSheet sobre por que el clear no puede fallar en silencio.
   await googleSheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${SHEET_NAME}'!A2:P`
-  }).catch((e) => { console.warn('Advertencia al limpiar Aula Sistemas:', e.message) })
+  })
 
   if (values.length > 0) {
     await googleSheets.spreadsheets.values.update({
@@ -983,7 +989,11 @@ async function syncFicoConsolidadoToSheet () {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END AS ocup,
-      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
+      END AS asesor,
       CASE
         WHEN (e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
@@ -1042,9 +1052,14 @@ async function syncFicoConsolidadoToSheet () {
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
       CASE WHEN (e.total_amount) = 0 THEN ''
-           ELSE CASE curr.alias
-                  WHEN 'we_currency_soles' THEN 'PEN'
-                  WHEN 'we_currency_usd'   THEN 'USD'
+           ELSE CASE
+                  WHEN curr.alias = 'we_currency_soles' THEN 'PEN'
+                  WHEN curr.alias = 'we_currency_usd'   THEN 'USD'
+                  -- Fallback por simbolo: cubre enrollments viejos con aliases
+                  -- typo en BD (we_currency_dolares/dollars) que el codigo dejo
+                  -- de generar el 2026-05-18 pero que pueden seguir en catalog.
+                  WHEN curr.variable_2 = '$'            THEN 'USD'
+                  WHEN curr.variable_2 IN ('S/', 'S/.') THEN 'PEN'
                   ELSE COALESCE(curr.variable_2, '')
                 END
            END AS tipo_moneda,
@@ -1167,10 +1182,11 @@ async function syncFicoConsolidadoToSheet () {
   ])
 
   // 31 columnas A..AE. Limpiamos desde A2 (preserva la fila de headers).
+  // Ver nota en syncFicoSalesToSheet sobre por que el clear no puede fallar en silencio.
   await googleSheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${SHEET_NAME}'!A2:AE`
-  }).catch((e) => { console.warn('Advertencia al limpiar Consolidado:', e.message) })
+  })
 
   if (values.length > 0) {
     await googleSheets.spreadsheets.values.update({
@@ -1267,15 +1283,24 @@ async function syncFicoCuotasToSheet () {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END AS ocup,
-      COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A') AS asesor,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
+      END AS asesor,
       CASE
         WHEN COALESCE(pay_agg.total_paid, 0) >= e.total_amount THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END AS estado,
-      CASE curr.alias
-        WHEN 'we_currency_soles' THEN 'PEN'
-        WHEN 'we_currency_usd'   THEN 'USD'
+      CASE
+        WHEN curr.alias = 'we_currency_soles' THEN 'PEN'
+        WHEN curr.alias = 'we_currency_usd'   THEN 'USD'
+        -- Ver nota en syncFicoConsolidadoToSheet: aliases typo (dolares/dollars)
+        -- escapan los WHEN explicitos y caen al simbolo. Mapeamos por simbolo
+        -- como segunda capa hasta que el catalog en BD quede canonizado.
+        WHEN curr.variable_2 = '$'            THEN 'USD'
+        WHEN curr.variable_2 IN ('S/', 'S/.') THEN 'PEN'
         ELSE COALESCE(curr.variable_2, '')
       END AS moneda,
       (
@@ -1396,10 +1421,11 @@ async function syncFicoCuotasToSheet () {
   }
   const created = await ensureSheetExists(googleSheets, SPREADSHEET_ID, SHEET_NAME, HEADER_ROW)
 
+  // Ver nota en syncFicoSalesToSheet sobre por que el clear no puede fallar en silencio.
   await googleSheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${SHEET_NAME}'!A2:BF`
-  }).catch((e) => { console.warn(`Advertencia al limpiar ${SHEET_NAME}:`, e.message) })
+  })
 
   if (values.length > 0) {
     await googleSheets.spreadsheets.values.update({
