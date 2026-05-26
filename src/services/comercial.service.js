@@ -6,7 +6,9 @@ import { pipeline } from 'stream';
 import fs from 'fs';
 import path from 'path';
 
-import integrationService from './integration.service.js'  
+import integrationService from './integration.service.js'
+import slackClient from '../config/slack.js'
+import { refreshEnrollmentMv } from './fico-mv-refresh.cron.js'
 const pump = promisify(pipeline);
 
 const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
@@ -84,6 +86,24 @@ async function enrollmentRegister(payload) {
 
   if (!lead_id) throw new Error("El lead_id es obligatorio para la inscripción");
 
+  // ¿El lead ya tiene una inscripción OBSERVADA? Entonces este registro es una
+  // subsanación (re-registro en sitio que hace el SP), no un alta nueva. Lo
+  // detectamos antes de llamar al SP para auditarlo como 'resubmitted' después.
+  let wasObserved = false;
+  try {
+    const prev = await pool.query(
+      `SELECT c.alias AS fico_alias
+         FROM public.leads l
+         JOIN public.enrollments e ON e.enrollment_id = l.enrollment_id
+         LEFT JOIN public."catalog" c ON c.catalog_id = e.cat_fico_status
+        WHERE l.lead_id = $1`,
+      [lead_id]
+    );
+    wasObserved = prev.rows?.[0]?.fico_alias === 'we_enrollment_status_observed';
+  } catch (chkErr) {
+    console.error('[enrollmentRegister] No se pudo verificar estado observado:', chkErr.message);
+  }
+
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_comercial_enrollment_register',
@@ -98,6 +118,56 @@ async function enrollmentRegister(payload) {
   const response = rows?.[0] || { result: 0, message: 'No response from DB', enrollment_id: null };
 
   if (response.result === 1 && response.enrollment_id) {
+      // Refresco inmediato de la MV del listado FICO para que la matrícula
+      // (alta nueva o subsanación) aparezca/actualice al instante, sin esperar
+      // al cron de 2 min. Fire-and-forget, mismo patrón que ficoEnrollmentRegister.
+      refreshEnrollmentMv('on-comercial-register')
+
+      // Subsanación: dejar traza en el historial y notificar a FICO por Slack
+      // (mismo aviso que hacía resubmitEnrollment, que ahora no se ejecuta en
+      // este flujo porque el reenvío pasa por re-registro).
+      if (wasObserved) {
+        try {
+          await pool.query(
+            `INSERT INTO public.enrollment_audit_log (enrollment_id, action, performed_by, details)
+             VALUES ($1, 'resubmitted', $2, $3)`,
+            [response.enrollment_id, user_id, 'Inscripción subsanada y reenviada a FICO (re-registro de datos corregidos)']
+          );
+        } catch (audErr) {
+          console.error('[enrollmentRegister] No se pudo auditar resubmit:', audErr.message);
+        }
+
+        try {
+          const { rows: ed } = await pool.query(
+            `SELECT CONCAT(per.first_name, ' ', per.last_name) AS student_name,
+                    pv.abbreviation AS program_name,
+                    pe.global_code  AS edition_code,
+                    pe.start_date   AS edition_start_date,
+                    ua.alias        AS advisor_alias
+               FROM public.enrollments e
+               JOIN public.customers cust ON cust.customer_id = e.customer_id
+               JOIN public.persons per    ON per.person_id    = cust.person_id
+               LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+               LEFT JOIN public.program_editions pe ON pe.edition_num_id      = e.program_edition_id
+               LEFT JOIN public.users ua            ON ua.user_id            = e.seller_agent_id
+              WHERE e.enrollment_id = $1`,
+            [response.enrollment_id]
+          );
+          if (ed?.[0]) {
+            const edDate = ed[0].edition_start_date ? new Date(ed[0].edition_start_date).toLocaleDateString('es-PE') : '';
+            await slackClient.notifyEnrollmentResubmitted({
+              studentName: ed[0].student_name,
+              programName: ed[0].program_name,
+              editionCode: ed[0].edition_code,
+              editionDate: edDate,
+              advisorName: ed[0].advisor_alias
+            });
+          }
+        } catch (slackErr) {
+          console.error('[enrollmentRegister] Slack resubmit:', slackErr.message);
+        }
+      }
+
       const vals = payload.validations
       if (vals?.enabled && vals.validated_children?.length > 0) {
         try {

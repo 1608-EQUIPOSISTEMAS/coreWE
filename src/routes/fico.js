@@ -31,6 +31,18 @@ export default async function ficoRoutes (fastify) {
     }
   })
 
+  // Recarga forzada: regenera la vista materializada y espera a que termine,
+  // para que el listado muestre TODO actualizado de inmediato (botón Recargar).
+  fastify.post('/refreshlist', async (req, reply) => {
+    try {
+      const data = await ficoService.refreshEnrollmentList()
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[refreshEnrollmentList ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/enrollmentlist', {
     schema: {
       body: {
@@ -182,6 +194,8 @@ export default async function ficoRoutes (fastify) {
           payment_medium:   { type: ['string', 'null'] },
           business_entity:  { type: ['string', 'null'] },
           financial_entity: { type: ['string', 'null'] },
+          // Solo membresias. YYYY-MM-DD. Si > hoy en TZ Lima, difiere Odoo + correo.
+          activation_date:  { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
           installments:     { type: ['array', 'null'], items: {
             type: 'object',
             properties: {
@@ -265,6 +279,35 @@ export default async function ficoRoutes (fastify) {
   }, async (req, reply) => {
     const data = await ficoService.getEmailLogs({ enrollmentId: req.body.enrollment_id })
     return reply.code(200).send({ ok: true, data })
+  })
+
+  fastify.patch('/membershipactivationdate', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['enrollment_id', 'activation_date'],
+        additionalProperties: false,
+        properties: {
+          enrollment_id:   { type: 'integer' },
+          activation_date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const result = await ficoService.updateMembershipActivationDate({
+        enrollmentId: req.body.enrollment_id,
+        newDate: req.body.activation_date,
+        userId: req.user?.id ?? null
+      })
+      if (!result.ok) {
+        return reply.code(400).send({ ok: false, error: result.error })
+      }
+      return reply.code(200).send({ ok: true, data: result })
+    } catch (err) {
+      console.error('[updateMembershipActivationDate ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
   })
 
   fastify.post('/sendpaymentconfirmationemail', {
@@ -393,14 +436,18 @@ export default async function ficoRoutes (fastify) {
         required: ['enrollment_id'],
         properties: {
           enrollment_id: { type: 'integer' },
-          override_edition_id: { type: ['integer', 'null'] }
+          override_edition_id: { type: ['integer', 'null'] },
+          // Solo membresias. Permite ver el preview con la fecha que el usuario
+          // esta a punto de elegir, antes de persistirla en BD.
+          activation_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
         }
       }
     }
   }, async (req, reply) => {
     const data = await ficoService.previewConfirmationEmail({
       enrollmentId: req.body.enrollment_id,
-      overrideEditionId: req.body.override_edition_id || null
+      overrideEditionId: req.body.override_edition_id || null,
+      activationDate: req.body.activation_date || null
     })
     return reply.code(200).send({ ok: true, data })
   })
@@ -740,8 +787,10 @@ export default async function ficoRoutes (fastify) {
         required: ['enrollment_id'],
         additionalProperties: false,
         properties: {
-          enrollment_id: { type: 'integer' },
-          user_id:       { type: ['integer', 'null'] }
+          enrollment_id:   { type: 'integer' },
+          user_id:         { type: ['integer', 'null'] },
+          // Solo membresias A5. YYYY-MM-DD. Si > hoy en TZ Lima, difiere Odoo + correo.
+          activation_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
         }
       }
     }
@@ -749,7 +798,8 @@ export default async function ficoRoutes (fastify) {
     try {
       const data = await ficoService.approvePendingReview({
         enrollmentId: req.body.enrollment_id,
-        userId: req.user?.id ?? req.body.user_id
+        userId: req.user?.id ?? req.body.user_id,
+        activationDate: req.body.activation_date ?? null
       })
       return reply.code(200).send({ ok: true, data })
     } catch (err) {

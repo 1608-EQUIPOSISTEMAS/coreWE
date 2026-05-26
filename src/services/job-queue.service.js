@@ -22,9 +22,22 @@ function nextBackoffSeconds (attempts) {
   return Math.min(BACKOFF_BASE_SECONDS * Math.pow(2, exp), BACKOFF_MAX_SECONDS)
 }
 
-export async function enqueue ({ jobType, enrollmentId = null, payload = {}, maxAttempts = 5 }) {
+// runAt: si se pasa, el job no sera reclamable hasta esa fecha/hora. Se traduce
+// a next_attempt_at en el INSERT. Sin runAt = NOW() (comportamiento default de
+// la columna). Acepta Date o string ISO.
+export async function enqueue ({ jobType, enrollmentId = null, payload = {}, maxAttempts = 5, runAt = null }) {
   if (!jobType || typeof jobType !== 'string') {
     throw new Error('enqueue: jobType requerido')
+  }
+  if (runAt != null) {
+    const runAtIso = runAt instanceof Date ? runAt.toISOString() : String(runAt)
+    const { rows } = await pool.query(
+      `INSERT INTO public.fico_jobs (job_type, enrollment_id, payload, max_attempts, next_attempt_at)
+       VALUES ($1, $2, $3::jsonb, $4, $5::timestamptz)
+       RETURNING job_id, status, next_attempt_at, created_at`,
+      [jobType, enrollmentId, JSON.stringify(payload), maxAttempts, runAtIso]
+    )
+    return rows[0]
   }
   const { rows } = await pool.query(
     `INSERT INTO public.fico_jobs (job_type, enrollment_id, payload, max_attempts)
@@ -33,6 +46,23 @@ export async function enqueue ({ jobType, enrollmentId = null, payload = {}, max
     [jobType, enrollmentId, JSON.stringify(payload), maxAttempts]
   )
   return rows[0]
+}
+
+// Re-agenda un job pendiente cambiando su next_attempt_at. Usado por el endpoint
+// PATCH de reprogramacion de membresia: si FICO mueve la fecha de activacion,
+// movemos tambien el job ya encolado en vez de crear uno nuevo (evita duplicados).
+// Solo afecta jobs en estado 'pending' — si ya esta in_progress/done/failed no se
+// toca y retorna 0.
+export async function rescheduleJob ({ jobId, runAt }) {
+  if (!jobId) throw new Error('rescheduleJob: jobId requerido')
+  if (runAt == null) throw new Error('rescheduleJob: runAt requerido')
+  const runAtIso = runAt instanceof Date ? runAt.toISOString() : String(runAt)
+  const { rowCount } = await pool.query(`
+    UPDATE public.fico_jobs
+    SET next_attempt_at = $2::timestamptz
+    WHERE job_id = $1 AND status = 'pending'
+  `, [jobId, runAtIso])
+  return rowCount
 }
 
 // Reclama el siguiente job pendiente (mas viejo primero) y lo marca como

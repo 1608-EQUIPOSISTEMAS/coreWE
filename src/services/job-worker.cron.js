@@ -18,6 +18,11 @@ import ficoService from './fico.service.js'
 // odoo DEBE correr antes de email (email lee odoo_user_id).
 const REGISTER_FOLLOWUP_STEPS = ['children', 'odoo', 'email']
 
+// Steps del job 'membership_activation' (activacion diferida de membresia).
+// odoo crea el res.users + inscribe en cursos online. email manda bienvenida con
+// credenciales. El email lee odoo_email persistido por el step odoo.
+const MEMBERSHIP_ACTIVATION_STEPS = ['odoo', 'email']
+
 const handlers = {
   /**
    * Inscripcion post-registro: hijos -> Odoo -> email.
@@ -64,6 +69,55 @@ const handlers = {
         // el retry vuelva a intentar mas tarde con backoff.
         if (!email?.success) {
           throw Object.assign(new Error(email?.error || 'Email no enviado'), { _failStep: 'email' })
+        }
+        await updateCurrentStep(job.job_id, 'email')
+      } catch (err) {
+        if (!err._failStep) err._failStep = 'email'
+        throw err
+      }
+    } else {
+      result.skipped.push('email')
+    }
+
+    return result
+  },
+
+  /**
+   * Activacion diferida de membresia: odoo -> email.
+   * Encolado por confirmPayment cuando enrollments.membership_activation_date
+   * es futura. El worker lo reclama al llegar la fecha (next_attempt_at <= NOW())
+   * y dispara los efectos que normalmente serian sincronicos.
+   *
+   * payload: { enrollmentId } — el resto se lee de la BD para evitar staleness.
+   * current_step: null | 'odoo' | 'email' (ultimo completado).
+   */
+  async membership_activation (job) {
+    const { enrollment_id: enrollmentId, current_step: completed } = job
+    const startIdx = completed ? MEMBERSHIP_ACTIVATION_STEPS.indexOf(completed) + 1 : 0
+    const result = { skipped: [] }
+
+    if (startIdx <= 0) {
+      try {
+        const odoo = await ficoService.enrollMembershipInOdoo({ enrollmentId })
+        result.odoo = odoo
+        if (!odoo?.success) {
+          throw Object.assign(new Error(odoo?.error || 'Odoo membership enrollment fallo'), { _failStep: 'odoo' })
+        }
+        await updateCurrentStep(job.job_id, 'odoo')
+      } catch (err) {
+        if (!err._failStep) err._failStep = 'odoo'
+        throw err
+      }
+    } else {
+      result.skipped.push('odoo')
+    }
+
+    if (startIdx <= 1) {
+      try {
+        const email = await ficoService.sendMembershipEmail({ enrollmentId })
+        result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
+        if (!email?.success) {
+          throw Object.assign(new Error(email?.error || 'Email membresia no enviado'), { _failStep: 'email' })
         }
         await updateCurrentStep(job.job_id, 'email')
       } catch (err) {

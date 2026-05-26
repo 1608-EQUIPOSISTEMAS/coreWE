@@ -29,8 +29,8 @@ import { buildConfirmacionPagoHTML } from '../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from './pdf.service.js'
 import slackClient from '../config/slack.js'
-import { refreshEnrollmentMv } from './fico-mv-refresh.cron.js'
-import { enqueue as enqueueJob } from './job-queue.service.js'
+import { refreshEnrollmentMv, forceRefreshEnrollmentMv } from './fico-mv-refresh.cron.js'
+import { enqueue as enqueueJob, rescheduleJob, getLatestJobByEnrollment } from './job-queue.service.js'
 
 async function enrollmentList (payload = {}) {
   const rows = await callProcedureReturningRows(
@@ -311,16 +311,23 @@ async function paymentDetailGet ({ enrollment_id }) {
     try {
       const { rows: edRows } = await pool.query(`
         SELECT pe.start_date AS edition_start_date, pe.end_date AS edition_end_date,
-               l.pay_date AS commercial_pay_date
+               l.pay_date AS commercial_pay_date,
+               e.membership_activation_date,
+               cts.alias AS cat_type_status_alias
         FROM enrollments e
         LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
         LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+        LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
         WHERE e.enrollment_id = $1
       `, [enrollment_id])
       if (edRows?.[0]) {
-        result.edition_start_date    = edRows[0].edition_start_date || null
-        result.edition_end_date      = edRows[0].edition_end_date || null
-        result.commercial_pay_date   = edRows[0].commercial_pay_date || null
+        result.edition_start_date         = edRows[0].edition_start_date || null
+        result.edition_end_date           = edRows[0].edition_end_date || null
+        result.commercial_pay_date        = edRows[0].commercial_pay_date || null
+        result.membership_activation_date = edRows[0].membership_activation_date || null
+        // Necesario para que el modal detecte A5 pending_review y enrute al
+        // endpoint correcto (approvePendingReview vs confirmPayment).
+        result.cat_type_status_alias      = edRows[0].cat_type_status_alias || null
       }
     } catch (err) {
       console.error('[paymentDetailGet] edition dates:', err.message)
@@ -385,12 +392,177 @@ async function _confirmPaymentIdempotencyGuard (enrollmentId, action) {
   return null
 }
 
+const MEMBERSHIP_ACTIVATION_WINDOW_MONTHS = 6
+
+// Resuelve si la confirmacion de pago debe diferir la activacion de membresia.
+// Lee is_membership de BD (no confiamos en flags del frontend) y valida la
+// fecha contra una ventana de N meses calculada en TZ Lima (la zona horaria
+// del servidor en prod no es confiable, ver memoria timezone-production).
+//
+// Devuelve:
+//   { isMembership: false }                                  -> no aplica, curso regular
+//   { isMembership: true, deferred: false, activationDate }  -> activacion hoy o pasado, flujo sincrono
+//   { isMembership: true, deferred: true, activationDate, runAt }
+//   { error: '<motivo>' }                                    -> fecha invalida o fuera de ventana
+async function _resolveMembershipActivation (payload) {
+  const enrollmentId = payload?.enrollment_id
+  if (!enrollmentId) return { isMembership: false }
+
+  const { rows: probe } = await pool.query(`
+    SELECT pv.abbreviation, prog.is_membership
+    FROM enrollments e
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  const row = probe?.[0]
+  if (!row || !isMembership(row.abbreviation, row.is_membership)) {
+    return { isMembership: false }
+  }
+
+  // No mandaron fecha: comportamiento legacy (activacion inmediata, sin
+  // persistir nada en membership_activation_date para no cambiar el template
+  // de correos antiguos que dependen de pe.start_date).
+  const raw = payload.activation_date
+  if (!raw) return { isMembership: true, deferred: false, activationDate: null }
+
+  // Validacion de formato. Aceptamos solo YYYY-MM-DD para evitar ambiguedad
+  // de timezone — el cliente debe mandar la fecha calendario explicita.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(raw).trim())) {
+    return { error: 'activation_date debe ser YYYY-MM-DD' }
+  }
+
+  // Comparacion y calculo de runAt en SQL para que todo viva en TZ Lima.
+  const { rows: chk } = await pool.query(`
+    SELECT
+      ($1::date <= (NOW() AT TIME ZONE 'America/Lima')::date)                                            AS is_today_or_past,
+      ($1::date > ((NOW() AT TIME ZONE 'America/Lima')::date + ($2 || ' months')::interval)::date)      AS out_of_window,
+      (($1::date + TIME '09:00:00') AT TIME ZONE 'America/Lima')                                         AS run_at,
+      $1::date                                                                                            AS activation_date
+  `, [raw, String(MEMBERSHIP_ACTIVATION_WINDOW_MONTHS)])
+
+  const c = chk?.[0]
+  if (!c) return { error: 'activation_date no se pudo parsear' }
+  if (c.out_of_window) return { error: `activation_date excede la ventana permitida (${MEMBERSHIP_ACTIVATION_WINDOW_MONTHS} meses)` }
+
+  if (c.is_today_or_past) {
+    return { isMembership: true, deferred: false, activationDate: c.activation_date }
+  }
+  return { isMembership: true, deferred: true, activationDate: c.activation_date, runAt: c.run_at }
+}
+
+// Reprograma la fecha de activacion de una membresia ya confirmada. FICO solo
+// puede mover la fecha mientras el correo de bienvenida NO se haya enviado —
+// una vez que el alumno ya recibio sus credenciales, mover la fecha causaria
+// inconsistencia entre lo que dice el correo y la realidad.
+//
+// Inputs:
+//   enrollmentId: int requerido
+//   newDate: string YYYY-MM-DD, requerido. Debe ser > hoy en TZ Lima.
+//   userId: int para audit log
+//
+// Devuelve { ok, error?, job? }.
+async function updateMembershipActivationDate ({ enrollmentId, newDate, userId }) {
+  if (!enrollmentId) return { ok: false, error: 'enrollment_id requerido' }
+  if (!newDate) return { ok: false, error: 'newDate requerido' }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(newDate).trim())) {
+    return { ok: false, error: 'newDate debe ser YYYY-MM-DD' }
+  }
+
+  // Verificamos: (a) es membresia, (b) no se mando aun el correo de bienvenida.
+  // Hacemos ambos checks en una sola query para evitar TOCTOU.
+  const { rows: probe } = await pool.query(`
+    SELECT pv.abbreviation, prog.is_membership,
+           EXISTS (
+             SELECT 1 FROM public.email_logs el
+             WHERE el.enrollment_id = e.enrollment_id
+               AND el.template_type = 'membresia'
+               AND el.status = 'sent'
+           ) AS email_already_sent
+    FROM enrollments e
+    LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN programs prog ON prog.program_id = pv.program_id
+    WHERE e.enrollment_id = $1
+  `, [enrollmentId])
+
+  const row = probe?.[0]
+  if (!row) return { ok: false, error: 'Inscripcion no encontrada' }
+  if (!isMembership(row.abbreviation, row.is_membership)) {
+    return { ok: false, error: 'Esta inscripcion no es membresia' }
+  }
+  if (row.email_already_sent) {
+    return { ok: false, error: 'El correo de bienvenida ya fue enviado. La fecha no puede cambiarse.' }
+  }
+
+  // Validacion de ventana y calculo de runAt en TZ Lima — misma logica que
+  // _resolveMembershipActivation pero exigiendo fecha estrictamente futura
+  // (la activacion inmediata se hace por sendconfirmationemail, no por aqui).
+  const { rows: chk } = await pool.query(`
+    SELECT
+      ($1::date <= (NOW() AT TIME ZONE 'America/Lima')::date)                                       AS is_today_or_past,
+      ($1::date > ((NOW() AT TIME ZONE 'America/Lima')::date + ($2 || ' months')::interval)::date) AS out_of_window,
+      (($1::date + TIME '09:00:00') AT TIME ZONE 'America/Lima')                                    AS run_at,
+      $1::date                                                                                       AS activation_date
+  `, [newDate, String(MEMBERSHIP_ACTIVATION_WINDOW_MONTHS)])
+
+  const c = chk?.[0]
+  if (!c) return { ok: false, error: 'Fecha no se pudo parsear' }
+  if (c.is_today_or_past) {
+    return { ok: false, error: 'La nueva fecha debe ser posterior a hoy. Para activar hoy, use el envio directo.' }
+  }
+  if (c.out_of_window) {
+    return { ok: false, error: `La nueva fecha excede la ventana permitida (${MEMBERSHIP_ACTIVATION_WINDOW_MONTHS} meses)` }
+  }
+
+  // Persistimos la nueva fecha y reagendamos (o creamos) el job.
+  await pool.query(
+    `UPDATE enrollments SET membership_activation_date = $2::date WHERE enrollment_id = $1`,
+    [enrollmentId, c.activation_date]
+  )
+
+  let job = await getLatestJobByEnrollment(enrollmentId, 'membership_activation')
+  if (job && job.status === 'pending') {
+    await rescheduleJob({ jobId: job.job_id, runAt: c.run_at })
+  } else {
+    // No hay job pendiente (caso edge: legacy sin encolar, o el anterior ya
+    // termino done/failed). Encolamos uno nuevo apuntando al runAt nuevo.
+    job = await enqueueJob({
+      jobType: 'membership_activation',
+      enrollmentId,
+      payload: { enrollmentId },
+      runAt: c.run_at
+    })
+  }
+
+  try {
+    await logAudit({
+      enrollmentId,
+      action: 'membership_activation_rescheduled',
+      userId,
+      details: `Nueva fecha: ${c.activation_date} 09:00 (job=${job?.job_id ?? '-'})`
+    })
+  } catch (e) {
+    console.error('[updateMembershipActivationDate] audit fallo:', e.message)
+  }
+
+  return { ok: true, job, activationDate: c.activation_date }
+}
+
 async function confirmPayment (payload) {
   const childErr = await _confirmPaymentValidateChildren(payload.enrollment_id)
   if (childErr) return childErr
 
   const idemHit = await _confirmPaymentIdempotencyGuard(payload.enrollment_id, payload.action)
   if (idemHit) return idemHit
+
+  // Resolvemos activation_date ANTES del SP. Si la fecha es invalida abortamos
+  // sin tocar el pago — preferimos que FICO corrija el dato a que el pago quede
+  // confirmado con activacion en limbo.
+  const activation = await _resolveMembershipActivation(payload)
+  if (activation.error) {
+    return { result: 0, message: activation.error }
+  }
 
   // Capturamos el max payment_id ANTES del SP. Cualquier payment activo con id <= a este
   // valor es un placeholder previo creado por sp_comercial_enrollment_register cuando el
@@ -483,36 +655,80 @@ async function confirmPayment (payload) {
       console.error('[confirmPayment] Error actualizando token:', err.message)
     }
 
-    try {
-      let odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
-
-      if (!odooOrderId) {
-        const odooResult = await enrollInOdoo({ enrollmentId: payload.enrollment_id })
-        if (odooResult?.success) {
-          const cursoLabel = odooResult.course_search || 'Curso no especificado'
-          await logAudit({
-            enrollmentId: payload.enrollment_id,
-            action: 'odoo_enrolled',
-            userId: payload.user_id,
-            details: `Odoo user ${odooResult.odoo_user_id} - ${cursoLabel}`
-          })
-          odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
-        }
+    // Persistir membership_activation_date si la confirmacion trajo fecha valida.
+    // Lo hacemos para AMBOS casos (inmediata o diferida) cuando el caller mando
+    // fecha explicita — la fecha quedara reflejada en el correo de bienvenida.
+    if (activation.isMembership && activation.activationDate) {
+      try {
+        await pool.query(
+          `UPDATE enrollments SET membership_activation_date = $2::date WHERE enrollment_id = $1`,
+          [payload.enrollment_id, activation.activationDate]
+        )
+      } catch (e) {
+        console.error('[confirmPayment] No se pudo persistir membership_activation_date:', e.message)
       }
+    }
 
-      if (odooOrderId) {
-        const activated = await odooClient.activateFees(odooOrderId)
-        if (activated?.activated > 0) {
-          await logAudit({
-            enrollmentId: payload.enrollment_id,
-            action: 'odoo_fees_activated',
-            userId: payload.user_id,
-            details: `${activated.activated} cuota(s) pasadas a Pendiente en Odoo`
-          })
-        }
+    // Bifurcacion membresia diferida: encolar job en lugar de ejecutar Odoo + email
+    // sincronicamente. El worker reclama el job cuando llegue runAt (9am Lima del
+    // dia pedido) y dispara enrollMembershipInOdoo + sendMembershipEmail.
+    if (activation.isMembership && activation.deferred) {
+      try {
+        const job = await enqueueJob({
+          jobType: 'membership_activation',
+          enrollmentId: payload.enrollment_id,
+          payload: { enrollmentId: payload.enrollment_id },
+          runAt: activation.runAt
+        })
+        // Enriquecemos la respuesta para que el frontend sepa que NO debe llamar
+        // a enrollInOdoo ni sendConfirmationEmail despues — el job lo hara en su
+        // momento. Sin este flag el frontend seguiria llamando esos endpoints y
+        // dispararia la activacion HOY, rompiendo el diferimiento.
+        resp.membership_deferred = true
+        resp.activation_date = activation.activationDate
+        resp.scheduled_job_id = job.job_id
+        await logAudit({
+          enrollmentId: payload.enrollment_id,
+          action: 'membership_activation_scheduled',
+          userId: payload.user_id,
+          details: `Activacion programada para ${activation.activationDate} 09:00 (job=${job.job_id})`
+        })
+      } catch (qErr) {
+        console.error('[confirmPayment] No se pudo encolar membership_activation:', qErr.message)
       }
-    } catch (odooErr) {
-      console.error('[confirmPayment] Odoo enroll/activate:', odooErr.message)
+    } else {
+      // Flujo sincrono: cursos regulares + membresia inmediata.
+      try {
+        let odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
+
+        if (!odooOrderId) {
+          const odooResult = await enrollInOdoo({ enrollmentId: payload.enrollment_id })
+          if (odooResult?.success) {
+            const cursoLabel = odooResult.course_search || 'Curso no especificado'
+            await logAudit({
+              enrollmentId: payload.enrollment_id,
+              action: 'odoo_enrolled',
+              userId: payload.user_id,
+              details: `Odoo user ${odooResult.odoo_user_id} - ${cursoLabel}`
+            })
+            odooOrderId = (await getEnrollmentOdoo(payload.enrollment_id))?.odoo_order_id
+          }
+        }
+
+        if (odooOrderId) {
+          const activated = await odooClient.activateFees(odooOrderId)
+          if (activated?.activated > 0) {
+            await logAudit({
+              enrollmentId: payload.enrollment_id,
+              action: 'odoo_fees_activated',
+              userId: payload.user_id,
+              details: `${activated.activated} cuota(s) pasadas a Pendiente en Odoo`
+            })
+          }
+        }
+      } catch (odooErr) {
+        console.error('[confirmPayment] Odoo enroll/activate:', odooErr.message)
+      }
     }
 
     if (payload.action === 'confirm_contado') {
@@ -1068,7 +1284,7 @@ async function bankAccountList () {
   return rows || []
 }
 
-async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null }) {
+async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, activationDate = null }) {
   // Si es membresia, derivar al preview de membresia (otra plantilla, otros datos).
   const { rows: checkRows } = await pool.query(`
     SELECT pv.abbreviation, prog.is_membership FROM enrollments e
@@ -1077,7 +1293,7 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
     WHERE e.enrollment_id = $1
   `, [enrollmentId])
   if (checkRows?.[0] && isMembership(checkRows[0].abbreviation, checkRows[0].is_membership)) {
-    return previewMembershipEmail({ enrollmentId, overrideEditionId })
+    return previewMembershipEmail({ enrollmentId, overrideEditionId, activationDate })
   }
 
   // overrideEditionId proyecta el preview sobre una edicion futura (reprogramacion / cambio de curso)
@@ -1200,13 +1416,14 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
   }
 }
 
-async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null }) {
+async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null, activationDate = null }) {
   const editionId = overrideEditionId || null
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
+           e.membership_activation_date,
            curr.variable_2 AS currency_symbol,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
@@ -1223,7 +1440,17 @@ async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null 
   const data = rows?.[0]
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
 
-  const startDate = data.start_date ? new Date(data.start_date) : new Date()
+  // Prioridad para el PREVIEW: param activationDate (lo que el usuario esta
+  // a punto de elegir) > membership_activation_date persistida > start_date de
+  // la edicion > hoy. El param tiene prioridad para que el preview refleje el
+  // datepicker en vivo, antes de que el confirm persista la fecha en BD.
+  let rawStart = null
+  if (activationDate && /^\d{4}-\d{2}-\d{2}$/.test(String(activationDate).trim())) {
+    rawStart = activationDate
+  } else {
+    rawStart = data.membership_activation_date || data.start_date
+  }
+  const startDate = rawStart ? new Date(rawStart) : new Date()
   const fechaAct = formatCalendarDate(startDate)
   const fechaRenov = formatCalendarDate(addMonthsCalendar(startDate, MEMBERSHIP_DURATION_MONTHS))
 
@@ -2174,7 +2401,10 @@ async function _enrollMembershipInOdooInner ({ enrollmentId }) {
     SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
-           pv.abbreviation AS program_name
+           pv.abbreviation AS program_name,
+           e.membership_activation_date,
+           (e.membership_activation_date IS NOT NULL
+            AND e.membership_activation_date > (NOW() AT TIME ZONE 'America/Lima')::date) AS is_deferred
     FROM enrollments e
     JOIN customers cust ON cust.customer_id = e.customer_id
     JOIN persons per ON per.person_id = cust.person_id
@@ -2185,6 +2415,20 @@ async function _enrollMembershipInOdooInner ({ enrollmentId }) {
 
   const data = rows?.[0]
   if (!data) throw new Error('Inscripcion no encontrada')
+
+  // Defensa: si esta membresia esta marcada como diferida (activacion en el
+  // futuro), abortamos antes de tocar Odoo. El job encolado se encargara cuando
+  // toque. Esto cubre el caso donde un caller (frontend con bug, script manual)
+  // dispara esta funcion sin saber que estaba diferida.
+  if (data.is_deferred) {
+    return {
+      success: true,
+      deferred: true,
+      scheduled_for: data.membership_activation_date,
+      odoo_user_id: null,
+      message: 'Activacion diferida — job en cola la procesara al llegar la fecha'
+    }
+  }
 
   const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
   // Mismo password que el flujo de cursos regulares. Es el unico que conocemos y
@@ -2251,10 +2495,11 @@ async function sendMembershipEmail ({ enrollmentId }) {
 
 async function _sendMembershipEmailInner ({ enrollmentId }) {
   const queryEnrollment = () => pool.query(`
-    SELECT e.enrollment_id, per.first_name, per.last_name,
+    SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
+           e.membership_activation_date,
            curr.variable_2 AS currency_symbol,
            c_plan.alias AS payment_plan_alias
     FROM enrollments e
@@ -2271,6 +2516,24 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
   let { rows } = await queryEnrollment()
   let data = rows?.[0]
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
+
+  // Defensa: misma logica que _enrollMembershipInOdooInner. Si la activacion
+  // todavia es futura, el correo NO debe salir hoy — el job en la cola lo
+  // mandara cuando llegue la fecha. Devolvemos success=true para que callers
+  // que reintentan (ej. UI con boton "reenviar") no muestren error.
+  if (data.membership_activation_date) {
+    const { rows: cmp } = await pool.query(`
+      SELECT $1::date > (NOW() AT TIME ZONE 'America/Lima')::date AS is_deferred
+    `, [data.membership_activation_date])
+    if (cmp?.[0]?.is_deferred) {
+      return {
+        success: true,
+        deferred: true,
+        scheduled_for: data.membership_activation_date,
+        message: 'Correo diferido — el job en cola lo enviara al llegar la fecha de activacion'
+      }
+    }
+  }
 
   const toEmail = data.origin_email
   if (!toEmail) return { success: false, error: 'Sin correo registrado' }
@@ -2303,7 +2566,11 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
     }
   }
 
-  const startDate = data.start_date ? new Date(data.start_date) : new Date()
+  // Prioridad: fecha pedida por el alumno > start_date de la edicion > hoy.
+  // Identica a previewMembershipEmail — garantiza que preview y envio real
+  // muestren exactamente la misma fecha.
+  const rawStart = data.membership_activation_date || data.start_date
+  const startDate = rawStart ? new Date(rawStart) : new Date()
   const fechaAct = formatCalendarDate(startDate)
   const fechaRenov = formatCalendarDate(addMonthsCalendar(startDate, MEMBERSHIP_DURATION_MONTHS))
 
@@ -2640,6 +2907,9 @@ async function retireEnrollment ({ enrollmentId, reason, hasRefund, refundAmount
     retiredChildren
   })
 
+  // Refresco inmediato de la MV: el retiro se refleja al instante en el listado.
+  refreshEnrollmentMv('on-retire')
+
   return { result: 1, message: 'Alumno retirado correctamente' }
 }
 
@@ -2721,6 +2991,10 @@ async function deleteEnrollment ({ enrollmentId, userId }) {
       `program="${target[0].program_name || '---'} ${target[0].edition_code || ''}" ` +
       `children=${children.length}`
     )
+
+    // Refresco inmediato de la MV para que la inscripcion desaparezca del
+    // listado al instante (la MV se regenera por cron cada 2 min). Fire-and-forget.
+    refreshEnrollmentMv('on-delete')
 
     return {
       result: 1,
@@ -3737,6 +4011,9 @@ async function rejectEnrollment ({ enrollmentId, reason, userId }) {
     console.error('[rejectEnrollment] Slack:', slackErr.message)
   }
 
+  // Refresco inmediato de la MV: el cambio a Observado se ve al instante.
+  refreshEnrollmentMv('on-observe')
+
   return { result: 1, message: 'Inscripcion observada correctamente' }
 }
 
@@ -3826,6 +4103,9 @@ async function resubmitEnrollment ({ enrollmentId, userId }) {
   } catch (slackErr) {
     console.error('[resubmitEnrollment] Slack:', slackErr.message)
   }
+
+  // Refresco inmediato de la MV: el reenvio se refleja al instante en el listado.
+  refreshEnrollmentMv('on-resubmit')
 
   return { result: 1, message: 'Inscripcion reenviada correctamente' }
 }
@@ -4201,7 +4481,22 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
 // Aprueba una inscripcion en estado "pendiente a revisar" creada por
 // migracion A5. El SP transfiere cuotas pendientes y convalidaciones; aqui
 // hacemos los side effects externos (Odoo + correo + crear hijos si es padre).
-async function approvePendingReview ({ enrollmentId, userId }) {
+//
+// Para membresias acepta activationDate: si es futura, persiste la fecha,
+// encola job 'membership_activation' y SKIP de email + Odoo. Mismo contrato
+// que confirmPayment (campo membership_deferred en el response).
+async function approvePendingReview ({ enrollmentId, userId, activationDate = null }) {
+  // Resolvemos activation_date ANTES del SP, mismo patron que confirmPayment.
+  // Si la fecha es invalida abortamos sin tocar el SP — fail-fast antes que
+  // dejar la migracion aprobada con activacion en limbo.
+  const activation = await _resolveMembershipActivation({
+    enrollment_id: enrollmentId,
+    activation_date: activationDate
+  })
+  if (activation.error) {
+    return { result: 0, message: activation.error }
+  }
+
   const rows = await callProcedureReturningRows(
     pool,
     'public.sp_enrollment_pending_review_approve',
@@ -4213,14 +4508,51 @@ async function approvePendingReview ({ enrollmentId, userId }) {
     return summary || { result: 0, message: 'Sin respuesta del SP' }
   }
 
+  // Persistir membership_activation_date si la confirmacion trajo fecha valida.
+  if (activation.isMembership && activation.activationDate) {
+    try {
+      await pool.query(
+        `UPDATE enrollments SET membership_activation_date = $2::date WHERE enrollment_id = $1`,
+        [enrollmentId, activation.activationDate]
+      )
+    } catch (e) {
+      console.error('[approvePendingReview] No se pudo persistir membership_activation_date:', e.message)
+    }
+  }
+
   // Si el origen era padre (ESP/Diplomado), crear hijos en la nueva edicion
-  // respetando convalidaciones que el SP ya copio.
+  // respetando convalidaciones que el SP ya copio. Esto NO depende de
+  // activacion diferida — los hijos deben crearse de cualquier modo.
   if (summary.is_parent) {
     await safeAsync('[A5Approve][Children] create', () => createChildEnrollments({ enrollmentId, userId }))
   }
 
-  // Odoo: si el programa tiene odoo_activation, desinscribir el slide_group viejo
-  // del origen y reinscribir en el nuevo. Idempotente respecto al estado actual.
+  // Bifurcacion: membresia con activacion futura -> encolar job en lugar de
+  // disparar Odoo + email ahora.
+  if (activation.isMembership && activation.deferred) {
+    try {
+      const job = await enqueueJob({
+        jobType: 'membership_activation',
+        enrollmentId,
+        payload: { enrollmentId },
+        runAt: activation.runAt
+      })
+      summary.membership_deferred = true
+      summary.activation_date = activation.activationDate
+      summary.scheduled_job_id = job.job_id
+      await logAudit({
+        enrollmentId,
+        action: 'membership_activation_scheduled',
+        userId,
+        details: `Activacion programada para ${activation.activationDate} 09:00 (job=${job.job_id}, post-A5)`
+      })
+    } catch (qErr) {
+      console.error('[approvePendingReview] No se pudo encolar membership_activation:', qErr.message)
+    }
+    return summary
+  }
+
+  // Flujo sincrono (no membresia, o membresia inmediata): Odoo + correo ahora.
   const { rows: progRows } = await pool.query(`
     SELECT prog.odoo_activation
       FROM enrollments e
@@ -4250,8 +4582,17 @@ async function approvePendingReview ({ enrollmentId, userId }) {
   return summary
 }
 
+// Recarga forzada del listado: regenera la vista materializada y espera a que
+// termine, de modo que el siguiente enrollmentList devuelva datos 100% frescos.
+// Lo invoca el botón "Recargar" de FICO Inscripciones.
+async function refreshEnrollmentList () {
+  await forceRefreshEnrollmentMv('manual-reload')
+  return { result: 1, message: 'Listado actualizado' }
+}
+
 export default {
   enrollmentList,
+  refreshEnrollmentList,
   enrollmentAdvisorsList,
   invalidateAdvisorsCache,
   getKpisDaily,
@@ -4285,6 +4626,7 @@ export default {
   getProgramPrice,
   enrollMembershipInOdoo,
   sendMembershipEmail,
+  updateMembershipActivationDate,
   syncInstallmentPaymentToOdoo,
   getValidations,
   saveValidations,
