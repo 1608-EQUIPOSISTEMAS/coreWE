@@ -4131,7 +4131,13 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
       CASE c_prof.alias
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
-      END                                                        AS ocup
+      END                                                        AS ocup,
+      COALESCE(e.odoo_email, '')                                 AS correo_odoo,
+      CASE
+        WHEN COALESCE(fin.fin_paid, 0) >= COALESCE(fin.fin_total, 0) THEN 'Saldado'
+        WHEN COALESCE(fin.fin_overdue, 0) > 0 THEN 'Deuda ' || fin.fin_overdue::text
+        ELSE 'Al dia'
+      END                                                        AS estado
       FROM public.enrollments e
       JOIN approved a ON a.enrollment_id = e.enrollment_id
       JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -4141,10 +4147,34 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
       LEFT JOIN public."catalog" c_mod  ON c_mod.catalog_id  = e.cat_inscription_modality
       LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
       LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+      LEFT JOIN LATERAL (
+        -- Evalua el estado financiero sobre el enrollment "vendido" (padre si es
+        -- hijo de un diplomado/ESP, propio si es curso standalone). Espeja la
+        -- logica de syncFicoSalesToSheet ('0. Ventas Sistemas'): suma de cuotas
+        -- pagadas y conteo de cuotas vencidas no pagadas.
+        SELECT
+          ef.total_amount AS fin_total,
+          (SELECT COALESCE(SUM(pi.amount), 0)
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_paid,
+          (SELECT COUNT(*)::int
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND pi.installment_number > 0
+              AND pi.due_date < CURRENT_DATE
+              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_overdue
+          FROM public.enrollments ef
+         WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+      ) fin ON TRUE
      ORDER BY per.last_name, per.first_name
   `, [programVersionId, editionNumId])
 
-  const headers = ['Nombres y Apellidos', 'N° Grp', 'Cat Prog', 'Usuario', 'Contraseña', 'Modalidad', 'Celular', 'Correo', 'Ocup']
+  const headers = ['Nombres y Apellidos', 'N° Grp', 'Cat Prog', 'Usuario', 'Contraseña', 'Modalidad', 'Celular', 'Correo', 'Ocup', 'Correo Odoo', 'Estado']
   const escape = v => {
     const s = v == null ? '' : String(v)
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
@@ -4160,7 +4190,9 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
       r.modalidad || '',
       r.celular || '',
       r.correo || '',
-      r.ocup || ''
+      r.ocup || '',
+      r.correo_odoo || '',
+      r.estado || ''
     ].map(escape).join(','))
   }
   return '﻿' + lines.join('\r\n')
