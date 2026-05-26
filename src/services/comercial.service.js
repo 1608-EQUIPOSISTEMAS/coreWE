@@ -315,6 +315,38 @@ async function searchPhoneGet(phone) {
   return rows?.[0] || {}
 }
 
+// Listado distinto de celulares de origen para alimentar el filtro de la columna
+// Cel. Origen del DataTable. Antes el filtro se construia desde leadsRaw.value
+// (solo la pagina visible), por lo que un asesor con leads en otra pagina no
+// aparecia. Esta query trae todos los celulares historicos con su owner.
+let _sellerPhonesCache = null
+let _sellerPhonesCachedAt = 0
+const SELLER_PHONES_TTL_MS = 5 * 60 * 1000
+
+async function leadSellerPhones () {
+  const now = Date.now()
+  if (_sellerPhonesCache && (now - _sellerPhonesCachedAt) < SELLER_PHONES_TTL_MS) {
+    return _sellerPhonesCache
+  }
+  const sql = `
+    SELECT DISTINCT
+      TRIM(l.origin_seller_phone) AS phone,
+      u.alias AS owner
+    FROM public.leads l
+    LEFT JOIN public.users u ON u.user_id = l.user_registration_id
+    WHERE l.origin_seller_phone IS NOT NULL
+      AND TRIM(l.origin_seller_phone) <> ''
+    ORDER BY u.alias NULLS LAST, phone
+  `
+  const { rows } = await pool.query(sql)
+  _sellerPhonesCache = rows.map(r => ({
+    id: r.phone,
+    description: r.owner ? `${r.phone} — ${r.owner}` : r.phone
+  }))
+  _sellerPhonesCachedAt = now
+  return _sellerPhonesCache
+}
+
 
 async function leadUpdate(payload) {
   const { id, lead = {}, user_id, contact_attempts} = payload
@@ -447,5 +479,6 @@ export default {
   uploadEnrollmentFiles,
   searchContact,
   searchPhoneGet,
+  leadSellerPhones,
   leadStats
 }

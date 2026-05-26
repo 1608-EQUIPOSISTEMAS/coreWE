@@ -141,9 +141,9 @@ export function buildConfirmacionPagoHTML (data) {
     </div>
 
     <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
-    <table style="line-height:14px"><tr><td>Jocelyn Obeso</td></tr>
-        <tr><td>Finanzas</td></tr>
-        <tr><td>+51 986 115 148</td></tr>
+    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
+        <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+        <tr><td><b>+51 943 882 766</b></td></tr>
         <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Pol\u00edticas de privacidad y tratamiento de datos</a></td></tr>
         <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panam\u00e1 3418-Piso 2 / San Isidro</td></tr></table>
 </td></tr></table>

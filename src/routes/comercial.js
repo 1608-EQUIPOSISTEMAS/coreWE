@@ -56,6 +56,18 @@ export default async function comercialRoutes (fastify) {
     return reply.code(200).send({ ok: true, data })
   })
 
+  fastify.get('/sellerphones', {
+    preHandler: [authenticate, ALL_COMERCIAL]
+  }, async (req, reply) => {
+    try {
+      const data = await comercialService.leadSellerPhones()
+      return reply.code(200).send({ ok: true, data })
+    } catch (err) {
+      console.error('[leadSellerPhones ERROR]', err.message)
+      return reply.code(500).send({ ok: false, error: err.message })
+    }
+  })
+
   fastify.post('/leadstats', {
     schema: leadStatsSchema,
     preHandler: [authenticate, ALL_COMERCIAL]
