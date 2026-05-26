@@ -132,7 +132,7 @@ async function sendEnrollmentWebToSlack({ enrollment_id }) {
         c_mod.description  AS modalidad,
         to_char(pe.start_date::timestamptz, 'DD/MM/YYYY') AS fecha_inicio,
         per.document_number AS dni,
-        per.first_name || ' ' || COALESCE(per.last_name, '') AS alumno,
+        TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS alumno,
         concat('(', c_sitx.variable_2, ') ', l.origin_phone)  AS celular,
         l.origin_email  AS correo,
         c_sit.variable_1 AS ocupacion,
@@ -627,7 +627,7 @@ async function syncFicoSalesToSheet () {
       to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
       to_char(pay_eff.f_pago_date, 'DD/MM/YYYY')           AS f_pago,
       per.document_number                                  AS dni,
-      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       COALESCE(
         l.origin_phone,
         (SELECT pc.value FROM public.person_contacts pc
@@ -799,7 +799,7 @@ async function syncFicoAulaToSheet () {
       COALESCE(pv_parent.version_code, '')                 AS catg,
       to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
       COALESCE(per.document_number, '')                    AS dni,
-      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       COALESCE(
         l.origin_phone,
         (SELECT pc.value FROM public.person_contacts pc
@@ -970,7 +970,7 @@ async function syncFicoConsolidadoToSheet () {
         'DD/MM/YYYY'
       ) AS f_pago,
       per.document_number AS dni,
-      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       COALESCE(
         l.origin_phone,
         (SELECT pc.value FROM public.person_contacts pc
@@ -1271,7 +1271,7 @@ async function syncFicoCuotasToSheet () {
            ELSE COALESCE(pe.global_code, '')
       END AS ed,
       to_char(pe.start_date, 'DD/MM/YYYY') AS f_inicio,
-      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       COALESCE(
         l.origin_phone,
         (SELECT pc.value FROM public.person_contacts pc

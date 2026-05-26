@@ -36,7 +36,7 @@ const B2B_SITUATION_ALIASES = "('we_prospect_situation_corporate','we_prospect_s
 const BASE_SELECT = `
   SELECT pt.*,
     CASE WHEN e.enrollment_id IS NOT NULL
-      THEN per.first_name || ' ' || per.last_name
+      THEN TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name))
       ELSE COALESCE(
         NULLIF(TRIM(COALESCE(pt.inscription_data->'inscription'->>'full_name','') || ' ' || COALESCE(pt.inscription_data->'inscription'->>'last_name','') || ' ' || COALESCE(pt.inscription_data->'inscription'->>'mother_last_name','')), ''),
         l_dir.full_name
@@ -151,7 +151,7 @@ async function tokenList (filters = {}) {
   const q = filters.q || filters.search
   if (q) {
     conditions.push(`(
-      per.first_name || ' ' || per.last_name ILIKE $${idx}
+      concat_ws(' ', per.first_name, per.last_name, per.mother_last_name) ILIKE $${idx}
       OR per.document_number ILIKE $${idx}
       OR l_dir.full_name ILIKE $${idx}
       OR pv.abbreviation ILIKE $${idx}

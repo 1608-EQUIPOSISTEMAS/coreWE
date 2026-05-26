@@ -185,7 +185,7 @@ async function getCollections ({ year, month, day, q, state, advisorIds }) {
         ELSE 'upcoming'
       END                                      AS state_label,
       e.enrollment_id,
-      TRIM(per.first_name || ' ' || COALESCE(per.last_name, '')) AS student_full_name,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS student_full_name,
       per.document_number,
       COALESCE(
         l.origin_email,
@@ -918,7 +918,7 @@ async function enrollInOdoo ({ enrollmentId }) {
 
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.program_edition_id,
-           per.first_name, per.last_name, per.document_number,
+           per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
            prog.odoo_activation,
@@ -1086,7 +1086,7 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
   const editionId = overrideEditionId || null
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
-           per.first_name, per.last_name, per.document_number,
+           per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
@@ -1203,7 +1203,7 @@ async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = nul
 async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null }) {
   const editionId = overrideEditionId || null
   const { rows } = await pool.query(`
-    SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
+    SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
@@ -1272,7 +1272,7 @@ async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null 
   const isFirstSendPreview = !priorSendsPreview?.[0]
 
   const htmlBody = buildMembresiaHTML({
-    studentName: `${data.first_name} ${data.last_name}`,
+    studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programName: data.program_name,
     email: odooEmail,
     password: '1234567',
@@ -1397,7 +1397,7 @@ async function sendConfirmationEmail ({ enrollmentId, cc }) {
 
   const { rows } = await pool.query(`
     SELECT e.enrollment_id, e.total_amount, e.discount_amount,
-           per.first_name, per.last_name, per.document_number,
+           per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            pv.abbreviation AS program_name,
            prog.banner_link,
@@ -1623,7 +1623,7 @@ async function sendPaymentConfirmationEmail ({ enrollmentId }) {
   const lastPaid = [...installments].reverse().find(i => PAID_INSTALLMENT_ALIASES.has(i.status_alias))
 
   const htmlBody = buildConfirmacionPagoHTML({
-    studentName: `${data.first_name} ${data.last_name}`,
+    studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programType: resolveProgramTypeLabel(data.category_description),
     isLastPayment,
     lastPaymentDate: lastPaid?.due_date || new Date().toISOString(),
@@ -2171,7 +2171,7 @@ async function enrollMembershipInOdoo ({ enrollmentId }) {
 
 async function _enrollMembershipInOdooInner ({ enrollmentId }) {
   const { rows } = await pool.query(`
-    SELECT e.enrollment_id, per.first_name, per.last_name, per.document_number,
+    SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name, per.document_number,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
            pv.abbreviation AS program_name
@@ -2349,7 +2349,7 @@ async function _sendMembershipEmailInner ({ enrollmentId }) {
   const isFirstSend = !priorSends?.[0]
 
   const htmlBody = buildMembresiaHTML({
-    studentName: `${data.first_name} ${data.last_name}`,
+    studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programName: data.program_name,
     email: data.odoo_email,
     password: '1234567',
@@ -3029,7 +3029,7 @@ async function _findFicoDuplicateEnrollment ({ programEditionId, documentNumber,
       pv.abbreviation                                     AS program_name,
       pe.global_code                                      AS edition_code,
       per.document_number                                 AS existing_document,
-      TRIM(per.first_name || ' ' || per.last_name)        AS existing_student_name,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS existing_student_name,
       u_s.alias                                           AS seller_agent_alias
     FROM public.enrollments e
     JOIN public.customers       cust ON cust.customer_id = e.customer_id
@@ -3631,7 +3631,7 @@ async function getEnrollmentSnapshot (enrollmentId) {
     SELECT e.total_amount, e.discount_amount, e.list_price,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
-           per.first_name, per.last_name, per.document_number,
+           per.first_name, per.last_name, per.mother_last_name, per.document_number,
            c_cur.description AS currency,
            c_plan.description AS payment_plan,
            c_prof.description AS profile
@@ -3651,7 +3651,7 @@ async function getEnrollmentSnapshot (enrollmentId) {
     [enrollmentId]
   ).catch(() => ({ rows: [] }))
   return {
-    alumno: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+    alumno: [r.first_name, r.last_name, r.mother_last_name].filter(Boolean).join(' ').trim(),
     documento: r.document_number,
     email: r.origin_email,
     telefono: r.origin_phone,
@@ -4108,7 +4108,7 @@ async function exportClassroomCsv ({ programVersionId, editionNumId }) {
          )
     )
     SELECT
-      TRIM(BOTH FROM concat(per.first_name, ' ', per.last_name)) AS nombres_apellidos,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres_apellidos,
       COALESCE(pv_parent.version_code, '')                       AS cat_prog,
       CASE c_mod.alias
         WHEN 'we_insc_modality_flexible' THEN 'FLEX'

@@ -81,15 +81,16 @@ BEGIN
         e.total_amount,
         per.first_name,
         per.last_name,
+        per.mother_last_name,
         per.document_number,
-        TRIM(COALESCE(per.first_name, '') || ' ' || COALESCE(per.last_name, '')) AS full_name,
+        TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
         pv.abbreviation AS program_name,
         pe.global_code AS edition_code,
         pe.start_date AS edition_start_date,
         (e.parent_enrollment_id IS NOT NULL) AS is_child,
         ppv.abbreviation AS parent_program_name,
         ppe.global_code AS parent_edition_code,
-        COALESCE(seller.first_name || ' ' || seller.last_name, 'S/A') AS seller_name,
+        COALESCE(NULLIF(TRIM(BOTH FROM concat_ws(' ', seller.first_name, seller.last_name, seller.mother_last_name)), ''), 'S/A') AS seller_name,
         COALESCE((
             SELECT SUM(pi.amount)
               FROM public.payment_installments pi
