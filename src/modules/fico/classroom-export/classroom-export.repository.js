@@ -93,7 +93,13 @@ export class ClassroomExportRepository {
           WHEN COALESCE(fin.fin_paid, 0) >= COALESCE(fin.fin_total, 0) THEN 'Saldado'
           WHEN COALESCE(fin.fin_overdue, 0) > 0 THEN 'Deuda ' || fin.fin_overdue::text
           ELSE 'Al dia'
-        END                                                        AS estado
+        END                                                        AS estado,
+        CASE
+          WHEN NULLIF(TRIM(ag.resolved_alias), '') IS NULL AND e_sold.agent_origin IS NOT NULL THEN e_sold.agent_origin
+          WHEN NULLIF(TRIM(ag.resolved_alias), '') IS NULL THEN NULL
+          WHEN e_sold.agent_origin IS NOT NULL THEN e_sold.agent_origin || ' - ' || ag.resolved_alias
+          ELSE ag.resolved_alias
+        END                                                        AS asesor
         FROM public.enrollments e
         JOIN approved a ON a.enrollment_id = e.enrollment_id
         JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -127,6 +133,24 @@ export class ClassroomExportRepository {
             FROM public.enrollments ef
            WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
         ) fin ON TRUE
+        -- Enrollment "vendido" (padre si es hijo de paquete, propio si es standalone)
+        -- y su fila en la vista de reporte, para resolver el asesor de la venta real.
+        LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+        LEFT JOIN public.mv_enrollment_report_system v_sold ON v_sold."ID"::INT = e_sold.enrollment_id
+        LEFT JOIN LATERAL (
+          -- Misma cascada de asesor que sp_fico_enrollment_list: alias del usuario
+          -- que solicito/creo el primer token de pago, con fallback al ASESOR de la
+          -- vista. Garantiza que el export y la lista de inscripciones coincidan.
+          SELECT COALESCE(
+            (SELECT u.alias
+               FROM public.payment_tokens pt
+               LEFT JOIN public.users u ON u.user_id = COALESCE(pt.requested_by, pt.created_by)
+              WHERE pt.enrollment_id = e_sold.enrollment_id
+              ORDER BY pt.token_id ASC
+              LIMIT 1),
+            v_sold."ASESOR"::TEXT
+          ) AS resolved_alias
+        ) ag ON TRUE
        ORDER BY per.last_name, per.first_name
     `, [programVersionId, editionNumId])
     return rows

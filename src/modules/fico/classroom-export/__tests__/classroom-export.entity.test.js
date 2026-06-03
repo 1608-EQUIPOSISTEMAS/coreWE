@@ -62,10 +62,11 @@ describe('buildClassroomCsv', () => {
       correo: 'a@b.com',
       ocup: 'E',
       correo_odoo: 'a@odoo.com',
-      estado: 'Al dia'
+      estado: 'Al dia',
+      asesor: 'B2B - JF39'
     }])
     const dataLine = csv.split('\r\n')[1].split(',')
-    // [Nombres, N°Grp, CatProg, Usuario, Contrasena, Modalidad, Celular, Correo, Ocup, CorreoOdoo, Estado]
+    // [Nombres, N°Grp, CatProg, Usuario, Contrasena, Modalidad, Celular, Correo, Ocup, CorreoOdoo, Estado, Asesor]
     expect(dataLine[0]).toBe('Ana Perez')
     expect(dataLine[1]).toBe('')
     expect(dataLine[2]).toBe('DIP-1')
@@ -73,6 +74,7 @@ describe('buildClassroomCsv', () => {
     expect(dataLine[4]).toBe('')
     expect(dataLine[5]).toBe('FLEX')
     expect(dataLine[10]).toBe('Al dia')
+    expect(dataLine[11]).toBe('B2B - JF39')
   })
 
   it('escapa valores con comas, comillas o saltos de linea (RFC 4180)', () => {
@@ -87,6 +89,6 @@ describe('buildClassroomCsv', () => {
   it('reemplaza valores nulos/indefinidos por cadena vacia', () => {
     const csv = buildClassroomCsv([{ nombres_apellidos: null }])
     const dataLine = csv.split('\r\n')[1]
-    expect(dataLine).toBe(',,,,,,,,,,')
+    expect(dataLine).toBe(',,,,,,,,,,,')
   })
 })

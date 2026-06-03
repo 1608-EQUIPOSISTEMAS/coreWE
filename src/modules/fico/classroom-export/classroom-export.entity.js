@@ -6,7 +6,7 @@
 // quedan en blanco para llenado manual posterior por el equipo academico.
 export const CLASSROOM_CSV_HEADERS = [
   'Nombres y Apellidos', 'N° Grp', 'Cat Prog', 'Usuario', 'Contraseña',
-  'Modalidad', 'Celular', 'Correo', 'Ocup', 'Correo Odoo', 'Estado'
+  'Modalidad', 'Celular', 'Correo', 'Ocup', 'Correo Odoo', 'Estado', 'Asesor'
 ]
 
 // Agrupa las filas planas (una por edicion) en programas con su lista de
@@ -56,7 +56,8 @@ export function buildClassroomCsv (rows) {
       r.correo || '',
       r.ocup || '',
       r.correo_odoo || '',
-      r.estado || ''
+      r.estado || '',
+      r.asesor || ''
     ].map(escapeCsv).join(','))
   }
   return '﻿' + lines.join('\r\n')
