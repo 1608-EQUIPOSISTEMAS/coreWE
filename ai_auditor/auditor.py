@@ -1,7 +1,7 @@
 """Auditor pedagógico — llamada principal a Gemini 2.5 Pro.
 
 Pieza central. Combina:
-  - PDFs de metodología (Part nativo + context caching)
+  - Metodología (pedagogía como Markdown + manual como PDF nativo) con caching
   - Imagen del syllabus (vision)
   - Transcripción + clasificación pre-calculada teoría/práctica
   - Métricas deterministas (cobertura de temas, ratio tiempo)
@@ -9,13 +9,18 @@ Pieza central. Combina:
 
 Optimizaciones de tokens (vs versión anterior):
   • response_schema en lugar de schema inline en el prompt: ahorra ~1.2K input.
-  • PDFs como Part nativo: fija el bug de pypdf perdiendo contenido escaneado.
-  • Context caching de los 2 PDFs: ~75% off en input cacheado en steady state.
+  • Pedagogía como Markdown: ~5x menos tokens que el PDF nativo (documento de
+    mucho diseño y poco texto, donde 258 tok/página no rentaba).
+  • Manual como PDF nativo: denso en texto, la tarifa plana por página es más
+    eficiente y conserva fidelidad de tablas/diagramas.
+  • Thinking acotado (thinking_budget): el razonamiento del modelo 2.5 se
+    factura a precio de output; sin tope era el grueso del costo.
+  • Metodología al frente de contents: el caching implícito la descuenta cuando
+    varias auditorías ocurren seguidas, sin gestionar cachedContents.
 """
 from __future__ import annotations
 import json
 import re
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,19 +29,35 @@ from google import genai
 from google.genai import types
 
 from config import (
-    GEMINI_API_KEY, GEMINI_MODEL,
-    PEDAGOGIA_PDF, BUENAS_PRACTICAS_PDF, CACHE_DIR,
+    GEMINI_API_KEY, GEMINI_MODEL, AUDITOR_THINKING_BUDGET,
+    PEDAGOGIA_MD, BUENAS_PRACTICAS_PDF, CACHE_DIR,
 )
 from prompts import (
     RESPONSE_SCHEMA, build_user_text, get_auditor_system_instruction,
 )
 from transcription import TranscriptSegment, segments_to_text, total_duration_min
 from classifier import ClassifiedBlock, render_classification_table, compute_ratio
+from retry import with_retry
 
 
-CACHE_META_FILE = CACHE_DIR / "gemini_cache.json"
-CACHE_TTL_SECONDS = 3600
 LAST_BAD_RESPONSE = CACHE_DIR / "last_bad_response.txt"
+
+# No se gestiona caché explícita (cachedContents). A volumen esporádico el TTL
+# expira sin reusarse y la creación + almacenamiento por hora resultan más
+# caros que el envío inline. La metodología va al inicio de contents para que
+# el caching IMPLÍCITO de Gemini 2.5 la descuente automáticamente cuando varias
+# auditorías ocurren seguidas, sin TTL ni estado en disco que mantener.
+# Si el volumen creciera mucho, reconsiderar caché explícita aquí.
+
+
+def _methodology_parts() -> list[types.Part]:
+    """Bloques de metodología: pedagogía como texto Markdown, manual como PDF."""
+    return [
+        types.Part.from_text(text=PEDAGOGIA_MD.read_text(encoding="utf-8")),
+        types.Part.from_bytes(
+            data=BUENAS_PRACTICAS_PDF.read_bytes(), mime_type="application/pdf",
+        ),
+    ]
 
 
 @dataclass
@@ -53,21 +74,26 @@ class AuditResult:
     input_tokens: int
     output_tokens: int
     cached_tokens: int
+    thinking_tokens: int = 0
 
     def cost_estimate_usd(self) -> float:
         """Tarifas Gemini 2.5 Pro (Nov 2025), prompts < 200K tokens.
           input:  $1.25 / 1M
-          output: $10.00 / 1M
+          output: $10.00 / 1M  (incluye thinking tokens)
           cached: $0.31 / 1M  (~75% off)
+
+        candidates_token_count NO incluye los thinking tokens, que se facturan
+        aparte a precio de output: por eso se suman explícitamente.
         """
         per_mtok_input = 1.25
         per_mtok_output = 10.00
         per_mtok_cached = 0.3125
         fresh_input = max(self.input_tokens - self.cached_tokens, 0)
+        billable_output = self.output_tokens + self.thinking_tokens
         return (
             fresh_input * per_mtok_input
             + self.cached_tokens * per_mtok_cached
-            + self.output_tokens * per_mtok_output
+            + billable_output * per_mtok_output
         ) / 1_000_000
 
 
@@ -78,51 +104,6 @@ def _read_image_part(path: Path) -> types.Part:
         "webp": "image/webp", "gif": "image/gif",
     }.get(suffix, "image/png")
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type)
-
-
-def _get_or_create_pdf_cache(client: genai.Client) -> str | None:
-    """Sube los 2 PDFs como contexto cacheado para reusarlo entre auditorías.
-
-    Devuelve el resource name del cache (`cachedContents/...`), o None si la
-    creación falla — en ese caso el caller manda los PDFs inline cada vez
-    (más caro, pero el sistema no se rompe).
-
-    Cacheamos en disco el resource name + expira_at para reusar entre runs.
-    """
-    if CACHE_META_FILE.exists():
-        meta = json.loads(CACHE_META_FILE.read_text(encoding="utf-8"))
-        if meta.get("expires_at", 0) > time.time() + 60:
-            return meta["name"]
-
-    pedagogia_part = types.Part.from_bytes(
-        data=PEDAGOGIA_PDF.read_bytes(), mime_type="application/pdf",
-    )
-    buenas_part = types.Part.from_bytes(
-        data=BUENAS_PRACTICAS_PDF.read_bytes(), mime_type="application/pdf",
-    )
-
-    try:
-        cached = client.caches.create(
-            model=GEMINI_MODEL,
-            config=types.CreateCachedContentConfig(
-                system_instruction=get_auditor_system_instruction(),
-                contents=[pedagogia_part, buenas_part],
-                ttl=f"{CACHE_TTL_SECONDS}s",
-            ),
-        )
-    except Exception as e:
-        # Cuentas free tier o modelos sin caching pueden fallar acá.
-        # Loguea para debug pero no rompas la auditoría.
-        print(f"[auditor] caching no disponible ({type(e).__name__}: {e}); "
-              f"se usará envío inline.")
-        return None
-
-    CACHE_META_FILE.write_text(json.dumps({
-        "name": cached.name,
-        "expires_at": time.time() + CACHE_TTL_SECONDS,
-        "model": GEMINI_MODEL,
-    }), encoding="utf-8")
-    return cached.name
 
 
 def _format_deterministic_metrics(audit_input: AuditInput, ratio: dict) -> str:
@@ -156,14 +137,16 @@ def audit(audit_input: AuditInput) -> AuditResult:
     )
 
     image_part = _read_image_part(audit_input.syllabus_image_path)
-    contents = [image_part, user_text]
+    # Metodología al frente (prefijo estable) → image + user_text variables al
+    # final. Así el caching implícito de Gemini descuenta el prefijo repetido.
+    contents = [*_methodology_parts(), image_part, user_text]
 
-    # max_output_tokens cubre thinking + visible. El reporte completo son ~3K
-    # output tokens; con Gemini 2.5 Pro necesitamos headroom amplio.
-    # Nota: thinking_config se removio porque la API del SDK google-genai
-    # cambio entre versiones (el nombre del parametro `thinking_budget` ya
-    # no es aceptado en >=1.3.0). El modelo usa su default de thinking budget,
-    # cuesta marginalmente mas pero funciona sin tocar la version del SDK.
+    # max_output_tokens cubre thinking + visible. Con el thinking acotado a
+    # AUDITOR_THINKING_BUDGET y el reporte visible en ~3.5K, 12K deja headroom
+    # holgado sin truncar.
+    # thinking_config acota el razonamiento interno del modelo 2.5, que se
+    # factura a precio de output: sin tope gastaba ~19K tokens/auditoría (el
+    # grueso del costo). El SDK >=1.10 acepta thinking_budget.
     # temperature=0 fuerza greedy decoding: el modelo elige siempre el token
     # mas probable. Garantiza que dos corridas con el mismo transcript +
     # syllabus den scores reproducibles, condicion necesaria para persistir
@@ -171,31 +154,21 @@ def audit(audit_input: AuditInput) -> AuditResult:
     common_config = dict(
         response_mime_type="application/json",
         response_schema=RESPONSE_SCHEMA,
-        max_output_tokens=32000,
+        max_output_tokens=12000,
         temperature=0,
+        thinking_config=types.ThinkingConfig(thinking_budget=AUDITOR_THINKING_BUDGET),
     )
 
-    cache_name = _get_or_create_pdf_cache(client)
-    if cache_name:
-        config = types.GenerateContentConfig(cached_content=cache_name, **common_config)
-    else:
-        pedagogia_part = types.Part.from_bytes(
-            data=PEDAGOGIA_PDF.read_bytes(), mime_type="application/pdf",
-        )
-        buenas_part = types.Part.from_bytes(
-            data=BUENAS_PRACTICAS_PDF.read_bytes(), mime_type="application/pdf",
-        )
-        contents = [pedagogia_part, buenas_part, image_part, user_text]
-        config = types.GenerateContentConfig(
-            system_instruction=get_auditor_system_instruction(),
-            **common_config,
-        )
+    config = types.GenerateContentConfig(
+        system_instruction=get_auditor_system_instruction(),
+        **common_config,
+    )
 
-    response = client.models.generate_content(
+    response = with_retry(lambda: client.models.generate_content(
         model=GEMINI_MODEL,
         contents=contents,
         config=config,
-    )
+    ))
 
     raw = response.text or ""
     finish_reason = _extract_finish_reason(response)
@@ -225,6 +198,7 @@ def audit(audit_input: AuditInput) -> AuditResult:
         input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
         output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
         cached_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
+        thinking_tokens=getattr(usage, "thoughts_token_count", 0) or 0,
     )
 
 

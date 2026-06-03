@@ -1,0 +1,128 @@
+import { authenticate, ALL_ADMIN, ALL_COMERCIAL } from '../../shared/http/auth.middleware.js'
+import {
+  editionRegisterSchema,
+  editionTreeRegisterSchema,
+  auditLogsGetSchema,
+  editionListSchema,
+  classroomMetricsListSchema,
+  classroomStudentsListSchema,
+  classroomAuditGetSchema,
+  classroomAuditSaveSchema,
+  classroomAuditSummaryListSchema,
+  editionByWeekListSchema,
+  editionGetSchema,
+  editionUpdateSchema,
+  editionCallerSchema,
+  editionExtraInfoCallerSchema,
+  editionTreeUpdateSchema,
+  bulkUpdateWhatsappSchema,
+  a5PendingEnrollmentsSchema,
+  a5MigrationExecuteSchema,
+  schedulePdfSchema
+} from './edition.schemas.js'
+import * as ctrl from './edition.controller.js'
+
+export default async function editionRoutes (fastify) {
+  fastify.addHook('preHandler', authenticate)
+
+  fastify.post('/editionregister', {
+    schema: editionRegisterSchema
+    // preHandler: [authenticate, ALL_ADMIN]
+  }, ctrl.registerHandler)
+
+  fastify.post('/editiontreeregister', {
+    schema: editionTreeRegisterSchema
+    // preHandler: [authenticate, ALL_ADMIN]
+  }, ctrl.treeRegisterHandler)
+
+  fastify.post('/auditlogsget', {
+    schema: auditLogsGetSchema
+    // preHandler: [authenticate, ALL_ADMIN]
+  }, ctrl.auditLogsGetHandler)
+
+  fastify.post('/editionlist', {
+    schema: editionListSchema
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+  }, ctrl.listHandler)
+
+  fastify.post('/editionbyweeklist', {
+    schema: editionByWeekListSchema
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+  }, ctrl.byWeekListHandler)
+
+  fastify.post('/classroommetricslist', {
+    schema: classroomMetricsListSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomMetricsListHandler)
+
+  fastify.post('/classroomstudentslist', {
+    schema: classroomStudentsListSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomStudentsListHandler)
+
+  fastify.post('/classroomauditget', {
+    schema: classroomAuditGetSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomAuditGetHandler)
+
+  fastify.post('/classroomauditsummarylist', {
+    schema: classroomAuditSummaryListSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomAuditSummaryListHandler)
+
+  fastify.post('/classroomauditsave', {
+    schema: classroomAuditSaveSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomAuditSaveHandler)
+
+  // Multipart: transcript_text + syllabus_image + edition_id + session_number.
+  // Sin schema porque @fastify/multipart parsea manualmente; validamos en el
+  // handler. La IA puede demorar 30-60s; configuramos timeout amplio.
+  fastify.post('/classroomauditrunai', {
+    bodyLimit: 25 * 1024 * 1024 // 25 MB para imagen del syllabus
+  }, ctrl.classroomAuditRunAiHandler)
+
+  fastify.post('/editionget', {
+    schema: editionGetSchema
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+  }, ctrl.getHandler)
+
+  fastify.post('/editionupdate', {
+    schema: editionUpdateSchema
+    // preHandler: [authenticate, ALL_ADMIN]
+  }, ctrl.updateHandler)
+
+  fastify.post('/editioncaller', {
+    schema: editionCallerSchema
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+  }, ctrl.callerHandler)
+
+  fastify.post('/editionextrainfocaller', {
+    schema: editionExtraInfoCallerSchema
+    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
+  }, ctrl.extraInfoCallerHandler)
+
+  fastify.post('/bulkupdatewhatsapp', {
+    schema: bulkUpdateWhatsappSchema
+  }, ctrl.bulkUpdateWhatsappHandler)
+
+  fastify.post('/editiontreeupdate', {
+    schema: editionTreeUpdateSchema
+    // preHandler: [authenticate, ALL_ADMIN]
+  }, ctrl.treeUpdateHandler)
+
+  // A5 MIGRATION: listar alumnos vigentes en una edicion.
+  fastify.post('/a5pendingenrollments', {
+    schema: a5PendingEnrollmentsSchema
+  }, ctrl.a5PendingEnrollmentsHandler)
+
+  // A5 MIGRATION: ejecutar migracion masiva + cancelacion.
+  fastify.post('/a5migrationexecute', {
+    schema: a5MigrationExecuteSchema
+  }, ctrl.a5MigrationExecuteHandler)
+
+  // PDF: programacion del curso.
+  fastify.post('/schedule-pdf', {
+    schema: schedulePdfSchema
+  }, ctrl.schedulePdfHandler)
+}

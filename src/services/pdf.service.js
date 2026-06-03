@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getCatalog } from './catalog.service.js'
+import { getCatalog } from '../modules/catalog/catalog.usecases.js'
 import { pool } from '../config/db.js'
 import { callProcedureReturningRows } from '../utils/spHelper.js'
 

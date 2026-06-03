@@ -1,0 +1,232 @@
+{
+  "criterios": [
+    {
+      "id": 1,
+      "nombre": "Alineación con el temario",
+      "score": 1,
+      "comentario": "La sesión omite dos de los seis temas listados en el syllabus oficial: 'Conceptos de UX entorno a Power BI' y 'Lenguaje DAX: introducción al lenguaje DAX con ayuda de CHAT GPT'. Aunque se cubren los modelos de datos y el entorno de trabajo, la ausencia de temas clave, especialmente la introducción a DAX que es central al objetivo de la sesión, representa una desviación crítica del temario planificado.",
+      "evidencia_timestamps": [
+        "[13:06]",
+        "[18:57]",
+        "[39:43]"
+      ]
+    },
+    {
+      "id": 2,
+      "nombre": "Estructura de la sesión",
+      "score": 2,
+      "comentario": "La sesión carece de una estructura metodológica WE completa. La apertura es débil, iniciando directamente con el contenido técnico sin una motivación o agenda visible [13:06]. No hay un cierre formal con síntesis de aprendizajes o próximos pasos; la clase termina abruptamente tras la última presentación [03:02:11]. Si bien existe un bloque teórico, uno práctico y un break intermedio [01:11:41], faltan las etapas y transiciones explícitas (Descubre-Aprende-Crea).",
+      "evidencia_timestamps": [
+        "[13:06]",
+        "[01:11:41]",
+        "[03:02:11]"
+      ]
+    },
+    {
+      "id": 3,
+      "nombre": "Nivel de profundidad",
+      "score": 4,
+      "comentario": "El docente explica con claridad los conceptos clave del modelado (primary/foreign keys, modelo estrella vs. copo de nieve) [13:34, 19:00]. Estos conceptos se aplican directamente en un taller guiado en Power BI [55:41]. Además, se contrastan alternativas y se advierte sobre errores comunes, como las relaciones de muchos a muchos [58:41]. La profundidad es sólida, aunque los ejemplos iniciales son más teóricos que basados en casos de negocio complejos.",
+      "evidencia_timestamps": [
+        "[13:34]",
+        "[26:24]",
+        "[55:41]",
+        "[58:41]"
+      ]
+    },
+    {
+      "id": 4,
+      "nombre": "Uso de casos y ejemplos",
+      "score": 3,
+      "comentario": "El docente utiliza un set de datos real para la actividad práctica [30:48], lo cual es positivo. Sin embargo, los ejemplos teóricos iniciales son genéricos (clientes, órdenes) y no se construye un caso de negocio integral alrededor del taller. El mayor valor en este aspecto proviene de los casos presentados por los propios alumnos en la segunda mitad de la sesión [01:24:30, 01:54:46], no del material preparado por el docente.",
+      "evidencia_timestamps": [
+        "[14:28]",
+        "[30:48]",
+        "[01:54:46]"
+      ]
+    },
+    {
+      "id": 5,
+      "nombre": "Calidad de talleres y actividades",
+      "score": 3,
+      "comentario": "La sesión incluye un extenso taller guiado sobre modelado de datos en Power BI, que ocupa una parte significativa del tiempo [35:54 - 01:11:41]. Sin embargo, la actividad se desarrolla en un formato de 'seguir al docente', sin un bloque definido de práctica autónoma donde los alumnos deban resolver un desafío por su cuenta. La segunda mitad dedicada a presentaciones de un trabajo previo no constituye práctica en vivo.",
+      "evidencia_timestamps": [
+        "[35:54]",
+        "[56:35]",
+        "[01:21:52]"
+      ]
+    },
+    {
+      "id": 6,
+      "nombre": "Claridad y comunicación docente",
+      "score": 3,
+      "comentario": "La explicación de los conceptos técnicos es ordenada y comprensible. El docente verifica la comprensión de los alumnos de forma constante y responde a sus dudas con paciencia durante el taller [44:18, 55:00]. No obstante, la comunicación se ve afectada por un uso excesivo de muletillas como 'ya', 'o k' y 'este', que aparecen de forma recurrente a lo largo de toda la sesión [13:24, 13:34, 14:04], restando fluidez y profesionalismo a la exposición.",
+      "evidencia_timestamps": [
+        "[13:24]",
+        "[44:18]",
+        "[55:00]"
+      ]
+    },
+    {
+      "id": 7,
+      "nombre": "Engagement e interacción",
+      "score": 3,
+      "comentario": "La interacción es alta durante el taller práctico y las presentaciones, con más de 10 intervenciones de alumnos respondidas por nombre [37:52, 43:57, 01:09:01]. Sin embargo, faltan las dinámicas de engagement estructuradas que exige la metodología WE. No se toma asistencia por nombre y la actividad de Kahoot, mencionada al inicio [08:40], no se realiza por falta de tiempo.",
+      "evidencia_timestamps": [
+        "[08:40]",
+        "[37:52]",
+        "[43:57]",
+        "[01:09:01]"
+      ]
+    },
+    {
+      "id": 8,
+      "nombre": "Gestión del tiempo",
+      "score": 2,
+      "comentario": "La gestión del tiempo es deficiente. La primera parte (teoría y taller) se extiende, dejando la segunda mitad exclusivamente para presentaciones de alumnos, lo que impide cubrir temas del syllabus como DAX. El cierre de la sesión se omite por completo [03:02:11]. El balance teórico-práctico (35% teoría) excede el rango saludable del 10-30%, indicando una sobreexposición teórica que comprime el tiempo para otras actividades planificadas.",
+      "evidencia_timestamps": [
+        "[01:11:56]",
+        "[01:21:52]",
+        "[03:02:11]"
+      ]
+    },
+    {
+      "id": 9,
+      "nombre": "Valor percibido para el participante",
+      "score": 4,
+      "comentario": "A pesar de las fallas estructurales, la sesión aporta un valor práctico considerable. Los alumnos aprenden una habilidad técnica fundamental y directamente aplicable: cómo crear un modelo de datos relacional en Power BI, distinguiendo modelos correctos (estrella) de problemáticos (muchos a muchos). Esta competencia es clave para cualquier rol de análisis de datos y mejora directamente su empleabilidad.",
+      "evidencia_timestamps": [
+        "[55:41]",
+        "[58:41]",
+        "[01:07:07]"
+      ]
+    }
+  ],
+  "metricas_rapidas": {
+    "puntuacion_global": 2.8,
+    "temas_cubiertos": 4,
+    "temas_totales": 6,
+    "porcentaje_practica": 65.0,
+    "porcentaje_teoria": 35.0,
+    "balance_metodologico": "Desbalance crítico"
+  },
+  "fortalezas_top3": [
+    {
+      "titulo": "Aportar valor técnico y aplicable",
+      "detalle": "La sesión enseña a construir un modelo de datos, una habilidad central y de alta demanda profesional."
+    },
+    {
+      "titulo": "Explicar conceptos complejos con claridad",
+      "detalle": "El docente desglosa temas como modelo estrella y cardinalidad de forma muy accesible para los alumnos."
+    },
+    {
+      "titulo": "Fomentar la participación con preguntas",
+      "detalle": "El docente responde constantemente a las dudas de los alumnos por nombre, creando un ambiente de confianza."
+    }
+  ],
+  "oportunidades_top5": [
+    {
+      "titulo": "Cumplir con el 100% del temario",
+      "detalle": "Es crítico no omitir temas centrales del syllabus como la introducción al lenguaje DAX."
+    },
+    {
+      "titulo": "Implementar la estructura de sesión WE",
+      "detalle": "La sesión debe tener una apertura motivadora, un cierre con síntesis y transiciones claras entre etapas."
+    },
+    {
+      "titulo": "Gestionar el tiempo para cubrir la agenda",
+      "detalle": "El tiempo debe ser planificado para cubrir todos los temas y actividades, incluyendo el cierre."
+    },
+    {
+      "titulo": "Reducir drásticamente el uso de muletillas",
+      "detalle": "La comunicación ganaría profesionalismo y fluidez eliminando la repetición constante de 'ya', 'o k' y 'este'."
+    },
+    {
+      "titulo": "Incorporar dinámicas de engagement activas",
+      "detalle": "Utilizar herramientas como Kahoot o pizarras virtuales para dinamizar la participación más allá del Q&A."
+    }
+  ],
+  "mantener": [
+    {
+      "titulo": "Responder a dudas de forma personalizada",
+      "detalle": "Continuar llamando a los alumnos por su nombre al responder preguntas genera un clima de cercanía."
+    },
+    {
+      "titulo": "Utilizar un taller práctico guiado",
+      "detalle": "La aplicación práctica de la teoría en una herramienta real es un pilar fundamental de la sesión."
+    },
+    {
+      "titulo": "Explicar el 'porqué' de las buenas prácticas",
+      "detalle": "Advertir sobre errores comunes como las relaciones 'muchos a muchos' aporta un gran valor preventivo."
+    },
+    {
+      "titulo": "Verificar la comprensión antes de avanzar",
+      "detalle": "Las pausas para preguntar '¿todo claro?' son efectivas para asegurar que nadie se quede atrás."
+    },
+    {
+      "titulo": "Realizar un break intermedio",
+      "detalle": "Mantener el descanso en la mitad de la sesión es crucial para la atención y el bienestar."
+    }
+  ],
+  "cambiar": [
+    {
+      "titulo": "Omitir temas clave del syllabus",
+      "detalle": "No se puede dejar fuera contenido tan relevante como la introducción a DAX en una sesión sobre ello."
+    },
+    {
+      "titulo": "Finalizar la sesión sin cierre ni síntesis",
+      "detalle": "Terminar abruptamente impide consolidar el aprendizaje y establecer la conexión con la siguiente clase."
+    },
+    {
+      "titulo": "Iniciar la clase sin un encuadre motivador",
+      "detalle": "La falta de una apertura con un caso o agenda debilita el propósito de la sesión."
+    },
+    {
+      "titulo": "Permitir que las presentaciones consuman todo el tiempo",
+      "detalle": "Las exposiciones deben tener un tiempo acotado para no desplazar el contenido nuevo de la sesión."
+    },
+    {
+      "titulo": "Depender solo de Q&A para la interacción",
+      "detalle": "La metodología exige dinámicas proactivas (Kahoot, etc.), no solo responder preguntas de forma reactiva."
+    }
+  ],
+  "quick_wins": [
+    {
+      "titulo": "Crear una slide de agenda y cierre",
+      "detalle": "Añadir una diapositiva al inicio con la agenda y una al final con la síntesis."
+    },
+    {
+      "titulo": "Reducir muletillas con pausas conscientes",
+      "detalle": "Reemplazar 'este' o 'ya' por una breve pausa para ordenar la siguiente idea antes de hablar."
+    },
+    {
+      "titulo": "Anunciar las transiciones de etapa",
+      "detalle": "Verbalizar explícitamente: 'Ahora pasamos a la práctica' o 'Vamos a la etapa de creación'."
+    }
+  ],
+  "mejoras_estrategicas": [
+    {
+      "titulo": "Rediseñar la gestión del tiempo de la sesión",
+      "detalle": "Asignar bloques de tiempo fijos a cada tema del syllabus, incluyendo el cierre, y respetarlos."
+    },
+    {
+      "titulo": "Integrar un taller con práctica autónoma",
+      "detalle": "Diseñar un mini-caso para que los alumnos resuelvan solos en 15-20 minutos tras el taller guiado."
+    },
+    {
+      "titulo": "Reestructurar el contenido para cubrir el syllabus",
+      "detalle": "Asegurar que la teoría y práctica de DAX tengan su propio bloque de tiempo bien definido."
+    }
+  ],
+  "veredicto": {
+    "etiqueta": "OBSERVADO",
+    "titular": "11/20 — Sesión con valor técnico pero con fallas estructurales y de alineación críticas.",
+    "cuerpo": "La sesión demuestra una **fortaleza notable en la claridad para explicar conceptos técnicos complejos** como los modelos de datos y en la aplicación práctica de los mismos a través de un taller guiado. El docente genera un ambiente de confianza y responde de manera efectiva a las dudas de los participantes, lo que constituye un pilar pedagógico sólido.\n\nSin embargo, la sesión presenta **dos problemas estructurales críticos**. El primero es una **desviación severa del syllabus**, omitiendo por completo la introducción al lenguaje DAX, que era un componente central del objetivo de aprendizaje. El segundo es una **gestión del tiempo deficiente** que lleva a la omisión de temas, la ausencia total de un cierre de sesión y un desbalance metodológico con exceso de teoría.\n\nAdicionalmente, la estructura de la sesión no sigue el modelo WE, careciendo de una apertura motivadora y un cierre con síntesis. La comunicación del docente, aunque clara en contenido, se ve mermada por un uso excesivo de muletillas que le resta profesionalismo.\n\nCon ajustes enfocados en la planificación, la gestión del tiempo y el cumplimiento estricto de la estructura y temario WE, esta sesión tiene el potencial de mejorar significativamente su calificación, ya que la base de conocimiento técnico y la capacidad de interacción del docente son altas.",
+    "potencial_score": 4.1
+  },
+  "sesion_evaluada": {
+    "numero": 3,
+    "duracion_total_min": 182.3,
+    "fecha_auditoria": "2026-06-01T21:28:23.805789+00:00"
+  }
+}

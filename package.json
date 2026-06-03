@@ -7,6 +7,10 @@
   "scripts": {
     "dev": "nodemon --watch src --ext js,json,mjs --ignore src/**/*.test.js --delay 500 src/app.js",
     "start": "node src/app.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "lint:arch": "eslint src",
     "ai:install": "cd ai_auditor && py -3 -m venv .venv && .venv\\Scripts\\python -m pip install --upgrade pip && .venv\\Scripts\\pip install -r requirements.txt",
     "ai:start": "cd ai_auditor && .venv\\Scripts\\uvicorn main:app --host 127.0.0.1 --port 8090"
   },
@@ -31,6 +35,10 @@
     "puppeteer": "^24.42.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "eslint": "^10.4.1",
+    "eslint-plugin-boundaries": "^6.0.2",
+    "globals": "^17.6.0",
+    "nodemon": "^3.1.10",
+    "vitest": "^3.2.4"
   }
 }

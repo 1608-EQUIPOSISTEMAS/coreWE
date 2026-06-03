@@ -11,7 +11,11 @@
 
 import cron from 'node-cron'
 import { claimNextJob, completeJob, failJob, updateCurrentStep, reapStaleJobs } from './job-queue.service.js'
-import ficoService from './fico.service.js'
+import '../modules/fico/fico.bootstrap.js'
+import { createChildEnrollments } from '../modules/fico/validation/validation.usecases.js'
+import { enrollInOdoo } from '../modules/fico/odoo-sync/odoo-sync.usecases.js'
+import { sendConfirmationEmail, sendMembershipEmail } from '../modules/fico/email-confirmation/email-confirmation.usecases.js'
+import { enrollMembershipInOdoo } from '../modules/fico/membership/membership.usecases.js'
 
 // Steps del job 'register_followup' en orden topologico de dependencias.
 // children DEBE correr primero (puede mutar program_edition_id a NULL si E0).
@@ -39,7 +43,7 @@ const handlers = {
 
     if (startIdx <= 0) {
       try {
-        await ficoService.createChildEnrollments({ enrollmentId, userId })
+        await createChildEnrollments({ enrollmentId, userId })
         await updateCurrentStep(job.job_id, 'children')
       } catch (err) {
         throw Object.assign(err, { _failStep: 'children' })
@@ -50,7 +54,7 @@ const handlers = {
 
     if (startIdx <= 1) {
       try {
-        const odoo = await ficoService.enrollInOdoo({ enrollmentId })
+        const odoo = await enrollInOdoo({ enrollmentId })
         result.odoo = odoo
         await updateCurrentStep(job.job_id, 'odoo')
       } catch (err) {
@@ -62,7 +66,7 @@ const handlers = {
 
     if (startIdx <= 2) {
       try {
-        const email = await ficoService.sendConfirmationEmail({ enrollmentId, cc })
+        const email = await sendConfirmationEmail({ enrollmentId, cc })
         result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
         // sendConfirmationEmail no tira — devuelve { success: false, error } en fallos
         // 'lentos' (Odoo no creado, etc.). Tratamos como fallo del step para que
@@ -98,7 +102,7 @@ const handlers = {
 
     if (startIdx <= 0) {
       try {
-        const odoo = await ficoService.enrollMembershipInOdoo({ enrollmentId })
+        const odoo = await enrollMembershipInOdoo({ enrollmentId })
         result.odoo = odoo
         if (!odoo?.success) {
           throw Object.assign(new Error(odoo?.error || 'Odoo membership enrollment fallo'), { _failStep: 'odoo' })
@@ -114,7 +118,7 @@ const handlers = {
 
     if (startIdx <= 1) {
       try {
-        const email = await ficoService.sendMembershipEmail({ enrollmentId })
+        const email = await sendMembershipEmail({ enrollmentId })
         result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
         if (!email?.success) {
           throw Object.assign(new Error(email?.error || 'Email membresia no enviado'), { _failStep: 'email' })

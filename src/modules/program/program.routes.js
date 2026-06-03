@@ -1,0 +1,27 @@
+import { authenticate, ALL_PRODUCTO, ALL_COMERCIAL, PRODUCTO_COMERCIAL } from '../../shared/http/auth.middleware.js'
+import {
+  programRegisterSchema,
+  programListSchema,
+  programGetSchema,
+  programUpdateSchema,
+  programVersionCallerSchema,
+  priceListSchema,
+  programVersionListSchema,
+  programVersionUpdateSchema,
+  programCallerSchema,
+  programVersionDetailGetSchema
+} from './program.schemas.js'
+import * as ctrl from './program.controller.js'
+
+export default async function programRoutes (fastify) {
+  fastify.post('/programregister', { schema: programRegisterSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.registerHandler)
+  fastify.post('/programlist', { schema: programListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.listHandler)
+  fastify.post('/programget', { schema: programGetSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.getHandler)
+  fastify.post('/programupdate', { schema: programUpdateSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.updateHandler)
+  fastify.post('/programversioncaller', { schema: programVersionCallerSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.versionCallerHandler)
+  fastify.post('/pricelist', { schema: priceListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.priceListHandler)
+  fastify.post('/programversionlist', { schema: programVersionListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.versionListHandler)
+  fastify.post('/programversionupdate', { schema: programVersionUpdateSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.versionUpdateHandler)
+  fastify.post('/programcaller', { schema: programCallerSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.callerHandler)
+  fastify.post('/programversiondetailget', { schema: programVersionDetailGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.versionDetailGetHandler)
+}
