@@ -16,11 +16,12 @@ from google import genai
 from google.genai import types
 
 from config import (
-    GEMINI_API_KEY, GEMINI_CLASSIFIER_MODEL,
+    GEMINI_API_KEY, GEMINI_CLASSIFIER_MODEL, CLASSIFIER_THINKING_BUDGET,
     SEGMENT_DURATION_SEC, theory_range,
 )
 from prompts import CLASSIFIER_INSTRUCTIONS, CLASSIFIER_RESPONSE_SCHEMA
 from transcription import TranscriptSegment, _seconds_to_hms
+from retry import with_retry
 
 
 class ClassifierError(RuntimeError):
@@ -73,12 +74,11 @@ def chunk_transcript(
     return blocks
 
 
-# Tamaño del batch para chunking. Gemini 2.5 Flash usa "thinking" interno que
-# consume tokens del mismo presupuesto que el output: con 190 bloques en una
-# sola llamada, el thinking se comía 31K de 32K tokens y truncaba el JSON.
-# Con 30 bloques por batch (≈30 min de video), el output crudo son ~3K tokens
-# y queda headroom amplio (~29K) para el thinking. La clasificacion no necesita
-# contexto cruzado entre bloques, asi que partir no degrada la calidad.
+# Tamaño del batch para chunking. Con 30 bloques (≈30 min de video) el output
+# crudo son ~3K tokens, holgado bajo max_output_tokens. Batches chicos además
+# aíslan fallas a nivel de lote y permiten re-pedir solo el batch incompleto.
+# La clasificación no necesita contexto cruzado entre bloques, así que partir
+# no degrada la calidad.
 CLASSIFIER_BATCH_SIZE = 30
 
 
@@ -116,13 +116,32 @@ def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
     return out
 
 
-def _classify_one_batch(
-    client: "genai.Client",
-    blocks: list[dict],
-    batch_num: int,
-    total_batches: int,
-) -> list[ClassifiedBlock]:
-    """Una sola llamada a Gemini para un batch. Garantiza len(out) == len(blocks)."""
+def _hms_to_seconds(value: str) -> int | None:
+    """Parsea 'SS', 'MM:SS' o 'HH:MM:SS' a segundos. None si no es numérico."""
+    try:
+        nums = [int(p) for p in value.strip().split(":")]
+    except (ValueError, AttributeError):
+        return None
+    if len(nums) == 3:
+        h, m, s = nums
+    elif len(nums) == 2:
+        h, m, s = 0, nums[0], nums[1]
+    elif len(nums) == 1:
+        h, m, s = 0, 0, nums[0]
+    else:
+        return None
+    return h * 3600 + m * 60 + s
+
+
+def _normalize_label(raw_label: str | None) -> Label:
+    label = (raw_label or "ADMIN").upper()
+    return label if label in {"TEORIA", "PRACTICA", "MIXTO", "ADMIN"} else "ADMIN"  # type: ignore
+
+
+def _call_classifier(
+    client: "genai.Client", blocks: list[dict], batch_num: int, total_batches: int,
+) -> list[dict]:
+    """Una llamada a Gemini Flash con reintentos; devuelve la lista cruda de segmentos."""
     blocks_text = "\n\n".join(
         f"BLOQUE {i+1} [{_seconds_to_hms(b['inicio_seg'])} - {_seconds_to_hms(b['fin_seg'])}]:\n"
         f"{b['transcript_excerpt'] or '(silencio o sin transcripción)'}"
@@ -134,59 +153,99 @@ def _classify_one_batch(
     )
 
     try:
-        response = client.models.generate_content(
+        response = with_retry(lambda: client.models.generate_content(
             model=GEMINI_CLASSIFIER_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=CLASSIFIER_INSTRUCTIONS,
                 response_mime_type="application/json",
                 response_schema=CLASSIFIER_RESPONSE_SCHEMA,
-                # 32000 con batches de 30 bloques: ~3K tokens de output real
-                # dejan ~29K para thinking. Headroom amplio.
-                max_output_tokens=32000,
+                # Etiquetar bloques no requiere razonamiento profundo: acotar el
+                # thinking de Flash recorta el costo sin afectar la calidad. El
+                # output crudo de un batch de 30 son ~3K tokens; 8K deja headroom.
+                max_output_tokens=8000,
                 temperature=0,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=CLASSIFIER_THINKING_BUDGET
+                ),
             ),
-        )
+        ))
     except Exception as e:
         raise ClassifierError(
             f"Gemini {GEMINI_CLASSIFIER_MODEL} no respondió: {type(e).__name__}: {e}"
         ) from e
 
-    finish_reason = _extract_finish_reason(response)
     raw = response.text or ""
-    if finish_reason == "MAX_TOKENS":
+    if _extract_finish_reason(response) == "MAX_TOKENS":
         raise ClassifierError(
             f"Gemini cortó la respuesta por límite de tokens "
             f"(output={len(raw)} chars). Reducí CLASSIFIER_BATCH_SIZE en classifier.py."
         )
 
-    parsed = _extract_json(raw)
-    classified = parsed.get("segmentos") or []
+    classified = _extract_json(raw).get("segmentos") or []
     if not classified:
         raise ClassifierError(
             f"Gemini devolvió 0 segmentos clasificados para {len(blocks)} bloques. "
             f"Respuesta cruda (primeros 500 chars): {raw[:500]!r}"
         )
-    if len(classified) < len(blocks):
+    return classified
+
+
+def _classify_one_batch(
+    client: "genai.Client",
+    blocks: list[dict],
+    batch_num: int,
+    total_batches: int,
+) -> list[ClassifiedBlock]:
+    """Clasifica un batch alineando cada etiqueta por el timestamp que Gemini
+    devuelve (no por posición): si el modelo omite un bloque, el resto NO se
+    corre. Los bloques sin match se re-piden una vez antes de degradar a ADMIN.
+    Garantiza len(out) == len(blocks).
+    """
+    by_start = _index_by_start(_call_classifier(client, blocks, batch_num, total_batches))
+
+    unmatched = [b for b in blocks if int(round(b["inicio_seg"])) not in by_start]
+    if unmatched:
         print(
             f"[classifier] WARN batch {batch_num}/{total_batches}: "
-            f"clasificación parcial {len(classified)}/{len(blocks)} bloques."
+            f"{len(unmatched)}/{len(blocks)} bloques sin match; re-pidiendo."
         )
+        retry_index = _index_by_start(
+            _call_classifier(client, unmatched, batch_num, total_batches)
+        )
+        for key, c in retry_index.items():
+            by_start.setdefault(key, c)
 
     out: list[ClassifiedBlock] = []
-    for i, b in enumerate(blocks):
-        c = classified[i] if i < len(classified) else {}
-        label = (c.get("etiqueta") or "ADMIN").upper()
-        if label not in {"TEORIA", "PRACTICA", "MIXTO", "ADMIN"}:
-            label = "ADMIN"
+    degraded = 0
+    for b in blocks:
+        c = by_start.get(int(round(b["inicio_seg"])), {})
+        if not c:
+            degraded += 1
         out.append(ClassifiedBlock(
             inicio_seg=b["inicio_seg"],
             fin_seg=b["fin_seg"],
-            etiqueta=label,  # type: ignore
+            etiqueta=_normalize_label(c.get("etiqueta")),
             razon=(c.get("razon") or "")[:120],
             transcript_excerpt=b["transcript_excerpt"][:300],
         ))
+    if degraded:
+        print(
+            f"[classifier] WARN batch {batch_num}/{total_batches}: "
+            f"{degraded} bloques quedaron como ADMIN tras el re-pedido."
+        )
     return out
+
+
+def _index_by_start(classified: list[dict]) -> dict[int, dict]:
+    """Indexa las clasificaciones por su segundo de inicio para alinear por
+    timestamp en vez de por posición. Descarta entradas sin inicio parseable."""
+    index: dict[int, dict] = {}
+    for c in classified:
+        key = _hms_to_seconds(c.get("inicio", ""))
+        if key is not None:
+            index.setdefault(key, c)
+    return index
 
 
 def _extract_finish_reason(response) -> str:

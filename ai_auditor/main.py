@@ -68,6 +68,26 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+def _audit_metadata(result, segments, report_path, classified, *, preview: bool) -> dict:
+    """Metadata común de ambos endpoints. thinking se reporta aparte del output
+    porque se factura a precio de output y suele dominar el costo."""
+    meta = {
+        "report_file": report_path.name,
+        "duration_min": round(total_duration_min(segments), 1),
+        "segments_classified": len(classified),
+        "tokens": {
+            "input": result.input_tokens,
+            "output": result.output_tokens,
+            "thinking": result.thinking_tokens,
+            "cached": result.cached_tokens,
+        },
+        "estimated_cost_usd": round(result.cost_estimate_usd(), 4),
+    }
+    if preview:
+        meta["classification_preview"] = serialize_blocks(classified[:5])
+    return meta
+
+
 @app.post("/api/audit")
 async def audit_endpoint(
     sesion_numero: int = Form(...),
@@ -105,18 +125,7 @@ async def audit_endpoint(
 
     return JSONResponse({
         "report": result.report,
-        "metadata": {
-            "report_file": report_path.name,
-            "duration_min": round(total_duration_min(segments), 1),
-            "segments_classified": len(classified),
-            "tokens": {
-                "input": result.input_tokens,
-                "output": result.output_tokens,
-                "cached": result.cached_tokens,
-            },
-            "estimated_cost_usd": round(result.cost_estimate_usd(), 4),
-            "classification_preview": serialize_blocks(classified[:5]),
-        },
+        "metadata": _audit_metadata(result, segments, report_path, classified, preview=True),
     })
 
 
@@ -155,17 +164,7 @@ async def audit_from_video(
 
     return JSONResponse({
         "report": result.report,
-        "metadata": {
-            "report_file": report_path.name,
-            "duration_min": round(total_duration_min(segments), 1),
-            "segments_classified": len(classified),
-            "tokens": {
-                "input": result.input_tokens,
-                "output": result.output_tokens,
-                "cached": result.cached_tokens,
-            },
-            "estimated_cost_usd": round(result.cost_estimate_usd(), 4),
-        },
+        "metadata": _audit_metadata(result, segments, report_path, classified, preview=False),
     })
 
 
