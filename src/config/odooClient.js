@@ -176,16 +176,21 @@ async function searchUserByEmail (email) {
   const normalized = String(email).trim().toLowerCase()
   if (!normalized) return null
 
-  // SOLO buscamos por login (identificador unico en res.users).
-  // El fallback por partner_id.email se removio porque ese campo puede repetirse
-  // entre varias personas (un padre con varios hijos, asesor que reusa correo,
-  // lead test reutilizado, etc.) y devolvia un user que NO correspondia al
-  // alumno actual: terminabamos reusando a otra persona y la plantilla del
-  // correo decia "ya estas registrado, usa la misma contrasenia" cuando era
-  // alguien diferente. El login es la unica llave segura.
-  const rows = await callKw('res.users', 'search_read', [
-    [['login', '=ilike', normalized]]
-  ], { fields: ['id', 'name', 'login', 'partner_id'], limit: 1 })
+  // Validacion de "ya registrado en Odoo": el filtro es UNICAMENTE esta peticion
+  // -> search_read sobre res.users por login. Usamos =ilike (insensible a
+  // mayusculas) en vez de = exacto para que un login guardado con otra
+  // capitalizacion siga haciendo match y NO se cree un correo duplicado. El
+  // login es la unica llave segura: el email de partner se repite entre personas
+  // (un padre con varios hijos, asesor que reusa correo, lead test reutilizado)
+  // y devolvia un user que NO correspondia al alumno actual. Si Odoo responde
+  // con una fila => la persona ya existe y NO se le crea otro correo; si
+  // responde [] => no esta registrada.
+  const rows = await callKw('res.users', 'search_read', [], {
+    domain:  [['login', '=ilike', normalized]],
+    fields:  ['name', 'login', 'partner_id', 'surnames', 'names'],
+    context: { website_id: 1 },
+    limit:   1
+  })
   return rows?.[0] || null
 }
 
