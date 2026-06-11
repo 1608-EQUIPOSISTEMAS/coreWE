@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   firstWord,
   synthesizeOdooEmail,
+  normalizeSapCredentials,
   resolveConfirmationEmailMode,
   resolveProgramTypeLabel,
   resolvePaymentProgress,
@@ -26,6 +27,21 @@ describe('firstWord', () => {
 describe('synthesizeOdooEmail', () => {
   it('construye apellido.nombre@dominio sintetico en minusculas', () => {
     expect(synthesizeOdooEmail('Ana Maria', 'Diaz Ruiz')).toBe(`diaz.ana${SYNTHETIC_ODOO_DOMAIN}`)
+  })
+})
+
+describe('normalizeSapCredentials', () => {
+  it('recorta espacios y marca complete cuando ambas existen', () => {
+    expect(normalizeSapCredentials({ sapUsername: '  SAP_4001 ', sapPassword: ' abc ' }))
+      .toEqual({ username: 'SAP_4001', password: 'abc', complete: true })
+  })
+  it('no esta complete si falta alguna', () => {
+    expect(normalizeSapCredentials({ sapUsername: 'SAP_4001', sapPassword: '   ' }).complete).toBe(false)
+    expect(normalizeSapCredentials({ sapUsername: '', sapPassword: 'abc' }).complete).toBe(false)
+  })
+  it('tolera entrada nula/indefinida', () => {
+    expect(normalizeSapCredentials()).toEqual({ username: '', password: '', complete: false })
+    expect(normalizeSapCredentials({ sapUsername: null, sapPassword: undefined }).complete).toBe(false)
   })
 })
 

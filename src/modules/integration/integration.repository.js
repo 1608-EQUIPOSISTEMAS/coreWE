@@ -177,6 +177,18 @@ export class IntegrationRepository {
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
+    ),
+    -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
+    -- Se usa como fallback cuando el lead no tiene cat_client_moment asignado:
+    -- telefono con momento comunidad -> CWE, con cualquier historico -> LDS,
+    -- sin historico -> NEW. La columna TIPO CLIENTE nunca debe quedar vacia.
+    hist AS (
+      SELECT co.phone,
+             BOOL_OR(cm_h.alias = 'we_moment_cwd') AS has_cwd
+        FROM public.consolidated co
+        LEFT JOIN public."catalog" cm_h ON cm_h.catalog_id = co.cat_client_moment
+       WHERE co.phone IS NOT NULL AND co.phone <> ''
+       GROUP BY co.phone
     )
     SELECT
       pv.version_code                                     AS cod,
@@ -187,13 +199,7 @@ export class IntegrationRepository {
       to_char(pay_eff.f_pago_date, 'DD/MM/YYYY')           AS f_pago,
       per.document_number                                  AS dni,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
-      COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS celular,
+      phone_eff.phone                                      AS celular,
       COALESCE(
         l.origin_email,
         (SELECT pc.value FROM public.person_contacts pc
@@ -224,10 +230,25 @@ export class IntegrationRepository {
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
-      replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',') AS inicial,
+      -- Misma logica de inicial que la hoja "2. Consolidado" (getFicoConsolidado):
+      -- PT no genera cuota 0 (su pago es la cuota 1), asi que leer solo pi_res
+      -- dejaba inicial=0 en todas las ventas al contado.
+      CASE
+        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN c_plan.alias = 'we_payment_way_single'
+          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
+        WHEN c_plan.alias = 'we_payment_way_installments'
+          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
+        ELSE '0'
+      END                                                  AS inicial,
       replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
       replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',') AS ingreso,
-      COALESCE(c_moment.variable_2, '')                    AS tipo_cliente,
+      CASE
+        WHEN COALESCE(c_moment.variable_2, '') <> '' THEN c_moment.variable_2
+        WHEN hist.has_cwd THEN 'CWE'
+        WHEN hist.phone IS NOT NULL THEN 'LDS'
+        ELSE 'NEW'
+      END                                                  AS tipo_cliente,
       'ACT'                                                AS estado_alumno,
       CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS membresia,
       CASE WHEN c_mod.alias = 'we_insc_modality_flexible' THEN 'FLEX' ELSE '' END AS flex
@@ -244,6 +265,16 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_mod     ON c_mod.catalog_id  = e.cat_inscription_modality
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS phone
+    ) phone_eff ON TRUE
+    LEFT JOIN hist ON hist.phone = phone_eff.phone
     LEFT JOIN LATERAL (
       SELECT u_pt.alias
         FROM public.payment_tokens pt
@@ -270,6 +301,11 @@ export class IntegrationRepository {
        WHERE enrollment_id = e.enrollment_id AND installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
+       LIMIT 1
+    ) pi_pt ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
@@ -305,6 +341,16 @@ export class IntegrationRepository {
               e.parent_enrollment_id IS NOT NULL
            OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          )
+    ),
+    -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
+    -- contra public.consolidated cuando el lead no lo tiene asignado.
+    hist AS (
+      SELECT co.phone,
+             BOOL_OR(cm_h.alias = 'we_moment_cwd') AS has_cwd
+        FROM public.consolidated co
+        LEFT JOIN public."catalog" cm_h ON cm_h.catalog_id = co.cat_client_moment
+       WHERE co.phone IS NOT NULL AND co.phone <> ''
+       GROUP BY co.phone
     )
     SELECT
       pv.version_code                                      AS curso,
@@ -312,13 +358,7 @@ export class IntegrationRepository {
       to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_inicio,
       COALESCE(per.document_number, '')                    AS dni,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
-      COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS celular,
+      phone_eff.phone                                      AS celular,
       COALESCE(
         l.origin_email,
         (SELECT pc.value FROM public.person_contacts pc
@@ -351,7 +391,12 @@ export class IntegrationRepository {
         WHEN COALESCE(e.list_price, 0) = 0 THEN ''
         ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 1), 'FM999990.0'), '.', ',') || '%'
       END                                                  AS descuento,
-      COALESCE(c_moment.variable_2, '')                    AS tipo_cliente,
+      CASE
+        WHEN COALESCE(c_moment.variable_2, '') <> '' THEN c_moment.variable_2
+        WHEN hist.has_cwd THEN 'CWE'
+        WHEN hist.phone IS NOT NULL THEN 'LDS'
+        ELSE 'NEW'
+      END                                                  AS tipo_cliente,
       CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS es_member
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
@@ -367,6 +412,16 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
     LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
     LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      ) AS phone
+    ) phone_eff ON TRUE
+    LEFT JOIN hist ON hist.phone = phone_eff.phone
     LEFT JOIN LATERAL (
       SELECT u_pt.alias
         FROM public.payment_tokens pt

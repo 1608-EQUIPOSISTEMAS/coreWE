@@ -1,10 +1,10 @@
 import { pool } from '../../../shared/db/pool.js'
 import { STUDENT_EMAIL_SQL } from '../../../utils/student-contacts.sql.js'
 
-// Persistencia de los correos transaccionales FICO. Envuelve pool.query y el
-// SP sp_assign_sap_credentials; no contiene reglas de negocio (esas viven en
-// email-confirmation.entity.js) ni efectos externos (Odoo/email/PDF). Las
-// queries se movieron VERBATIM desde fico.service.js para preservar paridad.
+// Persistencia de los correos transaccionales FICO. Envuelve pool.query; no
+// contiene reglas de negocio (esas viven en email-confirmation.entity.js) ni
+// efectos externos (Odoo/email/PDF). Las credenciales SAP se guardan por upsert
+// con los valores que FICO ingresa a mano (ya no se autogeneran).
 export class EmailConfirmationRepository {
   constructor (db = pool) {
     this.db = db
@@ -23,18 +23,21 @@ export class EmailConfirmationRepository {
   }
 
   // Variante de findMembershipCheck usada por el preview (no necesita odoo_user_id).
-  async findPreviewMembershipCheck (enrollmentId) {
+  // programVersionId permite previsualizar contra otro programa (cambio de curso).
+  async findPreviewMembershipCheck (enrollmentId, programVersionId = null) {
     const { rows } = await this.db.query(`
       SELECT pv.abbreviation, prog.is_membership FROM enrollments e
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN program_versions pv ON pv.program_version_id = COALESCE($2::integer, e.program_version_id)
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       WHERE e.enrollment_id = $1
-    `, [enrollmentId])
+    `, [enrollmentId, programVersionId])
     return rows?.[0] || null
   }
 
   // Datos completos para construir el correo de confirmacion (preview).
-  async findConfirmationDataForPreview (enrollmentId, editionId) {
+  // programVersionId override: el cambio de curso previsualiza el correo con el
+  // programa destino antes de que el enrollment nuevo exista.
+  async findConfirmationDataForPreview (enrollmentId, editionId, programVersionId = null) {
     const { rows } = await this.db.query(`
       SELECT e.enrollment_id, e.total_amount, e.discount_amount,
              per.first_name, per.last_name, per.mother_last_name, per.document_number,
@@ -53,13 +56,13 @@ export class EmailConfirmationRepository {
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN program_versions pv ON pv.program_version_id = COALESCE($3::integer, e.program_version_id)
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = COALESCE($2::integer, e.program_edition_id)
       LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
       LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
       WHERE e.enrollment_id = $1
-    `, [enrollmentId, editionId])
+    `, [enrollmentId, editionId, programVersionId])
     return rows?.[0] || null
   }
 
@@ -96,7 +99,7 @@ export class EmailConfirmationRepository {
   }
 
   // Datos para preview/envio de correo de membresia.
-  async findMembershipDataForPreview (enrollmentId, editionId) {
+  async findMembershipDataForPreview (enrollmentId, editionId, programVersionId = null) {
     const { rows } = await this.db.query(`
       SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name, per.document_number,
              ${STUDENT_EMAIL_SQL} AS origin_email,
@@ -109,12 +112,12 @@ export class EmailConfirmationRepository {
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN program_versions pv ON pv.program_version_id = COALESCE($3::integer, e.program_version_id)
       LEFT JOIN program_editions pe ON pe.edition_num_id = COALESCE($2::integer, e.program_edition_id)
       LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
       LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
       WHERE e.enrollment_id = $1
-    `, [enrollmentId, editionId])
+    `, [enrollmentId, editionId, programVersionId])
     return rows?.[0] || null
   }
 
@@ -162,21 +165,19 @@ export class EmailConfirmationRepository {
     return rows?.[0] || null
   }
 
-  // Credenciales SAP en modo preview: tabla persistida, con fallback placeholder.
-  async findSapCredentialsForPreview (enrollmentId) {
-    const { rows } = await this.db.query(
-      'SELECT sap_username, sap_password FROM public.enrollment_sap_credentials WHERE enrollment_id = $1',
-      [enrollmentId]
-    )
-    return rows?.[0] || { sap_username: 'SAP_XXXX', sap_password: '1234567' }
-  }
-
-  // Credenciales SAP en envio: el SP las asigna/devuelve.
-  async assignSapCredentials (enrollmentId) {
-    const { rows } = await this.db.query(
-      'SELECT sap_username, sap_password FROM public.sp_assign_sap_credentials($1)',
-      [enrollmentId]
-    )
+  // Credenciales SAP que el operador ingreso a mano, persistidas como registro
+  // de lo enviado (upsert: un reenvio reemplaza lo anterior). Ya no se
+  // autogeneran; vienen siempre del formulario de FICO.
+  async setSapCredentials (enrollmentId, sapUsername, sapPassword) {
+    const { rows } = await this.db.query(`
+      INSERT INTO public.enrollment_sap_credentials (enrollment_id, sap_username, sap_password)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (enrollment_id) DO UPDATE
+        SET sap_username = EXCLUDED.sap_username,
+            sap_password = EXCLUDED.sap_password,
+            updated_at   = now()
+      RETURNING sap_username, sap_password
+    `, [enrollmentId, sapUsername, sapPassword])
     return rows?.[0] || null
   }
 

@@ -35,6 +35,15 @@ export function resolveConfirmationEmailMode ({ isFirstSend, hasPriorEnrollment,
   return { isFirstSend, isReturningStudent, isNew }
 }
 
+// Normaliza las credenciales SAP que FICO escribio a mano. Recorta espacios y
+// reporta si ambas estan completas. `complete` es la senal que usa el envio para
+// decidir si pinta el bloque SAP y, en el borde HTTP, si exige el ingreso.
+export function normalizeSapCredentials ({ sapUsername, sapPassword } = {}) {
+  const username = String(sapUsername ?? '').trim()
+  const password = String(sapPassword ?? '').trim()
+  return { username, password, complete: username.length > 0 && password.length > 0 }
+}
+
 // Etiqueta de tipo de programa para el asunto/cuerpo del correo de cuota.
 export function resolveProgramTypeLabel (categoryDescription) {
   const raw = (categoryDescription || '').trim().toUpperCase()

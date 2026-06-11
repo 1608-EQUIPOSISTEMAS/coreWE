@@ -202,11 +202,17 @@ export function buildCourseChangeInscription ({
     list_price: totalAmount || 0,
     total_amount: totalAmount,
     saved_money: 0,
-    is_scholarship: false,
+    // CC sin pago adicional (lo pagado en el origen cubre el curso nuevo):
+    // monto 0 entra por la via "pago cero" del SP, que de otro modo rechaza
+    // list_price <= 0. El SP crea una cuota pagada de 0 sin fila de pago.
+    is_scholarship: !(Number(totalAmount) > 0),
     cat_b2b_doctype: null,
     seller_agent_id: null,
     agent_origin: 'SA',
-    client_profile: null,
+    // El SP exige perfil cuando la edicion destino existe. Se hereda del origen;
+    // sin alias de estudiante se asume profesional (mismo default que usan las
+    // hojas FICO al exportar OCUP).
+    client_profile: old.old_profile_alias === 'we_profile_student' ? 'estudiante' : 'profesional',
     observations: ccNote,
     ticket_payment_urls: ticket_payment_urls || [],
     installment_plan: null

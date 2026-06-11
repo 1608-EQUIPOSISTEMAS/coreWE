@@ -20,6 +20,7 @@ import {
   MEMBERSHIP_DEFAULT_PASSWORD,
   firstWord,
   synthesizeOdooEmail,
+  normalizeSapCredentials,
   resolveConfirmationEmailMode,
   resolveProgramTypeLabel,
   resolvePaymentProgress,
@@ -93,24 +94,32 @@ async function resolveModeFromDb ({ enrollmentId, odooEmail }) {
 // ---------------------------------------------------------------------------
 // PREVIEW
 
-export async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, activationDate = null }) {
-  const check = await repo.findPreviewMembershipCheck(enrollmentId)
+export async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null, sapUsername = null, sapPassword = null }) {
+  // overrideProgramVersionId: el cambio de curso previsualiza el correo con el
+  // programa destino (el enrollment nuevo aun no existe en este punto).
+  const check = await repo.findPreviewMembershipCheck(enrollmentId, overrideProgramVersionId)
   if (check && isMembership(check.abbreviation, check.is_membership)) {
-    return previewMembershipEmail({ enrollmentId, overrideEditionId, activationDate })
+    return previewMembershipEmail({ enrollmentId, overrideEditionId, overrideProgramVersionId, activationDate })
   }
 
   const editionId = overrideEditionId || null
-  const data = await repo.findConfirmationDataForPreview(enrollmentId, editionId)
+  const data = await repo.findConfirmationDataForPreview(enrollmentId, editionId, overrideProgramVersionId)
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
 
   const onlineModalityId = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
   const isOnline = data.cat_model_modality === onlineModalityId
   const sapCategoryId = await getCatalogIdByAlias(ALIAS.PROGRAM_CATEGORY_SAP)
-  const isSapOnline = isOnline && sapCategoryId && data.cat_category === sapCategoryId
+  const isSapOnline = !!(isOnline && sapCategoryId && data.cat_category === sapCategoryId)
 
+  // El preview pinta las credenciales que FICO esta escribiendo en vivo; si aun
+  // no escribio nada, muestra placeholders para que se vea la estructura.
   let sapCredentials = null
   if (isSapOnline) {
-    sapCredentials = await repo.findSapCredentialsForPreview(enrollmentId)
+    const { username, password } = normalizeSapCredentials({ sapUsername, sapPassword })
+    sapCredentials = {
+      sap_username: username || 'SAP_XXXX',
+      sap_password: password || '••••••'
+    }
   }
 
   const sched = await repo.findScheduleForPreview(enrollmentId, editionId)
@@ -158,13 +167,15 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
     to: data.origin_email || '---',
     subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
     hasAttachment: isParentProgram && !isOnline,
-    attachmentName: (isParentProgram && !isOnline) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null
+    attachmentName: (isParentProgram && !isOnline) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null,
+    // Senal para que el front muestre el formulario de credenciales SAP.
+    isSapOnline
   }
 }
 
-export async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null, activationDate = null }) {
+export async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null }) {
   const editionId = overrideEditionId || null
-  const data = await repo.findMembershipDataForPreview(enrollmentId, editionId)
+  const data = await repo.findMembershipDataForPreview(enrollmentId, editionId, overrideProgramVersionId)
   if (!data) return { html: null, error: 'Inscripcion no encontrada' }
 
   const startDate = resolvePreviewActivationStart({
@@ -214,7 +225,7 @@ export async function previewMembershipEmail ({ enrollmentId, overrideEditionId 
 // ---------------------------------------------------------------------------
 // ENVIO: confirmacion de inscripcion (curso / online / padre)
 
-export async function sendConfirmationEmail ({ enrollmentId, cc }) {
+export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = null, sapPassword = null, enforceSapCredentials = false }) {
   // Reintento manual: limpiar fallos previos para dejar la timeline limpia.
   await repo.clearPriorEmailFailures(enrollmentId)
 
@@ -251,11 +262,23 @@ export async function sendConfirmationEmail ({ enrollmentId, cc }) {
   const onlineModalityId = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
   const isOnline = data.cat_model_modality === onlineModalityId
   const sapCategoryId = await getCatalogIdByAlias(ALIAS.PROGRAM_CATEGORY_SAP)
-  const isSapOnline = isOnline && sapCategoryId && data.cat_category === sapCategoryId
+  const isSapOnline = !!(isOnline && sapCategoryId && data.cat_category === sapCategoryId)
 
+  // Credenciales SAP: ya no se autogeneran, vienen del formulario de FICO.
+  //   - completas  -> se persisten (registro) y se pintan en el correo.
+  //   - faltantes + enforceSapCredentials (borde HTTP manual) -> aborta el envio.
+  //   - faltantes sin enforce (llamadores internos RP/CC) -> correo sin bloque SAP.
   let sapCredentials = null
   if (isSapOnline) {
-    sapCredentials = await repo.assignSapCredentials(enrollmentId)
+    const { username, password, complete } = normalizeSapCredentials({ sapUsername, sapPassword })
+    if (complete) {
+      sapCredentials = await repo.setSapCredentials(enrollmentId, username, password)
+    } else if (enforceSapCredentials) {
+      return {
+        success: false,
+        error: 'Debes ingresar el usuario y la contrasena SAP antes de enviar el correo.'
+      }
+    }
   }
 
   const toEmail = data.origin_email

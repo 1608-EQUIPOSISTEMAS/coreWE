@@ -242,8 +242,6 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   const newEd = await repo.getCourseChangeDestEdition(newEditionId, newProgramVersionId)
   if (!newEd) throw new DomainError('La edicion destino no existe o no pertenece al programa seleccionado')
 
-  await repo.setCourseChangedStatus(enrollmentId)
-
   const ccNote = `Cambio de curso desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
   const { ccContadoCatId, resolvedMethodPayment } = await repo.resolveCourseChangeMethod(enrollmentId)
 
@@ -259,6 +257,11 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
     throw new DomainError(newEnroll.message || 'Error al crear la inscripcion destino')
   }
   const newEid = newEnroll.enrollment_id
+
+  // Marcar el origen como "cambio de curso" recien cuando la inscripcion
+  // destino ya existe: si registerDirect falla, el origen no debe quedar
+  // marcado con un cambio que nunca ocurrio.
+  await repo.setCourseChangedStatus(enrollmentId)
 
   const { oldAmount } = courseChangeAmountDifference(old.total_amount, old.discount_amount, totalAmount)
 

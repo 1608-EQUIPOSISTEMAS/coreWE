@@ -182,6 +182,27 @@ describe('buildCourseChangeInscription', () => {
     expect(insc.cat_payment_medium).toBe(88)
     expect(insc.cat_payment_way).toBe(20)
   })
+  it('monto 0 entra por la via pago-cero (lo pagado en el origen cubre el curso nuevo)', () => {
+    const insc = buildCourseChangeInscription({
+      old, newProgramVersionId: 1, newEditionId: 2, totalAmount: 0,
+      ccNote: 'x', ccContadoCatId: 99, resolvedMethodPayment: 7, today: '2026-05-29'
+    })
+    expect(insc.is_scholarship).toBe(true)
+    expect(insc.total_amount).toBe(0)
+    expect(insc.list_price).toBe(0)
+  })
+  it('hereda el perfil del origen; sin alias de estudiante asume profesional', () => {
+    const base = {
+      newProgramVersionId: 1, newEditionId: 2, totalAmount: 100,
+      ccNote: 'x', ccContadoCatId: 99, resolvedMethodPayment: 7, today: '2026-05-29'
+    }
+    const est = buildCourseChangeInscription({ ...base, old: { ...old, old_profile_alias: 'we_profile_student' } })
+    expect(est.client_profile).toBe('estudiante')
+    const prof = buildCourseChangeInscription({ ...base, old: { ...old, old_profile_alias: 'we_profile_professional' } })
+    expect(prof.client_profile).toBe('profesional')
+    const sinPerfil = buildCourseChangeInscription({ ...base, old })
+    expect(sinPerfil.client_profile).toBe('profesional')
+  })
 })
 
 describe('courseChangeAmountDifference', () => {

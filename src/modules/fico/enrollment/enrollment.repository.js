@@ -307,7 +307,8 @@ export class EnrollmentRepository {
              l.cat_code_country,
              pv.abbreviation AS old_program_name,
              prog.odoo_activation AS old_odoo_activation,
-             pe.global_code AS old_edition_code, pe.start_date AS old_start_date
+             pe.global_code AS old_edition_code, pe.start_date AS old_start_date,
+             c_prof.alias AS old_profile_alias
       FROM enrollments e
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
@@ -315,6 +316,7 @@ export class EnrollmentRepository {
       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+      LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
     return rows?.[0] || null
@@ -781,12 +783,19 @@ export class EnrollmentRepository {
              c_fico.alias AS fico_status_alias,
              per.first_name, per.last_name,
              ${STUDENT_EMAIL_SQL} AS origin_email,
-             ${STUDENT_PHONE_SQL} AS origin_phone
+             ${STUDENT_PHONE_SQL} AS origin_phone,
+             -- Curso SAP online: el reenvio rapido pide credenciales a mano.
+             (prog.cat_category = cat_sap.catalog_id
+              AND prog.cat_model_modality = mod_online.catalog_id) AS is_sap_online
       FROM enrollments e
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
       LEFT JOIN catalog c_fico ON c_fico.catalog_id = e.cat_fico_status
+      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN programs prog ON prog.program_id = pv.program_id
+      LEFT JOIN catalog cat_sap ON cat_sap.alias = 'we_program_category_sap'
+      LEFT JOIN catalog mod_online ON mod_online.alias = 'we_modality_online'
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
     const r = rows?.[0]
