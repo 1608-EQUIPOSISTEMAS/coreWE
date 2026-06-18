@@ -333,6 +333,22 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
+  // Destino sin edicion: las membresias no tienen program_editions, asi que el CC
+  // resuelve el programa directamente. Devuelve la misma forma que
+  // getCourseChangeDestEdition (global_code/start_date null) para que el usecase
+  // arme la auditoria sin ramas adicionales.
+  async getCourseChangeDestProgram (newProgramVersionId) {
+    const { rows } = await this.db.query(`
+      SELECT NULL::int AS edition_num_id, NULL::text AS global_code, NULL::date AS start_date,
+             pv.abbreviation AS new_program_name, pv.program_version_id,
+             COALESCE(prog.is_membership, false) AS is_membership
+      FROM program_versions pv
+      JOIN programs prog ON prog.program_id = pv.program_id
+      WHERE pv.program_version_id = $1
+    `, [newProgramVersionId])
+    return rows?.[0] || null
+  }
+
   async setCourseChangedStatus (enrollmentId) {
     const ccCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_COURSE_CHANGED)
     if (ccCatId) {
@@ -873,12 +889,28 @@ export class EnrollmentRepository {
     return rows?.[0] || {}
   }
 
-  async getLatestActivePayment (enrollmentId) {
+  // Pago "principal" que edita el formulario de Pago Inicial / contado: el de la
+  // cuota inicial (installment_number = 0). NO se debe identificar por la fecha
+  // mas reciente: si una cuota pagada recibe una fecha posterior, ese pago pasaria
+  // a ser "el ultimo" y la edicion del pago inicial lo sobrescribiria por error
+  // (bug: la fecha de una cuota pagada se revertia al guardar). Fallback al ultimo
+  // pago activo solo si no existe cuota inicial con pago.
+  async getInitialPayment (enrollmentId) {
     const { rows } = await this.db.query(
+      `SELECT p.payment_id, p.cat_method_payment, p.settled_in_account_id, p.transaction_code, p.payment_date
+         FROM payments p
+         JOIN payment_installments pi ON pi.installment_id = p.installment_id
+        WHERE p.enrollment_id = $1 AND p.active = 'Y' AND pi.installment_number = 0
+        ORDER BY p.payment_date DESC, p.payment_id DESC
+        LIMIT 1`,
+      [enrollmentId]
+    )
+    if (rows?.[0]) return rows[0]
+    const { rows: fb } = await this.db.query(
       "SELECT payment_id, cat_method_payment, settled_in_account_id, transaction_code, payment_date FROM payments WHERE enrollment_id = $1 AND active = 'Y' ORDER BY payment_date DESC LIMIT 1",
       [enrollmentId]
     )
-    return rows?.[0] || {}
+    return fb?.[0] || {}
   }
 
   async updateEnrollmentFields (enrollmentId, sets, params) {

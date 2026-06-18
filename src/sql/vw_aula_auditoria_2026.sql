@@ -232,43 +232,117 @@ LEFT JOIN LATERAL (
 ORDER BY ed.codigo, c.session_number;
 
 -- ---------------------------------------------------------------------------
--- RESUMEN POR AULA (rollup de la vista de detalle)
+-- RESUMEN POR AULA (una fila por edicion 2026 del docente)
 -- ---------------------------------------------------------------------------
+-- A diferencia de la version anterior (que hacia rollup de la vista de detalle
+-- y por tanto SOLO listaba aulas con al menos una sesion auditada), este
+-- resumen parte de TODAS las ediciones 2026 (`ed`) y agrega la auditoria por
+-- LEFT JOIN. Asi Nexus ve el universo completo de aulas del docente:
+-- finalizadas, en proceso y proximas. Las aulas sin auditoria aparecen con
+-- contadores en 0, notas NULL y veredicto 'SIN EVALUAR'.
+--
+-- Exclusion A5 (cursos cancelados): se descarta el segmento we_segment_a5,
+-- igual que Aulas.vue y ReporteAcademico.vue en el ERP. El `codigo` se calcula
+-- ANTES de excluir A5 (ventana sobre todas las ediciones 2026) para que la
+-- desambiguacion por iniciales del docente sea identica a la vista de detalle
+-- y a vw_program_editions_2026.
 CREATE OR REPLACE VIEW public.vw_aula_auditoria_resumen_2026 AS
+WITH ed AS (
+  SELECT
+    pe.edition_num_id,
+    pv.abbreviation                         AS programa,
+    pv.sessions                             AS sesiones_programadas,
+    (p.first_name || ' ' || p.last_name)    AS docente,
+    pe.start_date                           AS fecha_inicio,
+    pe.end_date                             AS fecha_fin,
+    pe.active                               AS edicion_activa,
+    cs.alias                                AS segmento_alias,
+    CASE
+      WHEN count(*) OVER (PARTITION BY pv.abbreviation, pe.start_date) > 1
+        THEN upper(left(split_part(btrim(p.first_name), ' ', 1), 1))
+          || upper(left(split_part(btrim(p.last_name), ' ', 1), 1))
+          || sg.siglas || '-' || to_char(pe.start_date, 'DD/MM/YY')
+      ELSE sg.siglas || '-' || to_char(pe.start_date, 'DD/MM/YY')
+    END                                     AS codigo
+  FROM program_editions pe
+  JOIN program_versions pv ON pv.program_version_id = pe.program_version_id
+  JOIN instructors i       ON i.instructor_id = pe.instructor_id
+  JOIN persons p           ON p.person_id = i.person_id
+  LEFT JOIN public."catalog" cs ON cs.catalog_id = pe.cat_segment
+  CROSS JOIN LATERAL (
+    SELECT string_agg(left(w, 1), '') AS siglas
+    FROM regexp_split_to_table(upper(pv.abbreviation::text), '\s+') AS w
+  ) sg
+  WHERE pe.start_date >= DATE '2026-01-01'
+    AND pe.start_date <  DATE '2027-01-01'
+),
+agg AS (
+  -- Rollup de la auditoria por edicion (solo aulas que tienen registro).
+  SELECT
+    edition_num_id,
+    count(*)                                          AS sesiones_con_registro,
+    count(*) FILTER (WHERE tiene_analisis_ia)         AS sesiones_con_ia,
+    count(*) FILTER (WHERE tiene_evaluacion_manual)   AS sesiones_con_manual,
+    avg(nota_ia_20)   FILTER (WHERE tiene_analisis_ia)        AS nota_ia_prom,
+    avg(nota_area_20) FILTER (WHERE tiene_evaluacion_manual)  AS nota_area_prom,
+    avg(nota_consolidada_20)                          AS nota_cons_prom,
+    max(ia_generado_at)                               AS ultimo_analisis_ia_at,
+    max(actualizado_at)                               AS ultima_actividad_at,
+    string_agg(
+      'S' || sesion || ': consolidada ' || COALESCE(nota_consolidada_20::text, '--')
+        || ' (IA ' || COALESCE(nota_ia_20::text, '--')
+        || ' / Area ' || COALESCE(nota_area_20::text, '--') || ') ' || veredicto,
+      E'\n' ORDER BY sesion
+    )                                                 AS sesiones_resumen_texto
+  FROM public.vw_aula_auditoria_2026
+  GROUP BY edition_num_id
+)
 SELECT
-  codigo,
-  edition_num_id,
-  programa,
-  docente,
-  fecha_inicio,
-  max(sesiones_programadas)                                 AS sesiones_programadas,
-  count(*)                                                  AS sesiones_con_registro,
-  count(*) FILTER (WHERE tiene_analisis_ia)                 AS sesiones_con_ia,
-  count(*) FILTER (WHERE tiene_evaluacion_manual)           AS sesiones_con_manual,
-  ROUND(avg(nota_ia_20)   FILTER (WHERE tiene_analisis_ia), 2)        AS nota_ia_promedio_20,
-  ROUND(avg(nota_area_20) FILTER (WHERE tiene_evaluacion_manual), 2)  AS nota_area_promedio_20,
-  ROUND(avg(nota_consolidada_20), 2)                        AS nota_consolidada_aula_20,
+  ed.codigo,
+  ed.edition_num_id,
+  ed.programa,
+  ed.docente,
+  ed.fecha_inicio,
+  ed.sesiones_programadas,
+  COALESCE(a.sesiones_con_registro, 0)                      AS sesiones_con_registro,
+  COALESCE(a.sesiones_con_ia, 0)                            AS sesiones_con_ia,
+  COALESCE(a.sesiones_con_manual, 0)                        AS sesiones_con_manual,
+  ROUND(a.nota_ia_prom, 2)                                  AS nota_ia_promedio_20,
+  ROUND(a.nota_area_prom, 2)                                AS nota_area_promedio_20,
+  ROUND(a.nota_cons_prom, 2)                                AS nota_consolidada_aula_20,
+  -- Sin nota consolidada (aula sin auditoria) => SIN EVALUAR; no DEFICIENTE.
   CASE
-    WHEN avg(nota_consolidada_20) >= 19 THEN 'EXCELENTE'
-    WHEN avg(nota_consolidada_20) >= 17 THEN 'BUENO'
-    WHEN avg(nota_consolidada_20) >= 15 THEN 'EN PROCESO'
+    WHEN a.nota_cons_prom IS NULL    THEN 'SIN EVALUAR'
+    WHEN a.nota_cons_prom >= 19      THEN 'EXCELENTE'
+    WHEN a.nota_cons_prom >= 17      THEN 'BUENO'
+    WHEN a.nota_cons_prom >= 15      THEN 'EN PROCESO'
     ELSE 'DEFICIENTE'
   END                                                       AS veredicto_aula,
-  ROUND(100.0 * count(*) FILTER (WHERE tiene_analisis_ia)
-        / NULLIF(max(sesiones_programadas), 0), 0)          AS cobertura_ia_pct,
-  ROUND(100.0 * count(*) FILTER (WHERE tiene_evaluacion_manual)
-        / NULLIF(max(sesiones_programadas), 0), 0)          AS cobertura_manual_pct,
-  (count(*) FILTER (WHERE tiene_analisis_ia) >= max(sesiones_programadas)
-   AND count(*) FILTER (WHERE tiene_evaluacion_manual) >= max(sesiones_programadas)) AS muestra_completa,
-  max(ia_generado_at)                                       AS ultimo_analisis_ia_at,
-  max(actualizado_at)                                       AS ultima_actividad_at,
-  -- Rollup legible por aula: una linea por sesion con sus notas y veredicto.
-  string_agg(
-    'S' || sesion || ': consolidada ' || COALESCE(nota_consolidada_20::text, '--')
-      || ' (IA ' || COALESCE(nota_ia_20::text, '--')
-      || ' / Area ' || COALESCE(nota_area_20::text, '--') || ') ' || veredicto,
-    E'\n' ORDER BY sesion
-  )                                                         AS sesiones_resumen_texto
-FROM public.vw_aula_auditoria_2026
-GROUP BY codigo, edition_num_id, programa, docente, fecha_inicio
-ORDER BY codigo;
+  ROUND(100.0 * COALESCE(a.sesiones_con_ia, 0)
+        / NULLIF(ed.sesiones_programadas, 0), 0)            AS cobertura_ia_pct,
+  ROUND(100.0 * COALESCE(a.sesiones_con_manual, 0)
+        / NULLIF(ed.sesiones_programadas, 0), 0)            AS cobertura_manual_pct,
+  (COALESCE(a.sesiones_con_ia, 0)     >= ed.sesiones_programadas
+   AND COALESCE(a.sesiones_con_manual, 0) >= ed.sesiones_programadas) AS muestra_completa,
+  a.ultimo_analisis_ia_at,
+  a.ultima_actividad_at,
+  a.sesiones_resumen_texto,
+  -- Estado del ciclo de vida del aula (mismo criterio que deriveStatus en el
+  -- frontend). Precedencia: la baja manual (active='N') manda; luego las fechas
+  -- vs hoy. Bordes: sin fecha_inicio => PROXIMO; sin fecha_fin => sigue vigente.
+  -- "Hoy" se toma en hora de Lima (no UTC) para no equivocar la clasificacion
+  -- cerca de medianoche; el server (Neon) corre en UTC.
+  CASE
+    WHEN ed.edicion_activa = 'N'                              THEN 'FINALIZADO'
+    WHEN ed.fecha_inicio IS NULL                             THEN 'PROXIMO'
+    WHEN ed.fecha_inicio > (now() AT TIME ZONE 'America/Lima')::date THEN 'PROXIMO'
+    WHEN ed.fecha_fin IS NOT NULL
+         AND ed.fecha_fin < (now() AT TIME ZONE 'America/Lima')::date THEN 'FINALIZADO'
+    ELSE 'EN CURSO'
+  END                                                       AS estado,
+  ed.fecha_fin
+FROM ed
+LEFT JOIN agg a ON a.edition_num_id = ed.edition_num_id
+-- Excluir A5 (cancelados); el codigo ya quedo calculado sobre el universo full.
+WHERE ed.segmento_alias IS DISTINCT FROM 'we_segment_a5'
+ORDER BY ed.codigo;

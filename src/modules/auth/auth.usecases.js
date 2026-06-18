@@ -2,6 +2,7 @@ import { DomainError } from '../../shared/errors.js'
 import { authRepository } from './auth.repository.js'
 import { buildJwtPayload, validateCredentialsResult, requireRoleAlias } from './auth.entity.js'
 import { toLoginDto, toUserListDto } from './auth.dto.js'
+import { modulesForRoles, submodulesForRoles } from '../../shared/security/module-access.js'
 
 const repo = authRepository
 
@@ -18,8 +19,24 @@ export async function login ({ username, password }, signToken) {
     throw new DomainError('Usuario o contraseña incorrectos', { statusCode: 401 })
   }
 
+  // Módulos y submódulos accesibles según la matriz de Configuración. Si la
+  // consulta falla el login no se bloquea: el frontend cae al filtrado por
+  // roles hardcodeados.
+  let modules, submodules
+  try {
+    [modules, submodules] = await Promise.all([
+      modulesForRoles(user.roles),
+      submodulesForRoles(user.roles)
+    ])
+  } catch (err) {
+    console.error('[login] no se pudieron cargar los módulos del usuario:', err.message)
+  }
+
   const token = signToken(buildJwtPayload(user), { expiresIn: '12h' })
-  return toLoginDto({ token, user })
+  return toLoginDto({
+    token,
+    user: { ...user, ...(modules && { modules }), ...(submodules && { submodules }) }
+  })
 }
 
 export async function userList () {

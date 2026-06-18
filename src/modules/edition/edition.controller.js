@@ -52,6 +52,21 @@ export async function classroomAuditSaveHandler (req, reply) {
   return reply.code(result.ok ? 200 : 400).send(result)
 }
 
+export async function classroomGradesGetHandler (req, reply) {
+  const data = await usecases.classroomGradesGet(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function classroomGradesSaveHandler (req, reply) {
+  const result = await usecases.classroomGradesSave(req.body)
+  return reply.code(result.ok ? 200 : 400).send(result)
+}
+
+export async function classroomGradesObservationsHandler (req, reply) {
+  const result = await usecases.classroomGradesObservations(req.body)
+  return reply.code(result.ok ? 200 : 502).send(result)
+}
+
 // Multipart: transcript_text + syllabus_image + edition_id + session_number.
 // Sin schema porque @fastify/multipart parsea manualmente; validamos en el
 // usecase. La IA puede demorar; el timeout de socket vive en la ruta.

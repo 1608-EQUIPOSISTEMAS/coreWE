@@ -27,6 +27,13 @@ import webhookRoutes from './routes/webhooks.js'
 import notificationRoutes from './modules/notification/notification.routes.js'
 import tokenRoutes from './modules/fico/tokens/token.routes.js'
 import botRoutes from './modules/bot/bot.routes.js'
+import configRoutes from './modules/config/config.routes.js'
+import importerRoutes from './modules/importer/importer.routes.js'
+import { setImporterPorts } from './modules/importer/importer.ports.js'
+import { ficoEnrollmentRegister } from './modules/fico/enrollment/enrollment.usecases.js'
+import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
+import { getCatalog } from './modules/catalog/catalog.usecases.js'
+import { listProgramVersions } from './modules/program/program.usecases.js'
 import { setIntegrationPorts } from './modules/comercial/comercial.usecases.js'
 import { sendEnrollmentWebToSlack, syncEnrollmentToSheet } from './modules/integration/integration.usecases.js'
 
@@ -35,6 +42,16 @@ import { sendEnrollmentWebToSlack, syncEnrollmentToSheet } from './modules/integ
 // (Slack/Sheets) tras una inscripcion; aqui se satisface ese contrato sin que
 // comercial dependa de los internals de integration (regla de aislamiento Fase 4).
 setIntegrationPorts({ sendEnrollmentWebToSlack, syncEnrollmentToSheet })
+
+// El modulo de importacion masiva (Administracion) registra inscripciones y
+// resuelve nombres->IDs leyendo catalogos/programas de otros modulos. Aqui se
+// le inyectan esos puertos sin que importer dependa de sus internals.
+setImporterPorts({
+  registerEnrollment: ficoEnrollmentRegister,
+  getCatalog,
+  listProgramVersions,
+  listEditionsByVersion: (programVersionId) => enrollmentRepository.listEditionsByVersion(programVersionId)
+})
 
 // Construye y configura la instancia Fastify sin arrancarla. Permite levantar
 // el servidor en produccion (server entry) y, sobre todo, hacer app.inject() en
@@ -172,6 +189,8 @@ export async function buildApp (opts = {}) {
   await app.register(notificationRoutes, { prefix: '/api' })
   await app.register(tokenRoutes, { prefix: '/api/token' })
   await app.register(botRoutes, { prefix: '/api/bot' })
+  await app.register(configRoutes, { prefix: '/api/config' })
+  await app.register(importerRoutes, { prefix: '/api/import' })
 
   app.get('/health', async () => ({ ok: true }))
 

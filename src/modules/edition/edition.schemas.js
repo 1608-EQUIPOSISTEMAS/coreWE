@@ -216,6 +216,68 @@ export const classroomAuditSaveSchema = {
   }
 }
 
+export const classroomGradesGetSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' }
+    }
+  }
+}
+
+// Bulk de filas de notas. Los rangos finos (0-5 por test, maximos por
+// criterio) se clampan en edition.entity.js para no rechazar el guardado
+// completo por una celda fuera de rango.
+export const classroomGradesSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id', 'items'],
+    properties: {
+      edition_id: { type: 'integer' },
+      user_id: { type: ['integer', 'null'] },
+      items: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 200,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['enrollment_id'],
+          properties: {
+            enrollment_id: { type: 'integer' },
+            tests: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
+            participation: { type: 'object', additionalProperties: { type: 'boolean' } },
+            partial_criteria: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
+            final_criteria: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
+            group_number: { type: ['integer', 'null'] },
+            tracking_code: { type: ['string', 'null'], maxLength: 50 },
+            observation: { type: ['string', 'null'], maxLength: 2000 }
+          }
+        }
+      }
+    }
+  }
+}
+
+export const classroomGradesObservationsSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' },
+      enrollment_ids: {
+        type: ['array', 'null'],
+        items: { type: 'integer' },
+        maxItems: 200
+      }
+    }
+  }
+}
+
 export const classroomMetricsListSchema = {
   body: {
     type: 'object',

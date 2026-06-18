@@ -1,5 +1,6 @@
 import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
+import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
 
 // Persistencia del dominio edition. Envuelve los stored procedures sp_edition_*
 // y el SQL directo de metricas de aula y auditoria (classroom_audit_rubric).
@@ -177,7 +178,10 @@ export class EditionRepository {
 
   // Listado de alumnos matriculados (FICO-aprobados) en una edicion/aula.
   // Misma elegibilidad que classroomMetricsList; ordenado por apellido, con un
-  // contacto vigente de telefono/email y la modalidad de inscripcion.
+  // contacto vigente de telefono/email y la modalidad de inscripcion. Incluye
+  // los campos de la Lista de Notas: ocupacion (P/E), certificado, B2B,
+  // usuario de plataforma y estado financiero del enrollment vendido (LATERAL
+  // fin, espejo de classroom-export.repository.js).
   async classroomStudentsList (id) {
     const { rows } = await this.db.query(`
     SELECT e.enrollment_id,
@@ -193,13 +197,92 @@ export class EditionRepository {
            cim.description                              AS modality_label,
            contact_phone.value                          AS phone,
            contact_email.value                          AS email,
-           e.registration_date::date                    AS enrolled_on
+           e.registration_date::date                    AS enrolled_on,
+           c_prof.alias                                 AS profile_alias,
+           (ccert.alias = 'we_certificate_status_paid') AS has_certificate,
+           -- B2B: el doctype vive en el enrollment vendido (padre si es hijo
+           -- de paquete). agent_origin identifica el convenio/agente (JP39...).
+           (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NOT NULL) AS is_b2b,
+           COALESCE(e_sold.agent_origin, e.agent_origin) AS agent_origin,
+           -- Codigo del programa padre al que pertenece el alumno (solo hijos).
+           CASE WHEN e.parent_enrollment_id IS NOT NULL
+                THEN pv_sold.version_code END            AS parent_code,
+           odoo_src.odoo_email                          AS odoo_email_stored,
+           odoo_src.odoo_user_id                        AS odoo_user_id,
+           COALESCE(prog_sold.is_membership, false)     AS is_member,
+           -- Membresia del alumno (persona) en ventas FICO: tier vigente y flag.
+           mem.tier_name                                AS membership_tier_name,
+           (mem.tier_name IS NOT NULL)                  AS membership_active,
+           fin.fin_total,
+           fin.fin_paid,
+           fin.fin_overdue
       FROM public.enrollments e
       JOIN public.customers cust ON cust.customer_id = e.customer_id
       JOIN public.persons per    ON per.person_id    = cust.person_id
       JOIN public."catalog" cf   ON cf.catalog_id    = e.cat_fico_status
  LEFT JOIN public."catalog" cts  ON cts.catalog_id   = e.cat_type_status
  LEFT JOIN public."catalog" cim  ON cim.catalog_id   = e.cat_inscription_modality
+ LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
+ LEFT JOIN public."catalog" ccert  ON ccert.catalog_id  = e.cat_certificate_status
+ LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+ LEFT JOIN public.program_versions pv_sold ON pv_sold.program_version_id = e_sold.program_version_id
+ LEFT JOIN public.programs prog_sold ON prog_sold.program_id = pv_sold.program_id
+ LEFT JOIN LATERAL (
+        -- Acceso Odoo del alumno: el correo de campus puede vivir en otra
+        -- inscripcion de la misma persona (FICO lo reusa por persona).
+        -- Prioriza filas con odoo_email guardado; si solo hay odoo_user_id,
+        -- el correo se sintetiza en JS (misma regla que el panel FICO).
+        SELECT NULLIF(TRIM(e2.odoo_email), '') AS odoo_email,
+               e2.odoo_user_id
+          FROM public.enrollments e2
+          JOIN public.customers c2 ON c2.customer_id = e2.customer_id
+         WHERE c2.person_id = per.person_id
+           AND (NULLIF(TRIM(e2.odoo_email), '') IS NOT NULL OR e2.odoo_user_id IS NOT NULL)
+         ORDER BY (NULLIF(TRIM(e2.odoo_email), '') IS NOT NULL) DESC,
+                  (e2.enrollment_id = e.enrollment_id) DESC,
+                  e2.enrollment_id DESC
+         LIMIT 1
+      ) odoo_src ON TRUE
+ LEFT JOIN LATERAL (
+        -- Estado financiero sobre el enrollment "vendido" (padre si es hijo de
+        -- paquete, propio si es standalone): cuotas pagadas y vencidas.
+        SELECT
+          ef.total_amount AS fin_total,
+          (SELECT COALESCE(SUM(pi.amount), 0)
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_paid,
+          (SELECT COUNT(*)::int
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND pi.installment_number > 0
+              AND pi.due_date < CURRENT_DATE
+              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_overdue
+          FROM public.enrollments ef
+         WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+      ) fin ON TRUE
+ LEFT JOIN LATERAL (
+        -- "Member" en aulas = la persona tiene una membresia ACTIVA en ventas
+        -- FICO: inscripcion a un programa is_membership, confirmada por FICO
+        -- (we_enrollment_status_checked) y vigente (active='Y'). El tier (WE PLUS/
+        -- GOLD/PLAT/BLACK) sale de la abreviatura. Si hay varias (upgrade), se
+        -- toma la mas reciente. "pending" no cuenta: aun no es venta confirmada.
+        SELECT pv_m.abbreviation AS tier_name
+          FROM public.enrollments em
+          JOIN public.customers c_m ON c_m.customer_id = em.customer_id
+          JOIN public.program_versions pv_m ON pv_m.program_version_id = em.program_version_id
+          JOIN public.programs prog_m ON prog_m.program_id = pv_m.program_id AND prog_m.is_membership = true
+          JOIN public."catalog" cf_m ON cf_m.catalog_id = em.cat_fico_status
+         WHERE c_m.person_id = per.person_id
+           AND em.active = 'Y'
+           AND cf_m.alias = 'we_enrollment_status_checked'
+         ORDER BY em.enrollment_id DESC
+         LIMIT 1
+      ) mem ON TRUE
  LEFT JOIN LATERAL (
         SELECT pc.value
           FROM public.person_contacts pc
@@ -228,7 +311,18 @@ export class EditionRepository {
        )
      ORDER BY per.last_name, per.first_name
   `, [id])
-    return rows
+    // platform_user: misma resolucion que el panel FICO (getEnrollmentFlags):
+    // odoo_email guardado > sintetizado apellido.nombre@dominio si existe
+    // cuenta Odoo (odoo_user_id) > correo de contacto registrado.
+    return rows.map((r) => {
+      const { odoo_email_stored, odoo_user_id, ...rest } = r
+      let platformUser = (odoo_email_stored || '').trim() || null
+      if (!platformUser && odoo_user_id) {
+        const { base, domain } = buildOdooEmailBase(r.first_name, r.last_name)
+        platformUser = `${base}${domain}`
+      }
+      return { ...rest, platform_user: platformUser || r.email || null }
+    })
   }
 
   // Crea la tabla classroom_audit_rubric si no existe (auto-migracion idempotente),
@@ -346,6 +440,122 @@ export class EditionRepository {
               updated_by, updated_at
   `, [eid, sn, JSON.stringify(payload), uid])
     return rows
+  }
+
+  // Crea la tabla classroom_student_grades si no existe (auto-migracion
+  // idempotente, mismo patron que ensureRubricTable). Lista de Notas por
+  // alumno: tests/participacion por sesion + proyecto integrador.
+  async ensureGradesTable () {
+    if (this._gradesTableReady) return
+    await this.db.query(`
+    CREATE TABLE IF NOT EXISTS public.classroom_student_grades (
+      grade_id            SERIAL PRIMARY KEY,
+      program_edition_id  INTEGER NOT NULL REFERENCES public.program_editions(edition_num_id) ON DELETE CASCADE,
+      enrollment_id       INTEGER NOT NULL REFERENCES public.enrollments(enrollment_id) ON DELETE CASCADE,
+      tests               JSONB NOT NULL DEFAULT '{}'::jsonb,
+      participation       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      partial_criteria    JSONB NOT NULL DEFAULT '{}'::jsonb,
+      final_criteria      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      test_score          NUMERIC(5,2),
+      participation_score NUMERIC(4,2),
+      partial_score       NUMERIC(5,2),
+      final_deliv_score   NUMERIC(5,2),
+      final_grade         NUMERIC(5,2),
+      group_number        INTEGER,
+      tracking_code       TEXT,
+      updated_by          INTEGER REFERENCES public.users(user_id),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (enrollment_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_csg_edition
+      ON public.classroom_student_grades (program_edition_id);
+    ALTER TABLE public.classroom_student_grades
+      ADD COLUMN IF NOT EXISTS observation TEXT;
+  `)
+    this._gradesTableReady = true
+  }
+
+  // Sesiones programadas del aula (program_versions.sessions), para calcular
+  // promedios de test y participacion server-side.
+  async editionSessionsGet (id) {
+    const { rows } = await this.db.query(`
+    SELECT pv.sessions
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+     WHERE pe.edition_num_id = $1
+  `, [id])
+    return rows[0]?.sessions ?? null
+  }
+
+  // Notas guardadas de todos los alumnos de un aula.
+  async classroomGradesGet (id) {
+    await this.ensureGradesTable()
+    const { rows } = await this.db.query(`
+    SELECT enrollment_id, tests, participation, partial_criteria, final_criteria,
+           test_score, participation_score, partial_score, final_deliv_score,
+           final_grade, group_number, tracking_code, observation,
+           updated_by, updated_at
+      FROM public.classroom_student_grades
+     WHERE program_edition_id = $1
+     ORDER BY enrollment_id
+  `, [id])
+    return rows
+  }
+
+  // Bulk upsert transaccional de filas de notas. Los items llegan saneados y
+  // con totales ya calculados por el usecase (la formula no vive aqui).
+  async classroomGradesSaveBulk (eid, items, uid) {
+    await this.ensureGradesTable()
+    const client = await this.db.connect()
+    try {
+      await client.query('BEGIN')
+      const saved = []
+      for (const it of items) {
+        const { rows } = await client.query(`
+        INSERT INTO public.classroom_student_grades
+          (program_edition_id, enrollment_id, tests, participation,
+           partial_criteria, final_criteria, test_score, participation_score,
+           partial_score, final_deliv_score, final_grade,
+           group_number, tracking_code, observation, updated_by, updated_at)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb,
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+        ON CONFLICT (enrollment_id) DO UPDATE
+           SET tests = EXCLUDED.tests,
+               participation = EXCLUDED.participation,
+               partial_criteria = EXCLUDED.partial_criteria,
+               final_criteria = EXCLUDED.final_criteria,
+               test_score = EXCLUDED.test_score,
+               participation_score = EXCLUDED.participation_score,
+               partial_score = EXCLUDED.partial_score,
+               final_deliv_score = EXCLUDED.final_deliv_score,
+               final_grade = EXCLUDED.final_grade,
+               group_number = EXCLUDED.group_number,
+               tracking_code = EXCLUDED.tracking_code,
+               observation = EXCLUDED.observation,
+               updated_by = EXCLUDED.updated_by,
+               updated_at = NOW()
+        RETURNING enrollment_id, tests, participation, partial_criteria,
+                  final_criteria, test_score, participation_score, partial_score,
+                  final_deliv_score, final_grade, group_number, tracking_code,
+                  observation, updated_by, updated_at
+      `, [
+          eid, it.enrollment_id,
+          JSON.stringify(it.tests), JSON.stringify(it.participation),
+          JSON.stringify(it.partial_criteria), JSON.stringify(it.final_criteria),
+          it.test_score, it.participation_score, it.partial_score,
+          it.final_deliv_score, it.final_grade,
+          it.group_number, it.tracking_code, it.observation, uid
+        ])
+        saved.push(rows[0])
+      }
+      await client.query('COMMIT')
+      return saved
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
   }
 }
 

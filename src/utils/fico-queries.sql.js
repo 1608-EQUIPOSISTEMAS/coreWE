@@ -35,8 +35,11 @@ export async function getProgramPrice (programVersionId, executor = pool) {
   const { rows } = await executor.query(`
     SELECT pp.price_student_soles, pp.price_student_dollars,
            pp.price_profesional_soles, pp.price_profesional_dollars,
-           pp.reservation_price_soles, pp.reservation_price_dollars
+           pp.reservation_price_soles, pp.reservation_price_dollars,
+           COALESCE(prog.is_membership, false) AS is_membership
     FROM program_price pp
+    JOIN program_versions pv ON pv.program_version_id = pp.program_version_id
+    JOIN programs prog ON prog.program_id = pv.program_id
     WHERE pp.program_version_id = $1 AND pp.active = 'Y'
     ORDER BY pp.program_price_id DESC LIMIT 1
   `, [programVersionId])

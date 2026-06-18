@@ -180,12 +180,14 @@ export const editSellerAgentSchema = {
 export const courseChangeSchema = {
   body: {
     type: 'object',
-    required: ['enrollment_id', 'new_program_version_id', 'new_edition_id', 'total_amount', 'justificacion'],
+    required: ['enrollment_id', 'new_program_version_id', 'total_amount', 'justificacion'],
     additionalProperties: true,
     properties: {
       enrollment_id: { type: 'integer' },
       new_program_version_id: { type: 'integer' },
-      new_edition_id: { type: 'integer' },
+      // Las membresias (WE PLUS/GOLD/PLAT/BLACK) no tienen edicion: program_edition_id
+      // queda null. Para cursos regulares el usecase exige edicion explicitamente.
+      new_edition_id: { type: ['integer', 'null'] },
       total_amount: { type: 'number' },
       justificacion: { type: 'string', minLength: 1 }
     }

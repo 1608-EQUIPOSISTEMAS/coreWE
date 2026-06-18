@@ -239,8 +239,19 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
 
-  const newEd = await repo.getCourseChangeDestEdition(newEditionId, newProgramVersionId)
-  if (!newEd) throw new DomainError('La edicion destino no existe o no pertenece al programa seleccionado')
+  // Las membresias (WE PLUS/GOLD/PLAT/BLACK) no tienen program_editions: el CC
+  // hacia una membresia llega sin new_edition_id y crea la inscripcion destino con
+  // program_edition_id null (igual que una venta de membresia normal). Para cursos
+  // regulares la edicion sigue siendo obligatoria.
+  let newEd
+  if (newEditionId) {
+    newEd = await repo.getCourseChangeDestEdition(newEditionId, newProgramVersionId)
+    if (!newEd) throw new DomainError('La edicion destino no existe o no pertenece al programa seleccionado')
+  } else {
+    newEd = await repo.getCourseChangeDestProgram(newProgramVersionId)
+    if (!newEd) throw new DomainError('El programa destino no existe')
+    if (!newEd.is_membership) throw new DomainError('Debe seleccionar una edicion destino')
+  }
 
   const ccNote = `Cambio de curso desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
   const { ccContadoCatId, resolvedMethodPayment } = await repo.resolveCourseChangeMethod(enrollmentId)
@@ -658,7 +669,7 @@ export async function enrollmentUpdate ({ enrollmentId, fields, justificacion, u
   const changes = {}
 
   const oldE = await repo.getEnrollmentCurrency(enrollmentId)
-  const oldP = await repo.getLatestActivePayment(enrollmentId)
+  const oldP = await repo.getInitialPayment(enrollmentId)
 
   const enrollmentFields = ['cat_currency', 'notes']
   const eSets = []

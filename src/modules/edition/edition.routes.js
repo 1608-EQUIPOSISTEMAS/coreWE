@@ -9,6 +9,9 @@ import {
   classroomAuditGetSchema,
   classroomAuditSaveSchema,
   classroomAuditSummaryListSchema,
+  classroomGradesGetSchema,
+  classroomGradesSaveSchema,
+  classroomGradesObservationsSchema,
   editionByWeekListSchema,
   editionGetSchema,
   editionUpdateSchema,
@@ -74,6 +77,23 @@ export default async function editionRoutes (fastify) {
     schema: classroomAuditSaveSchema
     // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomAuditSaveHandler)
+
+  fastify.post('/classroomgradesget', {
+    schema: classroomGradesGetSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomGradesGetHandler)
+
+  fastify.post('/classroomgradessave', {
+    schema: classroomGradesSaveSchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomGradesSaveHandler)
+
+  // Genera borradores de observacion con el modelo IA local (Ollama via tunel).
+  // Puede tardar ~30-60s con un aula completa; timeout de socket amplio.
+  fastify.post('/classroomgradesobservations', {
+    schema: classroomGradesObservationsSchema,
+    config: { timeout: 180000 }
+  }, ctrl.classroomGradesObservationsHandler)
 
   // Multipart: transcript_text + syllabus_image + edition_id + session_number.
   // Sin schema porque @fastify/multipart parsea manualmente; validamos en el

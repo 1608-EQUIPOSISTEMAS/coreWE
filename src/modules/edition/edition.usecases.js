@@ -6,7 +6,14 @@ import {
   buildA5Payload,
   validateRubricParams,
   resolveAiAuditorUrl,
-  formatStartDate
+  formatStartDate,
+  sanitizeGradeItem,
+  computeGradeTotals,
+  resolveOllamaUrl,
+  buildObservationPrompt,
+  buildAulaSummaryPrompt,
+  OBS_SIN_NOTAS,
+  GRADE_RULES
 } from './edition.entity.js'
 import {
   toSpRowOrFallback,
@@ -173,6 +180,180 @@ export async function classroomAuditSave ({ edition_id, session_number, criteria
   const uid = Number.isFinite(Number(user_id)) ? Number(user_id) : null
   const rows = await repo.classroomAuditSave(eid, sn, payload, uid)
   return { ok: true, row: rows[0] }
+}
+
+// Lista de Notas: filas guardadas de todos los alumnos de un aula.
+export async function classroomGradesGet ({ edition_id } = {}) {
+  const id = Number(edition_id)
+  if (!Number.isFinite(id)) return []
+  return repo.classroomGradesGet(id)
+}
+
+// Lista de Notas: bulk upsert de filas editadas. Sanea cada item (clamps por
+// celda) y recalcula los totales server-side con las sesiones del aula: el
+// cliente nunca dicta la nota final, solo los puntajes crudos.
+export async function classroomGradesSave ({ edition_id, items = [], user_id = null } = {}) {
+  const eid = Number(edition_id)
+  if (!Number.isFinite(eid)) {
+    return { ok: false, message: 'edition_id invalido' }
+  }
+  const list = Array.isArray(items) ? items : []
+  const clean = list
+    .map((it) => sanitizeGradeItem(it))
+    .filter((it) => Number.isFinite(it.enrollment_id) && it.enrollment_id > 0)
+  if (!clean.length) {
+    return { ok: false, message: 'Sin filas validas para guardar' }
+  }
+
+  const sessionsTotal = Number(await repo.editionSessionsGet(eid)) || 0
+  const withTotals = clean.map((it) => ({ ...it, ...computeGradeTotals(it, sessionsTotal) }))
+  // user_id == null debe quedar NULL: Number(null) es 0 y violaria la FK.
+  const uid = user_id != null && Number.isFinite(Number(user_id)) ? Number(user_id) : null
+
+  const saved = await repo.classroomGradesSaveBulk(eid, withTotals, uid)
+  return { ok: true, data: saved }
+}
+
+// Llama al Ollama local (OpenAI-compatible) y devuelve el texto. El modelo
+// corre detras de un tunel SSH en loopback; timeout corto porque un 7B
+// responde en segundos o no va a responder.
+async function ollamaChat (baseUrl, model, system, user, timeoutMs = 30000) {
+  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      temperature: 0.3,
+      max_tokens: 220,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ]
+    }),
+    signal: AbortSignal.timeout(timeoutMs)
+  })
+  if (!res.ok) {
+    throw new Error(`Ollama respondio ${res.status}`)
+  }
+  const data = await res.json()
+  const text = data?.choices?.[0]?.message?.content
+  if (!text || !String(text).trim()) throw new Error('Ollama devolvio respuesta vacia')
+  return String(text).trim()
+}
+
+// "Tiene notas registradas" = existe al menos una celda escrita (un 0 tecleado
+// CUENTA como nota: el alumno fue evaluado con 0). Distinto de celdas vacias.
+function hasRegisteredGrades (item) {
+  const hasNum = (obj) => Object.values(obj || {}).some((v) => v !== null && v !== undefined)
+  return hasNum(item.tests) ||
+    Object.values(item.participation || {}).some((v) => v === true) ||
+    hasNum(item.partial_criteria) ||
+    hasNum(item.final_criteria)
+}
+
+// Genera borradores de observacion por alumno (y resumen del aula) con el
+// modelo local. NO persiste nada: el frontend coloca los textos en el draft y
+// se guardan con el flujo normal (el humano siempre revisa antes).
+// enrollment_ids opcional: regenerar solo esos alumnos (sin resumen de aula).
+export async function classroomGradesObservations ({ edition_id, enrollment_ids = null } = {}) {
+  const eid = Number(edition_id)
+  if (!Number.isFinite(eid)) {
+    return { ok: false, message: 'edition_id invalido' }
+  }
+
+  let baseUrl
+  try {
+    baseUrl = resolveOllamaUrl()
+  } catch (err) {
+    return { ok: false, message: err.message }
+  }
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct'
+
+  const [students, grades, sessions] = await Promise.all([
+    repo.classroomStudentsList(eid),
+    repo.classroomGradesGet(eid),
+    repo.editionSessionsGet(eid)
+  ])
+  const sessionsTotal = Number(sessions) || 0
+  const gradesMap = new Map(grades.map((g) => [g.enrollment_id, g]))
+
+  const wanted = Array.isArray(enrollment_ids) && enrollment_ids.length
+    ? new Set(enrollment_ids.map(Number))
+    : null
+  const targets = students.filter((s) => !wanted || wanted.has(Number(s.enrollment_id)))
+  if (!targets.length) {
+    return { ok: false, message: 'Sin alumnos para generar observaciones' }
+  }
+
+  // Concurrencia limitada: un 7B local atiende pocas requests a la vez y el
+  // tunel agrega latencia; 4 en paralelo equilibra tiempo total y estabilidad.
+  const CONCURRENCY = 4
+  const items = []
+  const errors = []
+  let cursor = 0
+  async function worker () {
+    while (cursor < targets.length) {
+      const s = targets[cursor++]
+      const g = gradesMap.get(s.enrollment_id) || {}
+      const item = sanitizeGradeItem({ ...g, enrollment_id: s.enrollment_id })
+      const totals = computeGradeTotals(item, sessionsTotal)
+      if (!hasRegisteredGrades(item)) {
+        items.push({ enrollment_id: s.enrollment_id, observation: OBS_SIN_NOTAS })
+        continue
+      }
+      try {
+        const { system, user } = buildObservationPrompt(item, totals, sessionsTotal)
+        const text = await ollamaChat(baseUrl, model, system, user)
+        items.push({ enrollment_id: s.enrollment_id, observation: text })
+      } catch (err) {
+        errors.push({ enrollment_id: s.enrollment_id, message: err.message })
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker))
+
+  if (!items.length) {
+    return {
+      ok: false,
+      message: `IA local no disponible (${errors[0]?.message || 'sin respuesta'}). Verifica el tunel a Ollama.`
+    }
+  }
+
+  // Resumen del aula solo en la generacion completa (no al regenerar uno).
+  let aulaSummary = null
+  if (!wanted) {
+    try {
+      const flex = students.filter((s) => s.modality_alias === 'we_insc_modality_flexible').length
+      const withFinals = students
+        .map((s) => {
+          const g = gradesMap.get(s.enrollment_id)
+          const item = sanitizeGradeItem({ ...(g || {}), enrollment_id: s.enrollment_id })
+          const totals = computeGradeTotals(item, sessionsTotal)
+          return hasRegisteredGrades(item) ? { name: s.full_name, final: totals.final_grade } : null
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.final - a.final)
+      const approved = withFinals.filter((x) => x.final >= GRADE_RULES.PASS_THRESHOLD).length
+      const { system, user } = buildAulaSummaryPrompt({
+        total: students.length,
+        regular: students.length - flex,
+        flex,
+        approved,
+        failed: students.length - approved,
+        ungraded: students.length - withFinals.length,
+        average: withFinals.length
+          ? Math.round(withFinals.reduce((a, x) => a + x.final, 0) / withFinals.length * 100) / 100
+          : null,
+        top: withFinals.slice(0, 3)
+      })
+      aulaSummary = await ollamaChat(baseUrl, model, system, user)
+    } catch (err) {
+      // El resumen es secundario: si falla, igual devolvemos las observaciones.
+      console.warn('[gradesObservations] resumen de aula fallo:', err.message)
+    }
+  }
+
+  return { ok: true, data: { items, aula_summary: aulaSummary, errors } }
 }
 
 // Proxy del analisis IA: reenvia transcript + imagen al sidecar FastAPI y
