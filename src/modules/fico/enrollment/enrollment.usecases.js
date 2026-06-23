@@ -91,11 +91,18 @@ export async function paymentDetailGet ({ enrollment_id }) {
 
 // --- Registro directo FICO ----------------------------------------------
 
-export async function ficoEnrollmentRegister ({ data, userId }) {
+// skipFollowup: omite TODOS los efectos posteriores al alta (cola
+// register_followup = correo + activacion Odoo, y el refresh de la MV por fila).
+// Lo usa la importacion masiva: solo debe insertar datos, sin notificar a nadie.
+export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = false, dedupeByVersion = false }) {
   const doc = data.document_number && String(data.document_number).trim() ? String(data.document_number).trim() : null
   const mail = data.email && String(data.email).trim() ? String(data.email).trim() : null
   if (data.program_edition_id && (doc || mail)) {
     const duplicate = await repo.findDuplicate({ programEditionId: data.program_edition_id, doc, mail })
+    if (duplicate) return buildDuplicateResponse(duplicate)
+  } else if (dedupeByVersion && !data.program_edition_id && data.program_version_id && (doc || mail)) {
+    // Convalidacion (sin edicion): re-correr la importacion no debe duplicarla.
+    const duplicate = await repo.findDuplicateByVersion({ programVersionId: data.program_version_id, doc, mail })
     if (duplicate) return buildDuplicateResponse(duplicate)
   }
 
@@ -131,17 +138,21 @@ export async function ficoEnrollmentRegister ({ data, userId }) {
       })
     }
 
-    repo.refreshMv('on-register-sync')
+    // Importacion masiva: sin correo, sin Odoo, sin refresh por fila. El listado
+    // se actualiza con un "Actualizar" manual o refreshEnrollmentList al final.
+    if (!skipFollowup) {
+      repo.refreshMv('on-register-sync')
 
-    let registerJobId = null
-    try {
-      const job = await repo.enqueueRegisterFollowup({ enrollmentId: eid, userId })
-      registerJobId = job.job_id
-    } catch (qErr) {
-      console.error('[ficoEnrollmentRegister] enqueue register_followup fallo:', qErr.message)
+      let registerJobId = null
+      try {
+        const job = await repo.enqueueRegisterFollowup({ enrollmentId: eid, userId })
+        registerJobId = job.job_id
+      } catch (qErr) {
+        console.error('[ficoEnrollmentRegister] enqueue register_followup fallo:', qErr.message)
+      }
+      enrollResp.email_pending = true
+      enrollResp.job_id = registerJobId
     }
-    enrollResp.email_pending = true
-    enrollResp.job_id = registerJobId
   }
 
   return enrollResp

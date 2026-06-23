@@ -129,10 +129,16 @@ describe('validateReschedule', () => {
       .toThrow('La cuota 2 ya esta pagada')
   })
 
-  it('exige nueva fecha posterior a la actual', () => {
+  it('permite adelantar la fecha (correccion de back-office)', () => {
     const byId = mapOf(instRow({ installment_id: 2, due_date: '2026-06-10' }))
-    expect(() => validateReschedule([{ installment_id: 2, new_due_date: '2026-06-01' }], byId, null))
-      .toThrow(/debe ser posterior a la actual/)
+    const { normalizedChanges } = validateReschedule([{ installment_id: 2, new_due_date: '2026-06-01' }], byId, null)
+    expect(normalizedChanges[0].new_due_date).toBe('2026-06-01')
+  })
+
+  it('guarda la fecha exacta sin corrimiento de zona horaria', () => {
+    const byId = mapOf(instRow({ installment_id: 2, due_date: '2026-06-10' }))
+    const { normalizedChanges } = validateReschedule([{ installment_id: 2, new_due_date: '2026-06-20' }], byId, null)
+    expect(normalizedChanges[0].new_due_date).toBe('2026-06-20')
   })
 
   it('no permite superar la fecha fin de la edicion', () => {

@@ -41,6 +41,7 @@ export async function editionTreeRegister ({ edition = {}, user_id } = {}) {
 export async function editionList (payload = {}) {
   const { filters, page, size } = buildEditionFilters(payload)
   const rows = await repo.list(filters)
+  await attachChannelMetrics(rows)
   return toListDto({ rows, page, size })
 }
 
@@ -48,7 +49,30 @@ export async function editionList (payload = {}) {
 export async function editionByWeeklist (payload = {}) {
   const { filters, page, size } = buildEditionByWeekFilters(payload)
   const rows = await repo.listByWeek(filters)
+  // listByWeek agrupa por semana: cada fila trae items[] de ediciones.
+  await attachChannelMetrics((rows || []).flatMap(w => Array.isArray(w.items) ? w.items : []))
   return toByWeekDto({ rows, page, size })
+}
+
+// Pega el contador por canal (cnt_ventas/segui/memb/becas/b2b/aula/total) a cada
+// edicion del cronograma. Muta los items in-place; las ediciones sin inscritos
+// quedan en 0. Una sola consulta agregada para todas las ediciones de la pagina.
+async function attachChannelMetrics (items = []) {
+  const list = Array.isArray(items) ? items : []
+  const ids = [...new Set(list.map(i => Number(i?.edition_num_id)).filter(Number.isFinite))]
+  if (!ids.length) return
+  const metrics = await repo.classroomChannelMetricsList(ids)
+  const byId = new Map(metrics.map(m => [Number(m.edition_num_id), m]))
+  for (const it of list) {
+    const m = byId.get(Number(it?.edition_num_id))
+    it.cnt_ventas = m?.cnt_ventas ?? 0
+    it.cnt_segui = m?.cnt_segui ?? 0
+    it.cnt_memb = m?.cnt_memb ?? 0
+    it.cnt_becas = m?.cnt_becas ?? 0
+    it.cnt_b2b = m?.cnt_b2b ?? 0
+    it.cnt_aula = m?.cnt_aula ?? 0
+    it.cnt_total = m?.cnt_total ?? 0
+  }
 }
 
 // UPDATE (simple). Inyecta edition_num_id desde id o el propio edition.

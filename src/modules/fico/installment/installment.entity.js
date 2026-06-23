@@ -80,6 +80,20 @@ export function nextInstallmentNumber (maxExistingNumber) {
 // @param {Map<number,object>} byId       installment_id -> fila actual
 // @param {Date|null} editionEnd          fecha fin de la edicion (o null)
 // @returns {{ normalizedChanges: Array, auditDiff: object }}
+// Devuelve YYYY-MM-DD sin corrimiento de zona horaria. Acepta string ('...slice')
+// o Date (node-pg arma las columnas `date` a medianoche local, asi que sus
+// componentes locales son la fecha-calendario correcta en cualquier TZ).
+function toIsoDate (d) {
+  if (d == null) return ''
+  if (typeof d === 'string') return d.slice(0, 10)
+  const dt = d instanceof Date ? d : new Date(d)
+  if (isNaN(dt.getTime())) return ''
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function validateReschedule (changes, byId, editionEnd) {
   const normalizedChanges = []
   const auditDiff = {}
@@ -93,33 +107,28 @@ export function validateReschedule (changes, byId, editionEnd) {
       throw new DomainError(`La cuota ${inst.installment_number} ya esta pagada`)
     }
 
-    const newDate = new Date(raw.new_due_date)
-    if (isNaN(newDate.getTime())) throw new DomainError(`Fecha invalida para cuota ${inst.installment_number}`)
+    // Trabajamos con fechas-calendario como string YYYY-MM-DD para no arrastrar
+    // el corrimiento de un dia que provoca new Date(str) (UTC) + setHours (local).
+    const newIso = toIsoDate(raw.new_due_date)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newIso)) throw new DomainError(`Fecha invalida para cuota ${inst.installment_number}`)
+    const oldIso = toIsoDate(inst.due_date)
 
-    const oldDate = new Date(inst.due_date)
-    newDate.setHours(0, 0, 0, 0)
-    oldDate.setHours(0, 0, 0, 0)
-
-    if (newDate <= oldDate) {
-      throw new DomainError(`La nueva fecha de la cuota ${inst.installment_number} debe ser posterior a la actual (${oldDate.toISOString().slice(0, 10)})`)
-    }
+    // ponytail: se permite adelantar o posponer la fecha (correccion libre de
+    // back-office, todo auditado). Unico tope: no pasar el fin de la edicion.
     if (editionEnd) {
-      const endCopy = new Date(editionEnd); endCopy.setHours(0, 0, 0, 0)
-      if (newDate > endCopy) {
-        throw new DomainError(`La cuota ${inst.installment_number} no puede superar la fecha fin de la edicion (${endCopy.toISOString().slice(0, 10)})`)
+      const endIso = toIsoDate(editionEnd)
+      if (newIso > endIso) {
+        throw new DomainError(`La cuota ${inst.installment_number} no puede superar la fecha fin de la edicion (${endIso})`)
       }
     }
 
     normalizedChanges.push({
       installment_id: id,
       installment_number: inst.installment_number,
-      old_due_date: oldDate.toISOString().slice(0, 10),
-      new_due_date: newDate.toISOString().slice(0, 10)
+      old_due_date: oldIso,
+      new_due_date: newIso
     })
-    auditDiff[`Cuota ${inst.installment_number}`] = {
-      old: oldDate.toISOString().slice(0, 10),
-      new: newDate.toISOString().slice(0, 10)
-    }
+    auditDiff[`Cuota ${inst.installment_number}`] = { old: oldIso, new: newIso }
   }
 
   return { normalizedChanges, auditDiff }

@@ -87,6 +87,20 @@ export class EnrollmentRepository {
     return rows || []
   }
 
+  // Monedas (SOLES/DOLARES) con su catalog_id. Estan marcadas active='N', por lo
+  // que sp_catalog_list NO las incluye en el DTO de catalogos; pero siguen siendo
+  // los IDs canonicos referenciados por enrollments. La importacion masiva las lee
+  // por aqui para mapear la columna "TIPO DE MONEDA" (PEN/USD) -> cat_currency.
+  async currencyList () {
+    const { rows } = await this.db.query(
+      `SELECT c.catalog_id, c.alias
+         FROM public.catalog c
+         JOIN public.catalog p ON p.catalog_id = c.catalog_parent_id
+        WHERE p.alias = 'we_currency'`
+    )
+    return rows || []
+  }
+
   // --- Detalle de pago ----------------------------------------------------
 
   async paymentDetailGet (enrollmentId) {
@@ -154,6 +168,51 @@ export class EnrollmentRepository {
       ORDER BY e.registration_date DESC
       LIMIT 1
     `, [programEditionId, doc, mail])
+    return rows?.[0] || null
+  }
+
+  // Dedup para convalidaciones (sin edicion): misma persona + mismo curso y
+  // program_edition_id NULL. El IS NULL es clave: no choca con una inscripcion
+  // normal del mismo curso (esa tiene edicion), solo con otra convalidacion.
+  // Hace idempotente re-correr una importacion masiva con filas ED E0.
+  async findDuplicateByVersion ({ programVersionId, doc, mail }) {
+    const { rows } = await this.db.query(`
+      SELECT
+        e.enrollment_id,
+        e.registration_date,
+        e.agent_origin,
+        pv.abbreviation                                     AS program_name,
+        NULL                                                AS edition_code,
+        per.document_number                                 AS existing_document,
+        TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS existing_student_name,
+        u_s.alias                                           AS seller_agent_alias
+      FROM public.enrollments e
+      JOIN public.customers       cust ON cust.customer_id = e.customer_id
+      JOIN public.persons         per  ON per.person_id    = cust.person_id
+      LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN public.leads             l ON l.enrollment_id        = e.enrollment_id
+      LEFT JOIN public.users           u_s ON u_s.user_id            = e.seller_agent_id
+      WHERE e.active = 'Y'
+        AND e.program_version_id = $1
+        AND e.program_edition_id IS NULL
+        AND (
+          ($2::text IS NOT NULL AND per.document_number = $2)
+          OR ($3::text IS NOT NULL AND (
+            LOWER(COALESCE(l.origin_email, '')) = LOWER($3)
+            OR EXISTS (
+              SELECT 1
+                FROM public.person_contacts pc
+                JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+               WHERE pc.person_id = per.person_id
+                 AND c.alias      = 'we_way_contact_email'
+                 AND pc.active    = 'Y'
+                 AND LOWER(pc.value) = LOWER($3)
+            )
+          ))
+        )
+      ORDER BY e.registration_date DESC
+      LIMIT 1
+    `, [programVersionId, doc, mail])
     return rows?.[0] || null
   }
 
@@ -233,6 +292,67 @@ export class EnrollmentRepository {
       WHERE pe.edition_num_id = $1
     `, [editionId])
     return rows?.[0] || null
+  }
+
+  // Todas las ediciones activas con su par (version_code, global_code) en UNA
+  // query. La importacion masiva la indexa en un Map y resuelve la columna ED
+  // por fila en memoria (antes era 1 query por fila -> timeout en hojas grandes).
+  async listActiveEditions () {
+    const { rows } = await this.db.query(`
+      SELECT pe.edition_num_id AS program_edition_id, pe.program_version_id,
+             pe.global_code, pv.version_code
+      FROM program_editions pe
+      JOIN program_versions pv ON pv.program_version_id = pe.program_version_id
+      WHERE pe.active = 'Y'
+    `)
+    return rows
+  }
+
+  // Estructura padre->hijos a nivel de edicion/aula. Una edicion-padre (paquete/
+  // especializacion) tiene N aulas hijas. La importacion crea las inscripciones
+  // hijas en estas aulas cuando el alumno compra el padre.
+  async listEditionStructure () {
+    const { rows } = await this.db.query(`
+      SELECT es.parent_edition_id, es.child_edition_id,
+             pe.program_version_id AS child_version_id
+      FROM public.edition_structure es
+      JOIN public.program_editions pe ON pe.edition_num_id = es.child_edition_id
+      WHERE pe.active = 'Y'
+    `)
+    return rows
+  }
+
+  // Usuarios-asesor con su alias (codigo de agente, ej "AE30"). La importacion
+  // masiva lo indexa para resolver la columna AS -> seller_agent_id.
+  async listAgents () {
+    const { rows } = await this.db.query(
+      `SELECT user_id, alias FROM public.users WHERE alias IS NOT NULL AND alias <> ''`)
+    return rows
+  }
+
+  // Setea/actualiza el agente de una inscripcion. COALESCE: no borra lo existente
+  // si el valor entrante es null. Usado por la importacion al re-encontrar una
+  // inscripcion duplicada para completarle el asesor.
+  async updateEnrollmentAgent (enrollmentId, sellerAgentId, agentOrigin) {
+    await this.db.query(
+      `UPDATE public.enrollments
+          SET seller_agent_id = COALESCE($2, seller_agent_id),
+              agent_origin    = COALESCE($3, agent_origin)
+        WHERE enrollment_id = $1`,
+      [enrollmentId, sellerAgentId ?? null, agentOrigin ?? null])
+  }
+
+  // Versiones de los programas-membresia (WE BLACK/GOLD/PLAT/PLUS) con su
+  // abreviatura. La importacion masiva la usa para, ante una fila con columna J
+  // (tier), crear la inscripcion de membresia que marca a la persona como miembro.
+  async listMembershipVersions () {
+    const { rows } = await this.db.query(`
+      SELECT pv.program_version_id, pv.abbreviation
+      FROM program_versions pv
+      JOIN programs p ON p.program_id = pv.program_id
+      WHERE p.is_membership = true AND pv.active = 'Y'
+    `)
+    return rows
   }
 
   async setProgramEdition (enrollmentId, newEditionId) {

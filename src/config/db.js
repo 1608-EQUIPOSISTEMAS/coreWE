@@ -29,7 +29,7 @@ export const query = (text, params) => pool.query(text, params);
 /** Helper opcional para ejecutar una función dentro de una transacción. */
 export async function withTransaction(fn) {
   const client = await pool.connect();
-  try {
+  try { 
     await client.query('BEGIN');
     const result = await fn(client);     // <-- usa este client dentro
     await client.query('COMMIT');

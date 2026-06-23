@@ -176,6 +176,108 @@ export class EditionRepository {
     return rows
   }
 
+  // Conteo por CANAL de adquisicion por edicion (aula), para el contador del
+  // cronograma. OJO: `parent_enrollment_id` tiene DOS significados y se separan
+  // con la tabla course_changes (origin/destination):
+  //   * hijo por CAMBIO DE CURSO -> esta en course_changes.enrollment_destination_id.
+  //   * hijo de PAQUETE/diploma  -> tiene parent_enrollment_id pero NO esta en
+  //     course_changes (su venta vive en el padre, el diploma).
+  // Elegibilidad para el contador (una venta se cuenta UNA vez, en su aula):
+  //   - se EXCLUYE la inscripcion REEMPLAZADA por un cambio de curso (es origin en
+  //     course_changes): "en la que hizo el primer pago no cuenta".
+  //   - HIJO de PAQUETE/diploma: el padre NO es curso, solo es la venta. El PRIMER
+  //     curso del paquete (hijo con la edicion de inicio mas temprana entre
+  //     hermanos) se EXCLUYE: cuenta 0 porque la venta del padre esta "arriba".
+  //     Del SEGUNDO curso en adelante, el hijo cuenta como SEGUI (seguimiento) en
+  //     su aula. Asi el alumno suma 1 venta (padre) + 1 SEGUI por curso posterior.
+  //   - se INCLUYE: venta directa (sin padre), el PADRE/diploma, el hijo de paquete
+  //     de curso 2+ (SEGUI) y el hijo por cambio de curso (SEGUI en su aula nueva).
+  // Cascada de PRIORIDAD (primer match gana; cada inscrito en UN solo canal, asi
+  // AULA = VENTAS+SEGUI+MEMB+B2B no descuadra):
+  //   1. SEGUI  -> destino de cambio de curso, o hijo de paquete de curso 2+
+  //               (salvo que la persona sea socia: ahi gana MEMB, ver abajo).
+  //   2. B2B    -> cat_b2b_doctype. ANTES de BECA: el corporativo suele ir en 0.
+  //   3. BECA   -> total_amount = 0 (incluye 100% dscto). APARTE: no suma a AULA.
+  //                Misma regla que integration.repository (total=0 => BECA).
+  //   4. MEMB   -> la persona tiene una membresia FICO-aprobada y vigente. Gana
+  //               sobre el SEGUI de paquete: un socio SIEMPRE cuenta como MEMB
+  //               aunque la inscripcion venga de un padre/diploma.
+  //   5. VENTAS -> el resto (venta directa o diploma padre).
+  // cnt_aula = todos menos BECA. cnt_total incluye becas (AULA + BECA = total).
+  // ponytail: los EXISTS (membresia, course_changes) corren por inscrito; con
+  // ~100 ediciones/mes es holgado. Si crece, materializar por persona/enrollment.
+  async classroomChannelMetricsList (ids) {
+    const { rows } = await this.db.query(`
+    WITH roster AS (
+      SELECT
+        e.program_edition_id AS edition_num_id,
+        CASE
+          WHEN EXISTS (SELECT 1 FROM public.course_changes cc
+                        WHERE cc.enrollment_destination_id = e.enrollment_id) THEN 'SEGUI'
+          -- la membresia manda: si la persona es socia, va a MEMB aunque la
+          -- inscripcion venga de un padre/paquete (nunca SEGUI en ese caso).
+          WHEN e.parent_enrollment_id IS NOT NULL AND mem.is_member THEN 'MEMB'
+          -- hijo de paquete que llego al roster = curso 2+ (el 1er curso se filtra
+          -- abajo); cuenta como seguimiento en su aula.
+          WHEN e.parent_enrollment_id IS NOT NULL THEN 'SEGUI'
+          WHEN e.cat_b2b_doctype IS NOT NULL THEN 'B2B'
+          WHEN COALESCE(e.total_amount, 0) = 0 THEN 'BECA'
+          WHEN mem.is_member THEN 'MEMB'
+          ELSE 'VENTAS'
+        END AS bucket
+        FROM public.enrollments e
+        JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
+        JOIN public.customers cust ON cust.customer_id = e.customer_id
+        JOIN public.program_editions pe_e ON pe_e.edition_num_id = e.program_edition_id
+        LEFT JOIN LATERAL (
+          -- la persona tiene una membresia FICO-aprobada y vigente (propiedad de
+          -- la persona, no del enrollment; por eso se reusa en dos ramas).
+          SELECT EXISTS (
+            SELECT 1
+              FROM public.enrollments em
+              JOIN public.customers cm         ON cm.customer_id = em.customer_id
+              JOIN public.program_versions pvm ON pvm.program_version_id = em.program_version_id
+              JOIN public.programs pm          ON pm.program_id = pvm.program_id AND pm.is_membership = true
+              JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
+             WHERE cm.person_id = cust.person_id AND em.active = 'Y'
+          ) AS is_member
+        ) mem ON TRUE
+       WHERE e.program_edition_id = ANY($1::int[])
+         AND e.active = 'Y'
+         AND cf.alias = 'we_enrollment_status_checked'
+         -- no fue reemplazada por un cambio de curso (la origen no cuenta)
+         AND NOT EXISTS (SELECT 1 FROM public.course_changes cc
+                          WHERE cc.enrollment_origin_id = e.enrollment_id)
+         AND (
+              e.parent_enrollment_id IS NULL
+           OR EXISTS (SELECT 1 FROM public.course_changes cc
+                       WHERE cc.enrollment_destination_id = e.enrollment_id)
+           -- hijo de paquete: incluir solo cursos 2+ (existe un hermano que
+           -- empieza antes). El 1er curso se omite: su venta vive en el padre.
+           OR EXISTS (SELECT 1 FROM public.enrollments sib
+                        JOIN public.program_editions pesib
+                          ON pesib.edition_num_id = sib.program_edition_id
+                       WHERE sib.parent_enrollment_id = e.parent_enrollment_id
+                         AND sib.enrollment_id <> e.enrollment_id
+                         AND (pesib.start_date, pesib.edition_num_id)
+                           < (pe_e.start_date, pe_e.edition_num_id))
+         )
+    )
+    SELECT
+      edition_num_id,
+      COUNT(*) FILTER (WHERE bucket = 'VENTAS')::int AS cnt_ventas,
+      COUNT(*) FILTER (WHERE bucket = 'SEGUI')::int  AS cnt_segui,
+      COUNT(*) FILTER (WHERE bucket = 'MEMB')::int   AS cnt_memb,
+      COUNT(*) FILTER (WHERE bucket = 'BECA')::int   AS cnt_becas,
+      COUNT(*) FILTER (WHERE bucket = 'B2B')::int    AS cnt_b2b,
+      COUNT(*) FILTER (WHERE bucket <> 'BECA')::int  AS cnt_aula,
+      COUNT(*)::int                                  AS cnt_total
+      FROM roster
+     GROUP BY edition_num_id
+  `, [ids])
+    return rows
+  }
+
   // Listado de alumnos matriculados (FICO-aprobados) en una edicion/aula.
   // Misma elegibilidad que classroomMetricsList; ordenado por apellido, con un
   // contacto vigente de telefono/email y la modalidad de inscripcion. Incluye

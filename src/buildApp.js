@@ -50,7 +50,23 @@ setImporterPorts({
   registerEnrollment: ficoEnrollmentRegister,
   getCatalog,
   listProgramVersions,
-  listEditionsByVersion: (programVersionId) => enrollmentRepository.listEditionsByVersion(programVersionId)
+  listEditionsByVersion: (programVersionId) => enrollmentRepository.listEditionsByVersion(programVersionId),
+  // Todas las ediciones activas en una query; la hoja FICO la indexa por
+  // (version_code, global_code) y resuelve la columna ED en memoria.
+  listActiveEditions: () => enrollmentRepository.listActiveEditions(),
+  // Versiones de programas-membresia (WE BLACK/GOLD/...) para crear la
+  // inscripcion de membresia desde la columna J de la hoja.
+  listMembershipVersions: () => enrollmentRepository.listMembershipVersions(),
+  // Asesores (alias -> user_id) y actualizacion de agente al re-importar.
+  listAgents: () => enrollmentRepository.listAgents(),
+  updateEnrollmentAgent: ({ enrollmentId, sellerAgentId, agentOrigin }) =>
+    enrollmentRepository.updateEnrollmentAgent(enrollmentId, sellerAgentId, agentOrigin),
+  // Estructura padre->aulas hijas, para crear inscripciones hijas de paquete.
+  listEditionStructure: () => enrollmentRepository.listEditionStructure(),
+  // Cuentas bancarias y monedas, para resolver "ENTIDAD FINANCIERA" y "TIPO DE
+  // MONEDA" de la hoja FICO.
+  listBankAccounts: () => enrollmentRepository.bankAccountList(),
+  listCurrencies: () => enrollmentRepository.currencyList()
 })
 
 // Construye y configura la instancia Fastify sin arrancarla. Permite levantar

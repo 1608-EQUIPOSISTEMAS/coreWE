@@ -14,10 +14,28 @@ export const importerPorts = {
   listProgramVersions: null,
   // (programVersionId) -> [{ edition_num_id, global_code, start_date }].
   listEditionsByVersion: null,
-  // (codigoEdicion) -> { program_edition_id, program_version_id } | null.
-  // Usado por la hoja FICO para resolver la columna ED. Puede quedar null si
-  // aun no se cableo: el adaptador lo reporta como error legible por fila.
-  findEditionByCode: null
+  // () -> [{ program_edition_id, program_version_id, version_code, global_code }]
+  // de todas las ediciones activas. La hoja FICO lo indexa una vez por archivo y
+  // resuelve la columna ED en memoria (en vez de 1 query por fila).
+  listActiveEditions: null,
+  // () -> [{ program_version_id, abbreviation }] de programas-membresia. La hoja
+  // FICO lo usa para crear la inscripcion de membresia segun la columna J.
+  listMembershipVersions: null,
+  // () -> [{ user_id, alias }] de asesores. La hoja FICO resuelve la columna AS
+  // (codigo de agente) a seller_agent_id.
+  listAgents: null,
+  // ({ enrollmentId, sellerAgentId, agentOrigin }) -> void. Completa el asesor de
+  // una inscripcion existente al re-importar (cuando salio duplicada).
+  updateEnrollmentAgent: null,
+  // () -> [{ parent_edition_id, child_edition_id, child_version_id }]. Estructura
+  // padre->aulas hijas; la hoja FICO crea las inscripciones hijas de un paquete.
+  listEditionStructure: null,
+  // () -> [{ account_id, business_entity_catalog_id, bank_name, currency }]. La hoja
+  // FICO resuelve "ENTIDAD FINANCIERA" (+ empresa + moneda) a bank_account_id.
+  listBankAccounts: null,
+  // () -> [{ catalog_id, alias }] de monedas (SOLES/DOLARES). Necesario porque el
+  // grupo we_currency esta inactivo y no llega en getCatalog.
+  listCurrencies: null
 }
 
 export function setImporterPorts (ports = {}) {
