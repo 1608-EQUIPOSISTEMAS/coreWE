@@ -156,10 +156,13 @@ export function buildDirectInscription (data) {
     saved_money: data.saved_money || 0,
     is_scholarship: data.is_scholarship === true,
     // Beneficio de membresia: curso de cortesia (precio 0) sin ser beca. Tercera
-    // via de "pago cero" del SP (ver sp_fico_enrollment_register_direct_membership_benefit.sql).
+    // via de "pago cero" del SP (ver sp_fico_enrollment_register_direct.sql).
     is_membership_benefit: data.is_membership_benefit === true,
+    // Tier de membresia normalizado: FK a la fila real en programs (is_membership=Y).
+    // NULL = sin membresia. Reemplaza el prefijo de texto que vivia en notes.
+    membership_program_id: data.membership_program_id || null,
     // Hijo de paquete: liga al padre y entra como pago cero (la venta vive en el
-    // padre). Ver sp_fico_enrollment_register_direct_package_children.sql.
+    // padre). Ver sp_fico_enrollment_register_direct.sql.
     parent_enrollment_id: data.parent_enrollment_id || null,
     cat_b2b_doctype: data.cat_b2b_doctype || null,
     seller_agent_id: data.seller_agent_id || null,

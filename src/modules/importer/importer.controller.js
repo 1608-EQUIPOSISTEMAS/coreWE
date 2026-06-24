@@ -29,8 +29,14 @@ export async function validateHandler (req, reply) {
 export async function commitHandler (req, reply) {
   const buffer = await readUploadedFile(req)
   const userId = req.user?.id
-  const data = await usecases.commitFile(req.params.entity, buffer, userId)
+  const data = await usecases.commitFile(req.params.entity, buffer, userId, req.query?.jobId)
   return reply.code(200).send({ ok: true, data })
+}
+
+// Progreso de una importacion en curso (lo consulta el frontend por polling). El
+// jobId lo genera el cliente y lo manda en la request de commit.
+export async function progressHandler (req, reply) {
+  return reply.code(200).send({ ok: true, data: usecases.getProgress(req.params.jobId) })
 }
 
 export async function validateUrlHandler (req, reply) {
@@ -41,7 +47,7 @@ export async function validateUrlHandler (req, reply) {
 
 export async function commitUrlHandler (req, reply) {
   const url = requireUrl(req)
-  const data = await usecases.commitUrl(req.params.entity, url, req.user?.id)
+  const data = await usecases.commitUrl(req.params.entity, url, req.user?.id, req.body?.jobId)
   return reply.code(200).send({ ok: true, data })
 }
 

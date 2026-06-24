@@ -7,7 +7,10 @@ const ctx = {
   catalog: {
     we_business_entity: [
       { alias: 'we_business_entity_wec', description: 'WORLD ENTERPRISE CONSULTING S.A.C.', catalogo_id: 3212 },
-      { alias: 'we_business_entity_weee', description: 'WE EDUCACION EJECUTIVA S.A.C.', catalogo_id: 3213 }
+      { alias: 'we_business_entity_weee', description: 'WE EDUCACION EJECUTIVA S.A.C.', catalogo_id: 3213 },
+      { alias: 'we_business_entity_wel', description: 'WE EDUCACION LATAM S.A.C.', catalogo_id: 3214 },
+      { alias: 'we_business_entity_wef', description: 'WE FOUNDATION', catalogo_id: 3215 },
+      { alias: 'we_business_entity_johan', description: 'Johan Palomino', catalogo_id: 3258 }
     ]
   },
   programVersions: [{ program_version_id: 42, version_code: 'IA-CZ-03' }],
@@ -21,7 +24,8 @@ const ctx = {
     { account_id: 1, business_entity_catalog_id: 3212, bank_name: 'BCP', currency: 'PEN' },
     { account_id: 2, business_entity_catalog_id: 3212, bank_name: 'BCP', currency: 'USD' },
     { account_id: 6, business_entity_catalog_id: 3213, bank_name: 'BCP', currency: 'PEN' },
-    { account_id: 9, business_entity_catalog_id: 3213, bank_name: 'INTERBANK', currency: 'PEN' }
+    { account_id: 9, business_entity_catalog_id: 3213, bank_name: 'INTERBANK', currency: 'PEN' },
+    { account_id: 3, business_entity_catalog_id: 3212, bank_name: 'BCP-PROINNOVATE', currency: 'PEN' }
   ]
 }
 const baseRaw = { full_name: 'PEREZ GOMEZ JUAN', edition: 'E0', course_code: 'IA-CZ-03' }
@@ -131,7 +135,18 @@ describe('enrollment-fico resolveRow — moneda / entidad empresa / cuenta banca
     expect(data.cat_currency).toBe(3041)
   })
 
-  it('ENTIDAD EMPRESA por abreviatura de alias (WEC) -> cat_business_entity', async () => {
+  it('ENTIDAD EMPRESA nombres amigables del dropdown -> cat_business_entity', async () => {
+    const cases = [
+      ['WE Educación', 3213], ['WE Consulting', 3212], ['WE Foundation', 3215],
+      ['WE LATAM', 3214], ['Johan Palomino', 3258]
+    ]
+    for (const [label, id] of cases) {
+      const { data } = await enrollmentFicoImporter.resolveRow({ ...base, business_entity: label }, ctx)
+      expect(data.cat_business_entity, label).toBe(id)
+    }
+  })
+
+  it('ENTIDAD EMPRESA tambien por abreviatura de alias (WEC) -> cat_business_entity', async () => {
     const { data } = await enrollmentFicoImporter.resolveRow({ ...base, business_entity: 'WEC' }, ctx)
     expect(data.cat_business_entity).toBe(3212)
   })
@@ -140,6 +155,13 @@ describe('enrollment-fico resolveRow — moneda / entidad empresa / cuenta banca
     const { data } = await enrollmentFicoImporter.resolveRow(
       { ...base, financial_entity: 'BCP', business_entity: 'WEC', currency: 'USD' }, ctx)
     expect(data.bank_account_id).toBe(2)
+  })
+
+  it('ENTIDAD FINANCIERA "BCP" exacto NO engancha "BCP-PROINNOVATE"', async () => {
+    // WEC+PEN tiene cuenta BCP (1) y BCP-PROINNOVATE (3); el exacto debe dar la 1.
+    const { data } = await enrollmentFicoImporter.resolveRow(
+      { ...base, financial_entity: 'BCP', business_entity: 'WE Consulting', currency: 'PEN' }, ctx)
+    expect(data.bank_account_id).toBe(1)
   })
 
   it('ENTIDAD FINANCIERA ambigua (BCP sin empresa, dos cuentas PEN) -> null, no adivina', async () => {

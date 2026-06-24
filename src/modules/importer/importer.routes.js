@@ -23,4 +23,7 @@ export default async function importerRoutes (fastify) {
   // Variantes por URL de Google Sheet (body JSON { url }).
   fastify.post('/:entity/validate-url', ctrl.validateUrlHandler)
   fastify.post('/:entity/commit-url', ctrl.commitUrlHandler)
+
+  // Progreso de una importacion en curso (polling del frontend): { done, total }.
+  fastify.get('/progress/:jobId', ctrl.progressHandler)
 }

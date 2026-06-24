@@ -60,6 +60,31 @@ async function ensureSheetExists (googleSheets, spreadsheetId, sheetName, header
   return true
 }
 
+// Filtro temporal del sync FICO -> Google Sheets: excluye las inscripciones
+// cargadas por la importacion masiva (notes 'Importacion/Migracion masiva FICO
+// ...') para no re-subir data historica mientras dura la migracion. El resto del
+// sistema usa 'Registro directo FICO', asi que el patron no toca ventas normales.
+// La columna real en enrollments es `notes` (el SP mapea el campo JSON
+// `observations` -> notes). COALESCE evita que filas con notes NULL caigan al
+// NULL NOT LIKE (= excluidas por error).
+//
+// Doble condicion: (1) la fila no es import; (2) su PADRE no es import. Las hijas
+// de paquete deberian heredar el note 'hijo de paquete', pero hay hijas creadas
+// sin el (paquetes viejos / via SP), asi que se excluyen mirando el note del
+// padre. En las 3 queries que ya filtran parent_enrollment_id IS NULL el NOT
+// EXISTS es trivialmente verdadero; en getFicoAula (incluye hijas) es el que las
+// atrapa.
+// ponytail: quitar ${EXCLUDE_IMPORTED} de las 4 CTEs `approved` cuando la migracion termine.
+export const EXCLUDE_IMPORTED = `
+         AND COALESCE(e.notes, '') NOT LIKE '%masiva FICO%'
+         AND NOT EXISTS (
+               SELECT 1 FROM public.enrollments p
+                WHERE p.enrollment_id = e.parent_enrollment_id
+                  AND COALESCE(p.notes, '') LIKE '%masiva FICO%'
+             )`
+// Token que el note de la importacion masiva debe contener para ser excluido.
+export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
+
 export class IntegrationRepository {
   constructor (db = pool) {
     this.db = db
@@ -177,6 +202,7 @@ export class IntegrationRepository {
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
+         ${EXCLUDE_IMPORTED}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
     -- Se usa como fallback cuando el lead no tiene cat_client_moment asignado:
@@ -341,6 +367,7 @@ export class IntegrationRepository {
               e.parent_enrollment_id IS NOT NULL
            OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          )
+         ${EXCLUDE_IMPORTED}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
     -- contra public.consolidated cuando el lead no lo tiene asignado.
@@ -472,6 +499,7 @@ export class IntegrationRepository {
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
+         ${EXCLUDE_IMPORTED}
     )
     SELECT
       pv.version_code AS cod,
@@ -696,6 +724,7 @@ export class IntegrationRepository {
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
+         ${EXCLUDE_IMPORTED}
     )
     SELECT
       e.enrollment_id,

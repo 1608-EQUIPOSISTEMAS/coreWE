@@ -10,6 +10,26 @@ import { DomainError } from '../../shared/errors.js'
 
 const MAX_ROWS = 5000
 
+// Progreso de importacion por jobId (lo genera el frontend y lo manda en la
+// request). commitWorkbook lo actualiza fila a fila; el frontend lo consulta por
+// GET /import/progress/:jobId para mostrar "X de N" mientras la request corre.
+// ponytail: store en memoria de un solo proceso; basta para una operacion manual
+// de admin. Si algun dia hay multiples instancias, moverlo a Redis.
+const progressStore = new Map() // jobId -> { done, total, ts }
+const PROGRESS_TTL_MS = 10 * 60 * 1000
+
+function startProgress (jobId, total) {
+  if (!jobId) return () => {}
+  const cutoff = Date.now() - PROGRESS_TTL_MS
+  for (const [k, v] of progressStore) if (v.ts < cutoff) progressStore.delete(k)
+  progressStore.set(jobId, { done: 0, total, ts: Date.now() })
+  return (done) => progressStore.set(jobId, { done, total, ts: Date.now() })
+}
+
+export function getProgress (jobId) {
+  return progressStore.get(jobId) || null
+}
+
 export function getEntities () {
   return listImporters()
 }
@@ -27,16 +47,16 @@ export async function validateFile (entity, buffer) {
   return validateWorkbook(getImporter(entity), await loadWorkbook(buffer, 'xlsx'))
 }
 
-export async function commitFile (entity, buffer, userId) {
-  return commitWorkbook(getImporter(entity), await loadWorkbook(buffer, 'xlsx'), userId)
+export async function commitFile (entity, buffer, userId, jobId) {
+  return commitWorkbook(getImporter(entity), await loadWorkbook(buffer, 'xlsx'), userId, jobId)
 }
 
 export async function validateUrl (entity, url) {
   return validateWorkbook(getImporter(entity), await loadGoogleSheet(url))
 }
 
-export async function commitUrl (entity, url, userId) {
-  return commitWorkbook(getImporter(entity), await loadGoogleSheet(url), userId)
+export async function commitUrl (entity, url, userId, jobId) {
+  return commitWorkbook(getImporter(entity), await loadGoogleSheet(url), userId, jobId)
 }
 
 // --- Nucleo comun (a partir de un workbook) --------------------------------
@@ -61,17 +81,20 @@ async function validateWorkbook (def, wb) {
 // Importa de verdad: re-parsea y re-valida (no confia en el cliente) y confirma
 // SOLO las filas validas, una por una. Cada commit captura su error para no
 // abortar el lote.
-async function commitWorkbook (def, wb, userId) {
+async function commitWorkbook (def, wb, userId, jobId) {
   const { rows, details } = await parseWorkbook(wb, def)
   guardRowCount(rows)
 
   const ctx = await def.loadContext()
+  const report = startProgress(jobId, rows.length)
   const used = new Set()
   const results = []
+  let done = 0
   for (const { rowNumber, raw } of rows) {
     const evaluated = await evaluateRow(def, raw, rowNumber, ctx, details, used)
     if (evaluated.status !== 'valid') {
       results.push({ ...evaluated, imported: false })
+      report(++done)
       continue
     }
     try {
@@ -87,6 +110,7 @@ async function commitWorkbook (def, wb, userId) {
     } catch (err) {
       results.push({ rowNumber, raw, imported: false, status: 'error', errors: [err.message] })
     }
+    report(++done)
   }
   results.push(...orphanDetailResults(def, details, used).map(r => ({ ...r, imported: false })))
 

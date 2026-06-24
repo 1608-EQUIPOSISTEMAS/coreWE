@@ -321,17 +321,31 @@ function currencyCode (raw) {
   return null
 }
 
-// ENTIDAD EMPRESA -> catalog_id de we_business_entity. Match por descripcion/codigo
-// (catByText) o, si la hoja usa abreviaturas (WEC/WEEE/WEL/WEF), por sufijo de alias.
+// Nombres amigables del dropdown "ENTIDAD EMPRESA" de la hoja -> alias del catalogo.
+// La hoja NO usa la razon social (ej "WE Consulting" != "WORLD ENTERPRISE CONSULTING
+// S.A.C.", "WE LATAM" != "WE EDUCACION LATAM S.A.C."), de ahi el mapa explicito.
+const BUSINESS_ENTITY_ALIAS = {
+  'we educacion': 'we_business_entity_weee',
+  'we consulting': 'we_business_entity_wec',
+  'we foundation': 'we_business_entity_wef',
+  'we latam': 'we_business_entity_wel',
+  'johan palomino': 'we_business_entity_johan'
+}
+
+// ENTIDAD EMPRESA -> catalog_id de we_business_entity. 1) mapa de nombres amigables
+// de la hoja; 2) descripcion/codigo (catByText); 3) sufijo de alias (WEC/WEEE/...).
 function matchBusinessEntity (cat, text) {
-  const byText = catByText(cat, 'we_business_entity', text)
-  if (byText) return byText
   const t = normText(text)
   if (!t) return null
-  const hit = (cat?.we_business_entity || []).find(e => {
-    const suffix = String(e.alias || '').replace(/^we_business_entity_/, '')
-    return suffix && normText(suffix) === t
-  })
+  const group = cat?.we_business_entity || []
+  const mappedAlias = BUSINESS_ENTITY_ALIAS[t]
+  if (mappedAlias) {
+    const hit = group.find(e => e.alias === mappedAlias)
+    if (hit) return catId(hit)
+  }
+  const byText = catByText(cat, 'we_business_entity', text)
+  if (byText) return byText
+  const hit = group.find(e => normText(String(e.alias || '').replace(/^we_business_entity_/, '')) === t)
   return hit ? catId(hit) : null
 }
 
@@ -342,10 +356,15 @@ function matchBusinessEntity (cat, text) {
 function matchBankAccount (accounts, bankText, businessEntityId, currencyRaw) {
   const t = normText(bankText)
   if (!t || !accounts.length) return null
-  let candidates = accounts.filter(a => {
-    const name = normText(a.bank_name)
-    return name === t || name.startsWith(t) || t.startsWith(name)
-  })
+  // Match exacto de banco primero (asi "BCP" NO engancha "BCP-PROINNOVATE"); solo
+  // si no hay exacto se cae a prefijo.
+  let candidates = accounts.filter(a => normText(a.bank_name) === t)
+  if (!candidates.length) {
+    candidates = accounts.filter(a => {
+      const name = normText(a.bank_name)
+      return name.startsWith(t) || t.startsWith(name)
+    })
+  }
   if (businessEntityId) {
     const byEntity = candidates.filter(a => Number(a.business_entity_catalog_id) === Number(businessEntityId))
     if (byEntity.length) candidates = byEntity

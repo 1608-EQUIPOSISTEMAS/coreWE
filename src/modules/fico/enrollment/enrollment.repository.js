@@ -118,10 +118,13 @@ export class EnrollmentRepository {
       SELECT pe.start_date AS edition_start_date, pe.end_date AS edition_end_date,
              l.pay_date AS commercial_pay_date,
              e.membership_activation_date,
+             e.membership_program_id,
+             mp.program_name AS membership_program_name,
              cts.alias AS cat_type_status_alias
       FROM enrollments e
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
+      LEFT JOIN programs mp ON mp.program_id = e.membership_program_id
       LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
       WHERE e.enrollment_id = $1
     `, [enrollmentId])

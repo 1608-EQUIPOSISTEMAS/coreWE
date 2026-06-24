@@ -1,9 +1,13 @@
--- Migracion idempotente: agrega una tercera via de "pago cero" al registro
--- directo FICO -> is_membership_benefit. Membresias (WE BLACK/GOLD/...) regalan
--- el curso como beneficio: precio 0 legitimo, PERO no son becas. Antes solo
--- is_scholarship o B2B documental eximian el chequeo list_price > 0.
--- Cambios vs original: var v_is_membership_benefit, su lectura del payload, su
--- inclusion en v_is_zero_payment, el texto del error y la nota de la cuota 0.
+-- ARCHIVO CANONICO de public.sp_fico_enrollment_register_direct. UNICA fuente.
+-- (Fusiona lo que antes vivian en archivos separados ..._membership_benefit.sql y
+--  ..._package_children.sql, que se pisaban entre si al redeployar. NO recrear
+--  esos archivos: cualquier cambio al proc va AQUI.)
+--
+-- Vias de "pago cero" (eximen el chequeo list_price > 0): is_scholarship, B2B
+-- documental (cat_b2b_doctype), beneficio de membresia (is_membership_benefit:
+-- WE BLACK/GOLD/... regalan el curso, precio 0 legitimo, no es beca) e hijo de
+-- paquete (parent_enrollment_id: la venta vive en el padre, el hijo solo ocupa
+-- el aula). Ademas persiste membership_program_id (tier normalizado, FK a programs).
 CREATE OR REPLACE PROCEDURE public.sp_fico_enrollment_register_direct(IN p_user_id integer, IN p_payload jsonb, INOUT p_cur refcursor DEFAULT NULL::refcursor)
  LANGUAGE plpgsql
 AS $procedure$
@@ -46,6 +50,8 @@ DECLARE
     v_observations           text;
     v_is_scholarship         boolean;
     v_is_membership_benefit  boolean;
+    v_membership_program_id  int;
+    v_parent_enrollment_id   int;
     v_cat_b2b_doctype        int;
     v_is_zero_payment        boolean;
 
@@ -105,8 +111,11 @@ BEGIN
     v_observations          := COALESCE(j_insc->>'observations', 'Registro directo FICO');
     v_is_scholarship        := COALESCE((j_insc->>'is_scholarship')::boolean, false);
     v_is_membership_benefit := COALESCE((j_insc->>'is_membership_benefit')::boolean, false);
+    v_membership_program_id := NULLIF(j_insc->>'membership_program_id', '')::int;
+    v_parent_enrollment_id  := NULLIF(j_insc->>'parent_enrollment_id', '')::int;
     v_cat_b2b_doctype       := NULLIF(j_insc->>'cat_b2b_doctype', '')::int;
-    v_is_zero_payment       := v_is_scholarship OR (v_cat_b2b_doctype IS NOT NULL) OR v_is_membership_benefit;
+    -- Hijo de paquete (tiene padre) = pago cero: la venta vive en el padre.
+    v_is_zero_payment       := v_is_scholarship OR (v_cat_b2b_doctype IS NOT NULL) OR v_is_membership_benefit OR (v_parent_enrollment_id IS NOT NULL);
     v_cat_insc_modality     := NULLIF(j_insc->>'cat_insc_modality', '')::int;
     v_list_price            := COALESCE(NULLIF(j_insc->>'list_price', '')::numeric, 0);
     v_total_amount          := COALESCE(NULLIF(j_insc->>'total_amount', '')::numeric, v_list_price);
@@ -241,7 +250,7 @@ BEGIN
         cat_payment_plan, cat_currency, cat_payment_channel,
         cat_type_status, cat_fico_status, cat_certificate_status, cat_inscription_modality,
         registration_date, user_registration_id, active, cat_profile_id, notes,
-        cat_b2b_doctype, agent_origin
+        cat_b2b_doctype, agent_origin, membership_program_id, parent_enrollment_id
     )
     VALUES (
         v_customer_id, v_program_version_id, v_program_edition_id, v_seller_agent_id,
@@ -256,7 +265,7 @@ BEGIN
         c_certificate_paid,
         v_cat_insc_modality,
         NOW(), p_user_id, 'Y', v_cat_profile, v_observations,
-        v_cat_b2b_doctype, v_agent_origin
+        v_cat_b2b_doctype, v_agent_origin, v_membership_program_id, v_parent_enrollment_id
     )
     RETURNING enrollment_id INTO v_enrollment_id;
 

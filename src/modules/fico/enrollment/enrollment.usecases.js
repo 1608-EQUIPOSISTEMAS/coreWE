@@ -80,6 +80,8 @@ export async function paymentDetailGet ({ enrollment_id }) {
         result.edition_end_date = ed.edition_end_date || null
         result.commercial_pay_date = ed.commercial_pay_date || null
         result.membership_activation_date = ed.membership_activation_date || null
+        result.membership_program_id = ed.membership_program_id || null
+        result.membership_program_name = ed.membership_program_name || null
         result.cat_type_status_alias = ed.cat_type_status_alias || null
       }
     } catch (err) {
