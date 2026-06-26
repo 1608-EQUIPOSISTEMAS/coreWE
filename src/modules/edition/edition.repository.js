@@ -404,6 +404,12 @@ export class EditionRepository {
      WHERE e.program_edition_id = $1
        AND e.active = 'Y'
        AND cf.alias = 'we_enrollment_status_checked'
+       -- Los que salieron del aula (retiro / cambio de curso) ya no van en la
+       -- lista activa; quedan registrados en el Historial (classroomStudentsHistory).
+       AND (cts.alias IS NULL OR cts.alias NOT IN (
+              'we_enrollment_status_retired',
+              'we_enrollment_status_course_changed'
+            ))
        AND (
             e.parent_enrollment_id IS NOT NULL
          OR NOT EXISTS (
@@ -425,6 +431,69 @@ export class EditionRepository {
       }
       return { ...rest, platform_user: platformUser || r.email || null }
     })
+  }
+
+  // Historial del aula: alumnos que estuvieron matriculados en esta edicion pero
+  // ya NO figuran en la lista activa (Notas). Complemento de classroomStudentsList:
+  // retiros, cambios de curso (la matricula origen conserva program_edition_id),
+  // reprogramaciones/observados, bajas manuales (active='N') o FICO no confirmado.
+  // Cada fila trae la ultima accion de enrollment_audit_log (fecha/usuario/motivo)
+  // para responder "cuando y por que salio".
+  async classroomStudentsHistory (id) {
+    const { rows } = await this.db.query(`
+    SELECT e.enrollment_id,
+           per.document_number                          AS dni,
+           TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
+           per.first_name,
+           per.last_name,
+           per.mother_last_name,
+           cts.alias                                    AS type_status_alias,
+           cts.description                              AS type_status_label,
+           cf.alias                                     AS fico_status_alias,
+           cf.description                               AS fico_status_label,
+           e.active,
+           e.registration_date::date                    AS enrolled_on,
+           al.action                                    AS last_action,
+           al.performed_at                              AS left_at,
+           al.justificacion                             AS justificacion,
+           usr.alias                                    AS performed_by
+      FROM public.enrollments e
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per    ON per.person_id    = cust.person_id
+      JOIN public."catalog" cf   ON cf.catalog_id    = e.cat_fico_status
+ LEFT JOIN public."catalog" cts  ON cts.catalog_id   = e.cat_type_status
+ LEFT JOIN LATERAL (
+        -- Ultima accion registrada para esta inscripcion (el retiro / cambio /
+        -- baja queda como la mas reciente). Best-effort: puede no existir.
+        SELECT a.action, a.performed_at, a.justificacion, a.performed_by
+          FROM public.enrollment_audit_log a
+         WHERE a.enrollment_id = e.enrollment_id
+         ORDER BY a.performed_at DESC
+         LIMIT 1
+      ) al ON TRUE
+ LEFT JOIN public.users usr ON usr.user_id = al.performed_by
+     WHERE e.program_edition_id = $1
+       AND (
+            e.active = 'N'
+         OR cts.alias IN (
+              'we_enrollment_status_retired',
+              'we_enrollment_status_course_changed'
+            )
+       )
+       -- Excluir si la persona AUN tiene una matricula vigente en esta misma
+       -- aula: son filas duplicadas/migracion, no alumnos que se fueron.
+       AND NOT EXISTS (
+            SELECT 1
+              FROM public.enrollments e2
+              JOIN public.customers cu2 ON cu2.customer_id = e2.customer_id
+             WHERE e2.program_edition_id = e.program_edition_id
+               AND cu2.person_id = per.person_id
+               AND e2.active = 'Y'
+               AND e2.enrollment_id <> e.enrollment_id
+       )
+     ORDER BY al.performed_at DESC NULLS LAST, per.last_name, per.first_name
+  `, [id])
+    return rows
   }
 
   // Crea la tabla classroom_audit_rubric si no existe (auto-migracion idempotente),

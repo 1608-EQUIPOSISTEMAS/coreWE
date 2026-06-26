@@ -10,6 +10,11 @@ export async function programGoalsHandler (req, reply) {
   return reply.send({ ok: true, data })
 }
 
+export async function leadsPerEditionHandler (req, reply) {
+  const data = await usecases.leadsPerEdition(req.body)
+  return reply.send({ ok: true, data })
+}
+
 export async function targetRegisterHandler (req, reply) {
   const { target_id } = await usecases.dashboardTargetRegister(req.body)
   return reply.code(201).send({ ok: true, target_id })

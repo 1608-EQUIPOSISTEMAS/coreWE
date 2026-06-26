@@ -6,6 +6,7 @@ import {
   editionListSchema,
   classroomMetricsListSchema,
   classroomStudentsListSchema,
+  classroomStudentsHistorySchema,
   classroomAuditGetSchema,
   classroomAuditSaveSchema,
   classroomAuditSummaryListSchema,
@@ -62,6 +63,11 @@ export default async function editionRoutes (fastify) {
     schema: classroomStudentsListSchema
     // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomStudentsListHandler)
+
+  fastify.post('/classroomstudentshistory', {
+    schema: classroomStudentsHistorySchema
+    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+  }, ctrl.classroomStudentsHistoryHandler)
 
   fastify.post('/classroomauditget', {
     schema: classroomAuditGetSchema

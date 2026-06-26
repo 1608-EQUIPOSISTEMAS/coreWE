@@ -37,6 +37,11 @@ export async function classroomStudentsListHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function classroomStudentsHistoryHandler (req, reply) {
+  const data = await usecases.classroomStudentsHistory(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function classroomAuditGetHandler (req, reply) {
   const data = await usecases.classroomAuditGet(req.body)
   return reply.code(200).send({ ok: true, data })

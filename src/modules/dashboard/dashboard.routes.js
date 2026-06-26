@@ -2,6 +2,7 @@ import { authenticate } from '../../shared/http/auth.middleware.js'
 import {
   dashboardListSchema,
   programGoalsSchema,
+  leadsPerEditionSchema,
   targetRegisterSchema,
   detailLeadsSchema,
   contactabilitySchema,
@@ -17,6 +18,7 @@ export default async function dashboardRoutes (fastify) {
 
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
+  fastify.post('/leads-per-edition', { schema: leadsPerEditionSchema }, ctrl.leadsPerEditionHandler)
   fastify.post('/dashboardtargetregister', { schema: targetRegisterSchema }, ctrl.targetRegisterHandler)
   fastify.post('/detailleads', { schema: detailLeadsSchema }, ctrl.detailLeadsHandler)
   fastify.post('/contactability', { schema: contactabilitySchema }, ctrl.contactabilityHandler)

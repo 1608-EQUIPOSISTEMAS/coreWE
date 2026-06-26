@@ -26,6 +26,20 @@ export const programGoalsSchema = {
   }
 }
 
+export const leadsPerEditionSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      edition_ids: {
+        type: 'array',
+        items: { type: 'integer' },
+        default: []
+      }
+    }
+  }
+}
+
 export const targetRegisterSchema = {
   body: {
     type: 'object',

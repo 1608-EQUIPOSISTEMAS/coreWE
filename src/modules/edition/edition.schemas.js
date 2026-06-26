@@ -191,6 +191,17 @@ export const classroomStudentsListSchema = {
   }
 }
 
+export const classroomStudentsHistorySchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' }
+    }
+  }
+}
+
 export const classroomAuditGetSchema = {
   body: {
     type: 'object',

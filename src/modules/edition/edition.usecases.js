@@ -180,6 +180,13 @@ export async function classroomStudentsList ({ edition_id } = {}) {
   return repo.classroomStudentsList(id)
 }
 
+// Historial del aula: alumnos que estuvieron pero ya no estan en la lista activa.
+export async function classroomStudentsHistory ({ edition_id } = {}) {
+  const id = Number(edition_id)
+  if (!Number.isFinite(id)) return []
+  return repo.classroomStudentsHistory(id)
+}
+
 // Resumen agregado de auditoria por aula.
 export async function classroomAuditSummaryList ({ edition_ids = [] } = {}) {
   const ids = (edition_ids || []).map(Number).filter(Number.isFinite)

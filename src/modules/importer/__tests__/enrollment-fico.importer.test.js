@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { enrollmentFicoImporter } from '../importers/enrollment-fico.importer.js'
+import { enrollmentFicoImporter, num } from '../importers/enrollment-fico.importer.js'
 import { setImporterPorts } from '../importer.ports.js'
+
+describe('enrollment-fico num — montos en formato peruano y US', () => {
+  it('coma decimal peruana', () => {
+    expect(num('220,00')).toBe(220)      // antes daba 22000
+    expect(num('1.507,00')).toBe(1507)
+    expect(num('50,5')).toBe(50.5)
+  })
+  it('punto decimal con coma de miles', () => {
+    expect(num('1,507.00')).toBe(1507)
+    expect(num('395.00')).toBe(395)
+  })
+  it('enteros y prefijos de moneda', () => {
+    expect(num('370')).toBe(370)
+    expect(num('S/. 0')).toBe(0)
+    expect(num('S/. 33')).toBe(33)       // el "." de "S/." NO es decimal
+    expect(num('S/. 1.507,00')).toBe(1507)
+    expect(num('1,200')).toBe(1200)      // coma de miles sin decimales
+    expect(num('')).toBe(0)
+  })
+})
 
 // ctx minimo: una version activa + una edicion indexada por (version_code|global_code).
 const ctx = {
@@ -29,6 +49,24 @@ const ctx = {
   ]
 }
 const baseRaw = { full_name: 'PEREZ GOMEZ JUAN', edition: 'E0', course_code: 'IA-CZ-03' }
+
+describe('enrollment-fico loadContext — versiones para convalidacion', () => {
+  it('carga versiones SIN filtro active (convalidacion puede referenciar curso inactivo)', async () => {
+    let versionArgs = null
+    setImporterPorts({
+      getCatalog: async () => ({}),
+      listProgramVersions: async (p) => { versionArgs = p; return { items: [] } },
+      listActiveEditions: async () => [],
+      listMembershipVersions: async () => [],
+      listAgents: async () => [],
+      listEditionStructure: async () => [],
+      listBankAccounts: async () => [],
+      listCurrencies: async () => []
+    })
+    await enrollmentFicoImporter.loadContext()
+    expect(versionArgs.active).toBeUndefined() // antes pasaba 'Y' y perdia las inactivas
+  })
+})
 
 describe('enrollment-fico resolveRow — convalidacion (ED E0)', () => {
   it('ED E0 resuelve curso por COD y deja edicion null, sin error', async () => {
@@ -98,6 +136,74 @@ describe('enrollment-fico resolveRow — beneficio de membresia (columna J)', ()
       { full_name: 'X Y', course_code: 'IA-CZ-03', edition: 'E31', member_type: '', total_amount: 500 }, ctx)
     expect(data.is_membership_benefit).toBe(false)
     expect(data.membership_version_id).toBeNull()
+  })
+})
+
+describe('enrollment-fico resolveRow — cronograma de cuotas (raw._installments)', () => {
+  const base = { full_name: 'X Y', course_code: 'IA-CZ-03', edition: 'E31' }
+
+  it('toma las cuotas de raw._installments cuando el pipeline pasa [] (FICO sin hoja detalle)', async () => {
+    const raw = { ...base, _installments: [
+      { installment_number: 2, amount: 395, due_date: '29/4/2026' },
+      { installment_number: 1, amount: 395, due_date: '15/4/2026' }
+    ] }
+    const { data } = await enrollmentFicoImporter.resolveRow(raw, ctx, []) // 3er arg vacio = pipeline real
+    expect(data.installment_plan).toEqual([
+      { installment_number: 1, amount: 395, due_date: '2026-04-15' },
+      { installment_number: 2, amount: 395, due_date: '2026-04-29' }
+    ])
+  })
+
+  it('sin cuotas -> sin installment_plan', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [] }, ctx, [])
+    expect(data.installment_plan).toBeUndefined()
+  })
+})
+
+describe('enrollment-fico resolveRow — BECA y marcador de canal en columna AS', () => {
+  const base = { full_name: 'X Y', course_code: 'IA-CZ-03', edition: 'E31' }
+
+  it('tipo de descuento "BECA" -> is_scholarship true (acepta precio 0)', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, scholarship: 'BECA', total_amount: 0 }, ctx)
+    expect(data.is_scholarship).toBe(true)
+    expect(data.observations).toMatch(/BECA/)
+  })
+
+  it('sin beca -> is_scholarship false', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, scholarship: '', total_amount: 500 }, ctx)
+    expect(data.is_scholarship).toBe(false)
+  })
+
+  it('beca NO se combina con membresia (la membresia tiene su propia via)', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow(
+      { ...base, scholarship: 'BECA', member_type: 'WE BLACK' }, ctx)
+    expect(data.is_scholarship).toBe(false)
+    expect(data.is_membership_benefit).toBe(true)
+  })
+
+  it('columna AS "S/A" -> agent_origin SA, sin asesor', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, agent_code: 'S/A' }, ctx)
+    expect(data.agent_origin).toBe('SA')
+    expect(data.seller_agent_id).toBeUndefined()
+  })
+
+  it('columna AS con codigo real -> seller_agent_id, sin tocar agent_origin', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, agent_code: 'ae30' }, ctx)
+    expect(data.seller_agent_id).toBe(7)
+    expect(data.agent_origin).toBeUndefined()
+  })
+
+  it('combo "JP39-B2B" -> canal B2B en agent_origin + seller por codigo JP39', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, agent_code: 'JP39-B2B', total_amount: 500 }, ctx)
+    expect(data.agent_origin).toBe('B2B')
+    expect(data.seller_agent_id).toBe(8) // jp39 -> 8 en el ctx
+  })
+
+  it('total 0 sin beca (ej B2B 100%) -> is_scholarship true (acepta precio 0)', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow(
+      { ...base, agent_code: 'B2B', total_amount: 0 }, ctx)
+    expect(data.is_scholarship).toBe(true)
+    expect(data.agent_origin).toBe('B2B')
   })
 })
 
@@ -237,5 +343,23 @@ describe('enrollment-fico commitRow — importacion solo inserta', () => {
     }, { userId: 7 })
     expect(calls).toHaveLength(2)
     expect(calls[1].parent_enrollment_id).toBe(2000)
+  })
+
+  it('hija que falla (result!=1/2) -> fila NO ok y mensaje con ADVERTENCIA (no se traga el fallo)', async () => {
+    let n = 0
+    setImporterPorts({
+      registerEnrollment: async () => {
+        n++
+        // 1ra llamada = padre ok; 2da = hija falla con result 0.
+        return n === 1 ? { result: 1, enrollment_id: 1000 } : { result: 0, message: 'El correo es obligatorio.' }
+      }
+    })
+    const out = await enrollmentFicoImporter.commitRow({
+      program_version_id: 42, program_edition_id: 500, document_number: '123',
+      child_editions: [{ edition_id: 600, version_id: 60 }]
+    }, { userId: 7 })
+    expect(out.ok).toBe(false)
+    expect(out.message).toMatch(/ADVERTENCIA/)
+    expect(out.message).toMatch(/aula 600/)
   })
 })

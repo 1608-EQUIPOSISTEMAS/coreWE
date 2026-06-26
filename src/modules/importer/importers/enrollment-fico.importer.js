@@ -37,7 +37,10 @@ const H = {
   business_entity: ['entidad empresa', 'empresa', 'razon social', 'entidad'],
   // Entidad financiera: el banco donde se deposito (BCP/BBVA/...). Junto con empresa
   // y moneda resuelve la cuenta bancaria (bank_account_id).
-  financial_entity: ['entidad financiera', 'banco', 'cuenta', 'cuenta bancaria']
+  financial_entity: ['entidad financiera', 'banco', 'cuenta', 'cuenta bancaria'],
+  // Tipo de descuento: con valor "BECA" = beca (precio 0 legitimo, via is_scholarship
+  // del SP). El nombre del encabezado varia entre hojas; se detecta por VALOR ("beca").
+  scholarship: ['tipo dscto', 'tipo de descuento', 'tipo descuento', 'tipo dsct', 'tipo de dscto', 'beca', 'descuento']
 }
 const MAX_CUOTAS = 6 // FC1/C1 .. FC6/C6 (CURSOS llega a 5; sobran columnas se ignoran)
 
@@ -114,6 +117,7 @@ function ingest (wb) {
         agent_code: get('agent_code'),    // codigo del asesor (col AS)
         business_entity: get('business_entity'), // ENTIDAD EMPRESA (razon social)
         financial_entity: get('financial_entity'), // ENTIDAD FINANCIERA (banco)
+        scholarship: get('scholarship'), // TIPO DSCT: "BECA" = beca (precio 0)
         // Forma de pago inferida: si hay cuotas en el cronograma es "cuotas".
         payment_way: installments.length > 0 ? 'cuotas' : 'contado',
         _installments: installments
@@ -162,6 +166,12 @@ async function resolveRow (raw, ctx, installments = []) {
   // version del programa-membresia para crear la inscripcion que marca al miembro.
   const memberType = (raw.member_type || '').trim()
   const isMembershipBenefit = memberType !== ''
+  // Precio 0 = pago cero via is_scholarship del SP (de otro modo rechaza list_price
+  // <= 0). Aplica a: columna de descuento "BECA", o cualquier fila con total 0 que
+  // no sea membresia (descuento 100%, B2B totalmente cubierto, etc.). Una membresia
+  // tiene su propia via, por eso se excluye.
+  const isScholarship = !isMembershipBenefit &&
+    (normText(raw.scholarship).includes('beca') || (Number(raw.total_amount) || 0) <= 0)
   let membershipVersionId = null
   if (isMembershipBenefit) {
     membershipVersionId = (ctx?.membershipByName || new Map()).get(normText(memberType)) || null
@@ -182,8 +192,10 @@ async function resolveRow (raw, ctx, installments = []) {
     payment_date: normalizeDate(raw.payment_date),
     observations: isMembershipBenefit
       ? `Importacion masiva FICO (hoja) - beneficio de membresia ${memberType}`
-      : 'Importacion masiva FICO (hoja)',
-    is_scholarship: false,
+      : isScholarship
+        ? 'Importacion masiva FICO (hoja) - BECA'
+        : 'Importacion masiva FICO (hoja)',
+    is_scholarship: isScholarship,
     is_membership_benefit: isMembershipBenefit,
     member_type: isMembershipBenefit ? memberType : null,
     membership_version_id: membershipVersionId, // version del programa-membresia
@@ -191,18 +203,37 @@ async function resolveRow (raw, ctx, installments = []) {
     client_profile: profileFromOcup(raw.ocup)
   }
 
-  // Agente (columna AS = codigo del asesor): SOLO resuelve seller_agent_id por alias.
-  // agent_origin es el CANAL (WEB/B2B/SA), no el codigo: la hoja no lo trae, asi que
-  // queda null y el listado muestra el asesor solo (ej "AE30"). Meter el codigo aqui
-  // producia el duplicado "AE30 - AE30".
+  // Agente (columna AS). Dos casos:
+  //  - Marcador de CANAL (S/A, SA, WEB, B2B, WE): va a agent_origin, sin asesor.
+  //    "S/A"/"SA" = sin asesor -> 'SA' (asi se muestra en el listado).
+  //  - Codigo de asesor (ej "AE30"): resuelve seller_agent_id por alias. NO se mete
+  //    en agent_origin (eso producia el duplicado "AE30 - AE30").
   const agentCode = (raw.agent_code || '').trim()
   if (agentCode) {
-    data.seller_agent_id = (ctx?.agentsByAlias || new Map()).get(normText(agentCode)) || null
+    const n = normText(agentCode)
+    const isChannel = (x) => x === 'web' || x === 'b2b' || x === 'we'
+    if (n === 's/a' || n === 'sa') {
+      data.agent_origin = 'SA'
+    } else if (isChannel(n)) {
+      data.agent_origin = n.toUpperCase()
+    } else if (n.includes('-')) {
+      // Combo "JF39-B2B" / "B2B-JF39": separa canal y codigo de asesor.
+      const parts = agentCode.split('-').map(s => s.trim()).filter(Boolean)
+      const channel = parts.find(p => isChannel(normText(p)))
+      const code = parts.find(p => !isChannel(normText(p)))
+      if (channel) data.agent_origin = channel.toUpperCase()
+      if (code) data.seller_agent_id = (ctx?.agentsByAlias || new Map()).get(normText(code)) || null
+    } else {
+      data.seller_agent_id = (ctx?.agentsByAlias || new Map()).get(n) || null
+    }
   }
 
-  // Cronograma (ya viene reconstruido y limpio).
-  if (installments.length > 0) {
-    data.installment_plan = installments
+  // Cronograma (FCn/Cn). ingest lo reconstruye en raw._installments; el pipeline
+  // generico pasa [] como 3er arg (solo se usa con hojas de detalle, que FICO no
+  // tiene), asi que se cae a raw._installments. Sin esto las cuotas se perdian.
+  const schedule = installments.length > 0 ? installments : (raw._installments || [])
+  if (schedule.length > 0) {
+    data.installment_plan = schedule
       .map(c => ({
         installment_number: Number(c.installment_number),
         amount: Number(c.amount),
@@ -261,7 +292,7 @@ async function resolveRow (raw, ctx, installments = []) {
       data.program_edition_id = null
       data.observations = 'Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion)'
     } else {
-      errors.push(`Convalidacion (ED E0): curso "${raw.course_code}" no encontrado entre versiones activas.`)
+      errors.push(`Convalidacion (ED E0): curso "${raw.course_code}" no existe como version de programa (revisa el codigo COD).`)
     }
   } else {
     // Resuelve contra el indice ya cargado (1 query por archivo, no por fila).
@@ -431,10 +462,25 @@ function splitName (full) {
   return { firstName: tokens.slice(2).join(' '), lastName: tokens.slice(0, 2).join(' ') }
 }
 
-function num (v) {
-  const s = cellText(v)
+// Parsea montos tolerando AMBOS formatos: coma decimal peruana ("220,00" = 220.00,
+// "1.507,00") y punto decimal con coma de miles ("1,507.00"). Antes se borraba la
+// coma a secas, convirtiendo "220,00" en 22000 -> el SP rechazaba el plan de cuotas.
+// Regla: si hay dos separadores, el ULTIMO es el decimal; si solo hay coma, es
+// decimal cuando va seguida de 1-2 digitos (si no, es separador de miles).
+export function num (v) {
+  let s = cellText(v)
   if (!s) return 0
-  const n = Number(s.replace(/[^0-9.-]/g, ''))
+  s = s.replace(/s\/\.?|us\$|\$/gi, '') // quita simbolo de soles "S/." y dolares ANTES de parsear
+  s = s.replace(/[^0-9.,-]/g, '')       // quita "%", espacios, letras restantes
+  if (!s) return 0
+  const c = s.lastIndexOf(','); const d = s.lastIndexOf('.')
+  if (c > -1 && d > -1) {
+    s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+  } else if (c > -1) {
+    const dec = s.length - c - 1
+    s = (dec === 1 || dec === 2) ? s.replace(',', '.') : s.replace(/,/g, '')
+  }
+  const n = Number(s)
   return Number.isFinite(n) ? n : 0
 }
 
@@ -479,21 +525,35 @@ async function commitRow (data, { userId }) {
   // Paquete (especializacion): el padre no tiene aula propia. Crear las hijas en
   // cada aula hija, ligadas al padre. parentId sale del create o del duplicado
   // (re-import), asi el backfill de hijas funciona aunque el padre ya exista.
+  // El SP devuelve result=1 (creada) o 2 (ya existia, idempotente por findDuplicate);
+  // cualquier otro valor o excepcion es un FALLO REAL que antes se tragaba en
+  // silencio (por eso aparecian padres sin hijas). Ahora se cuenta y se reporta.
   const parentId = resp?.enrollment_id || resp?.duplicate_info?.enrollment_id
+  const childFails = []
   if (parentId && Array.isArray(data.child_editions) && data.child_editions.length) {
     for (const child of data.child_editions) {
       try {
-        await importerPorts.registerEnrollment({
+        const cresp = await importerPorts.registerEnrollment({
           data: childInscription(data, child, parentId), userId, skipFollowup: true
         })
+        if (cresp?.result !== 1 && cresp?.result !== 2) {
+          childFails.push(`aula ${child.edition_id}: ${cresp?.message || 'sin exito'}`)
+        }
       } catch (err) {
-        console.error('[importer] No se pudo crear el hijo de paquete', child.edition_id, err.message)
+        childFails.push(`aula ${child.edition_id}: ${err.message}`)
       }
     }
   }
+  const childNote = childFails.length
+    ? ` ADVERTENCIA: ${childFails.length} de ${data.child_editions.length} aula(s) hija(s) no se crearon (${childFails.join('; ')}).`
+    : ''
 
   if (resp?.result === 1 && resp.enrollment_id) {
-    return { ok: true, id: resp.enrollment_id, message: 'Inscripcion creada' }
+    // Si fallaron hijas, la fila se marca como error visible (no como exito limpio):
+    // el paquete quedo incompleto y el usuario debe verlo.
+    return childFails.length
+      ? { ok: false, id: resp.enrollment_id, message: `Inscripcion creada pero incompleta.${childNote}` }
+      : { ok: true, id: resp.enrollment_id, message: 'Inscripcion creada' }
   }
   if (resp?.result === 2) {
     // Ya existia (re-import): completar/actualizar el asesor sobre la existente,
@@ -508,9 +568,9 @@ async function commitRow (data, { userId }) {
         console.error('[importer] No se pudo actualizar el asesor de la inscripcion', dupId, err.message)
       }
     }
-    return { ok: false, duplicate: true, message: resp.message || 'Inscripcion duplicada' }
+    return { ok: false, duplicate: true, message: `${resp.message || 'Inscripcion duplicada'}${childNote}` }
   }
-  return { ok: false, message: resp?.message || 'El registro no devolvio exito' }
+  return { ok: false, message: `${resp?.message || 'El registro no devolvio exito'}${childNote}` }
 }
 
 // Inscripcion de la MEMBRESIA (WE BLACK/GOLD/...) a partir de la fila de curso ya
@@ -568,7 +628,11 @@ function childInscription (data, child, parentEnrollmentId) {
 async function loadContext () {
   const [catalog, versionsPage, editions, memberships, agents, structure, bankAccounts, currencies] = await Promise.all([
     importerPorts.getCatalog(),
-    importerPorts.listProgramVersions({ active: 'Y', size: 1000 }),
+    // SIN filtro active: una convalidacion (ED E0) acredita un curso viejo/cerrado,
+    // cuya version puede estar inactiva (ej PC-DZ-04 reemplazado por PC-DZ-05). Solo
+    // alimenta versionIdByCode (convalidaciones); las filas normales usan ediciones
+    // activas, asi que incluir inactivas aqui no las afecta.
+    importerPorts.listProgramVersions({ size: 1000 }),
     importerPorts.listActiveEditions(),
     importerPorts.listMembershipVersions(),
     importerPorts.listAgents(),

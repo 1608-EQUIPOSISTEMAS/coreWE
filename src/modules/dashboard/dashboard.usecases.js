@@ -32,6 +32,11 @@ export async function programGoalsList (payload = {}) {
   return toProgramGoalsDto(rows)
 }
 
+export async function leadsPerEdition (payload = {}) {
+  const { edition_ids = [] } = payload
+  return repo.leadsPerEdition({ edition_ids })
+}
+
 export async function dashboardTargetRegister ({ target = {} } = {}) {
   return repo.registerTarget(target)
 }

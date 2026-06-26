@@ -174,6 +174,21 @@ export class DashboardRepository {
     const { rows } = await this.db.query(sql, params)
     return rows
   }
+
+  // Nº de consultas (leads) por edición. La tabla leads ya enlaza a la edición
+  // vía program_edition_id (= program_editions.edition_num_id). Se cuenta sobre
+  // los ids ya visibles en pantalla, así no dependemos de la fecha del lead.
+  async leadsPerEdition ({ edition_ids = [] }) {
+    if (!edition_ids.length) return []
+    const sql = `
+    SELECT program_edition_id AS edition_num_id, COUNT(*)::int AS consultas
+    FROM public.leads
+    WHERE program_edition_id = ANY($1::int[])
+    GROUP BY program_edition_id
+  `
+    const { rows } = await this.db.query(sql, [edition_ids])
+    return rows
+  }
 }
 
 export const dashboardRepository = new DashboardRepository()
