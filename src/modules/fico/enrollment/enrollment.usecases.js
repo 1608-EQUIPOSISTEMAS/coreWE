@@ -200,7 +200,12 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
     'Edicion': {
       old: `${old.old_code || '---'} (${fmtDate(old.old_start_date)})`,
       new: `${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})`
-    }
+    },
+    // Ancla estable para el historial del aula origen: la fila se mueve a la
+    // edicion nueva (setProgramEdition), asi que el unico rastro de donde estaba
+    // queda aqui. classroomStudentsHistory lo usa para volver a mostrar al alumno.
+    old_edition_id: old.program_edition_id,
+    new_edition_id: newEditionId
   }
 
   const diffDays = editionShiftDays(old.old_start_date, newEd.start_date)

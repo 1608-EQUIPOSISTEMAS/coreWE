@@ -227,6 +227,7 @@ export class EditionRepository {
         END AS bucket
         FROM public.enrollments e
         JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
+        LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
         JOIN public.customers cust ON cust.customer_id = e.customer_id
         JOIN public.program_editions pe_e ON pe_e.edition_num_id = e.program_edition_id
         LEFT JOIN LATERAL (
@@ -245,6 +246,12 @@ export class EditionRepository {
        WHERE e.program_edition_id = ANY($1::int[])
          AND e.active = 'Y'
          AND cf.alias = 'we_enrollment_status_checked'
+         -- mismo filtro que classroomStudentsList (la lista del aula): los
+         -- retirados / cambiados de curso salen del aula activa, no cuentan.
+         AND (cts.alias IS NULL OR cts.alias NOT IN (
+                'we_enrollment_status_retired',
+                'we_enrollment_status_course_changed'
+              ))
          -- no fue reemplazada por un cambio de curso (la origen no cuenta)
          AND NOT EXISTS (SELECT 1 FROM public.course_changes cc
                           WHERE cc.enrollment_origin_id = e.enrollment_id)
@@ -472,12 +479,24 @@ export class EditionRepository {
          LIMIT 1
       ) al ON TRUE
  LEFT JOIN public.users usr ON usr.user_id = al.performed_by
-     WHERE e.program_edition_id = $1
+     WHERE (
+            e.program_edition_id = $1
+            -- ...o fue REPROGRAMADA fuera de esta aula: setProgramEdition movio la
+            -- fila a otra edicion, asi que ya no matchea por program_edition_id;
+            -- el vinculo con el aula origen quedo en el audit log (old_edition_id).
+         OR e.enrollment_id IN (
+              SELECT a.enrollment_id
+                FROM public.enrollment_audit_log a
+               WHERE a.action = 'edition_reprogrammed'
+                 AND (a.changes->>'old_edition_id') = $1::text
+            )
+       )
        AND (
             e.active = 'N'
          OR cts.alias IN (
               'we_enrollment_status_retired',
-              'we_enrollment_status_course_changed'
+              'we_enrollment_status_course_changed',
+              'we_enrollment_status_reprogrammed'
             )
        )
        -- Excluir si la persona AUN tiene una matricula vigente en esta misma
