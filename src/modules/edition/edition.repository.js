@@ -189,11 +189,14 @@ export class EditionRepository {
   //       - 1er CURSO de un paquete (hijo sin hermano que empiece antes, = orden
   //         de la rama en la modal Jerarquia): NO cuenta comercial; su venta esta
   //         arriba, en el padre.
-  //       - 2do+ CURSO de un paquete, o destino de CAMBIO DE CURSO: SEGUI (o MEMB
-  //         si la persona es socia: socio manda siempre).
-  //       - E0 (padre con program_edition_id NULL: modulos inscritos sueltos):
-  //         TODOS los modulos cuentan como SEG (la venta del diploma se vendio
-  //         aparte, no aparece como venta aqui).
+  //       - 2do+ CURSO de un paquete (o modulo E0, o destino de CAMBIO DE CURSO):
+  //         HEREDA el CANAL de la venta del padre. Si el padre es socio/B2B/beca,
+  //         el seguimiento cuenta en MEMB/B2B/BECA, NO en SEGUI. SEGUI queda solo
+  //         para hijos de una venta NORMAL. Prioridad: MEMB (socio) > B2B (padre
+  //         doctype/agent) > BECA (padre total 0) > SEGUI.
+  //       - E0 (padre con program_edition_id NULL: modulos inscritos sueltos): no
+  //         hay 1er curso especial; TODOS los modulos heredan el canal del padre
+  //         (la venta del diploma se vendio aparte, no aparece como venta aqui).
   //
   //  B) AULA (columna AULA = headcount del salon): cuantos alumnos ASISTEN a esa
   //     edicion. Son las HOJAS (hijos + ventas directas) con esa program_edition_id;
@@ -224,13 +227,10 @@ export class EditionRepository {
           -- HIJO de paquete:
           WHEN e.parent_enrollment_id IS NOT NULL THEN
             CASE
-              -- E0: el padre quedo SIN edicion (clearParentEdition: modulos
-              -- inscritos sueltos). La venta del diploma se conto aparte; aqui
-              -- TODOS los modulos cuentan como SEG (socio manda igual).
-              WHEN par.program_edition_id IS NULL
-                THEN CASE WHEN mem.is_member THEN 'MEMB' ELSE 'SEGUI' END
-              -- 1er curso (sin hermano que empiece antes): venta en el padre
-              WHEN NOT EXISTS (
+              -- 1er curso (sin hermano que empiece antes) de un paquete CON edicion:
+              -- su venta vive en el padre, no cuenta comercial. (Un E0 no tiene 1er
+              -- curso especial: el padre no cuenta, todos los modulos heredan canal.)
+              WHEN par.program_edition_id IS NOT NULL AND NOT EXISTS (
                      SELECT 1 FROM public.enrollments sib
                        JOIN public.program_editions pesib
                          ON pesib.edition_num_id = sib.program_edition_id
@@ -239,8 +239,14 @@ export class EditionRepository {
                         AND (pesib.start_date, pesib.edition_num_id)
                           < (pe_e.start_date, pe_e.edition_num_id)
                    ) THEN NULL
-              WHEN mem.is_member THEN 'MEMB'   -- socio manda siempre
-              ELSE 'SEGUI'                     -- 2do+ curso
+              -- 2do+ curso (o modulo E0): HEREDA el CANAL de la venta del padre.
+              -- Si el padre es socio/B2B/beca, el seguimiento cuenta en MEM/B2B/BECA,
+              -- NO en SEG. SEG queda solo para hijos de una venta normal.
+              -- Prioridad: socio manda > B2B > BECA > SEG.
+              WHEN mem.is_member THEN 'MEMB'
+              WHEN par.cat_b2b_doctype IS NOT NULL OR par.agent_origin ILIKE '%b2b%' THEN 'B2B'
+              WHEN COALESCE(par.total_amount, 0) = 0 THEN 'BECA'
+              ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
           WHEN mem.is_member THEN 'MEMB'

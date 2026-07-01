@@ -303,9 +303,14 @@ export class EnrollmentRepository {
   async listActiveEditions () {
     const { rows } = await this.db.query(`
       SELECT pe.edition_num_id AS program_edition_id, pe.program_version_id,
-             pe.global_code, pv.version_code
+             pe.global_code, pv.version_code,
+             -- es paquete (deberia tener aulas hijas): diplomado/especializacion/PEE.
+             -- Lo usa el importador para AVISAR si el paquete no tiene estructura.
+             (ct.alias IN ('we_program_type_diploma','we_program_type_specialization','we_program_type_pee')) AS is_package
       FROM program_editions pe
       JOIN program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs pr ON pr.program_id = pv.program_id
+ LEFT JOIN public."catalog" ct ON ct.catalog_id = pr.cat_type_program
       WHERE pe.active = 'Y'
     `)
     return rows

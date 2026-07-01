@@ -300,6 +300,7 @@ async function resolveRow (raw, ctx, installments = []) {
     if (ed) {
       data.program_edition_id = ed.program_edition_id
       data.program_version_id = ed.program_version_id
+      data.is_package = ed.is_package === true
     } else {
       errors.push(`Edicion no encontrada: curso "${raw.course_code}" + ED "${raw.edition}"`)
     }
@@ -428,7 +429,7 @@ function indexEditions (editions = []) {
   for (const e of editions) {
     const key = editionKey(e.version_code, e.global_code)
     if (!key) continue
-    map.set(key, map.has(key) ? null : { program_edition_id: e.program_edition_id, program_version_id: e.program_version_id })
+    map.set(key, map.has(key) ? null : { program_edition_id: e.program_edition_id, program_version_id: e.program_version_id, is_package: e.is_package === true })
   }
   return map
 }
@@ -544,14 +545,22 @@ async function commitRow (data, { userId }) {
       }
     }
   }
+  // Paquete SIN estructura: la edicion es un paquete (diploma/espec/PEE) pero no
+  // tiene aulas hijas en edition_structure, asi que no se creo NINGUNA. Antes esto
+  // pasaba en silencio (padre creado, cero hijas) => se avisa para que no vuelva a
+  // pasar desapercibido: falta cargar edition_structure de esa edicion.
+  const noStructure = data.is_package === true &&
+    (!Array.isArray(data.child_editions) || data.child_editions.length === 0)
   const childNote = childFails.length
     ? ` ADVERTENCIA: ${childFails.length} de ${data.child_editions.length} aula(s) hija(s) no se crearon (${childFails.join('; ')}).`
-    : ''
+    : noStructure
+      ? ' ADVERTENCIA: paquete SIN estructura de aulas hijas (edition_structure vacia para esta edicion); no se creo ninguna aula hija.'
+      : ''
 
   if (resp?.result === 1 && resp.enrollment_id) {
-    // Si fallaron hijas, la fila se marca como error visible (no como exito limpio):
-    // el paquete quedo incompleto y el usuario debe verlo.
-    return childFails.length
+    // Si fallaron hijas O el paquete no tiene estructura, la fila se marca como
+    // error visible (no como exito limpio): el paquete quedo incompleto.
+    return (childFails.length || noStructure)
       ? { ok: false, id: resp.enrollment_id, message: `Inscripcion creada pero incompleta.${childNote}` }
       : { ok: true, id: resp.enrollment_id, message: 'Inscripcion creada' }
   }

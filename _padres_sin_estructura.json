@@ -1,0 +1,90 @@
+[
+  {
+    "edicion": 14775,
+    "tipo": "Diplomado",
+    "version_code": "PC-DZ-04",
+    "global_code": "E48",
+    "inicio": "2026-01-24T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14895,
+    "tipo": "Diplomado",
+    "version_code": "BI-DZ-02",
+    "global_code": "E33",
+    "inicio": "2026-03-25T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14902,
+    "tipo": "Diplomado",
+    "version_code": "PC-DZ-04",
+    "global_code": "E50",
+    "inicio": "2026-03-29T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14919,
+    "tipo": "Diplomado",
+    "version_code": "FI-DZ-01",
+    "global_code": "E7",
+    "inicio": "2026-04-09T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14857,
+    "tipo": "Especialización",
+    "version_code": "PC-EZ-02",
+    "global_code": "E22",
+    "inicio": "2026-03-07T05:00:00.000Z",
+    "alumnos_afectados": 5
+  },
+  {
+    "edicion": 14850,
+    "tipo": "Especialización",
+    "version_code": "BI-EZ-02",
+    "global_code": "E92",
+    "inicio": "2026-02-28T05:00:00.000Z",
+    "alumnos_afectados": 2
+  },
+  {
+    "edicion": 14862,
+    "tipo": "Especialización",
+    "version_code": "EX-EZ-02",
+    "global_code": "E90",
+    "inicio": "2026-03-08T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14875,
+    "tipo": "Especialización",
+    "version_code": "EX-EZ-01",
+    "global_code": "E74",
+    "inicio": "2026-03-14T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14875,
+    "tipo": "Especialización",
+    "version_code": "EX-EZ-03",
+    "global_code": "E74",
+    "inicio": "2026-03-14T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14896,
+    "tipo": "Especialización",
+    "version_code": "SA-EZ-02",
+    "global_code": "E120",
+    "inicio": "2026-03-26T05:00:00.000Z",
+    "alumnos_afectados": 1
+  },
+  {
+    "edicion": 14887,
+    "tipo": "PEE",
+    "version_code": "BI-PZ-01",
+    "global_code": "E94",
+    "inicio": "2026-03-21T05:00:00.000Z",
+    "alumnos_afectados": 1
+  }
+]
