@@ -20,6 +20,7 @@ DECLARE
     c_payment_plan_install   int;
     c_fico_status_checked    int;
     c_enroll_status_pending  int;
+    c_enroll_status_tracking int;
     c_settlement_pending     int;
     c_inst_status_paid       int;
     c_inst_status_pending    int;
@@ -85,6 +86,7 @@ BEGIN
 
     -- Catalogos
     SELECT catalog_id INTO c_enroll_status_pending  FROM public."catalog" WHERE alias = 'we_inscription_way_act'         LIMIT 1;
+    SELECT catalog_id INTO c_enroll_status_tracking FROM public."catalog" WHERE alias = 'we_enrollment_status_tracking'  LIMIT 1;
     SELECT catalog_id INTO c_fico_status_checked    FROM public."catalog" WHERE alias = 'we_enrollment_status_checked'   LIMIT 1;
     SELECT catalog_id INTO c_inst_status_paid       FROM public."catalog" WHERE alias = 'we_payment_status_paid'         LIMIT 1;
     SELECT catalog_id INTO c_inst_status_pending    FROM public."catalog" WHERE alias = 'we_payment_status_pending'      LIMIT 1;
@@ -260,7 +262,11 @@ BEGIN
         COALESCE(v_cat_payment_way, c_payment_plan_cash),
         v_cat_currency,
         v_cat_channel_pay,
-        c_enroll_status_pending,
+        -- Hijo de paquete (tiene padre) entra como SEG (seguimiento), no ACT: es
+        -- un modulo de seguimiento, la venta vive en el padre. Antes clavaba ACT
+        -- a todos, por eso las hojas hijas salian "Activo" en vez de "SEG".
+        CASE WHEN v_parent_enrollment_id IS NOT NULL
+             THEN c_enroll_status_tracking ELSE c_enroll_status_pending END,
         c_fico_status_checked,
         c_certificate_paid,
         v_cat_insc_modality,

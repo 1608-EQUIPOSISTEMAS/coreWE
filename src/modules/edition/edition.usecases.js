@@ -61,8 +61,12 @@ async function attachChannelMetrics (items = []) {
   const list = Array.isArray(items) ? items : []
   const ids = [...new Set(list.map(i => Number(i?.edition_num_id)).filter(Number.isFinite))]
   if (!ids.length) return
-  const metrics = await repo.classroomChannelMetricsList(ids)
+  const [metrics, leads] = await Promise.all([
+    repo.classroomChannelMetricsList(ids),
+    repo.classroomLeadsCountList(ids)
+  ])
   const byId = new Map(metrics.map(m => [Number(m.edition_num_id), m]))
+  const leadsById = new Map(leads.map(l => [Number(l.edition_num_id), l]))
   for (const it of list) {
     const m = byId.get(Number(it?.edition_num_id))
     it.cnt_ventas = m?.cnt_ventas ?? 0
@@ -72,6 +76,8 @@ async function attachChannelMetrics (items = []) {
     it.cnt_b2b = m?.cnt_b2b ?? 0
     it.cnt_aula = m?.cnt_aula ?? 0
     it.cnt_total = m?.cnt_total ?? 0
+    // consultas (leads, excluye Desestimado/Cerrado)
+    it.cnt_consultas = leadsById.get(Number(it?.edition_num_id))?.cnt_consultas ?? 0
   }
 }
 
