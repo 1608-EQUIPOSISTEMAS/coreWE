@@ -26,6 +26,30 @@ export const programGoalsSchema = {
   }
 }
 
+export const programGoalsSaveSchema = {
+  body: {
+    type: 'object',
+    required: ['goals'],
+    additionalProperties: false,
+    properties: {
+      goals: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          required: ['edition_num_id'],
+          additionalProperties: false,
+          properties: {
+            edition_num_id: { type: 'integer' },
+            target_vacants: { type: ['integer', 'null'], default: 0 },
+            target_revenue: { type: ['number', 'null'], default: 0 }
+          }
+        }
+      }
+    }
+  }
+}
+
 export const leadsPerEditionSchema = {
   body: {
     type: 'object',

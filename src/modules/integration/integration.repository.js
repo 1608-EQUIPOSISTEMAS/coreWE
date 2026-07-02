@@ -85,6 +85,18 @@ export const EXCLUDE_IMPORTED = `
 // Token que el note de la importacion masiva debe contener para ser excluido.
 export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
 
+// Corte temporal del sync FICO -> Sheets: solo ventas desde esta fecha.
+// La familia entera (padre + hijas) se corta por la fecha del PADRE: una hija
+// registrada despues del corte pero con padre anterior tampoco se sube, para
+// que padre e hijas aparezcan o desaparezcan juntos.
+export const SYNC_FROM_DATE = '2026-04-28'
+export const SYNC_FROM = `
+         AND COALESCE(
+               (SELECT p.registration_date FROM public.enrollments p
+                 WHERE p.enrollment_id = e.parent_enrollment_id),
+               e.registration_date
+             )::date >= DATE '${SYNC_FROM_DATE}'`
+
 export class IntegrationRepository {
   constructor (db = pool) {
     this.db = db
@@ -203,6 +215,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
          ${EXCLUDE_IMPORTED}
+         ${SYNC_FROM}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
     -- Se usa como fallback cuando el lead no tiene cat_client_moment asignado:
@@ -368,6 +381,7 @@ export class IntegrationRepository {
            OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          )
          ${EXCLUDE_IMPORTED}
+         ${SYNC_FROM}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
     -- contra public.consolidated cuando el lead no lo tiene asignado.
@@ -500,6 +514,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
          ${EXCLUDE_IMPORTED}
+         ${SYNC_FROM}
     )
     SELECT
       pv.version_code AS cod,
@@ -725,6 +740,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          AND e.parent_enrollment_id IS NULL
          ${EXCLUDE_IMPORTED}
+         ${SYNC_FROM}
     )
     SELECT
       e.enrollment_id,

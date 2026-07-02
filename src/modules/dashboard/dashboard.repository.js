@@ -44,6 +44,28 @@ export class DashboardRepository {
     return rows
   }
 
+  // Upsert masivo de metas por edición (UNIQUE en edition_num_id).
+  async saveProgramGoals ({ goals, userId }) {
+    const sql = `
+      INSERT INTO public.program_edition_goals
+        (edition_num_id, vacant_goal, revenue_goal, user_registration_id)
+      SELECT * FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[])
+      ON CONFLICT (edition_num_id) DO UPDATE SET
+        vacant_goal = EXCLUDED.vacant_goal,
+        revenue_goal = EXCLUDED.revenue_goal,
+        user_modification_id = EXCLUDED.user_registration_id,
+        modification_date = now()
+    `
+    const params = [
+      goals.map(g => g.edition_num_id),
+      goals.map(g => g.target_vacants ?? 0),
+      goals.map(g => g.target_revenue ?? 0),
+      goals.map(() => userId)
+    ]
+    const { rowCount } = await this.db.query(sql, params)
+    return { saved: rowCount }
+  }
+
   async registerTarget (target) {
     const sql = `
       INSERT INTO public.sales_targets
