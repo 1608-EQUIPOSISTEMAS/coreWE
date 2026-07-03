@@ -86,16 +86,25 @@ export const EXCLUDE_IMPORTED = `
 export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
 
 // Corte temporal del sync FICO -> Sheets: solo ventas desde esta fecha.
-// La familia entera (padre + hijas) se corta por la fecha del PADRE: una hija
-// registrada despues del corte pero con padre anterior tampoco se sube, para
-// que padre e hijas aparezcan o desaparezcan juntos.
+// El corte usa la MISMA fecha efectiva que la columna F. PAGO de las hojas
+// (lead.pay_date -> primer pago -> fecha de registro), no registration_date:
+// hay ventas viejas registradas en el sistema meses despues y filtrarlas por
+// registro las dejaba pasar. La familia entera (padre + hijas) se corta por la
+// fecha del PADRE para que aparezcan o desaparezcan juntos.
 export const SYNC_FROM_DATE = '2026-04-28'
 export const SYNC_FROM = `
-         AND COALESCE(
-               (SELECT p.registration_date FROM public.enrollments p
-                 WHERE p.enrollment_id = e.parent_enrollment_id),
-               e.registration_date
-             )::date >= DATE '${SYNC_FROM_DATE}'`
+         AND (
+           SELECT COALESCE(
+                    (SELECT lf.pay_date FROM public.leads lf
+                      WHERE lf.enrollment_id = fam.enrollment_id LIMIT 1),
+                    (SELECT py.payment_date::date FROM public.payments py
+                      WHERE py.enrollment_id = fam.enrollment_id AND py.active = 'Y'
+                      ORDER BY py.payment_date ASC LIMIT 1),
+                    fam.registration_date::date
+                  )
+             FROM public.enrollments fam
+            WHERE fam.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+         ) >= DATE '${SYNC_FROM_DATE}'`
 
 export class IntegrationRepository {
   constructor (db = pool) {

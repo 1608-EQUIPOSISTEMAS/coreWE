@@ -74,6 +74,22 @@ export const rescheduleInstallmentsSchema = {
   }
 }
 
+export const collectionsSchema = {
+  body: {
+    type: 'object',
+    required: ['year', 'month'],
+    additionalProperties: true,
+    properties: {
+      year: { type: 'integer', minimum: 2000 },
+      month: { type: 'integer', minimum: 1, maximum: 12 },
+      day: { type: ['integer', 'null'], minimum: 1, maximum: 31 },
+      q: { type: ['string', 'null'] },
+      state: { type: 'string', enum: ['all', 'overdue', 'today', 'upcoming'] },
+      advisor_ids: { type: 'array', items: { type: 'integer' } }
+    }
+  }
+}
+
 export const syncInstallmentPaymentSchema = {
   body: {
     type: 'object',

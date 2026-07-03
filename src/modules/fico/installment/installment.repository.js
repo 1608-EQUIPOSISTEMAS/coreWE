@@ -273,6 +273,79 @@ export class InstallmentRepository {
     return result
   }
 
+  // Cuotas pendientes con vencimiento en el mes para el modulo Cobranzas.
+  // Trae TODAS las del mes (vencidas / hoy / por vencer): el usecase calcula
+  // los KPIs de los tres grupos y recien despues filtra por estado. 'Hoy' se
+  // resuelve en fecha de Lima para no correr el corte 5h con el UTC del server.
+  async listCollections ({ year, month, day = null, q = null, advisorIds = [] }) {
+    const params = [year, month]
+    const extra = []
+    if (day) {
+      params.push(day)
+      extra.push(`AND EXTRACT(DAY FROM pi.due_date)::int = $${params.length}`)
+    }
+    if (q) {
+      params.push(`%${q}%`)
+      const p = `$${params.length}`
+      extra.push(`AND (
+        TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) ILIKE ${p}
+        OR per.document_number ILIKE ${p}
+        OR ${STUDENT_EMAIL_SQL} ILIKE ${p}
+      )`)
+    }
+    if (advisorIds.length) {
+      params.push(advisorIds)
+      extra.push(`AND e.seller_agent_id = ANY($${params.length}::int[])`)
+    }
+
+    const { rows } = await this.db.query(`
+      SELECT
+        pi.installment_id,
+        pi.enrollment_id,
+        pi.installment_number,
+        pi.amount,
+        to_char(pi.due_date, 'YYYY-MM-DD') AS due_date,
+        (pi.due_date - (now() AT TIME ZONE 'America/Lima')::date)::int AS days_to_due,
+        CASE
+          WHEN pi.due_date < (now() AT TIME ZONE 'America/Lima')::date THEN 'overdue'
+          WHEN pi.due_date = (now() AT TIME ZONE 'America/Lima')::date THEN 'today'
+          ELSE 'upcoming'
+        END AS state_label,
+        TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS student_full_name,
+        per.document_number,
+        ${STUDENT_EMAIL_SQL} AS email,
+        prog.program_name,
+        COALESCE(pe.global_code, '') AS edition_code,
+        u.alias AS seller_agent_name
+      FROM payment_installments pi
+      JOIN catalog cs ON cs.catalog_id = pi.cat_status
+      JOIN enrollments e ON e.enrollment_id = pi.enrollment_id
+      JOIN catalog cf ON cf.catalog_id = e.cat_fico_status
+      JOIN customers cust ON cust.customer_id = e.customer_id
+      JOIN persons per ON per.person_id = cust.person_id
+      LEFT JOIN LATERAL (
+        SELECT lx.origin_email FROM leads lx
+         WHERE lx.enrollment_id = e.enrollment_id LIMIT 1
+      ) l ON TRUE
+      LEFT JOIN users u ON u.user_id = e.seller_agent_id
+      LEFT JOIN program_versions ver ON ver.program_version_id = e.program_version_id
+      LEFT JOIN programs prog ON prog.program_id = ver.program_id
+      LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
+      LEFT JOIN catalog cst ON cst.catalog_id = e.cat_type_status
+      WHERE e.active = 'Y'
+        AND cf.alias = 'we_enrollment_status_checked'
+        AND COALESCE(cst.alias, '') NOT IN
+            ('we_enrollment_status_retired', 'we_enrollment_status_reprogrammed', 'we_enrollment_status_course_changed')
+        AND pi.installment_number > 0
+        AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+        AND EXTRACT(YEAR FROM pi.due_date)::int = $1
+        AND EXTRACT(MONTH FROM pi.due_date)::int = $2
+        ${extra.join('\n        ')}
+      ORDER BY pi.due_date ASC, pi.enrollment_id
+    `, params)
+    return rows || []
+  }
+
   // Inserta una fila en la bitacora de auditoria de la inscripcion. Best-effort:
   // un fallo de auditoria no revierte la operacion principal.
   async logAudit ({ enrollmentId, action, userId, justificacion = null, changes = null, details = null }) {

@@ -233,3 +233,28 @@ export async function rescheduleInstallments ({ enrollmentId, changes, justifica
 export async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }) {
   return repo.syncInstallmentPaymentToOdoo({ enrollmentId, installmentNumber })
 }
+
+// Vista Cobranzas: cuotas pendientes con vencimiento en el mes pedido.
+// Los KPIs se calculan sobre todo el mes (respetando q/dia/asesor) para que
+// las pestañas del front muestren los conteos de los tres grupos aunque la
+// tabla este filtrada por uno solo.
+export async function getCollections ({ year, month, day = null, q = null, state = 'all', advisor_ids = [] } = {}) {
+  const rows = await repo.listCollections({ year, month, day, q, advisorIds: advisor_ids })
+
+  const kpis = {
+    total_count: 0, total_amount: 0,
+    overdue_count: 0, overdue_amount: 0,
+    today_count: 0, today_amount: 0,
+    upcoming_count: 0, upcoming_amount: 0
+  }
+  for (const r of rows) {
+    const amt = Number(r.amount) || 0
+    kpis.total_count++
+    kpis.total_amount += amt
+    kpis[`${r.state_label}_count`]++
+    kpis[`${r.state_label}_amount`] += amt
+  }
+
+  const items = state === 'all' ? rows : rows.filter(r => r.state_label === state)
+  return { items, kpis }
+}

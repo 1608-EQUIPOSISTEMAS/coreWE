@@ -11,6 +11,15 @@ export const pool = new pg.Pool({
   max: Number(process.env.PG_POOL_MAX ?? 20),
   idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT ?? 30000),
   connectionTimeoutMillis: Number(process.env.PG_CONN_TIMEOUT ?? 10000),
+  // TCP keepalive: sin esto, un corte de red deja sockets muertos en el pool
+  // y el proceso recien se entera al usarlos (timeouts de 10s en cascada).
+  keepAlive: true,
+});
+
+// Un socket idle del pool que muere (red inestable hacia el VPS) emite 'error';
+// sin este handler el evento queda sin escuchar y TUMBA el proceso Node entero.
+pool.on('error', (err) => {
+  console.error('[pg-pool] Conexion idle perdida (se repondra sola):', err.message);
 });
 
 // Opcional: setea cosas por sesión (timezone, app name, etc.)
