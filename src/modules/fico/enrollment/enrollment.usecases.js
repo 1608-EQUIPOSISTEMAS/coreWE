@@ -643,10 +643,11 @@ export async function editStudent ({ enrollmentId, firstName, lastName, document
       if (changes['Telefono']) { updFields.push(`origin_phone = $${idx++}`); updValues.push(originPhone) }
       updValues.push(current.lead_id)
       await repo.updateLeadContact(current.lead_id, updFields, updValues)
-    } else {
-      if (changes['Email']) await repo.updatePersonContactEmail(current.person_id, originEmail)
-      if (changes['Telefono']) await repo.updatePersonContactPhone(current.person_id, originPhone)
     }
+    // person_contacts es la fuente de aulas/cronograma: mantener en espejo
+    // aunque el contacto "oficial" viva en el lead.
+    if (changes['Email']) await repo.updatePersonContactEmail(current.person_id, originEmail)
+    if (changes['Telefono']) await repo.updatePersonContactPhone(current.person_id, originPhone)
   }
 
   if (changes['Perfil'] || changes['Correo Odoo']) {

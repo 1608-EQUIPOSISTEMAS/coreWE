@@ -18,8 +18,9 @@ export const importerPorts = {
   // de todas las ediciones activas. La hoja FICO lo indexa una vez por archivo y
   // resuelve la columna ED en memoria (en vez de 1 query por fila).
   listActiveEditions: null,
-  // () -> [{ program_version_id, abbreviation }] de programas-membresia. La hoja
-  // FICO lo usa para crear la inscripcion de membresia segun la columna J.
+  // () -> [{ program_version_id, program_id, abbreviation }] de programas-membresia.
+  // La hoja FICO lo usa para crear la inscripcion de membresia segun la columna J
+  // y para persistir el tier (enrollments.membership_program_id) en el curso.
   listMembershipVersions: null,
   // () -> [{ user_id, alias }] de asesores. La hoja FICO resuelve la columna AS
   // (codigo de agente) a seller_agent_id.

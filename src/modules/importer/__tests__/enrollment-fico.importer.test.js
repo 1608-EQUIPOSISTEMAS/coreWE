@@ -35,7 +35,10 @@ const ctx = {
   },
   programVersions: [{ program_version_id: 42, version_code: 'IA-CZ-03' }],
   editionsByCode: new Map([['ia-cz-03|e31', { program_edition_id: 500, program_version_id: 42 }]]),
-  membershipByName: new Map([['we black', 900], ['we gold', 901]]),
+  membershipByName: new Map([
+    ['we black', { version_id: 900, program_id: 167 }],
+    ['we gold', { version_id: 901, program_id: 169 }]
+  ]),
   agentsByAlias: new Map([['ae30', 7], ['jp39', 8]]),
   // edicion 500 es padre: aulas hijas 600 (curso 60) y 601 (curso 61).
   childEditionsByParent: new Map([[500, [{ edition_id: 600, version_id: 60 }, { edition_id: 601, version_id: 61 }]]]),

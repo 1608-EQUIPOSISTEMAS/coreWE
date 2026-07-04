@@ -355,7 +355,7 @@ export class EnrollmentRepository {
   // (tier), crear la inscripcion de membresia que marca a la persona como miembro.
   async listMembershipVersions () {
     const { rows } = await this.db.query(`
-      SELECT pv.program_version_id, pv.abbreviation
+      SELECT pv.program_version_id, pv.program_id, pv.abbreviation
       FROM program_versions pv
       JOIN programs p ON p.program_id = pv.program_id
       WHERE p.is_membership = true AND pv.active = 'Y'

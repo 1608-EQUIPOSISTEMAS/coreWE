@@ -298,7 +298,11 @@ export class IntegrationRepository {
         ELSE 'NEW'
       END                                                  AS tipo_cliente,
       'ACT'                                                AS estado_alumno,
-      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS membresia,
+      -- MEMBRESIA: la propia venta de membresia muestra su abreviatura (WE BLACK...);
+      -- los cursos comprados bajo membresia muestran el tier normalizado del enrollment.
+      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '')
+           ELSE COALESCE(mtier.abbreviation, '')
+      END                                                  AS membresia,
       CASE WHEN c_mod.alias = 'we_insc_modality_flexible' THEN 'FLEX' ELSE '' END AS flex
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
@@ -313,6 +317,13 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" c_plan    ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_mod     ON c_mod.catalog_id  = e.cat_inscription_modality
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
+    LEFT JOIN LATERAL (
+      SELECT pv_m.abbreviation
+        FROM public.program_versions pv_m
+       WHERE pv_m.program_id = e.membership_program_id AND pv_m.active = 'Y'
+       ORDER BY pv_m.program_version_id DESC
+       LIMIT 1
+    ) mtier ON TRUE
     LEFT JOIN LATERAL (
       SELECT COALESCE(
         l.origin_phone,
@@ -447,7 +458,11 @@ export class IntegrationRepository {
         WHEN hist.phone IS NOT NULL THEN 'LDS'
         ELSE 'NEW'
       END                                                  AS tipo_cliente,
-      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '') ELSE '' END AS es_member
+      -- ES MEMBER: mismo criterio que la hoja de ventas; los hijos de paquete
+      -- heredan el tier del padre (el hijo no repite membership_program_id).
+      CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '')
+           ELSE COALESCE(mtier.abbreviation, '')
+      END AS es_member
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -462,6 +477,14 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" c_moment  ON c_moment.catalog_id = l.cat_client_moment
     LEFT JOIN public.enrollments e_parent ON e_parent.enrollment_id = e.parent_enrollment_id
     LEFT JOIN public.program_versions pv_parent ON pv_parent.program_version_id = e_parent.program_version_id
+    LEFT JOIN LATERAL (
+      SELECT pv_m.abbreviation
+        FROM public.program_versions pv_m
+       WHERE pv_m.program_id = COALESCE(e.membership_program_id, e_parent.membership_program_id)
+         AND pv_m.active = 'Y'
+       ORDER BY pv_m.program_version_id DESC
+       LIMIT 1
+    ) mtier ON TRUE
     LEFT JOIN LATERAL (
       SELECT COALESCE(
         l.origin_phone,

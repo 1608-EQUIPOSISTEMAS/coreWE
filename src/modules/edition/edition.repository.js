@@ -388,6 +388,14 @@ export class EditionRepository {
            -- Membresia del alumno (persona) en ventas FICO: tier vigente y flag.
            mem.tier_name                                AS membership_tier_name,
            (mem.tier_name IS NOT NULL)                  AS membership_active,
+           -- Promo LAPTOP: el descuento vive en el enrollment vendido (padre si
+           -- es hijo de paquete). Mismo criterio que la etiqueta del panel FICO.
+           EXISTS (
+             SELECT 1 FROM public.enrollment_discounts edx
+               JOIN public.discounts dx ON dx.discount_id = edx.discount_id
+              WHERE edx.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+                AND dx.description ILIKE '%laptop%'
+           )                                            AS has_laptop_promo,
            fin.fin_total,
            fin.fin_paid,
            fin.fin_overdue
@@ -490,12 +498,12 @@ export class EditionRepository {
                WHERE c.parent_enrollment_id = e.enrollment_id
             )
        )
-     ORDER BY per.last_name, per.first_name
+     ORDER BY per.last_name, per.first_name, e.enrollment_id
   `, [id])
     // platform_user: misma resolucion que el panel FICO (getEnrollmentFlags):
     // odoo_email guardado > sintetizado apellido.nombre@dominio si existe
     // cuenta Odoo (odoo_user_id) > correo de contacto registrado.
-    return rows.map((r) => {
+    const students = rows.map((r) => {
       const { odoo_email_stored, odoo_user_id, ...rest } = r
       let platformUser = (odoo_email_stored || '').trim() || null
       if (!platformUser && odoo_user_id) {
@@ -504,6 +512,20 @@ export class EditionRepository {
       }
       return { ...rest, platform_user: platformUser || r.email || null }
     })
+    // Una misma persona puede caer dos veces en el aula como hijo de dos
+    // paquetes distintos (p.ej. DIP y ESP de Finanzas comparten el curso):
+    // se muestra una sola fila y todos sus codigos padre en parent_codes.
+    const byPerson = new Map()
+    for (const s of students) {
+      const prev = byPerson.get(s.person_id)
+      if (!prev) {
+        s.parent_codes = s.parent_code ? [s.parent_code] : []
+        byPerson.set(s.person_id, s)
+      } else if (s.parent_code && !prev.parent_codes.includes(s.parent_code)) {
+        prev.parent_codes.push(s.parent_code)
+      }
+    }
+    return [...byPerson.values()]
   }
 
   // Historial del aula: alumnos que estuvieron matriculados en esta edicion pero

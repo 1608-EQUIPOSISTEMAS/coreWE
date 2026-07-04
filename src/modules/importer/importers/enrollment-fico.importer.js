@@ -173,8 +173,11 @@ async function resolveRow (raw, ctx, installments = []) {
   const isScholarship = !isMembershipBenefit &&
     (normText(raw.scholarship).includes('beca') || (Number(raw.total_amount) || 0) <= 0)
   let membershipVersionId = null
+  let membershipProgramId = null
   if (isMembershipBenefit) {
-    membershipVersionId = (ctx?.membershipByName || new Map()).get(normText(memberType)) || null
+    const tier = (ctx?.membershipByName || new Map()).get(normText(memberType)) || null
+    membershipVersionId = tier?.version_id || null
+    membershipProgramId = tier?.program_id || null
     if (!membershipVersionId) {
       errors.push(`Membresia "${memberType}" (columna J) no coincide con ningun programa de membresia (WE BLACK/GOLD/PLAT/PLUS).`)
     }
@@ -199,6 +202,8 @@ async function resolveRow (raw, ctx, installments = []) {
     is_membership_benefit: isMembershipBenefit,
     member_type: isMembershipBenefit ? memberType : null,
     membership_version_id: membershipVersionId, // version del programa-membresia
+    // Tier normalizado en el curso (columna MEMBRESIA del sheet lo lee de aqui).
+    membership_program_id: membershipProgramId,
     // OCUP -> perfil de cliente (determinista, sin catalogo).
     client_profile: profileFromOcup(raw.ocup)
   }
@@ -653,7 +658,7 @@ async function loadContext () {
     catalog,
     programVersions: versionsPage?.items ?? [],
     editionsByCode: indexEditions(editions),
-    // tier normalizado (WE BLACK/GOLD/...) -> program_version_id de la membresia.
+    // tier normalizado (WE BLACK/GOLD/...) -> { version_id, program_id } de la membresia.
     membershipByName: indexMemberships(memberships),
     // alias normalizado (codigo agente) -> user_id.
     agentsByAlias: indexAgents(agents),
@@ -691,7 +696,7 @@ function indexMemberships (memberships = []) {
   const map = new Map()
   for (const m of memberships) {
     const key = normText(m.abbreviation)
-    if (key) map.set(key, Number(m.program_version_id))
+    if (key) map.set(key, { version_id: Number(m.program_version_id), program_id: Number(m.program_id) })
   }
   return map
 }
