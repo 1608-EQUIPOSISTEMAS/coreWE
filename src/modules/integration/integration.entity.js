@@ -106,6 +106,53 @@ export function buildCuotasHeaderRow (MAX_CUOTAS) {
   return headers
 }
 
+// Cabeceras de la hoja "CONT SISTEMAS" (cronograma con contadores por canal).
+// Mismos titulos que la hoja manual de control, saltos de linea incluidos.
+export const CRONOGRAMA_HEADER_ROW = [
+  'CATEG', 'COD', 'PROGRAMA', 'ED.',
+  'CUR1', 'INI CUR1', 'CUR2', 'INI CUR2', 'CUR3', 'INI CUR3',
+  'CUR4', 'INI CUR4', 'CUR5', 'INI CUR5',
+  'F INICIO', 'COD_C1', 'CURSO',
+  'AULA\n(contempla becados, memb, b2b)',
+  'B2B', 'BECAS', 'MEMB',
+  'PRG  NETO \n(no becados)',
+  'SEGUIMIENTO NETO\n (no becados)',
+  'AULA NUEVA\n(PRG NETO + SEG NETO)',
+  'RP'
+]
+
+// Mapea una edicion del cronograma + sus metricas por canal a las 25 columnas
+// A..Y de "CONT SISTEMAS". `m` viene de classroomChannelMetricsList (puede ser
+// undefined si la edicion no tiene inscritos). La columna CURSO va fija en 0
+// (confirmado con negocio: no se usa). AULA = headcount del salon incluyendo
+// becados (cnt_total); AULA NUEVA = total comercial sin becas.
+export function buildCronogramaRow (r, m) {
+  const cursos = r.cursos || {}
+  const slots = []
+  for (let i = 1; i <= 5; i++) {
+    const c = cursos[String(i)]
+    slots.push(c?.name || '', c?.ini || '')
+  }
+  const ventas = m?.cnt_ventas ?? 0
+  const segui = m?.cnt_segui ?? 0
+  const memb = m?.cnt_memb ?? 0
+  const b2b = m?.cnt_b2b ?? 0
+  return [
+    r.categ || '', r.cod || '', r.programa || '', r.ed || '',
+    ...slots,
+    r.f_inicio || '', r.cod || '',
+    0,                        // CURSO: fijo en 0
+    m?.cnt_total ?? 0,        // AULA (contempla becados, memb, b2b)
+    b2b,
+    m?.cnt_becas ?? 0,
+    memb,
+    ventas,                   // PRG NETO
+    segui,                    // SEGUIMIENTO NETO
+    ventas + segui + memb + b2b, // AULA NUEVA
+    r.cnt_rp ?? 0
+  ]
+}
+
 // Construye el array blocks[] de Slack para la notificacion de un pago web.
 // Logica de presentacion sin I/O: recibe la fila ya consultada y la lista de
 // adjuntos del lead.

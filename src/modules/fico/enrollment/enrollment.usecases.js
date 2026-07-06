@@ -690,7 +690,11 @@ export async function enrollmentUpdate ({ enrollmentId, fields, justificacion, u
   const oldE = await repo.getEnrollmentCurrency(enrollmentId)
   const oldP = await repo.getInitialPayment(enrollmentId)
 
-  const enrollmentFields = ['cat_currency', 'notes']
+  // 'notes' NO se acepta aqui: el modal de edicion no lo edita, solo lo re-enviaba
+  // (siempre null porque sp_fico_payment_detail_get no lo devuelve) y borraba el
+  // marcador 'Importacion masiva FICO' del que depende EXCLUDE_IMPORTED en el
+  // sync a Google Sheets (las importaciones aparecian como ventas).
+  const enrollmentFields = ['cat_currency']
   const eSets = []
   const eParams = []
   let eIdx = 1

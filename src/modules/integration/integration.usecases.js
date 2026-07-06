@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { integrationRepository } from './integration.repository.js'
+import { editionRepository } from '../edition/edition.repository.js'
 import {
   serializeSheetRow,
   buildSalesRow,
@@ -8,6 +9,8 @@ import {
   buildConsolidadoRow,
   buildCuotasRow,
   buildCuotasHeaderRow,
+  buildCronogramaRow,
+  CRONOGRAMA_HEADER_ROW,
   buildSlackEnrollmentBlocks
 } from './integration.entity.js'
 
@@ -235,7 +238,30 @@ export async function syncFicoCuotasToSheet () {
   }
 }
 
-// Sincroniza las 4 hojas FICO en serie (fail-fast, igual que el legacy): si una
+// FICO -> hoja "CONT SISTEMAS". Cronograma: una fila por edicion (desde jun-2025)
+// con sus cursos hijos (CUR1..CUR5 por slot del curriculum) y los contadores por
+// canal del cronograma (classroomChannelMetricsList, reglas confirmadas con
+// negocio). Data fija, sin formulas. Crea la hoja con headers si no existe.
+export async function syncFicoCronogramaToSheet () {
+  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SHEET_NAME = 'CONT SISTEMAS'
+
+  const rows = await repo.getFicoCronograma()
+  const ids = rows.map(r => Number(r.edition_num_id))
+  const metrics = ids.length ? await editionRepository.classroomChannelMetricsList(ids) : []
+  const byId = new Map(metrics.map(m => [Number(m.edition_num_id), m]))
+
+  const values = rows.map(r => buildCronogramaRow(r, byId.get(Number(r.edition_num_id))))
+
+  const created = await repo.ensureAndWrite(
+    SPREADSHEET_ID, SHEET_NAME, CRONOGRAMA_HEADER_ROW,
+    `'${SHEET_NAME}'!A2:Y`, `'${SHEET_NAME}'!A2`, values
+  )
+
+  return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
+// Sincroniza las 5 hojas FICO en serie (fail-fast, igual que el legacy): si una
 // falla, las siguientes no corren. Replica el comportamiento del boton
 // "Sincronizar ventas" del frontend.
 export async function syncFicoToSheets () {
@@ -243,7 +269,8 @@ export async function syncFicoToSheets () {
   const aula = await syncFicoAulaToSheet()
   const consolidado = await syncFicoConsolidadoToSheet()
   const cuotas = await syncFicoCuotasToSheet()
-  return { ventas, aula, consolidado, cuotas }
+  const cronograma = await syncFicoCronogramaToSheet()
+  return { ventas, aula, consolidado, cuotas, cronograma }
 }
 
 // Publica un reporte (titulo + texto + adjuntos) en Slack. Resuelve los adjuntos

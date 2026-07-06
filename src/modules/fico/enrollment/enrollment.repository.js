@@ -1169,14 +1169,22 @@ export class EnrollmentRepository {
   // a la cuota inicial. No cuenta como pagado; lo reemplaza la fila definitiva
   // cuando FICO confirma el pago real.
   async insertPrePaymentPlaceholder ({ enrollmentId, fields, userId }) {
+    // Cuota inicial = numero 0 (plan en cuotas). El contado no tiene cuota 0:
+    // el SP register_direct crea UNA sola cuota numero 1, asi que si no hay 0
+    // y la inscripcion tiene una unica cuota, el pago inicial cuelga de esa.
+    // Antes este metodo retornaba sin hacer nada en ese caso y la edicion de
+    // pago de un contado sin payment previo (tipico de importaciones) se
+    // perdia en silencio aunque el historial la registraba.
     const { rows: instRows } = await this.db.query(
-      `SELECT installment_id, amount FROM payment_installments
-        WHERE enrollment_id = $1 AND installment_number = 0
-        LIMIT 1`,
+      `SELECT installment_id, installment_number, amount FROM payment_installments
+        WHERE enrollment_id = $1
+        ORDER BY installment_number ASC
+        LIMIT 2`,
       [enrollmentId]
     )
     const inst = instRows?.[0]
-    if (!inst) return
+    const isInitial = inst && (Number(inst.installment_number) === 0 || instRows.length === 1)
+    if (!isInitial) return
 
     const [typeId, statusId] = await Promise.all([
       getCatalogIdByAlias(ALIAS.PAYMENT_TYPE_INITIAL),

@@ -901,6 +901,75 @@ export class IntegrationRepository {
     return rows || []
   }
 
+  // Cronograma para la hoja "CONT SISTEMAS": una fila por edicion activa desde
+  // jun-2025. Los CUR1..CUR5 son las ediciones hijas colocadas en el SLOT que su
+  // curso ocupa en el curriculum del programa (program_version_structure), igual
+  // que la hoja manual: un diplomado con solo el modulo 4 programado llena CUR4 y
+  // deja CUR1-3 vacios. Los contadores comerciales (ventas/segui/memb/b2b/becas)
+  // NO se calculan aqui: el usecase los pega desde classroomChannelMetricsList
+  // (modulo edition), que es la fuente confirmada con negocio del cronograma.
+  async getFicoCronograma () {
+    const { rows } = await this.db.query(`
+    WITH struct AS (
+      -- posicion (1..N) de cada curso dentro del curriculum de su programa padre
+      SELECT parent_program_version_id,
+             child_program_version_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY parent_program_version_id
+               ORDER BY sort_order, child_program_version_id
+             ) AS slot
+        FROM public.program_version_structure
+    ),
+    kids AS (
+      SELECT es.parent_edition_id,
+             jsonb_object_agg(
+               st.slot::text,
+               jsonb_build_object(
+                 'name', pv_ch.abbreviation,
+                 'ini',  to_char(ch.start_date, 'DD/MM/YYYY')
+               )
+             ) AS cursos
+        FROM public.edition_structure es
+        JOIN public.program_editions ch    ON ch.edition_num_id = es.child_edition_id AND ch.active = 'Y'
+        JOIN public.program_versions pv_ch ON pv_ch.program_version_id = ch.program_version_id
+        JOIN public.program_editions pep   ON pep.edition_num_id = es.parent_edition_id
+        JOIN struct st ON st.parent_program_version_id = pep.program_version_id
+                      AND st.child_program_version_id  = ch.program_version_id
+       WHERE st.slot <= 5
+       GROUP BY es.parent_edition_id
+    ),
+    rp AS (
+      -- alumnos que DEJARON la edicion por reprogramacion (el RP queda en la
+      -- edicion origen; su venta vive en el ACT destino).
+      SELECT e.program_edition_id AS edition_num_id, COUNT(*)::int AS cnt_rp
+        FROM public.enrollments e
+        JOIN public."catalog" cf  ON cf.catalog_id  = e.cat_fico_status AND cf.alias  = 'we_enrollment_status_checked'
+        JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status AND cts.alias = 'we_enrollment_status_reprogrammed'
+       WHERE e.active = 'Y'
+       GROUP BY e.program_edition_id
+    )
+    SELECT
+      pe.edition_num_id,
+      COALESCE(ctp.description, '')            AS categ,
+      COALESCE(pv.version_code, '')            AS cod,
+      COALESCE(pv.abbreviation, '')            AS programa,
+      COALESCE(pe.global_code, '')             AS ed,
+      to_char(pe.start_date, 'DD/MM/YYYY')     AS f_inicio,
+      COALESCE(k.cursos, '{}'::jsonb)          AS cursos,
+      COALESCE(rp.cnt_rp, 0)                   AS cnt_rp
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs p          ON p.program_id = pv.program_id
+      LEFT JOIN public."catalog" ctp  ON ctp.catalog_id = p.cat_type_program
+      LEFT JOIN kids k  ON k.parent_edition_id = pe.edition_num_id
+      LEFT JOIN rp      ON rp.edition_num_id = pe.edition_num_id
+     WHERE pe.active = 'Y'
+       AND pe.start_date >= DATE '2025-06-01'
+     ORDER BY pe.start_date, pv.version_code, pe.edition_num_id
+  `)
+    return rows || []
+  }
+
   // ── Escrituras en Google Sheets ────────────────────────────────────────
 
   // Limpia un rango y escribe valores desde una celda de inicio. El clear es
