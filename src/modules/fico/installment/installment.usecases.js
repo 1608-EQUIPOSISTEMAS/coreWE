@@ -90,6 +90,48 @@ export async function confirmInstallment ({ installmentId, enrollmentId, catCurr
   }
 }
 
+// Pago adicional de becado (certificado): registra el pago suelto (sin cuota),
+// promueve enrollments.cat_certificate_status a "Pagado e incluido" (la
+// etiqueta "Certificar" del panel) y audita. Sin correo ni sync Odoo: el
+// certificado no es parte del plan de pagos del programa.
+export async function registerAdditionalPayment ({ enrollmentId, amount, catCurrency, catPaymentMedium, bankAccountId, transactionCode, voucherUrl, paymentDate, userId }) {
+  const amt = Number(amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new DomainError('Monto invalido')
+
+  const enrollment = await repo.findActiveEnrollment(enrollmentId)
+  if (!enrollment) throw new DomainError('Inscripcion no encontrada')
+
+  const catPaymentType = await repo.findCatalogIdByAlias('we_payment_type_certificate')
+  if (!catPaymentType) throw new DomainError('Catalogo we_payment_type_certificate no encontrado')
+  const certPaidCatalogId = await repo.findCatalogIdByAlias('we_certificate_status_paid')
+  if (!certPaidCatalogId) throw new DomainError('Catalogo we_certificate_status_paid no encontrado')
+
+  const paidAt = paymentDate ? new Date(paymentDate) : new Date()
+
+  await repo.registerAdditionalPaymentTx({
+    enrollmentId,
+    amount: amt,
+    paidAt,
+    transactionCode,
+    catPaymentMedium,
+    bankAccountId,
+    voucherUrl,
+    catCurrency,
+    catPaymentType,
+    certPaidCatalogId,
+    userId
+  })
+
+  await repo.logAudit({
+    enrollmentId,
+    action: 'additional_payment',
+    userId,
+    details: `Pago adicional (certificado) registrado: ${fmtMoney(amt)}. Certificado habilitado.`
+  })
+
+  return { result: 1, message: 'Pago adicional registrado' }
+}
+
 // Edita el monto de UNA cuota pendiente. Audita old -> new con justificacion.
 export async function editInstallmentAmount ({ enrollmentId, installmentId, newAmount, justificacion, userId }) {
   if (!justificacion || !justificacion.trim()) throw new DomainError('Justificacion obligatoria')

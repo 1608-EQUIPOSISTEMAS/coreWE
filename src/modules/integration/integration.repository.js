@@ -388,6 +388,52 @@ export class IntegrationRepository {
     return rows || []
   }
 
+  // Pagos adicionales (certificado de becado): filas de payments sin cuota
+  // asociada con tipo we_payment_type_certificate. Alimenta la hoja "Adicionales".
+  async getFicoAdicionales () {
+    const { rows } = await this.db.query(`
+    SELECT
+      COALESCE(pv.abbreviation, '')                        AS programa,
+      to_char(p.payment_date, 'DD/MM/YYYY')                AS f_pago,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
+      COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS celular,
+      COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )                                                    AS correo,
+      replace(to_char(p.amount, 'FM999990.00'), '.', ',')  AS monto,
+      COALESCE(NULLIF(c_curr.variable_3, ''), c_curr.description, '') AS tipo_moneda,
+      COALESCE(cm.description, '')                         AS medio_pago,
+      COALESCE(cb.description, '')                         AS entidad_empresa,
+      COALESCE(ba.bank_name, '')                           AS entidad_financiera,
+      COALESCE(p.transaction_code, '')                     AS n_operacion
+    FROM public.payments p
+    JOIN public.enrollments e   ON e.enrollment_id = p.enrollment_id AND e.active = 'Y'
+    JOIN public.customers cust  ON cust.customer_id = e.customer_id
+    JOIN public.persons per     ON per.person_id = cust.person_id
+    LEFT JOIN public.leads l              ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.program_versions pv  ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public."catalog" c_curr     ON c_curr.catalog_id = e.cat_currency
+    LEFT JOIN public."catalog" cm         ON cm.catalog_id = p.cat_method_payment
+    LEFT JOIN public.bank_accounts ba     ON ba.account_id = p.settled_in_account_id
+    LEFT JOIN public."catalog" cb         ON cb.catalog_id = ba.business_entity_catalog_id
+    WHERE p.active = 'Y'
+      AND p.installment_id IS NULL
+      AND p.cat_payment_type = (SELECT catalog_id FROM public."catalog" WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+    ORDER BY p.payment_date ASC, p.payment_id ASC
+  `)
+    return rows || []
+  }
+
   async getFicoAula () {
     const { rows } = await this.db.query(`
     WITH approved AS (

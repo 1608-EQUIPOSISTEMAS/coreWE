@@ -87,6 +87,14 @@ export async function paymentDetailGet ({ enrollment_id }) {
     } catch (err) {
       console.error('[paymentDetailGet] edition dates:', err.message)
     }
+    try {
+      const cert = await repo.paymentDetailCertificate(enrollment_id)
+      result.certificate_status_alias = cert.status?.certificate_status_alias || null
+      result.certificate_status_label = cert.status?.certificate_status_label || null
+      result.additional_payments = cert.additionalPayments
+    } catch (err) {
+      console.error('[paymentDetailGet] certificate:', err.message)
+    }
   }
   return toPaymentDetailDto(result)
 }

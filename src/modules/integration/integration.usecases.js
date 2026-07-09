@@ -5,6 +5,8 @@ import { editionRepository } from '../edition/edition.repository.js'
 import {
   serializeSheetRow,
   buildSalesRow,
+  buildAdicionalesRow,
+  ADICIONALES_HEADER_ROW,
   buildAulaRow,
   buildConsolidadoRow,
   buildCuotasRow,
@@ -261,7 +263,25 @@ export async function syncFicoCronogramaToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 5 hojas FICO en serie (fail-fast, igual que el legacy): si una
+// FICO -> hoja "Adicionales". Pagos de certificado de becados: 19 columnas A..S,
+// sobreescritura total desde A2 (igual que las demas hojas). Crea la hoja con
+// headers si no existe.
+export async function syncFicoAdicionalesToSheet () {
+  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SHEET_NAME = 'Adicionales'
+
+  const rows = await repo.getFicoAdicionales()
+  const values = rows.map(buildAdicionalesRow)
+
+  const created = await repo.ensureAndWrite(
+    SPREADSHEET_ID, SHEET_NAME, ADICIONALES_HEADER_ROW,
+    `'${SHEET_NAME}'!A2:S`, `'${SHEET_NAME}'!A2`, values
+  )
+
+  return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
+// Sincroniza las 6 hojas FICO en serie (fail-fast, igual que el legacy): si una
 // falla, las siguientes no corren. Replica el comportamiento del boton
 // "Sincronizar ventas" del frontend.
 export async function syncFicoToSheets () {
@@ -270,7 +290,8 @@ export async function syncFicoToSheets () {
   const consolidado = await syncFicoConsolidadoToSheet()
   const cuotas = await syncFicoCuotasToSheet()
   const cronograma = await syncFicoCronogramaToSheet()
-  return { ventas, aula, consolidado, cuotas, cronograma }
+  const adicionales = await syncFicoAdicionalesToSheet()
+  return { ventas, aula, consolidado, cuotas, cronograma, adicionales }
 }
 
 // Publica un reporte (titulo + texto + adjuntos) en Slack. Resuelve los adjuntos

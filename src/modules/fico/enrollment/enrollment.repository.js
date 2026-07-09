@@ -131,6 +131,35 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
+  // Estado del certificado + pagos adicionales (certificado de becado) para el
+  // panel de detalle. Los adicionales son filas de payments sin cuota asociada
+  // con tipo we_payment_type_certificate.
+  async paymentDetailCertificate (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT c.alias AS certificate_status_alias, c.description AS certificate_status_label
+        FROM enrollments e
+        LEFT JOIN public."catalog" c ON c.catalog_id = e.cat_certificate_status
+       WHERE e.enrollment_id = $1
+    `, [enrollmentId])
+    const status = rows?.[0] || null
+
+    const { rows: pays } = await this.db.query(`
+      SELECT p.payment_id, p.amount, p.payment_date, p.transaction_code, p.evidence_url,
+             cm.description AS payment_method,
+             cb.description AS business_entity,
+             ba.bank_name, ba.account_number
+        FROM payments p
+        LEFT JOIN public."catalog" cm ON cm.catalog_id = p.cat_method_payment
+        LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
+        LEFT JOIN public."catalog" cb ON cb.catalog_id = ba.business_entity_catalog_id
+       WHERE p.enrollment_id = $1 AND p.active = 'Y' AND p.installment_id IS NULL
+         AND p.cat_payment_type = (SELECT catalog_id FROM public."catalog" WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+       ORDER BY p.payment_id
+    `, [enrollmentId])
+
+    return { status, additionalPayments: pays || [] }
+  }
+
   // --- Registro directo + duplicados -------------------------------------
 
   async findDuplicate ({ programEditionId, doc, mail }) {

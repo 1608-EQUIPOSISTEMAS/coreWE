@@ -35,7 +35,8 @@ export const enrollmentListSchema = {
       modalities: { type: ['array', 'null'], items: { type: 'string' } },
       program_version_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       edition_num_ids: { type: ['array', 'null'], items: { type: 'integer' } },
-      payment_channels: { type: ['array', 'null'], items: { type: 'string' } }
+      payment_channels: { type: ['array', 'null'], items: { type: 'string' } },
+      only_scholarship: { type: ['boolean', 'null'] }
     }
   }
 }

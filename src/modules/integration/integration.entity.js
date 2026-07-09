@@ -28,6 +28,27 @@ export function buildSalesRow (r) {
   ]
 }
 
+// Hoja "Adicionales" (pagos de certificado de becados): 19 columnas A..S.
+// Fijas por regla de negocio: LINEA DE NEGOCIO='EN VIVO', ASUNTO='Cert. becas',
+// ESTADO='EFECTUADO', REALIZADO?=TRUE, TIPO PROGRAMA='ADICIONALES'.
+// LINEA DE PRODUCTO y TIPO DE PAGO quedan vacias (las gestionan a mano).
+export const ADICIONALES_HEADER_ROW = [
+  'N°', 'LÍNEA DE NEGOCIO', 'PROGRAMA', 'ASUNTO', 'F. PAGO',
+  'NOMBRES Y APELLIDOS', 'CELULAR', 'CORREO', 'ESTADO', 'REALIZADO?',
+  'MONTO', 'TIPO DE MONEDA', 'MEDIO DE PAGO', 'ENTIDAD EMPRESA',
+  'ENTIDAD FINANCIERA', 'N° OPERACIÓN', 'TIPO PROGRAMA', 'LÌNEA DE PRODUCTO', 'TIPO DE PAGO'
+]
+
+export function buildAdicionalesRow (r, idx) {
+  return [
+    String(idx + 1), 'EN VIVO', r.programa || '', 'Cert. becas',
+    r.f_pago || '', r.nombres || '', r.celular || '', r.correo || '',
+    'EFECTUADO', 'TRUE', r.monto || '', r.tipo_moneda || '',
+    r.medio_pago || '', r.entidad_empresa || '', r.entidad_financiera || '',
+    r.n_operacion || '', 'ADICIONALES', '', ''
+  ]
+}
+
 // Mapea un resultado de la query de aula FICO a las 16 columnas A..P.
 export function buildAulaRow (r) {
   return [

@@ -4,6 +4,12 @@
 -- inscripcion), pero si en enrollments.odoo_email. El SP ya hace LEFT JOIN a
 -- enrollments (alias e), asi que el campo esta disponible sin joins adicionales.
 -- Cambio aditivo: solo amplia las coincidencias, no altera ningun otro filtro.
+--
+-- Filtro only_scholarship (boolean): solo becados. Beca = el enrollment tiene
+-- aplicado un descuento cuya descripcion contiene "BECA" (p.ej. "GLOBAL/BECA
+-- 100%"), via enrollment_discounts -> discounts. Mismo patron que la deteccion
+-- de la promo LAPTOP en edition.repository.js. NO se usa total 0 como proxy:
+-- hay becados con certificado pendiente de pago y pagos-cero que no son beca.
 CREATE OR REPLACE PROCEDURE public.sp_fico_enrollment_list(IN _filters_text text DEFAULT '{}'::text, INOUT p_cur refcursor DEFAULT 'cur_default'::refcursor)
  LANGUAGE plpgsql
 AS $procedure$
@@ -103,7 +109,18 @@ BEGIN
         v."FC7"::TEXT AS fc7, v."C7"::TEXT AS c7,
         v."FC8"::TEXT AS fc8, v."C8"::TEXT AS c8,
         v."KEYORIGINAL"::TEXT           AS key_original,
-        COALESCE((SELECT COUNT(*) FROM enrollment_validations ev WHERE ev.enrollment_id = v."ID"::INT), 0)::INT AS validations_count
+        COALESCE((SELECT COUNT(*) FROM enrollment_validations ev WHERE ev.enrollment_id = v."ID"::INT), 0)::INT AS validations_count,
+        -- Becado con certificado ya pagado (etiqueta "Certificar"): pinta la fila
+        -- en el listado, mismo patron que has-laptop/has-claude.
+        (EXISTS (
+            SELECT 1 FROM public.enrollment_discounts edc
+              JOIN public.discounts dc ON dc.discount_id = edc.discount_id
+             WHERE edc.enrollment_id = v."ID"::INT AND dc.description ILIKE '%beca%')
+         AND EXISTS (
+            SELECT 1 FROM public."catalog" ccert
+             WHERE ccert.catalog_id = e.cat_certificate_status
+               AND ccert.alias = 'we_certificate_status_paid')
+        ) AS beca_certificada
     FROM public.mv_enrollment_report_system v
     LEFT JOIN public.enrollments e ON e.enrollment_id = v."ID"::INT
     LEFT JOIN LATERAL (
@@ -175,6 +192,13 @@ BEGIN
         AND (NOT _filters ? 'payment_channels'
              OR jsonb_array_length(COALESCE(_filters->'payment_channels','[]'::JSONB)) = 0
              OR v."CANAL DE PAGO"::TEXT IN (SELECT jsonb_array_elements_text(_filters->'payment_channels')))
+        AND (NOT COALESCE((_filters->>'only_scholarship')::BOOLEAN, FALSE)
+             OR EXISTS (
+                SELECT 1
+                  FROM public.enrollment_discounts edb
+                  JOIN public.discounts db ON db.discount_id = edb.discount_id
+                 WHERE edb.enrollment_id = v."ID"::INT
+                   AND db.description ILIKE '%beca%'))
     ORDER BY v."ID" DESC
     LIMIT _size OFFSET _offset;
 END;

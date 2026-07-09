@@ -78,6 +78,30 @@ export class InstallmentRepository {
     })
   }
 
+  // Pago adicional (certificado de becado): fila en payments SIN cuota asociada
+  // (installment_id NULL, tipo we_payment_type_certificate) para no tocar el
+  // PAID_AMOUNT del listado (que suma solo payment_installments pagadas), y
+  // promocion del estado del certificado a "Pagado e incluido" en la misma tx.
+  async registerAdditionalPaymentTx ({ enrollmentId, amount, paidAt, transactionCode, catPaymentMedium, bankAccountId, voucherUrl, catCurrency, catPaymentType, certPaidCatalogId, userId }) {
+    await withTransaction(async client => {
+      await client.query(`
+        INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
+          cat_method_payment, cat_payment_type, cat_settlement_status,
+          settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, 'Y', $10, NOW())
+      `, [enrollmentId, amount, paidAt, transactionCode || '', catPaymentMedium || null, catPaymentType, CAT_SETTLEMENT_STATUS_PAID, bankAccountId || null, voucherUrl || null, userId])
+
+      if (catCurrency) {
+        await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])
+      }
+
+      await client.query(
+        'UPDATE enrollments SET cat_certificate_status = $1 WHERE enrollment_id = $2',
+        [certPaidCatalogId, enrollmentId]
+      )
+    })
+  }
+
   // Verifica que la inscripcion exista y este activa.
   async findActiveEnrollment (enrollmentId) {
     const { rows } = await this.db.query(
