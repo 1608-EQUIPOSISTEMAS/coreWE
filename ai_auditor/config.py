@@ -26,8 +26,8 @@ BUENAS_PRACTICAS_PDF = PDFS_DIR / "manual_buenas_practicas_2024.pdf"
 PEDAGOGIA_MD = MARKDOWN_DIR / "pedagogia_2026.md"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
-GEMINI_CLASSIFIER_MODEL = os.getenv("GEMINI_CLASSIFIER_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+GEMINI_CLASSIFIER_MODEL = os.getenv("GEMINI_CLASSIFIER_MODEL", "gemini-3.5-flash")
 
 # Presupuesto de tokens de "thinking" de Gemini 2.5. Sin tope, el modelo gasta
 # ~19K tokens de razonamiento por auditoría facturados a precio de output
