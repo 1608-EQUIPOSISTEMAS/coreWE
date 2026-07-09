@@ -28,6 +28,20 @@ class ClassifierError(RuntimeError):
     """Falla del clasificador Gemini Flash. Distinguible de errores del auditor Pro."""
 
 
+class EmptyResponseError(RuntimeError):
+    """Gemini respondió 200 pero sin texto (flakiness o bloqueo SAFETY/RECITATION).
+
+    El mensaje incluye 'UNAVAILABLE' para que retry.is_transient la trate como
+    transitoria y reintente antes de rendirse.
+    """
+
+    def __init__(self, finish_reason: str):
+        self.finish_reason = finish_reason
+        super().__init__(
+            f"UNAVAILABLE: Gemini devolvió respuesta vacía (finish_reason={finish_reason})"
+        )
+
+
 Label = Literal["TEORIA", "PRACTICA", "MIXTO", "ADMIN"]
 
 
@@ -152,8 +166,8 @@ def _call_classifier(
         f"(batch {batch_num}/{total_batches}):\n\n{blocks_text}"
     )
 
-    try:
-        response = with_retry(lambda: client.models.generate_content(
+    def _attempt():
+        response = client.models.generate_content(
             model=GEMINI_CLASSIFIER_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -169,7 +183,25 @@ def _call_classifier(
                     thinking_budget=CLASSIFIER_THINKING_BUDGET
                 ),
             ),
-        ))
+        )
+        # Validar contenido, no solo transporte: Gemini a veces responde 200
+        # con texto vacío. Lanzar acá hace que with_retry lo reintente.
+        if not (response.text or "").strip():
+            raise EmptyResponseError(_extract_finish_reason(response))
+        return response
+
+    try:
+        response = with_retry(_attempt)
+    except EmptyResponseError as e:
+        # Bloqueo persistente (p.ej. RECITATION sobre el video institucional que
+        # abre cada sesión). Ese contenido es promocional = ADMIN de todos modos:
+        # devolver [] deja que _classify_one_batch degrade el batch a ADMIN en
+        # vez de abortar la auditoría completa.
+        print(
+            f"[classifier] WARN batch {batch_num}/{total_batches}: {e}; "
+            f"los bloques sin clasificar caerán a ADMIN."
+        )
+        return []
     except Exception as e:
         raise ClassifierError(
             f"Gemini {GEMINI_CLASSIFIER_MODEL} no respondió: {type(e).__name__}: {e}"
@@ -222,6 +254,7 @@ def _classify_one_batch(
         c = by_start.get(int(round(b["inicio_seg"])), {})
         if not c:
             degraded += 1
+            c = {"etiqueta": "ADMIN", "razon": "sin clasificación de Gemini (degradado a ADMIN)"}
         out.append(ClassifiedBlock(
             inicio_seg=b["inicio_seg"],
             fin_seg=b["fin_seg"],

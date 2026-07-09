@@ -36,7 +36,9 @@ from prompts import (
     RESPONSE_SCHEMA, build_user_text, get_auditor_system_instruction,
 )
 from transcription import TranscriptSegment, segments_to_text, total_duration_min
-from classifier import ClassifiedBlock, render_classification_table, compute_ratio
+from classifier import (
+    ClassifiedBlock, EmptyResponseError, render_classification_table, compute_ratio,
+)
 from retry import with_retry
 
 
@@ -164,11 +166,19 @@ def audit(audit_input: AuditInput) -> AuditResult:
         **common_config,
     )
 
-    response = with_retry(lambda: client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=contents,
-        config=config,
-    ))
+    def _attempt():
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=contents,
+            config=config,
+        )
+        # Validar contenido, no solo transporte: Gemini a veces responde 200
+        # con texto vacío. EmptyResponseError es transitoria → with_retry reintenta.
+        if not (response.text or "").strip():
+            raise EmptyResponseError(_extract_finish_reason(response))
+        return response
+
+    response = with_retry(_attempt)
 
     raw = response.text or ""
     finish_reason = _extract_finish_reason(response)

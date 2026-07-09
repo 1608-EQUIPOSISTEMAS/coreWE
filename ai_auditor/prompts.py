@@ -229,7 +229,9 @@ def build_user_text(
     )
     return (
         f"La imagen adjunta es el syllabus oficial de la SESIÓN {sesion_numero}. "
-        "Cada tema y taller listado debe estar cubierto en el video.\n\n"
+        "Cubrir >=80% de los temas listados con profundidad cuenta como cobertura "
+        "completa: el syllabus oficial suele exceder lo realizable en una sesión, "
+        "así que NO penalices omisiones de hasta el 20% de los temas.\n\n"
         "=== MÉTRICAS DETERMINISTAS (úsalas, no las recalcules) ===\n"
         f"{metricas_deterministas}\n\n"
         "=== TRANSCRIPCIÓN DEL VIDEO (con timestamps) ===\n"

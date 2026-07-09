@@ -23,9 +23,11 @@ CRITERIOS = [
     {
         "id": 1,
         "nombre": "Alineación con el temario",
-        "anchor_5": "Cubre el 100% de los temas del syllabus de la sesión, dedica >=5 min a cada uno y los conecta entre sí y con la sesión previa.",
-        "anchor_3": "Cubre los temas del syllabus pero >=1 queda superficial (<3 min) o altera el orden sin justificarlo.",
-        "anchor_1": "Omite >=1 tema oficial del syllabus o introduce temas no listados sin avisar; la sesión no sigue el temario.",
+        # Ajuste 09/07 pedido por calidad: el syllabus oficial suele exceder lo
+        # realizable en una sesión, por eso >=80% de cobertura ya es nota máxima.
+        "anchor_5": "Cubre >=80% de los temas del syllabus de la sesión, dedica >=5 min a cada tema tratado y los conecta entre sí y con la sesión previa. Omitir hasta el 20% de los temas NO penaliza.",
+        "anchor_3": "Cubre entre 50% y 79% de los temas, o cubre >=80% pero >=1 tema queda superficial (<3 min) o altera el orden sin justificarlo.",
+        "anchor_1": "Cubre <50% de los temas del syllabus o dedica la mayor parte de la sesión a temas no listados sin avisar; la sesión no sigue el temario.",
     },
     {
         "id": 2,
