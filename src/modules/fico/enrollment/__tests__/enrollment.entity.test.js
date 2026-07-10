@@ -11,6 +11,8 @@ import {
   buildDuplicateResponse,
   buildDirectInscription,
   buildCourseChangeInscription,
+  buildReprogramInscription,
+  buildReprogramPlan,
   courseChangeAmountDifference,
   PAID_INSTALLMENT_CAT_IDS
 } from '../enrollment.entity.js'
@@ -216,5 +218,94 @@ describe('courseChangeAmountDifference', () => {
 describe('PAID_INSTALLMENT_CAT_IDS', () => {
   it('incluye ambos namespaces de cuota saldada', () => {
     expect(PAID_INSTALLMENT_CAT_IDS).toEqual([4454, 2471])
+  })
+})
+
+describe('buildReprogramPlan', () => {
+  const pend = [
+    { installment_id: 11, installment_number: 2, amount: '500.00', due_date: '2026-11-04' },
+    { installment_id: 12, installment_number: 3, amount: '500.00', due_date: '2026-12-04' }
+  ]
+
+  it('sin plan editado: desplaza fechas por diffDays y renumera 1..n', () => {
+    const plan = buildReprogramPlan({ pendingRows: pend, requestedPlan: null, diffDays: 30 })
+    expect(plan).toEqual([
+      { installment_id: 11, number: 1, amount: 500, due_date: '2026-12-04' },
+      { installment_id: 12, number: 2, amount: 500, due_date: '2027-01-03' }
+    ])
+  })
+
+  it('sin cuotas pendientes devuelve vacio', () => {
+    expect(buildReprogramPlan({ pendingRows: [], requestedPlan: null, diffDays: 10 })).toEqual([])
+  })
+
+  it('rechaza plan editado si el origen no tiene pendientes', () => {
+    expect(() => buildReprogramPlan({
+      pendingRows: [], requestedPlan: [{ installment_id: 11, amount: 500, due_date: '2026-12-04' }]
+    })).toThrow(DomainError)
+  })
+
+  it('plan editado: acepta si la suma cuadra y renumera por fecha', () => {
+    const plan = buildReprogramPlan({
+      pendingRows: pend,
+      requestedPlan: [
+        { installment_id: 12, amount: 300, due_date: '2027-02-01' },
+        { installment_id: 11, amount: 700, due_date: '2027-01-01' }
+      ]
+    })
+    expect(plan).toEqual([
+      { installment_id: 11, number: 1, amount: 700, due_date: '2027-01-01' },
+      { installment_id: 12, number: 2, amount: 300, due_date: '2027-02-01' }
+    ])
+  })
+
+  it('rechaza plan cuya suma no iguala el saldo pendiente', () => {
+    expect(() => buildReprogramPlan({
+      pendingRows: pend,
+      requestedPlan: [
+        { installment_id: 11, amount: 700, due_date: '2027-01-01' },
+        { installment_id: 12, amount: 400, due_date: '2027-02-01' }
+      ]
+    })).toThrow(/no coincide con el saldo/)
+  })
+
+  it('rechaza cuotas desconocidas, duplicadas, de mas/menos o con monto invalido', () => {
+    const base = { pendingRows: pend }
+    expect(() => buildReprogramPlan({ ...base, requestedPlan: [{ installment_id: 99, amount: 500, due_date: '2027-01-01' }, { installment_id: 12, amount: 500, due_date: '2027-02-01' }] })).toThrow(/desconocida o duplicada/)
+    expect(() => buildReprogramPlan({ ...base, requestedPlan: [{ installment_id: 11, amount: 500, due_date: '2027-01-01' }, { installment_id: 11, amount: 500, due_date: '2027-02-01' }] })).toThrow(/desconocida o duplicada/)
+    expect(() => buildReprogramPlan({ ...base, requestedPlan: [{ installment_id: 11, amount: 1000, due_date: '2027-01-01' }] })).toThrow(/exactamente/)
+    expect(() => buildReprogramPlan({ ...base, requestedPlan: [{ installment_id: 11, amount: -1, due_date: '2027-01-01' }, { installment_id: 12, amount: 1001, due_date: '2027-02-01' }] })).toThrow(/Monto invalido/)
+  })
+
+  it('tolera centavos (redondeo a 0.01)', () => {
+    const plan = buildReprogramPlan({
+      pendingRows: [{ installment_id: 11, installment_number: 1, amount: '333.335', due_date: '2026-11-04' }],
+      requestedPlan: [{ installment_id: 11, amount: 333.34, due_date: '2026-11-04' }]
+    })
+    expect(plan[0].amount).toBe(333.34)
+  })
+})
+
+describe('buildReprogramInscription', () => {
+  it('pago cero conservando programa, asesor y plan de pago del origen', () => {
+    const insc = buildReprogramInscription({
+      old: {
+        document_number: '71070880', cat_type_document: 1, first_name: 'GIOVANNI', last_name: 'CANEVARO',
+        origin_email: 'g@x.com', origin_phone: '999', program_version_id: 40, cat_inscription_modality: 5,
+        cat_payment_channel: 6, cat_currency: 1, cat_payment_plan: 77, seller_agent_id: 30, agent_origin: 'B2C',
+        old_profile_alias: 'we_profile_student'
+      },
+      newEditionId: 50, rpNote: 'RP desde #1544', today: '2026-07-09'
+    })
+    expect(insc.program_version_id).toBe(40)
+    expect(insc.program_edition_id).toBe(50)
+    expect(insc.total_amount).toBe(0)
+    expect(insc.list_price).toBe(0)
+    expect(insc.is_scholarship).toBe(true)
+    expect(insc.cat_payment_way).toBe(77)
+    expect(insc.seller_agent_id).toBe(30)
+    expect(insc.agent_origin).toBe('B2C')
+    expect(insc.client_profile).toBe('estudiante')
+    expect(insc.installment_plan).toBeNull()
   })
 })

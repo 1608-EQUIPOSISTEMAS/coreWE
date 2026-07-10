@@ -8,3 +8,8 @@ SELECT 3112, 'Pago de Certificado', 'we_payment_type_certificate', 'Y', NOW()
 WHERE NOT EXISTS (
     SELECT 1 FROM public.catalog WHERE alias = 'we_payment_type_certificate'
 );
+
+-- El pago de certificado es un pago SUELTO (no pertenece al plan de cuotas):
+-- installment_id debe aceptar NULL. Todo el resto del sistema siempre inserta
+-- payments con cuota, asi que quitar el NOT NULL no cambia ningun flujo previo.
+ALTER TABLE public.payments ALTER COLUMN installment_id DROP NOT NULL;

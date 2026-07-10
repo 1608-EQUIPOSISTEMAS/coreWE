@@ -159,6 +159,7 @@ export async function reprogramEditionHandler (req, reply) {
     enrollmentId: req.body.enrollment_id,
     newEditionId: req.body.new_edition_id,
     justificacion: req.body.justificacion,
+    installmentPlan: req.body.installment_plan ?? null,
     userId: req.user?.id ?? req.body.user_id
   })
   return reply.code(200).send({ ok: true, data })

@@ -203,7 +203,23 @@ export const reprogramEditionSchema = {
     properties: {
       enrollment_id: { type: 'integer' },
       new_edition_id: { type: 'integer' },
-      justificacion: { type: 'string', minLength: 1 }
+      justificacion: { type: 'string', minLength: 1 },
+      // Plan editado por FICO para las cuotas pendientes que se trasladan al
+      // enrollment destino: mismas cuotas del origen (installment_id), montos y
+      // fechas nuevos. La suma debe igualar el saldo (se valida en la entity).
+      installment_plan: {
+        type: ['array', 'null'],
+        items: {
+          type: 'object',
+          required: ['installment_id', 'amount', 'due_date'],
+          additionalProperties: false,
+          properties: {
+            installment_id: { type: 'integer' },
+            amount: { type: 'number', exclusiveMinimum: 0 },
+            due_date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+          }
+        }
+      }
     }
   }
 }

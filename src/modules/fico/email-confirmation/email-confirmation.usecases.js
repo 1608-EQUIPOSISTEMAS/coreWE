@@ -94,7 +94,7 @@ async function resolveModeFromDb ({ enrollmentId, odooEmail }) {
 // ---------------------------------------------------------------------------
 // PREVIEW
 
-export async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null, sapUsername = null, sapPassword = null }) {
+export async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null, sapUsername = null, sapPassword = null, overrideInstallments = null }) {
   // overrideProgramVersionId: el cambio de curso previsualiza el correo con el
   // programa destino (el enrollment nuevo aun no existe en este punto).
   const check = await repo.findPreviewMembershipCheck(enrollmentId, overrideProgramVersionId)
@@ -126,7 +126,11 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
   const frequency = sched.map(s => s.day_name).filter(Boolean).join(', ')
   const schedule = sched.length > 0 ? `${sched[0].start_time || ''} - ${sched[0].end_time || ''}` : ''
 
-  const instRows = await repo.findInstallments(enrollmentId)
+  // overrideInstallments: la reprogramacion previsualiza con el plan de cuotas
+  // que se trasladara al enrollment destino (que aun no existe en este paso).
+  const instRows = Array.isArray(overrideInstallments)
+    ? overrideInstallments
+    : await repo.findInstallments(enrollmentId)
 
   const firstName = firstWord(data.first_name)
   const lastName = firstWord(data.last_name)

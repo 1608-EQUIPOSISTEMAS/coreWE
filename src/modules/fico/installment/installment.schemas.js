@@ -39,6 +39,27 @@ export const additionalPaymentSchema = {
   }
 }
 
+export const additionalPaymentEditSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id', 'payment_id', 'amount', 'justificacion'],
+    additionalProperties: true,
+    properties: {
+      enrollment_id: { type: 'integer' },
+      payment_id: { type: 'integer' },
+      amount: { type: 'number', exclusiveMinimum: 0 },
+      justificacion: { type: 'string', minLength: 1 },
+      cat_currency: { type: ['integer', 'null'] },
+      cat_payment_medium: { type: ['integer', 'null'] },
+      cat_business_entity: { type: ['integer', 'null'] },
+      bank_account_id: { type: ['integer', 'null'] },
+      transaction_code: { type: ['string', 'null'] },
+      voucher_url: { type: ['string', 'null'] },
+      payment_date: { type: ['string', 'null'] }
+    }
+  }
+}
+
 export const editInstallmentAmountSchema = {
   body: {
     type: 'object',

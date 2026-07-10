@@ -234,3 +234,104 @@ export function courseChangeAmountDifference (oldTotal, oldDiscount, newTotal) {
   const oldAmount = Number(oldTotal || 0) - Number(oldDiscount || 0)
   return { oldAmount, amountDifference: Number(newTotal || 0) - oldAmount }
 }
+
+// --- Reprogramacion (RP) ---------------------------------------------------
+
+const round2 = n => Math.round(Number(n) * 100) / 100
+
+// Normaliza una fecha (Date o string ISO) a 'YYYY-MM-DD' y la desplaza N dias.
+// Aritmetica en UTC sobre la cadena calendario: inmune al TZ del server.
+function shiftCalendarDate (value, days) {
+  const s = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) throw new DomainError(`Fecha de cuota invalida: ${value}`)
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + days)).toISOString().slice(0, 10)
+}
+
+// Arma la inscripcion DESTINO de una reprogramacion. Mismo modelo que el cambio
+// de curso pero dentro del mismo programa: pago cero (la venta y lo ya pagado
+// viven en el origen RP), conserva asesor/canal (no es una venta nueva, no
+// duplica credito: los reportes de venta se calculan sobre payments, que quedan
+// en el origen) y conserva el plan de pago (Contado/Cuotas) para que el correo
+// liste las cuotas trasladadas.
+export function buildReprogramInscription ({ old, newEditionId, rpNote, today }) {
+  return {
+    document_number: old.document_number,
+    cat_type_document: old.cat_type_document,
+    first_name: old.first_name,
+    last_name: old.last_name,
+    email: old.origin_email,
+    phone: old.origin_phone,
+    program_version_id: old.program_version_id,
+    program_edition_id: newEditionId,
+    cat_insc_modality: old.cat_inscription_modality,
+    cat_payment_channel: old.cat_payment_channel,
+    cat_currency: old.cat_currency,
+    cat_payment_way: old.cat_payment_plan,
+    cat_payment_medium: null,
+    payment_date: today,
+    // Pago cero via is_scholarship: el SP no persiste marca de beca (beca real =
+    // descuento "BECA"); con list_price 0 no queda descuento fantasma.
+    list_price: 0,
+    total_amount: 0,
+    saved_money: 0,
+    is_scholarship: true,
+    cat_b2b_doctype: null,
+    seller_agent_id: old.seller_agent_id,
+    agent_origin: old.agent_origin,
+    client_profile: old.old_profile_alias === 'we_profile_student' ? 'estudiante' : 'profesional',
+    observations: rpNote,
+    ticket_payment_urls: [],
+    installment_plan: null
+  }
+}
+
+// Plan de cuotas que se traslada al enrollment destino en una RP.
+//  - Sin plan editado: las mismas cuotas pendientes con la fecha corrida por el
+//    desplazamiento entre ediciones (comportamiento historico de RP).
+//  - Con plan editado (FICO): mismas cuotas (por installment_id) con nuevos
+//    montos/fechas; la suma DEBE igualar el saldo pendiente del origen.
+// Devuelve [{ installment_id, number, amount, due_date }] renumerado 1..n por
+// fecha de vencimiento. Lanza DomainError ante cualquier inconsistencia.
+export function buildReprogramPlan ({ pendingRows = [], requestedPlan = null, diffDays = 0 }) {
+  if (pendingRows.length === 0) {
+    if (requestedPlan?.length) throw new DomainError('La inscripcion no tiene cuotas pendientes que trasladar')
+    return []
+  }
+
+  let rows
+  if (!requestedPlan?.length) {
+    rows = pendingRows.map(r => ({
+      installment_id: Number(r.installment_id),
+      amount: round2(r.amount),
+      due_date: shiftCalendarDate(r.due_date, diffDays)
+    }))
+  } else {
+    if (requestedPlan.length !== pendingRows.length) {
+      throw new DomainError(`El plan debe cubrir exactamente las ${pendingRows.length} cuota(s) pendiente(s) del origen`)
+    }
+    const pendingIds = new Set(pendingRows.map(r => Number(r.installment_id)))
+    const seen = new Set()
+    rows = requestedPlan.map((p, i) => {
+      const id = Number(p.installment_id)
+      if (!pendingIds.has(id) || seen.has(id)) {
+        throw new DomainError('Plan de cuotas invalido: cuota desconocida o duplicada')
+      }
+      seen.add(id)
+      const amount = round2(p.amount)
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new DomainError(`Monto invalido en la cuota ${i + 1}`)
+      }
+      return { installment_id: id, amount, due_date: shiftCalendarDate(p.due_date, 0) }
+    })
+    const pendingSum = round2(pendingRows.reduce((s, r) => s + Number(r.amount), 0))
+    const planSum = round2(rows.reduce((s, r) => s + r.amount, 0))
+    if (Math.abs(planSum - pendingSum) > 0.01) {
+      throw new DomainError(`La suma del plan (${planSum}) no coincide con el saldo pendiente a trasladar (${pendingSum})`)
+    }
+  }
+
+  return rows
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .map((r, i) => ({ ...r, number: i + 1 }))
+}

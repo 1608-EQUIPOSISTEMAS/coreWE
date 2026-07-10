@@ -2,6 +2,7 @@ import { authenticate, hasRole } from '../../../shared/http/auth.middleware.js'
 import {
   confirmInstallmentSchema,
   additionalPaymentSchema,
+  additionalPaymentEditSchema,
   editInstallmentAmountSchema,
   addInstallmentSchema,
   rescheduleInstallmentsSchema,
@@ -18,6 +19,7 @@ const RESCHEDULE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 export default async function installmentRoutes (fastify) {
   fastify.post('/confirminstallment', { preHandler: [authenticate], schema: confirmInstallmentSchema }, ctrl.confirmInstallmentHandler)
   fastify.post('/additionalpayment', { preHandler: [authenticate], schema: additionalPaymentSchema }, ctrl.additionalPaymentHandler)
+  fastify.post('/additionalpayment/edit', { preHandler: [authenticate], schema: additionalPaymentEditSchema }, ctrl.additionalPaymentEditHandler)
   fastify.post('/editinstallmentamount', { preHandler: [authenticate], schema: editInstallmentAmountSchema }, ctrl.editInstallmentAmountHandler)
   fastify.post('/addinstallment', { preHandler: [authenticate], schema: addInstallmentSchema }, ctrl.addInstallmentHandler)
   fastify.post('/rescheduleinstallments', { preHandler: [authenticate, hasRole(RESCHEDULE_ROLES)], schema: rescheduleInstallmentsSchema }, ctrl.rescheduleInstallmentsHandler)

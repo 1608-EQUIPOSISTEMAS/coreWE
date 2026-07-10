@@ -122,14 +122,71 @@ export async function registerAdditionalPayment ({ enrollmentId, amount, catCurr
     userId
   })
 
+  const methodLabel = await repo.findCatalogDescription(catPaymentMedium)
+  const accountLabel = await repo.findBankAccountLabel(bankAccountId)
   await repo.logAudit({
     enrollmentId,
     action: 'additional_payment',
     userId,
-    details: `Pago adicional (certificado) registrado: ${fmtMoney(amt)}. Certificado habilitado.`
+    details: [
+      `Pago de certificado registrado: ${fmtMoney(amt)}`,
+      methodLabel,
+      accountLabel,
+      transactionCode ? `Op: ${transactionCode}` : null,
+      paymentDate ? `Fecha: ${fmtFecha(paymentDate)}` : null,
+      voucherUrl ? 'con voucher' : 'sin voucher'
+    ].filter(Boolean).join(' · ') + '. Etiqueta Certificar activada.'
   })
 
   return { result: 1, message: 'Pago adicional registrado' }
+}
+
+// Edita el pago de certificado ya registrado (solo becados, nav Adicionales).
+// Exige justificacion y audita el diff old -> new en el historial.
+export async function editAdditionalPayment ({ enrollmentId, paymentId, amount, catCurrency, catPaymentMedium, bankAccountId, transactionCode, voucherUrl, paymentDate, justificacion, userId }) {
+  if (!justificacion || !justificacion.trim()) throw new DomainError('Justificacion obligatoria')
+  const amt = Number(amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new DomainError('Monto invalido')
+
+  const current = await repo.findCertificatePayment(paymentId, enrollmentId)
+  if (!current) throw new DomainError('Pago de certificado no encontrado')
+
+  const paidAt = paymentDate ? new Date(paymentDate) : new Date(current.payment_date)
+  const newMethodLabel = await repo.findCatalogDescription(catPaymentMedium)
+  const newAccountLabel = await repo.findBankAccountLabel(bankAccountId)
+  const oldAccountLabel = [current.bank_name, current.account_number].filter(Boolean).join(' - ') || '---'
+  const oldDate = current.payment_date ? new Date(current.payment_date).toISOString().slice(0, 10) : null
+
+  const changes = {}
+  if (Number(current.amount) !== amt) changes['Monto'] = { old: fmtMoney(current.amount), new: fmtMoney(amt) }
+  if ((current.cat_method_payment || null) !== (catPaymentMedium || null)) changes['Medio de pago'] = { old: current.payment_method_label || '---', new: newMethodLabel || '---' }
+  if ((current.settled_in_account_id || null) !== (bankAccountId || null)) changes['Cuenta bancaria'] = { old: oldAccountLabel, new: newAccountLabel || '---' }
+  if ((current.transaction_code || '') !== (transactionCode || '')) changes['N. Operacion'] = { old: current.transaction_code || '---', new: transactionCode || '---' }
+  if (paymentDate && oldDate !== paymentDate) changes['Fecha de pago'] = { old: oldDate ? fmtFecha(oldDate) : '---', new: fmtFecha(paymentDate) }
+  if ((current.evidence_url || null) !== (voucherUrl || null)) changes['Voucher'] = { old: current.evidence_url ? 'Adjunto' : '---', new: voucherUrl ? 'Adjunto (nuevo)' : '---' }
+
+  await repo.updateAdditionalPaymentTx({
+    paymentId,
+    enrollmentId,
+    amount: amt,
+    paidAt,
+    transactionCode,
+    catPaymentMedium,
+    bankAccountId,
+    voucherUrl,
+    catCurrency
+  })
+
+  await repo.logAudit({
+    enrollmentId,
+    action: 'additional_payment_edited',
+    userId,
+    justificacion: justificacion.trim(),
+    changes: Object.keys(changes).length ? changes : null,
+    details: `Pago de certificado editado: ${fmtMoney(amt)}`
+  })
+
+  return { result: 1, message: 'Pago adicional actualizado' }
 }
 
 // Edita el monto de UNA cuota pendiente. Audita old -> new con justificacion.

@@ -36,6 +36,23 @@ export async function additionalPaymentHandler (req, reply) {
   return reply.code(200).send({ ok: true, data: toResultDto(data) })
 }
 
+export async function additionalPaymentEditHandler (req, reply) {
+  const data = await usecases.editAdditionalPayment({
+    enrollmentId: req.body.enrollment_id,
+    paymentId: req.body.payment_id,
+    amount: req.body.amount,
+    catCurrency: req.body.cat_currency,
+    catPaymentMedium: req.body.cat_payment_medium,
+    bankAccountId: req.body.bank_account_id,
+    transactionCode: req.body.transaction_code,
+    voucherUrl: req.body.voucher_url,
+    paymentDate: req.body.payment_date,
+    justificacion: req.body.justificacion,
+    userId: req.user?.id ?? req.body.user_id
+  })
+  return reply.code(200).send({ ok: true, data: toResultDto(data) })
+}
+
 export async function editInstallmentAmountHandler (req, reply) {
   const data = await usecases.editInstallmentAmount({
     enrollmentId: req.body.enrollment_id,

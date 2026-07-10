@@ -145,10 +145,15 @@ export class EnrollmentRepository {
 
     const { rows: pays } = await this.db.query(`
       SELECT p.payment_id, p.amount, p.payment_date, p.transaction_code, p.evidence_url,
+             p.cat_method_payment,
+             p.settled_in_account_id            AS bank_account_id,
+             ba.business_entity_catalog_id      AS cat_business_entity,
+             e2.cat_currency,
              cm.description AS payment_method,
              cb.description AS business_entity,
              ba.bank_name, ba.account_number
         FROM payments p
+        JOIN enrollments e2 ON e2.enrollment_id = p.enrollment_id
         LEFT JOIN public."catalog" cm ON cm.catalog_id = p.cat_method_payment
         LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
         LEFT JOIN public."catalog" cb ON cb.catalog_id = ba.business_entity_catalog_id
@@ -299,24 +304,6 @@ export class EnrollmentRepository {
 
   // --- Reprogramar edicion -----------------------------------------------
 
-  async getReprogramOrigin (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT e.program_edition_id, e.program_version_id,
-             pe.global_code AS old_code, pe.start_date AS old_start_date,
-             ${STUDENT_EMAIL_SQL} AS origin_email,
-             prog.odoo_activation
-      FROM enrollments e
-      JOIN customers cust ON cust.customer_id = e.customer_id
-      JOIN persons per ON per.person_id = cust.person_id
-      LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
-      LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-      LEFT JOIN programs prog ON prog.program_id = pv.program_id
-      WHERE e.enrollment_id = $1
-    `, [enrollmentId])
-    return rows?.[0] || null
-  }
-
   async getEditionById (editionId) {
     const { rows } = await this.db.query(`
       SELECT pe.edition_num_id, pe.global_code, pe.start_date, pe.program_version_id
@@ -392,13 +379,6 @@ export class EnrollmentRepository {
     return rows
   }
 
-  async setProgramEdition (enrollmentId, newEditionId) {
-    await this.db.query(
-      'UPDATE enrollments SET program_edition_id = $1 WHERE enrollment_id = $2',
-      [newEditionId, enrollmentId]
-    )
-  }
-
   async setReprogrammedStatus (enrollmentId) {
     const rpCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_REPROGRAMMED)
     if (rpCatId) {
@@ -411,42 +391,55 @@ export class EnrollmentRepository {
     }
   }
 
-  async shiftPendingInstallments (enrollmentId, diffDays) {
+  // Cuotas pendientes reales del origen: excluye pagadas (ambos namespaces:
+  // legacy 4454 y nuevo 2471), anuladas (4456) y las que ya tienen un pago
+  // activo aunque su estado siga "pendiente verificacion/conciliacion" (2470):
+  // ese dinero ya entro y debe quedarse en el origen RP. Solo lo realmente
+  // adeudado se traslada al enrollment destino.
+  async getReprogramPendingInstallments (enrollmentId) {
     const { rows } = await this.db.query(`
-      UPDATE payment_installments
-      SET due_date = due_date + INTERVAL '${diffDays} days'
-      WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)
-      RETURNING installment_number, due_date
+      SELECT pi.installment_id, pi.installment_number, pi.amount, pi.due_date
+      FROM payment_installments pi
+      WHERE pi.enrollment_id = $1 AND pi.installment_number > 0
+        AND pi.cat_status NOT IN (4454, 2471, 4456)
+        AND NOT EXISTS (
+          SELECT 1 FROM payments p
+          WHERE p.installment_id = pi.installment_id AND p.active = 'Y'
+        )
+      ORDER BY pi.installment_number
     `, [enrollmentId])
     return rows
   }
 
-  async clearOdooRefsForReprogram ({ enrollmentId, old, newEd, userId }) {
-    if (!old.odoo_activation) return
-    try {
-      const od = await getEnrollmentOdoo(enrollmentId).catch(() => null)
-      if (od?.odoo_user_id) {
-        const user = await odoo.searchUserByEmail(old.origin_email)
-        if (user?.partner_id?.[0]) {
-          const oldGroups = await odoo.searchSlideGroup(old.odoo_activation)
-          const oldDate = new Date(old.old_start_date)
-          const oldDd = String(oldDate.getDate()).padStart(2, '0')
-          const oldMm = String(oldDate.getMonth() + 1).padStart(2, '0')
-          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-          const oldSearchName = `${old.odoo_activation} (${oldDd}/${oldMm}) - ${monthNames[oldDate.getMonth()]} ${oldDate.getFullYear()}`
-          const oldMatch = oldGroups.find(g => g.name === oldSearchName)
-          if (oldMatch) {
-            await odoo.unenrollStudentFromCourse({ partnerId: user.partner_id[0], slideGroupId: oldMatch.id })
-            await this.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${oldSearchName}` })
-          }
-        }
-        if (od.odoo_order_id) {
-          await odoo.cancelSaleOrder(od.odoo_order_id)
-          await this.db.query('UPDATE enrollments SET odoo_order_id = NULL WHERE enrollment_id = $1', [enrollmentId])
-        }
-        await this.db.query('UPDATE enrollments SET odoo_user_id = NULL, odoo_student_id = NULL WHERE enrollment_id = $1', [enrollmentId])
+  // Bloque atomico del traslado de cuotas en una RP: elimina la cuota "pago
+  // cero" que el SP creo en el destino (recien nacido: es su unica fila) y
+  // mueve las pendientes del origen con su nuevo numero/monto/fecha. Sin
+  // pendientes, solo re-etiqueta la cuota cero para que no diga "Beca".
+  async transferInstallmentsForReprogram ({ oldEnrollmentId, newEid, plan }) {
+    await withTransaction(async client => {
+      if (plan.length === 0) {
+        await client.query(
+          'UPDATE payment_installments SET notes = $2 WHERE enrollment_id = $1',
+          [newEid, `Reprogramacion - pagos registrados en inscripcion #${oldEnrollmentId}`]
+        )
+        return
       }
-    } catch (e) { console.error('[reprogramEdition] Error desinscribiendo Odoo:', e.message) }
+      await client.query('DELETE FROM payment_installments WHERE enrollment_id = $1', [newEid])
+      for (const p of plan) {
+        const res = await client.query(`
+          UPDATE payment_installments
+          SET enrollment_id = $1, installment_number = $2, amount = $3, due_date = $4, notes = $5
+          WHERE installment_id = $6 AND enrollment_id = $7
+        `, [
+          newEid, p.number, p.amount, p.due_date,
+          `Cuota ${p.number} - Pendiente (trasladada por reprogramacion de #${oldEnrollmentId})`,
+          p.installment_id, oldEnrollmentId
+        ])
+        if (res.rowCount !== 1) {
+          throw new Error(`Cuota ${p.installment_id} ya no esta pendiente en el origen (posible cambio concurrente)`)
+        }
+      }
+    })
   }
 
   // --- Cambio de curso ----------------------------------------------------
@@ -454,8 +447,8 @@ export class EnrollmentRepository {
   async getCourseChangeOrigin (enrollmentId) {
     const { rows } = await this.db.query(`
       SELECT e.enrollment_id, e.program_version_id, e.program_edition_id,
-             e.customer_id, e.seller_agent_id, e.cat_currency,
-             e.total_amount, e.discount_amount,
+             e.customer_id, e.seller_agent_id, e.agent_origin, e.email_cc,
+             e.total_amount, e.discount_amount, e.cat_currency,
              e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
              per.first_name, per.last_name, per.document_number, per.cat_type_document,
              l.lead_id,

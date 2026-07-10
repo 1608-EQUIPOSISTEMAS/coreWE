@@ -11,6 +11,8 @@ import {
   buildDuplicateResponse,
   buildDirectInscription,
   buildCourseChangeInscription,
+  buildReprogramInscription,
+  buildReprogramPlan,
   courseChangeAmountDifference,
   MEMBERSHIP_ACTIVATION_WINDOW_MONTHS
 } from './enrollment.entity.js'
@@ -182,9 +184,17 @@ export async function getProgramPrice ({ programVersionId }) {
 }
 
 // --- Reprogramar edicion -------------------------------------------------
+//
+// Modelo RP = 2 inscripciones (mismo esquema que el cambio de curso):
+//  - ORIGEN: conserva su edicion y todo lo pagado, pasa a estado RP; sus hijos
+//    SEG pasan a R (retirados). Sus cuotas pendientes salen de aqui.
+//  - DESTINO: inscripcion nueva en la edicion elegida, estado ACT, pago 0 (la
+//    venta vive en el origen) y hereda las cuotas pendientes (plan editable por
+//    FICO). El job register_followup crea sus hijos SEG, lo inscribe en Odoo y
+//    manda el correo — que asi lista SOLO las cuotas por pagar.
 
-export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId }) {
-  const old = await repo.getReprogramOrigin(enrollmentId)
+export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null }) {
+  const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   if (old.program_edition_id === newEditionId) {
     throw new DomainError('La nueva edicion es la misma que la actual')
@@ -196,32 +206,69 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
     throw new DomainError('La edicion destino no pertenece al mismo programa')
   }
 
-  await repo.setProgramEdition(enrollmentId, newEditionId)
-  try {
-    await repo.setReprogrammedStatus(enrollmentId)
-  } catch (err) {
-    console.error('[reprogramEdition] Error actualizando estado:', err.message)
+  const pendingRows = await repo.getReprogramPendingInstallments(enrollmentId)
+  const diffDays = editionShiftDays(old.old_start_date, newEd.start_date)
+  const plan = buildReprogramPlan({ pendingRows, requestedPlan: installmentPlan, diffDays })
+
+  const rpNote = `Reprogramacion desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
+  const inscription = buildReprogramInscription({
+    old, newEditionId, rpNote, today: new Date().toISOString().slice(0, 10)
+  })
+
+  const newEnroll = await repo.registerDirect({ userId, inscription })
+  if (newEnroll.result !== 1 || !newEnroll.enrollment_id) {
+    throw new DomainError(newEnroll.message || 'Error al crear la inscripcion destino')
+  }
+  const newEid = newEnroll.enrollment_id
+
+  await repo.transferInstallmentsForReprogram({ oldEnrollmentId: enrollmentId, newEid, plan })
+
+  const ccArray = repo.parseEmailCc(old.email_cc)
+  if (ccArray.length > 0) {
+    await repo.saveEmailCc(newEid, ccArray).catch(err => console.error('[reprogramEdition] email_cc:', err.message))
+  }
+
+  // Marcar RP recien cuando el destino existe y ya tiene las cuotas: si algo
+  // de lo anterior falla, el origen queda intacto.
+  await repo.setReprogrammedStatus(enrollmentId)
+
+  // Hijos SEG del origen -> R (retirados). El followup del destino creara los suyos.
+  const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
+  const retiredChildren = []
+  if (retId) {
+    const children = await repo.getActiveChildren(enrollmentId, retId)
+    for (const child of children) {
+      await repo.retireChild(child.enrollment_id, retId)
+      await repo.logAudit({
+        enrollmentId: child.enrollment_id,
+        action: 'retired',
+        userId,
+        justificacion,
+        details: `Retirado por reprogramacion del programa padre #${enrollmentId} hacia ${newEd.global_code || ''} (nueva inscripcion #${newEid})`
+      })
+      retiredChildren.push(`${child.child_program_name || ''} ${child.edition_code || ''}`.trim())
+    }
   }
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'
-  const changes = {
-    'Edicion': {
-      old: `${old.old_code || '---'} (${fmtDate(old.old_start_date)})`,
-      new: `${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})`
-    },
-    // Ancla estable para el historial del aula origen: la fila se mueve a la
-    // edicion nueva (setProgramEdition), asi que el unico rastro de donde estaba
-    // queda aqui. classroomStudentsHistory lo usa para volver a mostrar al alumno.
-    old_edition_id: old.program_edition_id,
-    new_edition_id: newEditionId
+  const edicionChange = {
+    old: `${old.old_edition_code || '---'} (${fmtDate(old.old_start_date)})`,
+    new: `${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})`
   }
-
-  const diffDays = editionShiftDays(old.old_start_date, newEd.start_date)
-  if (diffDays !== 0) {
-    const updatedCuotas = await repo.shiftPendingInstallments(enrollmentId, diffDays)
-    if (updatedCuotas.length > 0) {
-      changes['Cuotas reprogramadas'] = { old: '---', new: `${updatedCuotas.length} cuota(s) desplazada(s) ${diffDays > 0 ? '+' : ''}${diffDays} dias` }
-    }
+  const changes = {
+    'Edicion': edicionChange,
+    'Nuevo enrollment': { old: '---', new: `#${newEid}` },
+    // Anclas estables para el historial del aula (classroomStudentsHistory).
+    old_edition_id: old.program_edition_id,
+    new_edition_id: newEditionId,
+    new_enrollment_id: newEid
+  }
+  if (plan.length > 0) {
+    const planTotal = plan.reduce((s, p) => s + p.amount, 0)
+    changes['Cuotas trasladadas'] = { old: '---', new: `${plan.length} cuota(s) pendiente(s) (S/. ${planTotal.toFixed(2)}) al enrollment #${newEid}` }
+  }
+  if (retiredChildren.length > 0) {
+    changes['Modulos retirados'] = { old: '---', new: retiredChildren.join(', ') }
   }
 
   await repo.logAudit({
@@ -230,33 +277,45 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
     userId,
     justificacion,
     changes,
-    details: `Reprogramacion de edicion: ${changes['Edicion'].old} → ${changes['Edicion'].new}`
+    details: `Reprogramacion de edicion: ${edicionChange.old} → ${edicionChange.new}. Nueva inscripcion #${newEid}`
   })
 
-  if (old.odoo_activation) {
-    await repo.clearOdooRefsForReprogram({ enrollmentId, old, newEd, userId })
+  await repo.logAudit({
+    enrollmentId: newEid,
+    action: 'created_from_rp',
+    userId,
+    justificacion,
+    changes: {
+      'Edicion origen': { old: '---', new: edicionChange.old },
+      'Edicion nueva': { old: '---', new: edicionChange.new },
+      'Enrollment origen': { old: '---', new: `#${enrollmentId}` }
+    },
+    details: `Creado por reprogramacion de #${enrollmentId}: ${edicionChange.old} → ${edicionChange.new}${plan.length ? `. ${plan.length} cuota(s) pendiente(s) heredada(s)` : ''}`
+  })
 
-    try {
-      const odoo = await repo.enrollInOdoo({ enrollmentId })
-      if (odoo?.success) {
-        await repo.logAudit({ enrollmentId, action: 'odoo_enrolled', userId, details: `Reinscrito en Odoo con nueva edicion: ${newEd.global_code}` })
-      } else {
-        await repo.logAudit({ enrollmentId, action: 'odoo_enrolled', userId, details: `Pendiente reinscripcion en Odoo para edicion: ${newEd.global_code}. ${odoo?.error || ''}` })
-      }
-    } catch (e) {
-      console.error('[reprogramEdition] Error reinscribiendo Odoo:', e.message)
-      await repo.logAudit({ enrollmentId, action: 'odoo_enrolled', userId, details: `Error reinscripcion Odoo: ${e.message}` }).catch(() => {})
-    }
-
-    try {
-      const emailRes = await repo.sendConfirmationEmail({ enrollmentId })
-      if (!emailRes?.success) {
-        await repo.logAudit({ enrollmentId, action: 'email_sent', userId, details: `Error enviando correo: ${emailRes?.error || 'desconocido'}` }).catch(() => {})
-      }
-    } catch (e) { console.error('[reprogramEdition] Error enviando email:', e.message) }
+  // Odoo: desinscribir el origen (grupos del aula vieja + cancelar orden de venta).
+  if (old.old_odoo_activation) {
+    await repo.unenrollFromOldOdoo({ enrollmentId, old })
+    await repo.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${old.old_odoo_activation}` })
   }
 
-  return { result: 1, message: 'Edicion reprogramada correctamente' }
+  // Destino: hijos SEG -> Odoo -> correo de confirmacion, via job con reintentos.
+  let jobId = null
+  try {
+    const job = await repo.enqueueRegisterFollowup({ enrollmentId: newEid, userId })
+    jobId = job.job_id
+  } catch (qErr) {
+    console.error('[reprogramEdition] enqueue register_followup fallo:', qErr.message)
+  }
+
+  repo.refreshMv('on-reprogram')
+  return {
+    result: 1,
+    message: 'Edicion reprogramada correctamente',
+    new_enrollment_id: newEid,
+    email_pending: true,
+    job_id: jobId
+  }
 }
 
 // --- Cambio de curso -----------------------------------------------------

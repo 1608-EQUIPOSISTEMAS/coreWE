@@ -40,7 +40,21 @@ export const previewEmailSchema = {
       activation_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
       // Credenciales SAP en vivo: el preview pinta lo que FICO va escribiendo.
       sap_username: { type: ['string', 'null'] },
-      sap_password: { type: ['string', 'null'] }
+      sap_password: { type: ['string', 'null'] },
+      // Reprogramacion: previsualiza el correo con el plan de cuotas que se
+      // trasladara al enrollment destino (que aun no existe en este paso).
+      override_installments: {
+        type: ['array', 'null'],
+        items: {
+          type: 'object',
+          required: ['installment_number', 'amount', 'due_date'],
+          properties: {
+            installment_number: { type: 'integer' },
+            amount: { type: 'number' },
+            due_date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+          }
+        }
+      }
     }
   }
 }

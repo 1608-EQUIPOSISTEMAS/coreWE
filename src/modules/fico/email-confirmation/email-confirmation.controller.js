@@ -30,7 +30,8 @@ export async function previewEmailHandler (req, reply) {
     overrideProgramVersionId: req.body.override_program_version_id || null,
     activationDate: req.body.activation_date || null,
     sapUsername: req.body.sap_username ?? null,
-    sapPassword: req.body.sap_password ?? null
+    sapPassword: req.body.sap_password ?? null,
+    overrideInstallments: req.body.override_installments ?? null
   })
   return reply.code(200).send({ ok: true, data: toPreviewDto(data) })
 }

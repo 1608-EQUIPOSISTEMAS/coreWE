@@ -102,6 +102,48 @@ export class InstallmentRepository {
     })
   }
 
+  // Pago de certificado existente (para editarlo): valida pertenencia a la
+  // inscripcion y trae labels actuales para el diff de auditoria.
+  async findCertificatePayment (paymentId, enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT p.*, cm.description AS payment_method_label,
+             ba.bank_name, ba.account_number
+        FROM payments p
+        LEFT JOIN catalog cm ON cm.catalog_id = p.cat_method_payment
+        LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
+       WHERE p.payment_id = $1 AND p.enrollment_id = $2 AND p.active = 'Y'
+         AND p.installment_id IS NULL
+         AND p.cat_payment_type = (SELECT catalog_id FROM catalog WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+    `, [paymentId, enrollmentId])
+    return rows?.[0] || null
+  }
+
+  async findCatalogDescription (catalogId) {
+    if (!catalogId) return null
+    const { rows } = await this.db.query('SELECT description FROM catalog WHERE catalog_id = $1', [catalogId])
+    return rows?.[0]?.description || null
+  }
+
+  async findBankAccountLabel (accountId) {
+    if (!accountId) return null
+    const { rows } = await this.db.query('SELECT bank_name, account_number FROM bank_accounts WHERE account_id = $1', [accountId])
+    const r = rows?.[0]
+    return r ? [r.bank_name, r.account_number].filter(Boolean).join(' - ') : null
+  }
+
+  async updateAdditionalPaymentTx ({ paymentId, enrollmentId, amount, paidAt, transactionCode, catPaymentMedium, bankAccountId, voucherUrl, catCurrency }) {
+    await withTransaction(async client => {
+      await client.query(`
+        UPDATE payments SET amount = $1, payment_date = $2, transaction_code = $3,
+               cat_method_payment = $4, settled_in_account_id = $5, evidence_url = $6
+         WHERE payment_id = $7 AND enrollment_id = $8
+      `, [amount, paidAt, transactionCode || '', catPaymentMedium || null, bankAccountId || null, voucherUrl || null, paymentId, enrollmentId])
+      if (catCurrency) {
+        await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])
+      }
+    })
+  }
+
   // Verifica que la inscripcion exista y este activa.
   async findActiveEnrollment (enrollmentId) {
     const { rows } = await this.db.query(

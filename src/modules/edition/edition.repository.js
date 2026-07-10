@@ -569,9 +569,10 @@ export class EditionRepository {
  LEFT JOIN public.users usr ON usr.user_id = al.performed_by
      WHERE (
             e.program_edition_id = $1
-            -- ...o fue REPROGRAMADA fuera de esta aula: setProgramEdition movio la
-            -- fila a otra edicion, asi que ya no matchea por program_edition_id;
+            -- ...o fue REPROGRAMADA fuera de esta aula por el flujo RP antiguo,
+            -- que movia la fila a otra edicion (ya no matchea program_edition_id);
             -- el vinculo con el aula origen quedo en el audit log (old_edition_id).
+            -- El flujo RP actual deja la fila origen en su edicion (matchea arriba).
          OR e.enrollment_id IN (
               SELECT a.enrollment_id
                 FROM public.enrollment_audit_log a
