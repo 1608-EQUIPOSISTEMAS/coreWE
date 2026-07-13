@@ -244,6 +244,12 @@ export async function syncFicoCuotasToSheet () {
 // con sus cursos hijos (CUR1..CUR5 por slot del curriculum) y los contadores por
 // canal del cronograma (classroomChannelMetricsList, reglas confirmadas con
 // negocio). Data fija, sin formulas. Crea la hoja con headers si no existe.
+//
+// Orden de filas: espejo EXACTO de '0. Planeamiento 26' (spreadsheet cronograma
+// 2026), fila a fila desde la fila 2, para que el usuario copie el bloque de
+// contadores y lo pegue directo sin descuadrar. Filas del planeamiento sin
+// edicion en el sistema (eventos, separadores en blanco) quedan en blanco;
+// ediciones que no estan en el planeamiento van al final.
 export async function syncFicoCronogramaToSheet () {
   const SPREADSHEET_ID = repo.SPREADSHEET.fico
   const SHEET_NAME = 'CONT SISTEMAS'
@@ -253,7 +259,14 @@ export async function syncFicoCronogramaToSheet () {
   const metrics = ids.length ? await editionRepository.classroomChannelMetricsList(ids) : []
   const byId = new Map(metrics.map(m => [Number(m.edition_num_id), m]))
 
-  const values = rows.map(r => buildCronogramaRow(r, byId.get(Number(r.edition_num_id))))
+  const entries = rows.map(r => ({
+    active: r.active === 'Y',
+    recent: r.recent === true,
+    cod: String(r.cod || '').trim(),
+    ed: String(r.ed || '').trim(),
+    row: buildCronogramaRow(r, byId.get(Number(r.edition_num_id)))
+  }))
+  const values = await alignToPlaneamiento26(entries)
 
   const created = await repo.ensureAndWrite(
     SPREADSHEET_ID, SHEET_NAME, CRONOGRAMA_HEADER_ROW,
@@ -261,6 +274,50 @@ export async function syncFicoCronogramaToSheet () {
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
+// Reordena las filas de CONT SISTEMAS al orden de '0. Planeamiento 26'.
+// Clave de match: COD (col D del planeamiento) + ED.HIST (col K). Las ediciones
+// inactivas solo sirven de respaldo para filas del plan (el plan sigue
+// trabajando ediciones desactivadas); las activas van primero en cada clave.
+// Si el plan repite una edicion (aparece en dos meses), ambas filas reciben los
+// mismos contadores. Al final se anexan solo las ACTIVAS recientes (desde
+// jun-2025) que no estan en el plan. Si el planeamiento no se puede leer, se
+// conserva el orden original (solo activas recientes): el sync no debe caerse
+// por permisos del otro spreadsheet.
+async function alignToPlaneamiento26 (entries) {
+  let plan
+  try {
+    plan = await repo.readRange(repo.SPREADSHEET.cronograma26, "'0. Planeamiento 26'!D2:K")
+  } catch (err) {
+    console.warn('CONT SISTEMAS: no se pudo leer 0. Planeamiento 26, se mantiene orden por fecha:', err.message)
+    return entries.filter(e => e.active && e.recent).map(e => e.row)
+  }
+
+  const groups = new Map() // key -> { list, next }
+  for (const e of entries) {
+    const k = `${e.cod}|${e.ed}`
+    if (!groups.has(k)) groups.set(k, { list: [], next: 0 })
+    groups.get(k).list.push(e)
+  }
+  // activas y recientes primero dentro de cada clave (sort estable conserva
+  // el orden por fecha entre iguales)
+  for (const g of groups.values()) {
+    g.list.sort((a, b) => (Number(b.active) - Number(a.active)) || (Number(b.recent) - Number(a.recent)))
+  }
+
+  const ordered = plan.map(row => {
+    const k = `${String(row[0] || '').trim()}|${String(row[7] || '').trim()}` // D=COD, K=ED.HIST
+    const g = groups.get(k)
+    if (!g || g.list.length === 0) return ['']
+    const e = g.list[Math.min(g.next, g.list.length - 1)]
+    g.next++
+    return e.row
+  })
+  for (const g of groups.values()) {
+    ordered.push(...g.list.slice(g.next).filter(e => e.active && e.recent).map(e => e.row))
+  }
+  return ordered
 }
 
 // FICO -> hoja "Adicionales". Pagos de certificado de becados: 19 columnas A..S,

@@ -24,7 +24,8 @@ const SPREADSHEET = {
   insc: '1B4NAcmk1QjwLV_NhfP4FPkQrdFWLdanvIg_gkPufCPg',
   schedule: '1vZHEs2URSJOxiBVlnwwgwKV-W-g_pWqdv-Y1wtXmfUc',
   prospectos: '1plkAWdZvcIRt2fRi-nK9NQKuHy86yj2pMD9mtjAxZHc',
-  fico: '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c'
+  fico: '19ALxQ0OhKDyjLY9WOowgN275ji81YXZ91uLQWDOeF_c',
+  cronograma26: '1kh6HLxrg47qW2rkKh-UmEXkOgiGGLz7_wu6mpfT0KEM'
 }
 
 // Cliente de Google Sheets autenticado con la cuenta de servicio en disco.
@@ -442,10 +443,9 @@ export class IntegrationRepository {
         JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
-         AND (
-              e.parent_enrollment_id IS NOT NULL
-           OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
-         )
+         -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y
+         -- hijos: asisten sus hijos SEG, no el).
+         AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          ${EXCLUDE_IMPORTED}
          ${SYNC_FROM}
     ),
@@ -947,8 +947,11 @@ export class IntegrationRepository {
     return rows || []
   }
 
-  // Cronograma para la hoja "CONT SISTEMAS": una fila por edicion activa desde
-  // jun-2025. Los CUR1..CUR5 son las ediciones hijas colocadas en el SLOT que su
+  // Cronograma para la hoja "CONT SISTEMAS": una fila por edicion, sin corte de
+  // fecha (el planeamiento sigue trabajando ediciones viejas e inactivas; el
+  // usecase decide con los flags `active` y `recent` cuales matchear al plan y
+  // cuales anexar al final).
+  // Los CUR1..CUR5 son las ediciones hijas colocadas en el SLOT que su
   // curso ocupa en el curriculum del programa (program_version_structure), igual
   // que la hoja manual: un diplomado con solo el modulo 4 programado llena CUR4 y
   // deja CUR1-3 vacios. Los contadores comerciales (ventas/segui/memb/b2b/becas)
@@ -996,6 +999,8 @@ export class IntegrationRepository {
     )
     SELECT
       pe.edition_num_id,
+      pe.active,
+      (pe.start_date >= DATE '2025-06-01') AS recent,
       COALESCE(ctp.description, '')            AS categ,
       COALESCE(pv.version_code, '')            AS cod,
       COALESCE(pv.abbreviation, '')            AS programa,
@@ -1009,14 +1014,20 @@ export class IntegrationRepository {
       LEFT JOIN public."catalog" ctp  ON ctp.catalog_id = p.cat_type_program
       LEFT JOIN kids k  ON k.parent_edition_id = pe.edition_num_id
       LEFT JOIN rp      ON rp.edition_num_id = pe.edition_num_id
-     WHERE pe.active = 'Y'
-       AND pe.start_date >= DATE '2025-06-01'
      ORDER BY pe.start_date, pv.version_code, pe.edition_num_id
   `)
     return rows || []
   }
 
-  // ── Escrituras en Google Sheets ────────────────────────────────────────
+  // ── Lecturas / escrituras en Google Sheets ─────────────────────────────
+
+  // Lee un rango de valores de un spreadsheet (filas como arrays de strings).
+  async readRange (spreadsheetId, range) {
+    const googleSheets = await this.sheets()
+    const res = await googleSheets.spreadsheets.values.get({ spreadsheetId, range })
+    return res.data.values || []
+  }
+
 
   // Limpia un rango y escribe valores desde una celda de inicio. El clear es
   // obligatorio: si falla, el update solo sobrescribe las primeras N filas y deja

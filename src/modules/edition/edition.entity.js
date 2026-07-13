@@ -126,10 +126,10 @@ export function validateRubricParams (edition_id, session_number) {
 // PASS_THRESHOLD y CAP_FINAL_AT_20 son provisionales hasta confirmacion del
 // area academica; se cambian aqui sin tocar nada mas.
 export const GRADE_RULES = Object.freeze({
-  TEST_MAX_PER_SESSION: 5,
-  TEST_MULTIPLIER: 4, // promedio(0-5) * 4 => /20
-  PARTIAL_CRITERIA_MAX: Object.freeze([8, 8, 4]), // claves "1".."3"
-  FINAL_CRITERIA_MAX: Object.freeze([5, 5, 5, 5]), // claves "1".."4"
+  TEST_MAX_PER_SESSION: 20, // nota del TEST FINAL del quiz de la sesion (0-20)
+  CRITERIA_MAX: 20, // cada criterio se califica de 0 a 20
+  PARTIAL_CRITERIA_WEIGHTS: Object.freeze([0.4, 0.4, 0.2]), // claves "1".."3", ponderado /20
+  FINAL_CRITERIA_WEIGHTS: Object.freeze([0.3, 0.3, 0.2, 0.2]), // claves "1".."4", ponderado /20
   WEIGHT_TEST: 0.30,
   WEIGHT_PARTIAL: 0.30,
   WEIGHT_FINAL: 0.40,
@@ -146,17 +146,25 @@ function clampNumber (value, max) {
   return Math.min(Math.max(n, 0), max)
 }
 
-// Clampa un JSONB de criterios {"1": n, ...} contra sus maximos. Las claves
-// fuera de rango se descartan; los valores invalidos caen a null.
-function sanitizeCriteria (criteria, maxima) {
+// Clampa un JSONB de criterios {"1": n, ...}: cada criterio va de 0 a 20.
+// Las claves fuera de rango se descartan; los valores invalidos caen a null.
+function sanitizeCriteria (criteria, weights) {
   const out = {}
   if (!criteria || typeof criteria !== 'object') return out
-  maxima.forEach((max, i) => {
+  weights.forEach((_, i) => {
     const key = String(i + 1)
     if (criteria[key] === undefined) return
-    out[key] = clampNumber(criteria[key], max)
+    out[key] = clampNumber(criteria[key], GRADE_RULES.CRITERIA_MAX)
   })
   return out
+}
+
+// Total /20 de un entregable: promedio ponderado de sus criterios (0-20 c/u).
+function weightedCriteriaScore (criteria, weights) {
+  return round2(weights.reduce((acc, w, i) => {
+    const v = Number(criteria?.[String(i + 1)])
+    return acc + (Number.isFinite(v) ? v * w : 0)
+  }, 0))
 }
 
 // Sanea una fila del bulk de notas: clamps por celda en vez de rechazar el
@@ -193,8 +201,8 @@ export function sanitizeGradeItem (item = {}) {
     enrollment_id: Number(item.enrollment_id),
     tests,
     participation,
-    partial_criteria: sanitizeCriteria(item.partial_criteria, GRADE_RULES.PARTIAL_CRITERIA_MAX),
-    final_criteria: sanitizeCriteria(item.final_criteria, GRADE_RULES.FINAL_CRITERIA_MAX),
+    partial_criteria: sanitizeCriteria(item.partial_criteria, GRADE_RULES.PARTIAL_CRITERIA_WEIGHTS),
+    final_criteria: sanitizeCriteria(item.final_criteria, GRADE_RULES.FINAL_CRITERIA_WEIGHTS),
     group_number: Number.isInteger(groupNumber) && groupNumber > 0 ? groupNumber : null,
     tracking_code: trackingCode || null,
     observation: observation || null
@@ -220,12 +228,13 @@ export function computeGradeTotals (item, sessionsTotal = 0) {
   const sumValues = (obj) => Object.values(obj || {})
     .reduce((acc, v) => acc + (Number.isFinite(Number(v)) ? Number(v) : 0), 0)
 
+  // TEST /20 = promedio de los tests de sesion (cada uno ya viene 0-20)
   const testScore = sessionsTotal > 0
-    ? round2((sumValues(item.tests) / sessionsTotal) * GRADE_RULES.TEST_MULTIPLIER)
+    ? round2(sumValues(item.tests) / sessionsTotal)
     : 0
   const partScore = participationScore(item.participation, sessionsTotal)
-  const partialScore = round2(sumValues(item.partial_criteria))
-  const finalDelivScore = round2(sumValues(item.final_criteria))
+  const partialScore = weightedCriteriaScore(item.partial_criteria, GRADE_RULES.PARTIAL_CRITERIA_WEIGHTS)
+  const finalDelivScore = weightedCriteriaScore(item.final_criteria, GRADE_RULES.FINAL_CRITERIA_WEIGHTS)
 
   let finalGrade = round2(
     testScore * GRADE_RULES.WEIGHT_TEST +
@@ -367,6 +376,214 @@ export function resolveAiAuditorUrl (env = process.env) {
     throw new Error(`AI_AUDITOR_URL host no permitido: ${hostname}. Agregalo a AI_AUDITOR_ALLOWED_HOSTS.`)
   }
   return raw
+}
+
+// =====================================================================
+// Vista Semanal Academica: aulas en curso por dia con nº de sesion.
+// Las fechas de cada sesion NO estan en BD: se derivan de start_date +
+// dias permitidos (we_day_combination.variable_2) + feriados (we_holiday),
+// con la misma matematica que getNthSession en pdf.service.js.
+// =====================================================================
+
+// Parsea 'YYYY-MM-DD' (o ISO con hora) a Date local, evitando el corrimiento
+// UTC de un dia. Mismo helper que pdf.service.js y ScheduleBoard.vue.
+export function parseLocalDate (str) {
+  if (!str) return null
+  const [y, m, d] = String(str).split('T')[0].split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+const toYmd = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Rango lunes-domingo de una semana ISO ("semana comercial"). El 4 de enero
+// siempre cae en la semana ISO 1, asi que el lunes de la semana N es el lunes
+// de la semana del 4-ene desplazado (N-1)*7 dias.
+export function isoWeekRange (year, week) {
+  const jan4 = new Date(year, 0, 4)
+  const isodow = jan4.getDay() === 0 ? 7 : jan4.getDay()
+  const monday = new Date(year, 0, 4 - (isodow - 1) + (week - 1) * 7)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return { date_start: toYmd(monday), date_end: toYmd(sunday) }
+}
+
+// Dias de la semana permitidos (0=dom..6=sab) segun variable_2 del catalogo
+// we_day_combination. Fallback sin combinacion: el weekday de start_date,
+// mismo criterio que el PDF de programacion.
+export function getAllowedDays (dayCombos = [], catDayCombinationId, startDateStr) {
+  const entry = dayCombos.find(
+    (c) => c.id === catDayCombinationId || c.catalog_id === catDayCombinationId
+  )
+  try {
+    const parsed = JSON.parse(entry?.variable_2 ?? 'null')
+    if (Array.isArray(parsed) && parsed.length) return parsed
+  } catch { /* variable_2 malformado: cae al fallback */ }
+  const start = parseLocalDate(startDateStr)
+  return start ? [start.getDay()] : []
+}
+
+// Map 'YYYY-MM-DD' -> nº de sesion para las fechas dentro de [rangeStart,
+// rangeEnd]: itera desde start_date contando dias permitidos no feriados
+// (tope 1500 iteraciones, como pdf.service.js). Corta al agotar totalSessions
+// o al pasar endDateStr (fin real del aula).
+export function sessionNumbersForRange ({
+  startDateStr, endDateStr = null, allowedDays = [], holidaySet = new Set(),
+  totalSessions = 0, rangeStart, rangeEnd
+}) {
+  const out = new Map()
+  const iter = parseLocalDate(startDateStr)
+  let stop = parseLocalDate(rangeEnd)
+  const editionEnd = parseLocalDate(endDateStr)
+  if (editionEnd && editionEnd < stop) stop = editionEnd
+  if (!iter || !stop || !allowedDays.length) return out
+  let counted = 0
+  for (let i = 0; i < 1500 && iter <= stop; i++) {
+    const key = toYmd(iter)
+    if (allowedDays.includes(iter.getDay()) && !holidaySet.has(key)) {
+      counted++
+      if (totalSessions && counted > totalSessions) break
+      if (key >= rangeStart) out.set(key, counted)
+    }
+    iter.setDate(iter.getDate() + 1)
+  }
+  return out
+}
+
+// Construye los 7 dias (lunes-domingo) de la vista semanal volcando en cada
+// dia las ediciones que dictan sesion esa fecha, con su nº de sesion.
+export function buildWeeklySessionDays ({
+  date_start, date_end, rows = [], dayCombos = [], holidaySet = new Set()
+}) {
+  const days = []
+  const byDate = new Map()
+  const monday = parseLocalDate(date_start)
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    const key = toYmd(d)
+    const day = { date: key, weekday: d.getDay(), holiday: holidaySet.has(key), editions: [] }
+    days.push(day)
+    byDate.set(key, day)
+  }
+  for (const r of rows) {
+    const allowedDays = getAllowedDays(dayCombos, Number(r.cat_day_combination_id), r.start_date)
+    const sessions = sessionNumbersForRange({
+      startDateStr: r.start_date,
+      endDateStr: r.end_date,
+      allowedDays,
+      holidaySet,
+      totalSessions: Number(r.total_sessions) || 0,
+      rangeStart: date_start,
+      rangeEnd: date_end
+    })
+    for (const [dateKey, sessionNumber] of sessions) {
+      byDate.get(dateKey)?.editions.push({
+        edition_num_id: r.edition_num_id,
+        abbreviation: r.abbreviation,
+        specific_code: r.specific_code,
+        session_number: sessionNumber,
+        total_sessions: Number(r.total_sessions) || 0,
+        day_label: r.day_label,
+        hour_label: r.hour_label,
+        instructor: r.instructor,
+        start_date: r.start_date,
+        end_date: r.end_date
+      })
+    }
+  }
+  return days
+}
+
+// =====================================================================
+// Control de ediciones (gestion academica por sesion, espejo de la hoja
+// "3. Control de ediciones"): el cronograma se sigue DERIVANDO; solo se
+// persisten overrides {status A/R/T, new_date} en edition_session_control.
+// =====================================================================
+
+// Tope de reprogramaciones POR CURSO (suma de todos los cambios de fecha de
+// todas sus sesiones, incluyendo re-reprogramar la misma sesion).
+export const MAX_EDITION_REPROS = 3
+
+// Eventos de reprogramacion de un override. Fallback new_date?1:0 para filas
+// creadas antes de la columna repro_times.
+export const reproEventsOf = (c = {}) =>
+  Math.max(Number(c.repro_times) || 0, c.new_date ? 1 : 0)
+
+// Cronograma completo de un aula aplicando overrides. Reprogramar NO corre
+// las demas sesiones: la sesion con new_date conserva su session_number (la
+// clave del override) pero se REUBICA cronologicamente entre las otras, y el
+// array sale ordenado por fecha efectiva (S1..Sn de la vista = posicion).
+// Ej.: 15/7 R->6/8 con resto 22/7, 5/8, 12/8... => 22/7, 5/8, 6/8(R), 12/8...
+export function buildSessionSchedule ({
+  startDateStr, allowedDays = [], holidaySet = new Set(),
+  totalSessions = 0, overrides = new Map()
+}) {
+  const out = []
+  const cursor = parseLocalDate(startDateStr)
+  if (!cursor || !allowedDays.length || !totalSessions) return out
+  for (let n = 1; n <= totalSessions; n++) {
+    let guard = 0
+    while (guard++ < 1500 && (!allowedDays.includes(cursor.getDay()) || holidaySet.has(toYmd(cursor)))) {
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    if (guard > 1500) break
+    const planned = toYmd(cursor)
+    const ov = overrides.get(n) || {}
+    out.push({
+      session_number: n,
+      planned_date: planned,
+      date: ov.new_date || planned,
+      status: ov.status || null,
+      new_date: ov.new_date || null,
+      repro_times: ov.repro_times || 0
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.session_number - b.session_number))
+  return out
+}
+
+// Fila del control: cabecera del aula + sesiones (orden cronologico) +
+// derivados. Sesion actual = primera posicion AUN NO DICTADA (ni A ni T; una
+// R futura sigue pendiente de dictarse); todas dictadas = 'CULMINÓ'. Repros
+// cuenta reprogramadas (new_date u estado R) aunque luego se marquen A.
+export function buildControlRow (r, { dayCombos = [], holidaySet = new Set(), controls = [] } = {}) {
+  const overrides = new Map(
+    controls
+      .filter((c) => Number(c.program_edition_id) === Number(r.edition_num_id))
+      .map((c) => [Number(c.session_number), {
+        status: c.status || null,
+        new_date: c.new_date ? String(c.new_date).slice(0, 10) : null,
+        repro_times: reproEventsOf(c)
+      }])
+  )
+  const allowedDays = getAllowedDays(dayCombos, Number(r.cat_day_combination_id), r.start_date)
+  const sessions = buildSessionSchedule({
+    startDateStr: r.start_date,
+    allowedDays,
+    holidaySet,
+    totalSessions: Number(r.total_sessions) || 0,
+    overrides
+  })
+  const pendingIdx = sessions.findIndex((s) => s.status !== 'A' && s.status !== 'T')
+  return {
+    edition_num_id: r.edition_num_id,
+    abbreviation: r.abbreviation,
+    specific_code: r.specific_code,
+    instructor: r.instructor,
+    day_label: r.day_label,
+    hour_label: r.hour_label,
+    start_date: r.start_date,
+    end_date: r.end_date,
+    total_sessions: Number(r.total_sessions) || 0,
+    sessions,
+    current_label: sessions.length ? (pendingIdx !== -1 ? `S${pendingIdx + 1}` : 'CULMINÓ') : '',
+    // Repros = EVENTOS de reprogramacion del curso (re-reprogramar suma otra).
+    repro_count: sessions.reduce((a, s) => a + (s.repro_times || (s.status === 'R' ? 1 : 0)), 0),
+    repro_max: MAX_EDITION_REPROS,
+    tardy_count: sessions.filter((s) => s.status === 'T').length
+  }
 }
 
 // Convierte una fecha DD/MM/YYYY a YYYY-MM-DD. Si no tiene 3 partes, devuelve

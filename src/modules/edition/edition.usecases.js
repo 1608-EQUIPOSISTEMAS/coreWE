@@ -1,8 +1,14 @@
 import { editionRepository } from './edition.repository.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
+import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
   buildEditionFilters,
   buildEditionByWeekFilters,
+  isoWeekRange,
+  buildWeeklySessionDays,
+  buildControlRow,
+  reproEventsOf,
+  MAX_EDITION_REPROS,
   buildA5Payload,
   validateRubricParams,
   resolveAiAuditorUrl,
@@ -79,6 +85,89 @@ async function attachChannelMetrics (items = []) {
     // consultas (leads, excluye Desestimado/Cerrado)
     it.cnt_consultas = leadsById.get(Number(it?.edition_num_id))?.cnt_consultas ?? 0
   }
+}
+
+// Vista Semanal Academica: aulas en curso por dia (lunes-domingo) de una
+// semana ISO, con nº de sesion derivado (no persistido) desde start_date +
+// dias permitidos + feriados, misma matematica que el PDF de programacion.
+export async function editionWeeklySessions ({ year, week } = {}) {
+  const y = Number(year)
+  const w = Number(week)
+  const { date_start, date_end } = isoWeekRange(y, w)
+  const [rows, catalog] = await Promise.all([
+    repo.weeklySessions(date_start, date_end),
+    getCatalog()
+  ])
+  const holidaySet = new Set(
+    (catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)
+  )
+  const days = buildWeeklySessionDays({
+    date_start,
+    date_end,
+    rows,
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet
+  })
+  return { year: y, week: w, date_start, date_end, days }
+}
+
+// Control de ediciones: aulas que INICIAN en la semana ISO pedida, con su
+// cronograma S1..Sn derivado + overrides de gestion (estado / reprogramacion).
+export async function editionWeeklyControl ({ year, week } = {}) {
+  const y = Number(year)
+  const w = Number(week)
+  const { date_start, date_end } = isoWeekRange(y, w)
+  const [rows, catalog] = await Promise.all([
+    repo.weeklyControlEditions(date_start, date_end),
+    getCatalog()
+  ])
+  const controls = await repo.sessionControlsList(rows.map((r) => Number(r.edition_num_id)))
+  const ctx = {
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+    controls
+  }
+  // La BD prefiltra por start/end + margen; aqui se afina con el cronograma
+  // REAL derivado (incluye reprogramaciones): en curso = su primera sesion no
+  // pasa de la semana y su ultima sesion no termino antes de la semana.
+  const editions = rows
+    .map((r) => buildControlRow(r, ctx))
+    .filter((r) => {
+      const first = r.sessions[0]
+      const last = r.sessions[r.sessions.length - 1]
+      return first && first.date <= date_end && last.date >= date_start
+    })
+  return { year: y, week: w, date_start, date_end, editions }
+}
+
+// Guarda el estado de una sesion (A/R/T, con nueva fecha si es R) y devuelve
+// la fila recalculada (la R se reubica cronologicamente). Se puede
+// re-reprogramar la misma sesion; cada cambio de fecha consume una de las
+// MAX_EDITION_REPROS reprogramaciones del curso.
+export async function editionSessionControlSave ({ edition_num_id, session_number, status, new_date, user_id } = {}) {
+  if (status === 'R' && new_date) {
+    const controls = await repo.sessionControlsList([Number(edition_num_id)])
+    const existing = controls.find((c) => Number(c.session_number) === Number(session_number))
+    const isNewEvent = String(existing?.new_date || '').slice(0, 10) !== new_date
+    const total = controls.reduce((a, c) => a + reproEventsOf(c), 0)
+    if (isNewEvent && total >= MAX_EDITION_REPROS) {
+      const err = new Error(`El curso ya alcanzó el máximo de ${MAX_EDITION_REPROS} reprogramaciones`)
+      err.statusCode = 409
+      throw err
+    }
+  }
+  await repo.sessionControlSave({ edition_num_id, session_number, status, new_date }, user_id)
+  const row = await repo.controlEditionGet(edition_num_id)
+  if (!row) return null
+  const [controls, catalog] = await Promise.all([
+    repo.sessionControlsList([Number(edition_num_id)]),
+    getCatalog()
+  ])
+  return buildControlRow(row, {
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+    controls
+  })
 }
 
 // UPDATE (simple). Inyecta edition_num_id desde id o el propio edition.
@@ -246,6 +335,44 @@ export async function classroomGradesSave ({ edition_id, items = [], user_id = n
   const withTotals = clean.map((it) => ({ ...it, ...computeGradeTotals(it, sessionsTotal) }))
   // user_id == null debe quedar NULL: Number(null) es 0 y violaria la FK.
   const uid = user_id != null && Number.isFinite(Number(user_id)) ? Number(user_id) : null
+
+  // Entregables grupales (espejo de sp_nexus_aula_notas_save): si el parcial o
+  // final de un alumno con grupo CAMBIA respecto a lo guardado, se propaga el
+  // mismo bloque a todo el grupo; cada miembro conserva sus tests/participacion
+  // y su nota final se recalcula con ellos.
+  const existing = await repo.classroomGradesGet(eid)
+  const existingMap = new Map(existing.map((g) => [Number(g.enrollment_id), g]))
+  const sameBlock = (a, b) => JSON.stringify(a || {}) === JSON.stringify(b || {})
+  const groupOf = (it) => it.group_number ?? existingMap.get(it.enrollment_id)?.group_number ?? null
+
+  const groupBlocks = new Map() // grupo -> bloques que cambiaron (ultimo gana)
+  for (const it of withTotals) {
+    const grupo = groupOf(it)
+    if (!grupo) continue
+    const prev = existingMap.get(it.enrollment_id)
+    const cambios = {}
+    if (!sameBlock(it.partial_criteria, prev?.partial_criteria)) cambios.partial_criteria = it.partial_criteria
+    if (!sameBlock(it.final_criteria, prev?.final_criteria)) cambios.final_criteria = it.final_criteria
+    if (Object.keys(cambios).length) groupBlocks.set(grupo, { ...groupBlocks.get(grupo), ...cambios })
+  }
+
+  if (groupBlocks.size) {
+    // Miembros presentes en el payload: se sobrescriben sus bloques
+    for (const it of withTotals) {
+      const blocks = groupBlocks.get(groupOf(it))
+      if (!blocks) continue
+      Object.assign(it, blocks, computeGradeTotals({ ...it, ...blocks }, sessionsTotal))
+    }
+    // Miembros del grupo ya guardados que no vienen en el payload
+    const inPayload = new Set(withTotals.map((it) => it.enrollment_id))
+    for (const g of existing) {
+      if (inPayload.has(Number(g.enrollment_id))) continue
+      const blocks = g.group_number ? groupBlocks.get(g.group_number) : null
+      if (!blocks) continue
+      const item = sanitizeGradeItem({ ...g, ...blocks })
+      withTotals.push({ ...item, ...computeGradeTotals(item, sessionsTotal) })
+    }
+  }
 
   const saved = await repo.classroomGradesSaveBulk(eid, withTotals, uid)
   return { ok: true, data: saved }
@@ -464,3 +591,4 @@ export async function classroomAuditRunAi ({
   const rows = await repo.classroomAuditUpsertAi(eid, sn, report, metadata)
   return { ok: true, row: rows[0] }
 }
+

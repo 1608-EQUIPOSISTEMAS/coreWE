@@ -367,6 +367,14 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
       totalAmount, oldAmount, justificacion, userId,
       cat_method_payment, cat_business_entity, bank_account_id, transaction_code
     })
+
+    // Destino paquete/especializacion: crear sus hijos SEG (uno por aula de la
+    // estructura), igual que la venta directa y el modelo RP. Sin esto el
+    // destino queda como "hoja" sentado en el aula del diploma y el padre
+    // muestra AULA 1 en el cronograma (caso Diana Supo, CC #9). Si el destino
+    // es un curso normal, createChildEnrollments sale solo (sin estructura).
+    await safeAsync('[courseChange] crear hijos SEG del destino', () =>
+      repo.createChildEnrollments({ enrollmentId: newEid, userId }))
   }
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'

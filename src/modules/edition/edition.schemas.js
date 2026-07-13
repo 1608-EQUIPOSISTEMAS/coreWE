@@ -337,6 +337,38 @@ export const editionByWeekListSchema = {
   }
 }
 
+// Vista Semanal Academica: semana ISO del anio (1..53).
+export const weeklySessionsSchema = {
+  body: {
+    type: 'object',
+    required: ['year', 'week'],
+    additionalProperties: false,
+    properties: {
+      year: { type: 'integer', minimum: 2020, maximum: 2100 },
+      week: { type: 'integer', minimum: 1, maximum: 53 }
+    }
+  }
+}
+
+// Control de ediciones: aulas que inician en la semana ISO (1..53).
+export const weeklyControlSchema = weeklySessionsSchema
+
+// Estado de una sesion: A dictada, R reprogramada (new_date), T tardanza.
+// status null limpia la gestion de esa sesion.
+export const sessionControlSaveSchema = {
+  body: {
+    type: 'object',
+    required: ['edition_num_id', 'session_number'],
+    additionalProperties: false,
+    properties: {
+      edition_num_id: { type: 'integer' },
+      session_number: { type: 'integer', minimum: 1, maximum: 100 },
+      status: { type: ['string', 'null'], enum: ['A', 'R', 'T', null] },
+      new_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+    }
+  }
+}
+
 export const editionGetSchema = {
   body: {
     type: 'object',

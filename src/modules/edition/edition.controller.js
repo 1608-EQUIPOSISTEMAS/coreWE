@@ -27,6 +27,24 @@ export async function byWeekListHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function weeklySessionsHandler (req, reply) {
+  const data = await usecases.editionWeeklySessions(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function weeklyControlHandler (req, reply) {
+  const data = await usecases.editionWeeklyControl(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function sessionControlSaveHandler (req, reply) {
+  const data = await usecases.editionSessionControlSave({
+    ...req.body,
+    user_id: req.user?.id ?? null
+  })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function classroomMetricsListHandler (req, reply) {
   const data = await usecases.classroomMetricsList(req.body)
   return reply.code(200).send({ ok: true, data })

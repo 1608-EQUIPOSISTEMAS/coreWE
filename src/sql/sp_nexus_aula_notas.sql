@@ -19,17 +19,19 @@
 -- sus notas (tests por sesion, participacion, criterios de entregables) y los
 -- totales calculados con resultado APROBADO/DESAPROBADO.
 --
--- Lo que el docente registra: tests por sesion (0-5), participacion por sesion
--- (true/false), criterios del entregable parcial (max 8/8/4) y final (max
--- 5/5/5/5), y el numero de grupo. En el save, NULL = "no cambiar ese campo"
--- (actualizacion parcial); lo enviado reemplaza completo ese bloque.
+-- Lo que el docente registra: tests por sesion (0-20, la nota del TEST FINAL
+-- del quiz de esa sesion), participacion por sesion (true/false), criterios
+-- de entregables (cada criterio de 0 a 20; parcial pondera 40/40/20 y final
+-- 30/30/20/20), y el numero de grupo. En el save, NULL = "no cambiar ese
+-- campo"; lo enviado reemplaza completo ese bloque.
 --
 -- !! REGLAS DE NEGOCIO REPLICADAS DEL ERP !!
 -- Fuente de verdad: GRADE_RULES en Backend/src/modules/edition/edition.entity.js
 -- (y su espejo en Frontend AulaDetail.vue). Si cambian alla, actualizar aqui:
---   * TEST (20)        = SUM(tests) / sesiones_programadas * 4   (0-5 por sesion)
+--   * TEST (20)        = SUM(tests) / sesiones_programadas   (0-20 por sesion)
 --   * PARTICIPACION    = ROUND(checks * 2 / sesiones), cap 2
---   * ENTREGABLES      = suma de criterios (parcial /20, final /20)
+--   * ENTREGABLES      = promedio ponderado de criterios 0-20 c/u
+--                        (parcial: 40/40/20; final: 30/30/20/20) => /20
 --   * NOTA FINAL       = TEST*0.30 + PARCIAL*0.30 + FINAL*0.40 + PARTICIPACION
 --                        capeada a 20
 --   * APROBADO         = nota final >= 12
@@ -164,8 +166,16 @@ AS $$
     g.partial_score                           AS nota_parcial_20,
     g.final_deliv_score                       AS nota_entregable_final_20,
     g.final_grade                             AS nota_final_20,
+    -- "Tiene notas" = al menos una celda escrita (un 0 tecleado cuenta; el
+    -- grupo o la observacion NO cuentan). Espejo de hasAnyGrade en el ERP.
     CASE
       WHEN g.grade_id IS NULL THEN 'SIN NOTAS'
+      WHEN NOT (
+           EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(g.tests, '{}'::jsonb)) t WHERE t.value IS NOT NULL)
+        OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(g.partial_criteria, '{}'::jsonb)) t WHERE t.value IS NOT NULL)
+        OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(g.final_criteria, '{}'::jsonb)) t WHERE t.value IS NOT NULL)
+        OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(g.participation, '{}'::jsonb)) t WHERE t.value = 'true')
+      ) THEN 'SIN NOTAS'
       WHEN g.final_grade >= 12 THEN 'APROBADO'
       ELSE 'DESAPROBADO'
     END                                       AS resultado,
@@ -185,13 +195,12 @@ AS $$
   WHERE ed.codigo = p_codigo
     AND e.active = 'Y'
     AND cf.alias = 'we_enrollment_status_checked'
-    AND (
-         e.parent_enrollment_id IS NOT NULL
-      OR NOT EXISTS (
+    -- HOJA = sin hijos (un destino de cambio de curso hacia un paquete tiene
+    -- padre Y sus propios hijos SEG: asisten los hijos, no el).
+    AND NOT EXISTS (
            SELECT 1 FROM public.enrollments c
             WHERE c.parent_enrollment_id = e.enrollment_id
          )
-    )
   ORDER BY per.last_name, per.first_name
 $$;
 
@@ -201,8 +210,11 @@ $$;
 -- Contrato: p_tests / p_participacion / p_parcial / p_final / p_grupo en NULL
 -- significa "no cambiar"; si vienen, REEMPLAZAN ese bloque completo (mismo
 -- comportamiento que el guardado del ERP). Los valores se clampean por celda:
--- tests 0-5, parcial max 8/8/4, final max 5 c/u, claves invalidas se descartan.
+-- tests 0-20, criterios de entregables 0-20; claves invalidas se descartan.
 -- Los totales se recalculan SIEMPRE aqui (nunca se aceptan del cliente).
+-- ENTREGABLES GRUPALES: si el alumno tiene grupo y el bloque parcial/final
+-- CAMBIA, se propaga el mismo bloque a todo el grupo recalculando la nota
+-- final de cada miembro con SUS tests/participacion individuales.
 DROP FUNCTION IF EXISTS public.sp_nexus_aula_notas_save(text, integer, jsonb, jsonb, jsonb, jsonb, integer);
 CREATE OR REPLACE FUNCTION public.sp_nexus_aula_notas_save(
   p_codigo        text,
@@ -233,17 +245,24 @@ AS $$
 -- (enrollment_id, etc.); dentro de los statements SQL gana la columna.
 #variable_conflict use_column
 DECLARE
-  v_edition   integer;
-  v_sesiones  integer;
-  v_tests     jsonb;
-  v_part      jsonb;
-  v_parcial   jsonb;
-  v_final     jsonb;
-  v_test20    numeric;
-  v_part2     numeric;
-  v_parcial20 numeric;
-  v_final20   numeric;
-  v_nota      numeric;
+  v_edition      integer;
+  v_sesiones     integer;
+  v_tests        jsonb;
+  v_part         jsonb;
+  v_parcial      jsonb;
+  v_final        jsonb;
+  v_parcial_old  jsonb;
+  v_final_old    jsonb;
+  v_grupo_prev   integer;
+  v_grupo        integer;
+  v_prop_parcial boolean := false;
+  v_prop_final   boolean := false;
+  v_tiene_notas  boolean := false;
+  v_test20       numeric;
+  v_part2        numeric;
+  v_parcial20    numeric;
+  v_final20      numeric;
+  v_nota         numeric;
 BEGIN
   v_edition := public.sp_nexus_aula_codigo_resolver(p_codigo);
   IF v_edition IS NULL THEN
@@ -270,13 +289,17 @@ BEGIN
   END IF;
 
   -- Bloques: NULL = conservar lo guardado; si viene, se sanea y reemplaza.
-  SELECT g.tests, g.participation, g.partial_criteria, g.final_criteria
-    INTO v_tests, v_part, v_parcial, v_final
+  SELECT g.tests, g.participation, g.partial_criteria, g.final_criteria, g.group_number
+    INTO v_tests, v_part, v_parcial, v_final, v_grupo_prev
     FROM public.classroom_student_grades g
    WHERE g.enrollment_id = p_enrollment_id;
 
+  -- Copia previa de los entregables para detectar cambios (propagacion grupal)
+  v_parcial_old := COALESCE(v_parcial, '{}'::jsonb);
+  v_final_old   := COALESCE(v_final, '{}'::jsonb);
+
   IF p_tests IS NOT NULL THEN
-    SELECT COALESCE(jsonb_object_agg(key, LEAST(GREATEST(value::numeric, 0), 5)), '{}'::jsonb)
+    SELECT COALESCE(jsonb_object_agg(key, LEAST(GREATEST(value::numeric, 0), 20)), '{}'::jsonb)
       INTO v_tests
       FROM jsonb_each_text(p_tests)
      WHERE key ~ '^[0-9]+$' AND key::int BETWEEN 1 AND GREATEST(v_sesiones, 1)
@@ -294,9 +317,7 @@ BEGIN
   v_part := COALESCE(v_part, '{}'::jsonb);
 
   IF p_parcial IS NOT NULL THEN
-    SELECT COALESCE(jsonb_object_agg(key,
-             LEAST(GREATEST(value::numeric, 0),
-                   CASE key WHEN '1' THEN 8 WHEN '2' THEN 8 ELSE 4 END)), '{}'::jsonb)
+    SELECT COALESCE(jsonb_object_agg(key, LEAST(GREATEST(value::numeric, 0), 20)), '{}'::jsonb)
       INTO v_parcial
       FROM jsonb_each_text(p_parcial)
      WHERE key IN ('1', '2', '3')
@@ -305,7 +326,7 @@ BEGIN
   v_parcial := COALESCE(v_parcial, '{}'::jsonb);
 
   IF p_final IS NOT NULL THEN
-    SELECT COALESCE(jsonb_object_agg(key, LEAST(GREATEST(value::numeric, 0), 5)), '{}'::jsonb)
+    SELECT COALESCE(jsonb_object_agg(key, LEAST(GREATEST(value::numeric, 0), 20)), '{}'::jsonb)
       INTO v_final
       FROM jsonb_each_text(p_final)
      WHERE key IN ('1', '2', '3', '4')
@@ -313,18 +334,40 @@ BEGIN
   END IF;
   v_final := COALESCE(v_final, '{}'::jsonb);
 
+  -- Propagar al grupo solo si el bloque realmente cambio
+  v_prop_parcial := p_parcial IS NOT NULL AND v_parcial IS DISTINCT FROM v_parcial_old;
+  v_prop_final   := p_final   IS NOT NULL AND v_final   IS DISTINCT FROM v_final_old;
+  v_grupo        := COALESCE(p_grupo, v_grupo_prev);
+
   -- Totales (espejo de computeGradeTotals en edition.entity.js).
+  -- TEST /20 = promedio de los tests de sesion (cada uno ya viene 0-20).
   SELECT COALESCE(SUM(value::numeric), 0) INTO v_test20 FROM jsonb_each_text(v_tests);
-  v_test20 := CASE WHEN v_sesiones > 0 THEN ROUND(v_test20 / v_sesiones * 4, 2) ELSE 0 END;
+  v_test20 := CASE WHEN v_sesiones > 0 THEN ROUND(v_test20 / v_sesiones, 2) ELSE 0 END;
 
   SELECT COUNT(*) INTO v_part2 FROM jsonb_each_text(v_part) WHERE value = 'true';
   v_part2 := CASE WHEN v_sesiones > 0
                   THEN LEAST(ROUND(v_part2 * 2.0 / v_sesiones), 2) ELSE 0 END;
 
-  SELECT COALESCE(ROUND(SUM(value::numeric), 2), 0) INTO v_parcial20 FROM jsonb_each_text(v_parcial);
-  SELECT COALESCE(ROUND(SUM(value::numeric), 2), 0) INTO v_final20 FROM jsonb_each_text(v_final);
+  -- Entregables: promedio ponderado de criterios 0-20 (criterio ausente = 0)
+  v_parcial20 := ROUND(
+      COALESCE((v_parcial ->> '1')::numeric, 0) * 0.40
+    + COALESCE((v_parcial ->> '2')::numeric, 0) * 0.40
+    + COALESCE((v_parcial ->> '3')::numeric, 0) * 0.20, 2);
+  v_final20 := ROUND(
+      COALESCE((v_final ->> '1')::numeric, 0) * 0.30
+    + COALESCE((v_final ->> '2')::numeric, 0) * 0.30
+    + COALESCE((v_final ->> '3')::numeric, 0) * 0.20
+    + COALESCE((v_final ->> '4')::numeric, 0) * 0.20, 2);
 
   v_nota := LEAST(ROUND(v_test20 * 0.30 + v_parcial20 * 0.30 + v_final20 * 0.40 + v_part2, 2), 20);
+
+  -- "Tiene notas" = al menos una celda escrita (espejo de hasAnyGrade del ERP);
+  -- solo grupo u observacion NO cuenta como evaluado.
+  v_tiene_notas :=
+       EXISTS (SELECT 1 FROM jsonb_each_text(v_tests) t WHERE t.value IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM jsonb_each_text(v_parcial) t WHERE t.value IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM jsonb_each_text(v_final) t WHERE t.value IS NOT NULL)
+    OR EXISTS (SELECT 1 FROM jsonb_each_text(v_part) t WHERE t.value = 'true');
 
   RETURN QUERY
   INSERT INTO public.classroom_student_grades AS g
@@ -362,8 +405,31 @@ BEGIN
     g.partial_score,
     g.final_deliv_score,
     g.final_grade,
-    CASE WHEN g.final_grade >= 12 THEN 'APROBADO' ELSE 'DESAPROBADO' END,
+    CASE
+      WHEN NOT v_tiene_notas THEN 'SIN NOTAS'
+      WHEN g.final_grade >= 12 THEN 'APROBADO'
+      ELSE 'DESAPROBADO'
+    END,
     g.observation,
     g.updated_at;
+
+  -- Entregables grupales: mismo bloque para todo el grupo, pero cada miembro
+  -- conserva sus tests/participacion, asi que su nota final se recalcula aqui.
+  IF v_grupo IS NOT NULL AND (v_prop_parcial OR v_prop_final) THEN
+    UPDATE public.classroom_student_grades cg SET
+      partial_criteria  = CASE WHEN v_prop_parcial THEN v_parcial   ELSE cg.partial_criteria END,
+      final_criteria    = CASE WHEN v_prop_final   THEN v_final     ELSE cg.final_criteria END,
+      partial_score     = CASE WHEN v_prop_parcial THEN v_parcial20 ELSE cg.partial_score END,
+      final_deliv_score = CASE WHEN v_prop_final   THEN v_final20   ELSE cg.final_deliv_score END,
+      final_grade       = LEAST(ROUND(
+          COALESCE(cg.test_score, 0) * 0.30
+          + (CASE WHEN v_prop_parcial THEN v_parcial20 ELSE COALESCE(cg.partial_score, 0) END) * 0.30
+          + (CASE WHEN v_prop_final   THEN v_final20   ELSE COALESCE(cg.final_deliv_score, 0) END) * 0.40
+          + COALESCE(cg.participation_score, 0), 2), 20),
+      updated_at        = NOW()
+    WHERE cg.program_edition_id = v_edition
+      AND cg.group_number = v_grupo
+      AND cg.enrollment_id <> p_enrollment_id;
+  END IF;
 END;
 $$;

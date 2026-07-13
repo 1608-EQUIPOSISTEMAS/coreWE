@@ -9,7 +9,13 @@ import {
   aiAuditorAllowedHosts,
   isValidAiAuditorHost,
   resolveAiAuditorUrl,
-  formatStartDate
+  formatStartDate,
+  isoWeekRange,
+  getAllowedDays,
+  sessionNumbersForRange,
+  buildWeeklySessionDays,
+  buildSessionSchedule,
+  buildControlRow
 } from '../edition.entity.js'
 
 describe('normalizeActive (listado)', () => {
@@ -148,5 +154,171 @@ describe('formatStartDate', () => {
   })
   it('devuelve el valor original si no tiene 3 partes', () => {
     expect(formatStartDate('2026-01-01')).toBe('2026-01-01')
+  })
+})
+
+describe('isoWeekRange (Vista Semanal Academica)', () => {
+  it('semana 14 de 2026 = 30/mar a 05/abr (dato real de sales_targets S14)', () => {
+    expect(isoWeekRange(2026, 14)).toEqual({ date_start: '2026-03-30', date_end: '2026-04-05' })
+  })
+  it('semana 1 puede empezar en el anio anterior', () => {
+    // El 1-ene-2026 es jueves: la semana ISO 1 arranca el lunes 29-dic-2025.
+    expect(isoWeekRange(2026, 1)).toEqual({ date_start: '2025-12-29', date_end: '2026-01-04' })
+  })
+})
+
+describe('getAllowedDays (weekly)', () => {
+  const combos = [{ catalog_id: 3012, variable_2: '[1,3]' }]
+  it('parsea variable_2 del catalogo', () => {
+    expect(getAllowedDays(combos, 3012, '2026-05-11')).toEqual([1, 3])
+  })
+  it('sin combinacion cae al weekday de start_date', () => {
+    // 2026-05-11 es lunes (1)
+    expect(getAllowedDays(combos, 9999, '2026-05-11')).toEqual([1])
+  })
+})
+
+describe('sessionNumbersForRange', () => {
+  const base = {
+    startDateStr: '2026-05-11', // lunes
+    allowedDays: [1, 3], // Lun-Mie
+    holidaySet: new Set(),
+    totalSessions: 8,
+    rangeStart: '2026-05-18',
+    rangeEnd: '2026-05-24'
+  }
+  it('numera sesiones consecutivas dentro de la semana pedida', () => {
+    // Sesiones: 11/05=1, 13/05=2, 18/05=3, 20/05=4...
+    const map = sessionNumbersForRange(base)
+    expect(map.get('2026-05-18')).toBe(3)
+    expect(map.get('2026-05-20')).toBe(4)
+    expect(map.size).toBe(2)
+  })
+  it('un feriado corre la sesion al siguiente dia permitido', () => {
+    const map = sessionNumbersForRange({ ...base, holidaySet: new Set(['2026-05-18']) })
+    expect(map.has('2026-05-18')).toBe(false)
+    expect(map.get('2026-05-20')).toBe(3)
+  })
+  it('no proyecta sesiones mas alla de totalSessions ni del end_date del aula', () => {
+    const corto = sessionNumbersForRange({ ...base, totalSessions: 3 })
+    expect(corto.get('2026-05-18')).toBe(3)
+    expect(corto.has('2026-05-20')).toBe(false)
+    const terminado = sessionNumbersForRange({ ...base, endDateStr: '2026-05-18' })
+    expect(terminado.get('2026-05-18')).toBe(3)
+    expect(terminado.has('2026-05-20')).toBe(false)
+  })
+})
+
+describe('buildSessionSchedule (Control de ediciones)', () => {
+  const base = {
+    startDateStr: '2026-05-11', // lunes
+    allowedDays: [1, 3], // Lun-Mie
+    holidaySet: new Set(),
+    totalSessions: 4
+  }
+  it('deriva S1..Sn sin overrides', () => {
+    const s = buildSessionSchedule(base)
+    expect(s.map((x) => x.date)).toEqual(['2026-05-11', '2026-05-13', '2026-05-18', '2026-05-20'])
+    expect(s.every((x) => x.status === null)).toBe(true)
+  })
+  it('una R NO corre las demas: se reubica cronologicamente', () => {
+    // Caso real (EXCEL BASICO V2): 15/7, 22/7, 5/8, 12/8, 19/8, 26/8 y la
+    // S1 (15/7) se reprograma al 6/8 => 22/7, 5/8, 6/8(R), 12/8, 19/8, 26/8.
+    const s = buildSessionSchedule({
+      startDateStr: '2026-07-15',
+      allowedDays: [3], // miercoles (frecuencia semanal simplificada)
+      holidaySet: new Set(['2026-07-29']),
+      totalSessions: 6,
+      overrides: new Map([[1, { status: 'R', new_date: '2026-08-06' }]])
+    })
+    expect(s.map((x) => x.date)).toEqual([
+      '2026-07-22', '2026-08-05', '2026-08-06', '2026-08-12', '2026-08-19', '2026-08-26'
+    ])
+    // La reprogramada conserva su identidad (session_number 1 = clave del override).
+    expect(s[2]).toMatchObject({
+      session_number: 1, planned_date: '2026-07-15', new_date: '2026-08-06', status: 'R'
+    })
+    // Las demas mantienen su fecha planificada intacta.
+    expect(s[0]).toMatchObject({ session_number: 2, date: '2026-07-22', new_date: null })
+  })
+  it('un feriado corre la sesion planificada', () => {
+    const s = buildSessionSchedule({ ...base, holidaySet: new Set(['2026-05-13']) })
+    expect(s[1].date).toBe('2026-05-18')
+  })
+})
+
+describe('buildControlRow (derivados de gestion)', () => {
+  const row = {
+    edition_num_id: 7,
+    abbreviation: 'POWER BI',
+    cat_day_combination_id: 3012,
+    start_date: '2026-05-11',
+    total_sessions: 3
+  }
+  const ctx = { dayCombos: [{ catalog_id: 3012, variable_2: '[1,3]' }] }
+  it('sesion actual = primera no dictada (una R futura sigue pendiente)', () => {
+    // Planificadas: 11/5, 13/5, 18/5. La S1 (11/5) se reprograma al 20/5 y
+    // las otras dos ya se dictaron => orden 13/5(A), 18/5(A), 20/5(R) y la
+    // actual es la 3ra posicion (la reprogramada aun no dictada).
+    const out = buildControlRow(row, {
+      ...ctx,
+      controls: [
+        { program_edition_id: 7, session_number: 1, status: 'R', new_date: '2026-05-20' },
+        { program_edition_id: 7, session_number: 2, status: 'A' },
+        { program_edition_id: 7, session_number: 3, status: 'A' }
+      ]
+    })
+    expect(out.sessions.map((s) => s.date)).toEqual(['2026-05-13', '2026-05-18', '2026-05-20'])
+    expect(out.current_label).toBe('S3')
+    expect(out.repro_count).toBe(1)
+    expect(out.tardy_count).toBe(0)
+  })
+  it('re-reprogramar la misma sesion suma eventos (repro_times) y expone el tope', () => {
+    const out = buildControlRow(row, {
+      ...ctx,
+      controls: [
+        { program_edition_id: 7, session_number: 1, status: 'R', new_date: '2026-05-27', repro_times: 2 }
+      ]
+    })
+    expect(out.repro_count).toBe(2)
+    expect(out.repro_max).toBe(3)
+  })
+  it('todas dictadas = CULMINÓ; una repro luego dictada sigue contando en Repros', () => {
+    const out = buildControlRow(row, {
+      ...ctx,
+      controls: [
+        { program_edition_id: 7, session_number: 1, status: 'A', new_date: '2026-05-20' },
+        { program_edition_id: 7, session_number: 2, status: 'A' },
+        { program_edition_id: 7, session_number: 3, status: 'T' }
+      ]
+    })
+    expect(out.current_label).toBe('CULMINÓ')
+    expect(out.repro_count).toBe(1)
+    expect(out.tardy_count).toBe(1)
+  })
+})
+
+describe('buildWeeklySessionDays', () => {
+  it('arma 7 dias lunes-domingo y vuelca las ediciones en su fecha', () => {
+    const days = buildWeeklySessionDays({
+      date_start: '2026-05-18',
+      date_end: '2026-05-24',
+      rows: [{
+        edition_num_id: 1,
+        abbreviation: 'POWER BI',
+        cat_day_combination_id: 3012,
+        start_date: '2026-05-11',
+        end_date: '2026-06-03',
+        total_sessions: 8
+      }],
+      dayCombos: [{ catalog_id: 3012, variable_2: '[1,3]' }],
+      holidaySet: new Set()
+    })
+    expect(days).toHaveLength(7)
+    expect(days[0].date).toBe('2026-05-18')
+    expect(days[6].date).toBe('2026-05-24')
+    expect(days[0].editions[0]).toMatchObject({ abbreviation: 'POWER BI', session_number: 3 })
+    expect(days[2].editions[0].session_number).toBe(4)
+    expect(days[1].editions).toHaveLength(0)
   })
 })

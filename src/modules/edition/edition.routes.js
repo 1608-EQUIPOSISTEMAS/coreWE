@@ -14,6 +14,9 @@ import {
   classroomGradesSaveSchema,
   classroomGradesObservationsSchema,
   editionByWeekListSchema,
+  weeklySessionsSchema,
+  weeklyControlSchema,
+  sessionControlSaveSchema,
   editionGetSchema,
   editionUpdateSchema,
   editionCallerSchema,
@@ -53,6 +56,20 @@ export default async function editionRoutes (fastify) {
     schema: editionByWeekListSchema
     // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.byWeekListHandler)
+
+  // Vista Semanal Academica: aulas en curso por dia con nº de sesion.
+  fastify.post('/weeklysessions', {
+    schema: weeklySessionsSchema
+  }, ctrl.weeklySessionsHandler)
+
+  // Control de ediciones: aulas que inician en la semana + estados por sesion.
+  fastify.post('/weeklycontrol', {
+    schema: weeklyControlSchema
+  }, ctrl.weeklyControlHandler)
+
+  fastify.post('/sessioncontrolsave', {
+    schema: sessionControlSaveSchema
+  }, ctrl.sessionControlSaveHandler)
 
   fastify.post('/classroommetricslist', {
     schema: classroomMetricsListSchema

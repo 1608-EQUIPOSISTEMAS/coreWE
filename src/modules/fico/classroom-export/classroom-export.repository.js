@@ -23,10 +23,9 @@ export class ClassroomExportRepository {
            AND e.active = 'Y'
            AND e.program_edition_id IS NOT NULL
            AND COALESCE(prog.is_membership, false) = false
-           AND (
-                e.parent_enrollment_id IS NOT NULL
-             OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
-           )
+           -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y
+           -- hijos: asisten sus hijos SEG, no el).
+           AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
       )
       SELECT
         pv.program_version_id,
@@ -58,10 +57,8 @@ export class ClassroomExportRepository {
            AND e.active = 'Y'
            AND e.program_version_id = $1
            AND e.program_edition_id = $2
-           AND (
-                e.parent_enrollment_id IS NOT NULL
-             OR NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
-           )
+           -- HOJA = sin hijos (misma regla que listEditionsWithStudents).
+           AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
       )
       SELECT
         TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres_apellidos,

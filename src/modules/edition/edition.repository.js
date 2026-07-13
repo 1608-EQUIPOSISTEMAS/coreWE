@@ -154,7 +154,9 @@ export class EditionRepository {
   }
 
   // Conteo de alumnos por edicion (aula): inscripciones FICO-aprobadas, activas
-  // y solo hojas del arbol (hijos de programa o cursos standalone sin hijos).
+  // y solo hojas del arbol. HOJA = sin hijos: un destino de cambio de curso
+  // hacia un paquete tiene padre (el origen) Y sus propios hijos SEG; el que
+  // asiste es el hijo, no el.
   async classroomMetricsList (ids) {
     const { rows } = await this.db.query(`
     SELECT e.program_edition_id AS edition_num_id,
@@ -164,13 +166,10 @@ export class EditionRepository {
      WHERE e.program_edition_id = ANY($1::int[])
        AND e.active = 'Y'
        AND cf.alias = 'we_enrollment_status_checked'
-       AND (
-            e.parent_enrollment_id IS NOT NULL
-         OR NOT EXISTS (
+       AND NOT EXISTS (
               SELECT 1 FROM public.enrollments c
                WHERE c.parent_enrollment_id = e.enrollment_id
             )
-       )
      GROUP BY e.program_edition_id
   `, [ids])
     return rows
@@ -184,8 +183,9 @@ export class EditionRepository {
   //     el hijo. Por eso el PADRE (especializacion/diploma) SI muestra sus ventas
   //     en su fila (VENTAS/B2B/MEMB), aunque su AULA sea 0.
   //       - PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta. Canal
-  //         por el enrollment: MEMB (socio) > B2B (doctype o agent '%b2b%') >
-  //         BECA (total 0) > VENTAS.
+  //         por el enrollment: MEMB (socio) > B2B (doctype, o canal B2B con
+  //         asesor convenio users.alias NY12/JF39 o sin asesor; un comercial
+  //         con codigo B2B es VENTAS y sus hijos SEGUI) > BECA (total 0) > VENTAS.
   //       - 1er CURSO de un paquete (hijo sin hermano que empiece antes, = orden
   //         de la rama en la modal Jerarquia): NO cuenta comercial; su venta esta
   //         arriba, en el padre.
@@ -220,9 +220,12 @@ export class EditionRepository {
         -- A) bucket COMERCIAL (donde se registra la venta/seguimiento). NULL = no
         --    cuenta comercial: 1er curso de paquete (su venta vive en el padre).
         CASE
-          -- destino de cambio de curso => seguimiento en su aula nueva
+          -- destino de cambio de curso o de reprogramacion (RP) => seguimiento en
+          -- su aula nueva. El destino RP nace con total 0 (la venta vive en el
+          -- origen) y se identifica por la nota que escribe reprogramEdition.
           WHEN EXISTS (SELECT 1 FROM public.course_changes cc
                         WHERE cc.enrollment_destination_id = e.enrollment_id)
+            OR e.notes ILIKE '%Reprogramacion desde inscripcion #%'
             THEN CASE WHEN mem.is_member THEN 'MEMB' ELSE 'SEGUI' END
           -- HIJO de paquete:
           WHEN e.parent_enrollment_id IS NOT NULL THEN
@@ -241,30 +244,52 @@ export class EditionRepository {
                    ) THEN NULL
               -- 2do+ curso (o modulo E0): HEREDA el CANAL de la venta del padre.
               -- Si el padre es socio/B2B/beca, el seguimiento cuenta en MEM/B2B/BECA,
-              -- NO en SEG. SEG queda solo para hijos de una venta normal.
+              -- NO en SEG. SEG queda solo para hijos de una venta normal (incluye
+              -- padres con agente "B2B - ..." comercial que ahora son VENTAS).
               -- Prioridad: socio manda > B2B > BECA > SEG.
               WHEN mem.is_member THEN 'MEMB'
-              WHEN par.cat_b2b_doctype IS NOT NULL OR par.agent_origin ILIKE '%b2b%' THEN 'B2B'
-              WHEN COALESCE(par.total_amount, 0) = 0 THEN 'BECA'
+              WHEN par.cat_b2b_doctype IS NOT NULL
+                OR (par.agent_origin ILIKE '%b2b%'
+                    AND (upar.alias IS NULL OR upar.alias IN ('NY12','JF39'))) THEN 'B2B'
+              -- socio PLUS (has_membership sin is_member) en 0 NO es beca: cae a SEGUI.
+              -- Padre destino RP/CC (venta ficticia en 0: la venta real vive en el
+              -- origen) tampoco es beca: sus hijos son SEGUI.
+              WHEN COALESCE(par.total_amount, 0) = 0 AND NOT mem.has_membership
+                AND COALESCE(par.notes, '') NOT ILIKE '%desde inscripcion #%'
+                AND NOT EXISTS (SELECT 1 FROM public.course_changes ccp
+                                 WHERE ccp.enrollment_destination_id = par.enrollment_id) THEN 'BECA'
               ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
           WHEN mem.is_member THEN 'MEMB'
-          WHEN e.cat_b2b_doctype IS NOT NULL OR e.agent_origin ILIKE '%b2b%' THEN 'B2B'
-          WHEN COALESCE(e.total_amount, 0) = 0 THEN 'BECA'
+          WHEN e.cat_b2b_doctype IS NOT NULL
+            OR (e.agent_origin ILIKE '%b2b%'
+                AND (ua.alias IS NULL OR ua.alias IN ('NY12','JF39'))) THEN 'B2B'
+          -- socio PLUS (has_membership sin is_member) en 0 NO es beca: cae a VENTAS.
+          WHEN COALESCE(e.total_amount, 0) = 0 AND NOT mem.has_membership THEN 'BECA'
           ELSE 'VENTAS'
         END AS comm_bucket,
-        -- B) HOJA = asiste a un aula (hijos + standalone). El PADRE (tiene hijos y
-        --    no tiene padre) NO es aula. Misma regla que classroomMetricsList.
-        (e.parent_enrollment_id IS NOT NULL
-          OR NOT EXISTS (SELECT 1 FROM public.enrollments ch
-                          WHERE ch.parent_enrollment_id = e.enrollment_id)) AS is_leaf,
+        -- B) HOJA = asiste a un aula = NO tiene hijos. El PADRE (tiene hijos) NO
+        --    es aula, aunque tenga padre a su vez (destino de cambio de curso
+        --    hacia un paquete: su padre es el origen del CC y sus hijos SEG son
+        --    los que asisten). Misma regla que classroomMetricsList.
+        (NOT EXISTS (SELECT 1 FROM public.enrollments ch
+                      WHERE ch.parent_enrollment_id = e.enrollment_id)) AS is_leaf,
         -- beca de la hoja: la venta (propia o del padre) en total 0, sin B2B ni
-        -- socio (mismo criterio is_beca que classroomStudentsList).
+        -- socio (mismo criterio is_beca que classroomStudentsList). Un destino
+        -- RP/CC (o sus hijos) NO es beca: su total 0 es convencion del flujo.
         (COALESCE(e.cat_b2b_doctype, par.cat_b2b_doctype) IS NULL
-          AND COALESCE(par.agent_origin, e.agent_origin, '') NOT ILIKE '%b2b%'
+          AND NOT (COALESCE(par.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
+                   AND (COALESCE(upar.alias, ua.alias) IS NULL
+                        OR COALESCE(upar.alias, ua.alias) IN ('NY12','JF39')))
           AND COALESCE(par.total_amount, e.total_amount, 0) = 0
-          AND NOT mem.is_member) AS is_beca_leaf
+          AND NOT mem.has_membership
+          AND COALESCE(CASE WHEN e.parent_enrollment_id IS NOT NULL
+                            THEN par.notes ELSE e.notes END, '')
+              NOT ILIKE '%desde inscripcion #%'
+          AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
+                           WHERE ccx.enrollment_destination_id
+                                 = COALESCE(e.parent_enrollment_id, e.enrollment_id))) AS is_beca_leaf
         FROM public.enrollments e
         JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
         LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
@@ -273,21 +298,39 @@ export class EditionRepository {
         -- venta del padre (solo hijos): para resolver beca/canal del 1er curso.
         LEFT JOIN public.enrollments par ON par.enrollment_id = e.parent_enrollment_id
         LEFT JOIN public."catalog" parcts ON parcts.catalog_id = par.cat_type_status
+        -- asesor de la venta (propia y del padre): el codigo B2B (NY12/JF39) vive
+        -- en users.alias, NO en agent_origin (el importador los separa).
+        LEFT JOIN public.users ua   ON ua.user_id = e.seller_agent_id
+        LEFT JOIN public.users upar ON upar.user_id = par.seller_agent_id
         LEFT JOIN LATERAL (
-          -- la persona tiene una membresia FICO-aprobada y vigente que REGALA
+          -- is_member (columna MEMB): membresia FICO-aprobada y vigente que REGALA
           -- cursos (WE BLACK/GOLD/PLAT). Se EXCLUYE 'MEMBRESIA PLUS': no da cursos
           -- de beneficio, asi que un socio PLUS que lleva un curso es VENTA real,
           -- no MEMB. Confirmado con negocio.
-          SELECT EXISTS (
-            SELECT 1
-              FROM public.enrollments em
-              JOIN public.customers cm         ON cm.customer_id = em.customer_id
-              JOIN public.program_versions pvm ON pvm.program_version_id = em.program_version_id
-              JOIN public.programs pm          ON pm.program_id = pvm.program_id AND pm.is_membership = true
-                                                AND UPPER(TRIM(pm.program_name)) <> 'MEMBRESIA PLUS'
-              JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
-             WHERE cm.person_id = cust.person_id AND em.active = 'Y'
-          ) AS is_member
+          -- has_membership (para BECA): CUALQUIER tier, incluido PLUS. Es el mismo
+          -- criterio que mem.tier_name de classroomStudentsList: un socio (aunque
+          -- sea PLUS) con venta en 0 NO es beca; asi la Lista de Notas y el
+          -- cronograma cuentan las mismas becas.
+          SELECT
+            EXISTS (
+              SELECT 1
+                FROM public.enrollments em
+                JOIN public.customers cm         ON cm.customer_id = em.customer_id
+                JOIN public.program_versions pvm ON pvm.program_version_id = em.program_version_id
+                JOIN public.programs pm          ON pm.program_id = pvm.program_id AND pm.is_membership = true
+                                                  AND UPPER(TRIM(pm.program_name)) <> 'MEMBRESIA PLUS'
+                JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
+               WHERE cm.person_id = cust.person_id AND em.active = 'Y'
+            ) AS is_member,
+            EXISTS (
+              SELECT 1
+                FROM public.enrollments em
+                JOIN public.customers cm         ON cm.customer_id = em.customer_id
+                JOIN public.program_versions pvm ON pvm.program_version_id = em.program_version_id
+                JOIN public.programs pm          ON pm.program_id = pvm.program_id AND pm.is_membership = true
+                JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
+               WHERE cm.person_id = cust.person_id AND em.active = 'Y'
+            ) AS has_membership
         ) mem ON TRUE
        WHERE e.program_edition_id = ANY($1::int[])
          AND e.active = 'Y'
@@ -371,13 +414,19 @@ export class EditionRepository {
            -- de paquete). agent_origin identifica el convenio/agente (JP39...).
            (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NOT NULL) AS is_b2b,
            -- BECA: la venta (enrollment vendido) va en total 0 y NO es B2B NI socio.
-           -- B2B gana (mismo criterio que el badge del front: doctype o agent_origin
-           -- "B2B") y la membresia gana (si la persona es socia, es MEMB, no beca).
-           -- COALESCE(agent_origin,'') evita que NULL NOT ILIKE tumbe becas sin agente.
+           -- B2B real = doctype, o canal B2B con asesor convenio (users.alias
+           -- NY12/JF39) o sin asesor; un comercial con codigo B2B ya no es B2B.
+           -- La membresia gana (si la persona es socia, es MEMB, no beca).
+           -- Destino RP/CC (venta ficticia en 0, la real vive en el origen) no es
+           -- beca: ni el destino ni sus hijos SEG.
            (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NULL
-            AND COALESCE(e_sold.agent_origin, e.agent_origin, '') NOT ILIKE '%b2b%'
+            AND NOT (COALESCE(e_sold.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
+                     AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39')))
             AND COALESCE(e_sold.total_amount, e.total_amount, 0) = 0
-            AND mem.tier_name IS NULL) AS is_beca,
+            AND mem.tier_name IS NULL
+            AND COALESCE(e_sold.notes, '') NOT ILIKE '%desde inscripcion #%'
+            AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
+                             WHERE ccx.enrollment_destination_id = e_sold.enrollment_id)) AS is_beca,
            COALESCE(e_sold.agent_origin, e.agent_origin) AS agent_origin,
            -- Codigo del programa padre al que pertenece el alumno (solo hijos).
            CASE WHEN e.parent_enrollment_id IS NOT NULL
@@ -408,6 +457,9 @@ export class EditionRepository {
  LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
  LEFT JOIN public."catalog" ccert  ON ccert.catalog_id  = e.cat_certificate_status
  LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+ LEFT JOIN public."catalog" cts_sold ON cts_sold.catalog_id = e_sold.cat_type_status
+ -- asesor de la venta: el codigo B2B (NY12/JF39) vive en users.alias.
+ LEFT JOIN public.users usold ON usold.user_id = COALESCE(e_sold.seller_agent_id, e.seller_agent_id)
  LEFT JOIN public.program_versions pv_sold ON pv_sold.program_version_id = e_sold.program_version_id
  LEFT JOIN public.programs prog_sold ON prog_sold.program_id = pv_sold.program_id
  LEFT JOIN LATERAL (
@@ -485,19 +537,22 @@ export class EditionRepository {
      WHERE e.program_edition_id = $1
        AND e.active = 'Y'
        AND cf.alias = 'we_enrollment_status_checked'
-       -- Los que salieron del aula (retiro / cambio de curso) ya no van en la
-       -- lista activa; quedan registrados en el Historial (classroomStudentsHistory).
+       -- Los que salieron del aula (retiro / cambio de curso / reprogramado) ya
+       -- no van en la lista activa; quedan en el Historial. RP y sus hijos se
+       -- excluyen igual que en el contador del cronograma (se fueron con el
+       -- diploma a otra edicion) => cronograma y Lista de Notas cuadran.
        AND (cts.alias IS NULL OR cts.alias NOT IN (
               'we_enrollment_status_retired',
-              'we_enrollment_status_course_changed'
+              'we_enrollment_status_course_changed',
+              'we_enrollment_status_reprogrammed'
             ))
-       AND (
-            e.parent_enrollment_id IS NOT NULL
-         OR NOT EXISTS (
+       AND (cts_sold.alias IS NULL OR cts_sold.alias <> 'we_enrollment_status_reprogrammed')
+       -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y hijos:
+       -- asisten sus hijos, no el). Misma regla que classroomMetricsList.
+       AND NOT EXISTS (
               SELECT 1 FROM public.enrollments c
                WHERE c.parent_enrollment_id = e.enrollment_id
             )
-       )
      ORDER BY per.last_name, per.first_name, e.enrollment_id
   `, [id])
     // platform_user: misma resolucion que el panel FICO (getEnrollmentFlags):
@@ -752,6 +807,204 @@ export class EditionRepository {
       ADD COLUMN IF NOT EXISTS observation TEXT;
   `)
     this._gradesTableReady = true
+  }
+
+  // Vista Semanal Academica: aulas tipo curso, activas y no canceladas (A5),
+  // cuyo dictado se solapa con el rango [dateStart, dateEnd] (lunes-domingo
+  // de la semana ISO). El nº de sesion por dia se deriva en el entity.
+  async weeklySessions (dateStart, dateEnd) {
+    const { rows } = await this.db.query(`
+    SELECT pe.edition_num_id,
+           pe.start_date::date::text AS start_date,
+           pe.end_date::date::text   AS end_date,
+           pe.cat_day_combination_id,
+           pe.specific_code,
+           pv.abbreviation,
+           pv.sessions               AS total_sessions,
+           dayc.description          AS day_label,
+           hourc.description         AS hour_label,
+           INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs p          ON p.program_id = pv.program_id
+      JOIN public."catalog" ctp       ON ctp.catalog_id = p.cat_type_program
+                                     AND ctp.alias = 'we_program_type_course'
+ LEFT JOIN public."catalog" cseg      ON cseg.catalog_id = pe.cat_segment
+ LEFT JOIN public."catalog" dayc      ON dayc.catalog_id = pe.cat_day_combination_id
+ LEFT JOIN public."catalog" hourc     ON hourc.catalog_id = pe.cat_hour_combination_id
+ LEFT JOIN public.instructors i       ON i.instructor_id = pe.instructor_id
+ LEFT JOIN public.persons per         ON per.person_id = i.person_id
+     WHERE pe.active = 'Y'
+       AND COALESCE(cseg.alias, '') <> 'we_segment_a5'
+       AND pe.start_date::date <= $2::date
+       AND pe.end_date::date   >= $1::date
+     ORDER BY hourc.description NULLS LAST, pv.abbreviation
+  `, [dateStart, dateEnd])
+    return rows
+  }
+
+  // ===================================================================
+  // Control de ediciones: overrides de gestion por sesion (estado A/R/T
+  // y fecha reprogramada). Tabla lazy-create, mismo patron que grades.
+  // ===================================================================
+  async ensureSessionControlTable () {
+    if (this._sessionControlReady) return
+    await this.db.query(`
+    CREATE TABLE IF NOT EXISTS public.edition_session_control (
+      id                  SERIAL PRIMARY KEY,
+      program_edition_id  INTEGER NOT NULL,
+      session_number      INTEGER NOT NULL,
+      status              VARCHAR(1) CHECK (status IN ('A','R','T')),
+      new_date            DATE,
+      updated_by          INTEGER REFERENCES public.users(user_id),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (program_edition_id, session_number)
+    );
+    -- Veces que la sesion cambio de fecha (cada re-reprogramacion suma 1);
+    -- el tope por curso se valida en el usecase.
+    ALTER TABLE public.edition_session_control
+      ADD COLUMN IF NOT EXISTS repro_times INTEGER NOT NULL DEFAULT 0;
+  `)
+    this._sessionControlReady = true
+  }
+
+  // SELECT base del control (mismos joins/filtros que weeklySessions); el
+  // WHERE varia entre "inician en la semana" y "una edicion puntual".
+  _controlSelect (where) {
+    return `
+    SELECT pe.edition_num_id,
+           pe.start_date::date::text AS start_date,
+           pe.end_date::date::text   AS end_date,
+           pe.cat_day_combination_id,
+           pe.specific_code,
+           pv.abbreviation,
+           pv.sessions               AS total_sessions,
+           dayc.description          AS day_label,
+           hourc.description         AS hour_label,
+           INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs p          ON p.program_id = pv.program_id
+      JOIN public."catalog" ctp       ON ctp.catalog_id = p.cat_type_program
+                                     AND ctp.alias = 'we_program_type_course'
+ LEFT JOIN public."catalog" cseg      ON cseg.catalog_id = pe.cat_segment
+ LEFT JOIN public."catalog" dayc      ON dayc.catalog_id = pe.cat_day_combination_id
+ LEFT JOIN public."catalog" hourc     ON hourc.catalog_id = pe.cat_hour_combination_id
+ LEFT JOIN public.instructors i       ON i.instructor_id = pe.instructor_id
+ LEFT JOIN public.persons per         ON per.person_id = i.person_id
+     WHERE pe.active = 'Y'
+       AND COALESCE(cseg.alias, '') <> 'we_segment_a5'
+       AND ${where}
+     ORDER BY pe.start_date, pv.abbreviation`
+  }
+
+  // Aulas EN CURSO durante la semana: su dictado se solapa con el rango.
+  // ponytail: margen fijo de 45 dias sobre end_date para no perder sesiones
+  // reprogramadas mas alla del fin planificado; si un aula se estira mas,
+  // derivar el fin real desde los overrides.
+  async weeklyControlEditions (dateStart, dateEnd) {
+    const { rows } = await this.db.query(
+      this._controlSelect(`pe.start_date::date <= $2::date
+       AND (pe.end_date::date + INTERVAL '45 days') >= $1::date`),
+      [dateStart, dateEnd]
+    )
+    return rows
+  }
+
+  async controlEditionGet (id) {
+    const { rows } = await this.db.query(
+      this._controlSelect('pe.edition_num_id = $1'), [id]
+    )
+    return rows[0] || null
+  }
+
+  async sessionControlsList (editionIds) {
+    await this.ensureSessionControlTable()
+    if (!editionIds.length) return []
+    const { rows } = await this.db.query(`
+    SELECT program_edition_id, session_number, status, new_date::text AS new_date,
+           repro_times
+      FROM public.edition_session_control
+     WHERE program_edition_id = ANY($1::int[])
+  `, [editionIds])
+    return rows
+  }
+
+  // Upsert del override; status null limpia la gestion de esa sesion. Todo
+  // cambio deja su rastro en audit_logs (misma transaccion) para que aparezca
+  // en el Historial de cambios del aula (sp_audit_logs_get).
+  async sessionControlSave ({ edition_num_id, session_number, status, new_date }, uid) {
+    await this.ensureSessionControlTable()
+    const client = await this.db.connect()
+    try {
+      await client.query('BEGIN')
+      const { rows: prevRows } = await client.query(`
+      SELECT program_edition_id, session_number, status,
+             new_date::text AS new_date, repro_times
+        FROM public.edition_session_control
+       WHERE program_edition_id = $1 AND session_number = $2
+         FOR UPDATE
+    `, [edition_num_id, session_number])
+      const prev = prevRows[0] || null
+      let curr = null
+
+      if (!status) {
+        await client.query(`
+        DELETE FROM public.edition_session_control
+         WHERE program_edition_id = $1 AND session_number = $2
+      `, [edition_num_id, session_number])
+      } else {
+        const { rows } = await client.query(`
+        INSERT INTO public.edition_session_control
+          (program_edition_id, session_number, status, new_date, repro_times, updated_by, updated_at)
+        VALUES ($1, $2, $3, $4, CASE WHEN $4::date IS NULL THEN 0 ELSE 1 END, $5, NOW())
+        ON CONFLICT (program_edition_id, session_number)
+        DO UPDATE SET status = EXCLUDED.status,
+                      -- Marcar A/T una sesion ya reprogramada conserva su new_date
+                      -- (historial de repro); solo Pendiente (DELETE) la limpia.
+                      new_date = COALESCE(EXCLUDED.new_date, edition_session_control.new_date),
+                      -- Cada CAMBIO real de fecha suma una reprogramacion.
+                      repro_times = edition_session_control.repro_times +
+                        CASE WHEN EXCLUDED.new_date IS NOT NULL
+                              AND EXCLUDED.new_date IS DISTINCT FROM edition_session_control.new_date
+                             THEN 1 ELSE 0 END,
+                      updated_by = EXCLUDED.updated_by,
+                      updated_at = NOW()
+        RETURNING program_edition_id, session_number, status,
+                  new_date::text AS new_date, repro_times
+      `, [edition_num_id, session_number, status, new_date || null, uid ?? null])
+        curr = rows[0]
+      }
+
+      // Trazabilidad: solo si hubo cambio real (borrar algo inexistente no traza).
+      if (prev || curr) {
+        const changed = { sesion: { old: session_number, new: session_number } }
+        if ((prev?.status ?? null) !== (curr?.status ?? null)) {
+          changed.estado_sesion = { old: prev?.status ?? null, new: curr?.status ?? null }
+        }
+        if ((prev?.new_date ?? null) !== (curr?.new_date ?? null)) {
+          changed.fecha_reprogramada = { old: prev?.new_date ?? null, new: curr?.new_date ?? null }
+        }
+        await client.query(`
+        INSERT INTO public.audit_logs
+          (table_name, record_id, action, user_id, changed_fields, old_data, new_data, transaction_id)
+        VALUES ('edition_session_control', $1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, txid_current())
+      `, [
+          edition_num_id,
+          !prev ? 'INSERT' : (!curr ? 'DELETE' : 'UPDATE'),
+          uid ?? null,
+          JSON.stringify(changed),
+          prev ? JSON.stringify(prev) : null,
+          curr ? JSON.stringify(curr) : null
+        ])
+      }
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
   }
 
   // Sesiones programadas del aula (program_versions.sessions), para calcular

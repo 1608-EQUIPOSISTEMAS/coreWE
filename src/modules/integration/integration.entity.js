@@ -138,7 +138,7 @@ export const CRONOGRAMA_HEADER_ROW = [
   'B2B', 'BECAS', 'MEMB',
   'PRG  NETO \n(no becados)',
   'SEGUIMIENTO NETO\n (no becados)',
-  'AULA NUEVA\n(PRG NETO + SEG NETO)',
+  'AULA NUEVA\n(aula real: padre 0, sin becas)',
   'RP'
 ]
 
@@ -146,7 +146,8 @@ export const CRONOGRAMA_HEADER_ROW = [
 // A..Y de "CONT SISTEMAS". `m` viene de classroomChannelMetricsList (puede ser
 // undefined si la edicion no tiene inscritos). La columna CURSO va fija en 0
 // (confirmado con negocio: no se usa). AULA = headcount del salon incluyendo
-// becados (cnt_total); AULA NUEVA = total comercial sin becas.
+// becados (cnt_total); AULA NUEVA = cnt_aula, la misma columna AULA del
+// cronograma ERP (padre/diploma 0, hijo con su salon completo, sin becas).
 export function buildCronogramaRow (r, m) {
   const cursos = r.cursos || {}
   const slots = []
@@ -169,7 +170,10 @@ export function buildCronogramaRow (r, m) {
     memb,
     ventas,                   // PRG NETO
     segui,                    // SEGUIMIENTO NETO
-    ventas + segui + memb + b2b, // AULA NUEVA
+    // AULA NUEVA = columna AULA del cronograma ERP (cnt_aula): el PADRE/diploma
+    // va en 0 (su venta se registra arriba pero no es un salon) y el HIJO lleva
+    // el aula completa (incluye 1er curso cuya venta vive en el padre), sin becas.
+    m?.cnt_aula ?? 0,
     r.cnt_rp ?? 0
   ]
 }
