@@ -8,8 +8,11 @@ import {
   normalizeDueDate,
   nextInstallmentNumber,
   validateReschedule,
+  validateCampaign,
   summarizeOdooError,
   buildRescheduleAuditDetails,
+  buildCampaignAuditDetails,
+  CAT_STATUS_ANNULLED,
   fmtMoney,
   fmtFecha
 } from './installment.entity.js'
@@ -320,6 +323,140 @@ export async function rescheduleInstallments ({ enrollmentId, changes, justifica
     result: 1,
     message: 'Cuotas reprogramadas correctamente',
     updated: normalizedChanges.length,
+    odoo_sync: odooResult?.success !== false,
+    odoo_error: odooErrorSummary,
+    odoo_failed_fees: odooResult?.failed || [],
+    odoo_skipped: !!odooResult?.skipped
+  }
+}
+
+// Campaña de cobranza: paga cuotas en un solo pago consolidado (pagar las 5 de
+// una, pagar 2 con el mismo voucher), anula cuotas y/o ajusta montos de las
+// vivas. La cuota anulada NUNCA se borra: queda con estado Anulada, su monto y
+// vencimiento originales, la causa en notes y el diff completo (quien, cuando,
+// por que) en el audit log. Las pagadas comparten la misma data de pago
+// (voucher, operacion, medio) — una fila en payments por cuota. La escritura
+// es atomica; Odoo (write crudo sobre sale.order.fee) y el correo unico de
+// confirmacion son best-effort.
+export async function applyCollectionCampaign ({ enrollmentId, annulIds, adjustments, payIds, payment, payDiscount, payDiscountType, justificacion, reasonCode, userId }) {
+  if (!justificacion || !justificacion.trim()) {
+    throw new DomainError('La justificacion es obligatoria')
+  }
+  const pays = (payIds || []).map(Number).filter(Boolean)
+  if (pays.length && !payment?.cat_payment_medium) {
+    throw new DomainError('El medio de pago es obligatorio para registrar el pago consolidado')
+  }
+
+  const enrollment = await repo.findEnrollmentForReschedule(enrollmentId)
+  if (!enrollment) throw new DomainError('Inscripcion no encontrada')
+
+  const ids = [
+    ...(annulIds || []).map(Number),
+    ...(adjustments || []).map(a => Number(a.installment_id)),
+    ...pays
+  ].filter(Boolean)
+  const currentInst = await repo.findInstallmentsByIds(enrollmentId, ids)
+  const byId = new Map()
+  for (const i of currentInst) byId.set(Number(i.installment_id), i)
+
+  const { normalizedAnnuls, normalizedAdjusts, normalizedPays, auditDiff, annulledTotal, payTotal, paidTotal, payDiscount: discount, payDiscountPct, discountDelta } =
+    validateCampaign(annulIds, adjustments, byId, pays, payDiscount, payDiscountType || 'amount')
+
+  // Quien y cuando quedan en el audit log; la nota deja la causa en la fila.
+  const annulNote = `Anulada por estrategia de cobranza (${justificacion.trim()})`
+
+  await repo.applyCampaignTx({
+    enrollmentId,
+    annuls: normalizedAnnuls,
+    adjusts: normalizedAdjusts,
+    pays: normalizedPays,
+    payment: {
+      paidAt: payment?.payment_date ? new Date(payment.payment_date) : new Date(),
+      transactionCode: payment?.transaction_code || '',
+      catPaymentMedium: payment?.cat_payment_medium || null,
+      bankAccountId: payment?.bank_account_id || null,
+      voucherUrl: payment?.voucher_url || null,
+      catCurrency: payment?.cat_currency || null
+    },
+    discountDelta,
+    annulledStatusId: CAT_STATUS_ANNULLED,
+    annulNote,
+    userId
+  })
+
+  let odooResult = { success: true, updated: 0, skipped: true }
+  if (enrollment.odoo_order_id) {
+    try {
+      odooResult = await repo.updateOdooFees(enrollment.odoo_order_id, [
+        ...normalizedPays.map(p => ({
+          seq: p.installment_number,
+          values: {
+            state: 'pagado',
+            payment_state: 'saldado',
+            ...(p.paid_amount !== p.amount ? { amount: p.paid_amount } : {})
+          }
+        })),
+        ...normalizedAnnuls.map(a => ({ seq: a.installment_number, values: { state: 'anulado' } })),
+        ...normalizedAdjusts.map(a => ({ seq: a.installment_number, values: { amount: a.new_amount } }))
+      ])
+      console.log('[applyCollectionCampaign] Odoo result:', JSON.stringify(odooResult))
+    } catch (err) {
+      console.error('[applyCollectionCampaign] Odoo sync exception:', err.message)
+      odooResult = { success: false, error: err.message }
+    }
+  }
+
+  const odooErrorSummary = summarizeOdooError(odooResult)
+  await repo.logAudit({
+    enrollmentId,
+    action: 'collection_campaign',
+    userId,
+    justificacion: justificacion.trim(),
+    changes: auditDiff,
+    details: buildCampaignAuditDetails({
+      reasonCode,
+      annulCount: normalizedAnnuls.length,
+      adjustCount: normalizedAdjusts.length,
+      payCount: normalizedPays.length,
+      paidTotal,
+      payDiscount: discount,
+      payDiscountPct,
+      discountDelta,
+      odooResult,
+      hasOrder: !!enrollment.odoo_order_id,
+      odooErrorSummary
+    })
+  })
+
+  // Un solo correo de confirmacion por campaña (no uno por cuota pagada).
+  let emailSent = false
+  if (normalizedPays.length) {
+    const emailResult = await safeAsync(
+      '[applyCollectionCampaign][Email]',
+      () => repo.sendPaymentConfirmationEmail({ enrollmentId })
+    )
+    emailSent = emailResult?.success === true
+    await repo.logAudit({
+      enrollmentId,
+      action: emailSent ? 'email_sent' : 'email_failed',
+      userId,
+      details: emailSent
+        ? `Correo confirmacion de pago consolidado (${normalizedPays.length} cuota(s)) enviado`
+        : `Error al enviar correo de pago consolidado: ${emailResult?.error || 'desconocido'}`
+    })
+  }
+
+  return {
+    result: 1,
+    message: 'Campaña de cobranza aplicada',
+    paid: normalizedPays.length,
+    paid_total: paidTotal,
+    pay_discount: discount,
+    annulled: normalizedAnnuls.length,
+    adjusted: normalizedAdjusts.length,
+    annulled_total: annulledTotal,
+    discount_delta: discountDelta,
+    email_sent: emailSent,
     odoo_sync: odooResult?.success !== false,
     odoo_error: odooErrorSummary,
     odoo_failed_fees: odooResult?.failed || [],

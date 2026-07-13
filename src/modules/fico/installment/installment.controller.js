@@ -86,6 +86,22 @@ export async function rescheduleInstallmentsHandler (req, reply) {
   return reply.code(200).send({ ok: true, data: toResultDto(data) })
 }
 
+export async function collectionCampaignHandler (req, reply) {
+  const data = await usecases.applyCollectionCampaign({
+    enrollmentId: req.body.enrollment_id,
+    annulIds: req.body.annul_ids,
+    adjustments: req.body.adjustments,
+    payIds: req.body.pay_ids,
+    payment: req.body.payment,
+    payDiscount: req.body.pay_discount,
+    payDiscountType: req.body.pay_discount_type,
+    justificacion: req.body.justificacion,
+    reasonCode: req.body.reason_code,
+    userId: req.user?.id ?? req.body.user_id
+  })
+  return reply.code(200).send({ ok: true, data: toResultDto(data) })
+}
+
 export async function collectionsHandler (req, reply) {
   const data = await usecases.getCollections(req.body || {})
   return reply.code(200).send({ ok: true, data })

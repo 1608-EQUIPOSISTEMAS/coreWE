@@ -114,6 +114,48 @@ export const rescheduleInstallmentsSchema = {
   }
 }
 
+export const collectionCampaignSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id', 'justificacion'],
+    additionalProperties: false,
+    properties: {
+      enrollment_id: { type: 'integer' },
+      justificacion: { type: 'string', minLength: 1 },
+      reason_code: { type: ['string', 'null'] },
+      annul_ids: { type: 'array', items: { type: 'integer' } },
+      pay_ids: { type: 'array', items: { type: 'integer' } },
+      pay_discount: { type: ['number', 'null'], minimum: 0 },
+      pay_discount_type: { type: ['string', 'null'], enum: ['amount', 'percent', null] },
+      payment: {
+        type: ['object', 'null'],
+        additionalProperties: false,
+        properties: {
+          cat_currency: { type: ['integer', 'null'] },
+          cat_payment_medium: { type: ['integer', 'null'] },
+          cat_business_entity: { type: ['integer', 'null'] },
+          bank_account_id: { type: ['integer', 'null'] },
+          transaction_code: { type: ['string', 'null'] },
+          voucher_url: { type: ['string', 'null'] },
+          payment_date: { type: ['string', 'null'] }
+        }
+      },
+      adjustments: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['installment_id', 'new_amount'],
+          additionalProperties: false,
+          properties: {
+            installment_id: { type: 'integer' },
+            new_amount: { type: 'number', exclusiveMinimum: 0 }
+          }
+        }
+      }
+    }
+  }
+}
+
 export const collectionsSchema = {
   body: {
     type: 'object',

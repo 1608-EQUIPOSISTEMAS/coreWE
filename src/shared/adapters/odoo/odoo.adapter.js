@@ -18,6 +18,7 @@ export function createOdooAdapter (client = odooClient) {
     activateFees: (...args) => client.activateFees(...args),
     markFeeAsPaid: (...args) => client.markFeeAsPaid(...args),
     updateFeeDueDates: (...args) => client.updateFeeDueDates(...args),
+    updateFees: (...args) => client.updateFees(...args),
     findOdooFees: (...args) => client.findOdooFees(...args),
     unenrollStudentFromCourse: (...args) => client.unenrollStudentFromCourse(...args),
     cancelSaleOrder: (...args) => client.cancelSaleOrder(...args),

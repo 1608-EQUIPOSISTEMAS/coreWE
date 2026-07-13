@@ -20,6 +20,18 @@ export const CAT_SETTLEMENT_STATUS_PAID = 2573
 // Etiquetas de motivo de reprogramacion para el detalle de auditoria.
 export const RESCHEDULE_REASON_LABELS = { financiero: 'Financiero', academico: 'Academico', personal: 'Personal', otro: 'Otro' }
 
+// Estado "Anulada" de cuota (mismo catalogo que usa el flujo de Retiro). La
+// fila NUNCA se borra: conserva monto y vencimiento originales; la causa vive
+// en notes y en el audit log.
+export const CAT_STATUS_ANNULLED = 4456
+
+// Motivos de campaña de cobranza (etiqueta del reporte de casos).
+export const CAMPAIGN_REASON_LABELS = {
+  campana_cobranza: 'Campaña de cobranza',
+  pago_adelantado: 'Descuento por pago adelantado',
+  otro: 'Otro'
+}
+
 // Verdadero si el alias de estado corresponde a una cuota ya pagada.
 export function isPaidByAlias (statusAlias) {
   return PAID_STATUS_ALIASES.has(statusAlias)
@@ -132,6 +144,139 @@ export function validateReschedule (changes, byId, editionEnd) {
   }
 
   return { normalizedChanges, auditDiff }
+}
+
+// Valida una campaña de cobranza contra las filas actuales. annulIds son las
+// cuotas a anular (quedan con su monto original, tachadas); adjustments son
+// ajustes de monto sobre cuotas que siguen vivas; payIds son cuotas que se
+// pagan juntas en un solo pago (ej: "pago las 5 de una", "2 cuotas con el
+// mismo voucher") — todas comparten la misma data de pago. Reglas: toda cuota
+// debe pertenecer a la inscripcion, no estar pagada ni ya anulada, ni ser la
+// inicial; una misma cuota solo admite UNA accion; debe haber al menos una
+// operacion. payDiscount es el descuento de campaña sobre el pago consolidado
+// ("no pagan 800, pagan 750"): payDiscountType 'percent' lo expresa como % del
+// total a pagar (el caso tipico: 5% por pagar todo adelantado) y 'amount' como
+// monto fijo (S/50-S/100 en epoca de CTS/grati). Se reparte proporcionalmente
+// entre las cuotas pagadas (la ultima absorbe el redondeo) y entra al
+// descuento del enrollment. Devuelve normalizados + diff de auditoria +
+// totales (annulledTotal, payTotal original, paidTotal efectivo, payDiscount
+// en soles, payDiscountPct informativo y discountDelta = plata anulada no
+// absorbida por los ajustes + descuento del pago).
+export function validateCampaign (annulIds, adjustments, byId, payIds = [], payDiscount = 0, payDiscountType = 'amount') {
+  const annuls = (annulIds || []).map(Number).filter(Boolean)
+  const adjusts = (adjustments || [])
+  const pays = (payIds || []).map(Number).filter(Boolean)
+  const rawDiscount = Number(payDiscount) || 0
+  if (rawDiscount < 0) throw new DomainError('Descuento invalido')
+  if (payDiscountType === 'percent' && rawDiscount >= 100) {
+    throw new DomainError('El porcentaje de descuento debe ser menor a 100')
+  }
+  if (rawDiscount > 0 && pays.length === 0) {
+    throw new DomainError('El descuento del pago requiere cuotas marcadas para pagar')
+  }
+  if (annuls.length === 0 && adjusts.length === 0 && pays.length === 0) {
+    throw new DomainError('Debe anular, ajustar o pagar al menos una cuota')
+  }
+  const annulSet = new Set(annuls)
+  const paySet = new Set(pays)
+  if (pays.some(id => annulSet.has(id))) {
+    throw new DomainError('Una cuota no puede anularse y pagarse a la vez')
+  }
+
+  const auditDiff = {}
+  const assertAlive = (id) => {
+    const inst = byId.get(Number(id))
+    if (!inst) throw new DomainError(`Cuota ${id} no pertenece a la inscripcion`)
+    if (inst.installment_number === 0) throw new DomainError('El pago inicial no participa en campañas')
+    if (isPaidByCatStatus(inst.cat_status)) throw new DomainError(`La cuota ${inst.installment_number} ya esta pagada`)
+    if (Number(inst.cat_status) === CAT_STATUS_ANNULLED) throw new DomainError(`La cuota ${inst.installment_number} ya esta anulada`)
+    return inst
+  }
+
+  let annulledTotal = 0
+  const normalizedAnnuls = annuls.map(id => {
+    const inst = assertAlive(id)
+    annulledTotal += Number(inst.amount) || 0
+    auditDiff[`Cuota ${inst.installment_number}`] = { old: `${fmtMoney(inst.amount)} · Pendiente`, new: 'Anulada por estrategia de cobranza' }
+    return { installment_id: Number(id), installment_number: inst.installment_number, amount: Number(inst.amount) || 0 }
+  })
+
+  let payTotal = 0
+  const normalizedPays = pays.map(id => {
+    const inst = assertAlive(id)
+    const amount = Number(inst.amount) || 0
+    payTotal += amount
+    auditDiff[`Cuota ${inst.installment_number}`] = { old: `${fmtMoney(amount)} · Pendiente`, new: 'Pagada (pago consolidado de campaña)' }
+    return { installment_id: Number(id), installment_number: inst.installment_number, amount, paid_amount: amount }
+  })
+
+  // El % se convierte a soles recien aqui, cuando ya se conoce el total a pagar.
+  const discount = payDiscountType === 'percent'
+    ? Math.round(payTotal * rawDiscount) / 100
+    : rawDiscount
+
+  if (discount > 0) {
+    if (discount >= payTotal) throw new DomainError('El descuento no puede ser mayor o igual al total de las cuotas a pagar')
+    const paidTarget = payTotal - discount
+    let acc = 0
+    normalizedPays.forEach((p, i) => {
+      p.paid_amount = i === normalizedPays.length - 1
+        ? Math.round((paidTarget - acc) * 100) / 100
+        : Math.round(p.amount * (paidTarget / payTotal) * 100) / 100
+      acc += p.paid_amount
+      auditDiff[`Cuota ${p.installment_number}`] = {
+        old: `${fmtMoney(p.amount)} · Pendiente`,
+        new: `Pagada por ${fmtMoney(p.paid_amount)} (pago consolidado con descuento de campaña)`
+      }
+    })
+  }
+
+  let adjustDelta = 0
+  const normalizedAdjusts = adjusts.map(raw => {
+    const id = Number(raw.installment_id)
+    if (annulSet.has(id)) throw new DomainError(`La cuota ${id} no puede anularse y ajustarse a la vez`)
+    if (paySet.has(id)) throw new DomainError(`La cuota ${id} no puede pagarse y ajustarse a la vez`)
+    const inst = assertAlive(id)
+    const newAmount = Number(raw.new_amount)
+    if (!Number.isFinite(newAmount) || newAmount <= 0) {
+      throw new DomainError(`Monto invalido para la cuota ${inst.installment_number}`)
+    }
+    adjustDelta += newAmount - (Number(inst.amount) || 0)
+    auditDiff[`Cuota ${inst.installment_number}`] = { old: fmtMoney(inst.amount), new: fmtMoney(newAmount) }
+    return { installment_id: id, installment_number: inst.installment_number, old_amount: Number(inst.amount) || 0, new_amount: newAmount }
+  })
+
+  return {
+    normalizedAnnuls,
+    normalizedAdjusts,
+    normalizedPays,
+    auditDiff,
+    annulledTotal,
+    payTotal,
+    payDiscount: discount,
+    payDiscountPct: payDiscountType === 'percent' ? rawDiscount : null,
+    paidTotal: payTotal - discount,
+    discountDelta: annulledTotal - adjustDelta + discount
+  }
+}
+
+// Construye la nota de auditoria de la campaña de cobranza.
+export function buildCampaignAuditDetails ({ reasonCode, annulCount, adjustCount, payCount, paidTotal, payDiscount, payDiscountPct, discountDelta, odooResult, hasOrder, odooErrorSummary }) {
+  const reasonLabel = CAMPAIGN_REASON_LABELS[reasonCode] || 'Otro'
+  const parts = [`Motivo: ${reasonLabel}`]
+  if (payCount) {
+    const discNote = payDiscount > 0
+      ? `, con descuento de ${payDiscountPct != null ? `${payDiscountPct}% = ` : ''}${fmtMoney(payDiscount)}`
+      : ''
+    parts.push(`${payCount} cuota(s) pagada(s) en un solo pago (${fmtMoney(paidTotal || 0)}${discNote})`)
+  }
+  if (annulCount) parts.push(`${annulCount} cuota(s) anulada(s)`)
+  if (adjustCount) parts.push(`${adjustCount} cuota(s) ajustada(s)`)
+  if (discountDelta > 0.001) parts.push(`descuento por cobranza ${fmtMoney(discountDelta)}`)
+  const odooNote = odooResult?.success === false
+    ? ` | Odoo: FALLO (${odooErrorSummary})`
+    : (hasOrder ? ' | Odoo: sincronizado' : ' | Odoo: sin orden asociada')
+  return parts.join(' — ') + odooNote
 }
 
 // Resume el resultado de Odoo en un texto de error legible para auditoria.

@@ -6,6 +6,7 @@ import {
   editInstallmentAmountSchema,
   addInstallmentSchema,
   rescheduleInstallmentsSchema,
+  collectionCampaignSchema,
   syncInstallmentPaymentSchema,
   collectionsSchema
 } from './installment.schemas.js'
@@ -23,6 +24,7 @@ export default async function installmentRoutes (fastify) {
   fastify.post('/editinstallmentamount', { preHandler: [authenticate], schema: editInstallmentAmountSchema }, ctrl.editInstallmentAmountHandler)
   fastify.post('/addinstallment', { preHandler: [authenticate], schema: addInstallmentSchema }, ctrl.addInstallmentHandler)
   fastify.post('/rescheduleinstallments', { preHandler: [authenticate, hasRole(RESCHEDULE_ROLES)], schema: rescheduleInstallmentsSchema }, ctrl.rescheduleInstallmentsHandler)
+  fastify.post('/collectioncampaign', { preHandler: [authenticate, hasRole(RESCHEDULE_ROLES)], schema: collectionCampaignSchema }, ctrl.collectionCampaignHandler)
   fastify.post('/syncinstallmentpayment', { preHandler: [authenticate], schema: syncInstallmentPaymentSchema }, ctrl.syncInstallmentPaymentHandler)
   fastify.post('/collections', { preHandler: [authenticate], schema: collectionsSchema }, ctrl.collectionsHandler)
 }

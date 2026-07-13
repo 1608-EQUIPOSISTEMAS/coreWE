@@ -602,6 +602,43 @@ async function updateFeeDueDates ({ orderId, changes }) {
   return { success: failed.length === 0, updated: results.length - failed.length, failed, results }
 }
 
+// Escritura generica sobre fees por seq (mismo write JSON-RPC crudo que se
+// prueba en Postman): changes = [{ seq, values }]. Usado por la campaña de
+// cobranza para anular fees ({ state: 'anulado' }) o ajustar montos.
+async function updateFees ({ orderId, changes }) {
+  if (!orderId) return { success: false, error: 'Sin order_id' }
+  if (!Array.isArray(changes) || changes.length === 0) return { success: true, updated: 0 }
+
+  const multiCtx = { context: { allowed_company_ids: [1] } }
+  const fees = await callKw('sale.order.fee', 'search_read', [
+    [['order_id', '=', orderId]]
+  ], { fields: ['id', 'seq', 'state'], limit: 50, order: 'seq asc', ...multiCtx })
+
+  if (!fees || fees.length === 0) {
+    return { success: false, error: 'Orden sin cuotas en Odoo. Sincronizar manualmente.' }
+  }
+
+  const bySeq = new Map()
+  for (const f of fees) bySeq.set(f.seq, f)
+
+  const results = []
+  for (const change of changes) {
+    const fee = bySeq.get(change.seq)
+    if (!fee) { results.push({ seq: change.seq, success: false, error: 'Fee no encontrada en Odoo' }); continue }
+    if (fee.state === 'pagado') { results.push({ seq: change.seq, success: false, error: 'Fee ya pagada' }); continue }
+    try {
+      await callKw('sale.order.fee', 'write', [[fee.id], change.values], multiCtx)
+      results.push({ seq: change.seq, fee_id: fee.id, success: true })
+    } catch (err) {
+      console.error(`[updateFees] fee_id=${fee.id} seq=${change.seq}:`, err.message)
+      results.push({ seq: change.seq, fee_id: fee.id, success: false, error: err.message })
+    }
+  }
+
+  const failed = results.filter(r => !r.success)
+  return { success: failed.length === 0, updated: results.length - failed.length, failed, results }
+}
+
 async function findOdooFees ({ partnerId, slideGroupId }) {
   const fees = await callKw('sale.order.fee', 'search_read', [
     [['partner_id', '=', partnerId], ['slide_group_id', '=', slideGroupId], ['state', '=', 'pendiente']]
@@ -696,4 +733,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

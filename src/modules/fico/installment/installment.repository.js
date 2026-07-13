@@ -230,6 +230,64 @@ export class InstallmentRepository {
     }
   }
 
+  // Campaña de cobranza: anula cuotas (estado Anulada, fila intacta con su
+  // monto y vencimiento originales + marcador en notes), ajusta montos de las
+  // cuotas vivas, paga cuotas en un solo pago consolidado (misma data de pago
+  // — voucher, operacion, medio — para todas) y recalcula los totales del
+  // enrollment de forma atomica. Invariante: list_price = total_amount +
+  // discount_amount, asi que la plata anulada no absorbida por los ajustes se
+  // registra como mas descuento.
+  async applyCampaignTx ({ enrollmentId, annuls, adjusts, pays, payment, discountDelta, annulledStatusId, annulNote, userId }) {
+    await withTransaction(async client => {
+      for (const a of annuls) {
+        await client.query(`
+          UPDATE payment_installments
+             SET cat_status = $1,
+                 notes = CASE WHEN COALESCE(notes, '') = '' THEN $2 ELSE notes || ' | ' || $2 END
+           WHERE installment_id = $3 AND enrollment_id = $4
+        `, [annulledStatusId, annulNote, a.installment_id, enrollmentId])
+      }
+      for (const adj of adjusts) {
+        await client.query(
+          'UPDATE payment_installments SET amount = $1 WHERE installment_id = $2 AND enrollment_id = $3',
+          [adj.new_amount, adj.installment_id, enrollmentId]
+        )
+      }
+      for (const p of (pays || [])) {
+        // Con descuento de campaña la cuota queda con su monto efectivo pagado
+        // (paid_amount); la diferencia entra al discount_amount del enrollment.
+        await client.query(
+          'UPDATE payment_installments SET cat_status = $1, amount = $2 WHERE installment_id = $3 AND enrollment_id = $4',
+          [CAT_STATUS_PAID, p.paid_amount, p.installment_id, enrollmentId]
+        )
+        await client.query(`
+          INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
+            cat_method_payment, cat_payment_type, cat_settlement_status,
+            settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Y', $11, NOW())
+        `, [enrollmentId, p.installment_id, p.paid_amount, payment.paidAt, payment.transactionCode || '',
+          payment.catPaymentMedium || null, CAT_PAYMENT_TYPE_INSTALLMENT, CAT_SETTLEMENT_STATUS_PAID,
+          payment.bankAccountId || null, payment.voucherUrl || null, userId])
+      }
+      if ((pays || []).length && payment.catCurrency) {
+        await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [payment.catCurrency, enrollmentId])
+      }
+      const { rows } = await client.query(
+        'SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM payment_installments WHERE enrollment_id = $1 AND cat_status <> $2',
+        [enrollmentId, annulledStatusId]
+      )
+      await client.query(
+        'UPDATE enrollments SET total_amount = $1, discount_amount = GREATEST(0, COALESCE(discount_amount, 0) + $2) WHERE enrollment_id = $3',
+        [Number(rows[0].total) || 0, discountDelta, enrollmentId]
+      )
+    })
+  }
+
+  // Escritura generica de fees en Odoo (anular / ajustar monto) por seq.
+  async updateOdooFees (orderId, changes) {
+    return this.odoo.updateFees({ orderId, changes })
+  }
+
   // Propaga las nuevas fechas de cuotas a las fees de la orden Odoo.
   async updateOdooFeeDueDates (orderId, normalizedChanges) {
     return this.odoo.updateFeeDueDates({
@@ -404,6 +462,7 @@ export class InstallmentRepository {
             ('we_enrollment_status_retired', 'we_enrollment_status_reprogrammed', 'we_enrollment_status_course_changed')
         AND pi.installment_number > 0
         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+        AND pi.cat_status <> 4456 -- anuladas (retiro / campaña de cobranza) no son deuda
         AND EXTRACT(YEAR FROM pi.due_date)::int = $1
         AND EXTRACT(MONTH FROM pi.due_date)::int = $2
         ${extra.join('\n        ')}
