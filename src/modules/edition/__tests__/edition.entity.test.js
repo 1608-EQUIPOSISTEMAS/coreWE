@@ -176,6 +176,10 @@ describe('getAllowedDays (weekly)', () => {
     // 2026-05-11 es lunes (1)
     expect(getAllowedDays(combos, 9999, '2026-05-11')).toEqual([1])
   })
+  it('matchea la forma real de sp_catalog_list (id string / catalogo_id)', () => {
+    const spCombos = [{ id: '3012', catalogo_id: 3012, variable_2: '[1,3]' }]
+    expect(getAllowedDays(spCombos, 3012, '2026-07-08')).toEqual([1, 3])
+  })
 })
 
 describe('sessionNumbersForRange', () => {

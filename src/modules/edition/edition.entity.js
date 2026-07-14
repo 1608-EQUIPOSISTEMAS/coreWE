@@ -412,8 +412,11 @@ export function isoWeekRange (year, week) {
 // we_day_combination. Fallback sin combinacion: el weekday de start_date,
 // mismo criterio que el PDF de programacion.
 export function getAllowedDays (dayCombos = [], catDayCombinationId, startDateStr) {
+  // sp_catalog_list entrega id como string y el campo se llama catalogo_id:
+  // comparar numericamente o el combo nunca matchea y todo cae al fallback.
+  const wanted = Number(catDayCombinationId)
   const entry = dayCombos.find(
-    (c) => c.id === catDayCombinationId || c.catalog_id === catDayCombinationId
+    (c) => Number(c.id) === wanted || Number(c.catalog_id ?? c.catalogo_id) === wanted
   )
   try {
     const parsed = JSON.parse(entry?.variable_2 ?? 'null')

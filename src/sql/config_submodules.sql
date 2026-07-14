@@ -54,7 +54,7 @@ FROM (VALUES
   ('ACADEMICA',     'CONTROL_EDICIONES',    'Control de Ediciones',   '/academica/control-ediciones', 3),
   ('ACADEMICA',     'REPORTE',              'Reporte Académico',      '/academica/reporte',           4),
   ('ACADEMICA',     'BOT',                  'Bot Académico',          '/academica/bot',               5),
-  ('MARKETING',     'OVERVIEW',             'Overview',               '/marketing/overview',          1),
+  ('MARKETING',     'OVERVIEW',             'Reporte Completo',       '/marketing/overview',          1),
   ('CONFIGURACION', 'USUARIOS',             'Usuarios',               '/configuracion/usuarios',      1),
   ('CONFIGURACION', 'ROLES',                'Roles y Permisos',       '/configuracion/roles',         2)
 ) AS s (module_code, code, name, route, sort_order)

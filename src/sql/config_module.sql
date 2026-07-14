@@ -36,7 +36,7 @@ INSERT INTO public.modules (code, name, icon, route, sort_order) VALUES
   ('FUNDACION',      'Fundación',       'cil-people',     '/fundacion',             5),
   ('B2B',            'B2B',             'cil-people',     '/business',              6),
   ('ACADEMICA',      'Académica',       'cil-notes',      '/academica',             7),
-  ('MARKETING',      'Marketing',       'cil-speech',     '/marketing',             8),
+  ('MARKETING',      'Reporte',         'cil-chart-pie',  '/marketing',             8),
   ('CLIENTE',        'Cliente',         'cil-user',       '/general/cliente',       9),
   ('NOTIFICACIONES', 'Notificaciones',  'cil-bell',       '/general/notificaciones', 10),
   ('CONFIGURACION',  'Configuración',   'cil-settings',   '/configuracion',         11)
