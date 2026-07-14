@@ -32,8 +32,12 @@ export async function syncFicoSalesToSheetHandler (req, reply) {
 }
 
 export async function syncFicoToSheetsHandler (req, reply) {
-  const data = await usecases.syncFicoToSheets()
-  return reply.code(200).send({ ok: true, data })
+  const data = usecases.startFicoSyncInBackground()
+  return reply.code(202).send({ ok: true, data })
+}
+
+export async function ficoSyncStatusHandler (req, reply) {
+  return reply.code(200).send({ ok: true, data: usecases.getFicoSyncStatus() })
 }
 
 export async function sendSlackReportHandler (req, reply) {

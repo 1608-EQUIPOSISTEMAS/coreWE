@@ -51,8 +51,9 @@ FROM (VALUES
   ('B2B',           'CONVENIOS',            'Convenios',              '/business/agreements',         5),
   ('ACADEMICA',     'AULAS',                'Aulas',                  '/academica/aulas',             1),
   ('ACADEMICA',     'SEMANAL',              'Vista Semanal',          '/academica/semanal',           2),
-  ('ACADEMICA',     'REPORTE',              'Reporte Académico',      '/academica/reporte',           3),
-  ('ACADEMICA',     'BOT',                  'Bot Académico',          '/academica/bot',               4),
+  ('ACADEMICA',     'CONTROL_EDICIONES',    'Control de Ediciones',   '/academica/control-ediciones', 3),
+  ('ACADEMICA',     'REPORTE',              'Reporte Académico',      '/academica/reporte',           4),
+  ('ACADEMICA',     'BOT',                  'Bot Académico',          '/academica/bot',               5),
   ('MARKETING',     'OVERVIEW',             'Overview',               '/marketing/overview',          1),
   ('CONFIGURACION', 'USUARIOS',             'Usuarios',               '/configuracion/usuarios',      1),
   ('CONFIGURACION', 'ROLES',                'Roles y Permisos',       '/configuracion/roles',         2)

@@ -428,6 +428,9 @@ export class EditionRepository {
             AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
                              WHERE ccx.enrollment_destination_id = e_sold.enrollment_id)) AS is_beca,
            COALESCE(e_sold.agent_origin, e.agent_origin) AS agent_origin,
+           -- Codigo del asesor (ej. AE30): misma cascada que la columna AGENTE
+           -- del panel FICO: quien solicito el token de pago > asesor de la venta.
+           COALESCE(NULLIF(TRIM(tok.alias), ''), usold.alias) AS agent_code,
            -- Codigo del programa padre al que pertenece el alumno (solo hijos).
            CASE WHEN e.parent_enrollment_id IS NOT NULL
                 THEN pv_sold.version_code END            AS parent_code,
@@ -460,6 +463,16 @@ export class EditionRepository {
  LEFT JOIN public."catalog" cts_sold ON cts_sold.catalog_id = e_sold.cat_type_status
  -- asesor de la venta: el codigo B2B (NY12/JF39) vive en users.alias.
  LEFT JOIN public.users usold ON usold.user_id = COALESCE(e_sold.seller_agent_id, e.seller_agent_id)
+ -- agente que solicito el primer token de pago de la venta (padre si es hijo):
+ -- FICO lo prioriza sobre el seller_agent para su columna AGENTE.
+ LEFT JOIN LATERAL (
+        SELECT u.alias
+          FROM public.payment_tokens pt
+          LEFT JOIN public.users u ON u.user_id = COALESCE(pt.requested_by, pt.created_by)
+         WHERE pt.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+         ORDER BY pt.token_id ASC
+         LIMIT 1
+      ) tok ON TRUE
  LEFT JOIN public.program_versions pv_sold ON pv_sold.program_version_id = e_sold.program_version_id
  LEFT JOIN public.programs prog_sold ON prog_sold.program_id = pv_sold.program_id
  LEFT JOIN LATERAL (

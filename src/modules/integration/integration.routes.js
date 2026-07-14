@@ -19,5 +19,6 @@ export default async function integrationRoutes (fastify) {
   fastify.post('/syncEnrollmentToSheet', { schema: syncEnrollmentToSheetSchema, preHandler: [authenticate] }, ctrl.syncEnrollmentToSheetHandler)
   fastify.post('/syncFicoSalesToSheet', { schema: syncFicoSalesToSheetSchema, preHandler: [authenticate] }, ctrl.syncFicoSalesToSheetHandler)
   fastify.post('/syncFicoToSheets', { schema: syncFicoToSheetsSchema, preHandler: [authenticate] }, ctrl.syncFicoToSheetsHandler)
+  fastify.get('/syncFicoToSheets/status', { schema: { tags: ['Integration'] }, preHandler: [authenticate] }, ctrl.ficoSyncStatusHandler)
   fastify.post('/send-slack-report', { schema: sendSlackReportSchema, preHandler: [authenticate] }, ctrl.sendSlackReportHandler)
 }

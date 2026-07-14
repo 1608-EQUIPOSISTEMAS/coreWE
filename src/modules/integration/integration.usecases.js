@@ -338,17 +338,51 @@ export async function syncFicoAdicionalesToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 6 hojas FICO en serie (fail-fast, igual que el legacy): si una
-// falla, las siguientes no corren. Replica el comportamiento del boton
-// "Sincronizar ventas" del frontend.
+// Sincroniza las 6 hojas FICO en paralelo: son independientes (misma
+// spreadsheet, hojas y rangos distintos), asi el tiempo total es el de la hoja
+// mas lenta y no la suma de las 6. Si alguna falla, la request completa falla
+// (Promise.all), pero las demas ya lanzadas terminan igual: cada hoja se
+// sobreescribe completa en cada sync, asi que no queda estado corrupto.
+// ponytail: si Sheets empieza a devolver 429 por la rafaga, volver a lotes de 2-3.
 export async function syncFicoToSheets () {
-  const ventas = await syncFicoSalesToSheet()
-  const aula = await syncFicoAulaToSheet()
-  const consolidado = await syncFicoConsolidadoToSheet()
-  const cuotas = await syncFicoCuotasToSheet()
-  const cronograma = await syncFicoCronogramaToSheet()
-  const adicionales = await syncFicoAdicionalesToSheet()
+  const [ventas, aula, consolidado, cuotas, cronograma, adicionales] = await Promise.all([
+    syncFicoSalesToSheet(),
+    syncFicoAulaToSheet(),
+    syncFicoConsolidadoToSheet(),
+    syncFicoCuotasToSheet(),
+    syncFicoCronogramaToSheet(),
+    syncFicoAdicionalesToSheet()
+  ])
   return { ventas, aula, consolidado, cuotas, cronograma, adicionales }
+}
+
+// Version fire-and-forget de syncFicoToSheets: responde al instante y deja la
+// sincronizacion corriendo en segundo plano, para que el usuario no espere.
+// El resultado (contadores por hoja) y los errores quedan solo en el log del
+// servidor. Cada hoja se sobreescribe completa en cada sync, asi que un fallo
+// a mitad se corrige solo en la siguiente corrida.
+// ponytail: candado en memoria, vale porque hay una sola instancia del backend.
+let ficoSyncRunning = false
+let ficoSyncLastError = null
+export function startFicoSyncInBackground () {
+  if (ficoSyncRunning) return { started: false, already_running: true }
+  ficoSyncRunning = true
+  ficoSyncLastError = null
+  syncFicoToSheets()
+    .then(r => console.log('[syncFicoToSheets] fondo ok:',
+      Object.entries(r).map(([k, v]) => `${k}=${v.rows_synced}`).join(' ')))
+    .catch(err => {
+      ficoSyncLastError = err.message
+      console.error('[syncFicoToSheets] fallo en segundo plano:', err)
+    })
+    .finally(() => { ficoSyncRunning = false })
+  return { started: true }
+}
+
+// Estado del sync en fondo, para que el frontend haga polling y mantenga el
+// boton deshabilitado hasta que termine (y muestre el error si fallo).
+export function getFicoSyncStatus () {
+  return { running: ficoSyncRunning, last_error: ficoSyncLastError }
 }
 
 // Publica un reporte (titulo + texto + adjuntos) en Slack. Resuelve los adjuntos
