@@ -19,6 +19,10 @@ export async function login ({ username, password }, signToken) {
     throw new DomainError('Usuario o contraseña incorrectos', { statusCode: 401 })
   }
 
+  // Huella del ingreso (fire-and-forget: un fallo aquí no bloquea el login)
+  repo.registerLogin(user.user_id).catch((err) =>
+    console.error('[login] no se pudo registrar el ingreso:', err.message))
+
   // Módulos y submódulos accesibles según la matriz de Configuración. Si la
   // consulta falla el login no se bloquea: el frontend cae al filtrado por
   // roles hardcodeados.

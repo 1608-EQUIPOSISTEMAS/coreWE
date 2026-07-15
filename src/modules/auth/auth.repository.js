@@ -14,6 +14,16 @@ export class AuthRepository {
     return rows?.[0]?.result
   }
 
+  // Deja huella del ingreso en audit_logs (tabla virtual 'logins') para el
+  // reporte de últimos accesos del Dashboard de uso.
+  async registerLogin (userId) {
+    await this.db.query(
+      `INSERT INTO public.audit_logs (table_name, record_id, action, user_id)
+       VALUES ('logins', $1, 'LOGIN', $1)`,
+      [userId]
+    )
+  }
+
   async userList () {
     const rows = await this.sp(this.db, 'public.sp_user_list', [])
     return rows

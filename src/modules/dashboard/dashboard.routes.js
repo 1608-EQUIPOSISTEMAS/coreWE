@@ -1,4 +1,4 @@
-import { authenticate } from '../../shared/http/auth.middleware.js'
+import { authenticate, hasRole } from '../../shared/http/auth.middleware.js'
 import {
   dashboardListSchema,
   programGoalsSchema,
@@ -17,6 +17,7 @@ import * as ctrl from './dashboard.controller.js'
 export default async function dashboardRoutes (fastify) {
   fastify.addHook('preHandler', authenticate)
 
+  fastify.post('/admin-summary', { preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.adminSummaryHandler)
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
   fastify.post('/program-goals/save', { schema: programGoalsSaveSchema }, ctrl.programGoalsSaveHandler)

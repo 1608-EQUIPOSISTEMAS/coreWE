@@ -1,5 +1,10 @@
 import * as usecases from './dashboard.usecases.js'
 
+export async function adminSummaryHandler (req, reply) {
+  const data = await usecases.adminSummary()
+  return reply.send({ ok: true, data })
+}
+
 export async function dashboardListHandler (req, reply) {
   const data = await usecases.dashboardList(req.body)
   return reply.code(200).send({ ok: true, data })

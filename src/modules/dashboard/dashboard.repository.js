@@ -8,6 +8,129 @@ export class DashboardRepository {
     this.db = db
   }
 
+  // Dashboard de uso (ADMIN): actividad del sistema (audit_logs como proxy de
+  // tráfico), ingresos, uso por módulo, patrón horario y usuarios top.
+  async adminSummary () {
+    const [actividad, ingresos, hoy, modulosPorMes, topUsuarios, horas, recurrencia, habilitados] = await Promise.all([
+      // Actividad mensual (7 meses): acciones + usuarios distintos
+      this.db.query(`
+        SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS mes,
+               COUNT(*)::int AS acciones,
+               COUNT(DISTINCT user_id)::int AS usuarios
+        FROM public.audit_logs
+        WHERE created_at >= date_trunc('month', now()) - interval '6 months'
+          AND table_name <> 'logins'
+        GROUP BY 1 ORDER BY 1`),
+      // Ingresos mensuales (7 meses)
+      this.db.query(`
+        SELECT to_char(date_trunc('month', registration_date), 'YYYY-MM') AS mes,
+               COUNT(*)::int AS inscripciones,
+               COALESCE(SUM(total_amount), 0)::float AS monto
+        FROM public.enrollments
+        WHERE active = 'Y'
+          AND registration_date >= date_trunc('month', now()) - interval '6 months'
+        GROUP BY 1 ORDER BY 1`),
+      this.db.query(`
+        SELECT COUNT(*)::int AS inscripciones,
+               COALESCE(SUM(total_amount), 0)::float AS monto
+        FROM public.enrollments
+        WHERE active = 'Y' AND registration_date::date = CURRENT_DATE`),
+      // Acciones por tabla, mes actual y anterior (para share + variación)
+      this.db.query(`
+        SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS mes,
+               table_name, COUNT(*)::int AS acciones
+        FROM public.audit_logs
+        WHERE created_at >= date_trunc('month', now()) - interval '1 month'
+          AND table_name <> 'logins'
+        GROUP BY 1, 2`),
+      // Top 5 usuarios del mes con su mes anterior y la tabla que más tocan
+      this.db.query(`
+        SELECT u.name, u.alias,
+               COUNT(*) FILTER (WHERE a.created_at >= date_trunc('month', now()))::int AS acciones,
+               COUNT(*) FILTER (WHERE a.created_at <  date_trunc('month', now()))::int AS acciones_prev,
+               mode() WITHIN GROUP (ORDER BY a.table_name) AS tabla_top,
+               MAX(a.created_at) AS ultima_actividad
+        FROM public.audit_logs a
+        JOIN public.users u ON u.user_id = a.user_id
+        WHERE a.created_at >= date_trunc('month', now()) - interval '1 month'
+          AND a.table_name <> 'logins'
+        GROUP BY u.user_id, u.name, u.alias
+        HAVING COUNT(*) FILTER (WHERE a.created_at >= date_trunc('month', now())) > 0
+        ORDER BY acciones DESC
+        LIMIT 5`),
+      // Patrón horario (30 días, día hábil): MEDIANA de acciones por hora sobre
+      // la grilla completa de días — así un backfill masivo en un par de días
+      // no fabrica un pico que no representa el uso típico.
+      this.db.query(`
+        WITH dias AS (
+          SELECT d::date AS dia
+          FROM generate_series(CURRENT_DATE - interval '29 days', CURRENT_DATE, interval '1 day') d
+          WHERE EXTRACT(isodow FROM d) < 6
+        ),
+        horas AS (SELECT generate_series(0, 23) AS h),
+        conteo AS (
+          SELECT created_at::date AS dia, EXTRACT(hour FROM created_at)::int AS h, COUNT(*) AS n
+          FROM public.audit_logs
+          WHERE created_at >= CURRENT_DATE - interval '29 days'
+            AND EXTRACT(isodow FROM created_at) < 6
+            AND table_name <> 'logins'
+          GROUP BY 1, 2
+        )
+        SELECT h.h AS hora,
+               ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY COALESCE(c.n, 0)))::int AS acciones
+        FROM dias d
+        CROSS JOIN horas h
+        LEFT JOIN conteo c ON c.dia = d.dia AND c.h = h.h
+        GROUP BY h.h ORDER BY h.h`),
+      // Recurrencia: promedio de usuarios diarios / usuarios del mes
+      this.db.query(`
+        SELECT COALESCE(ROUND(AVG(d.n)::numeric / NULLIF(t.total, 0) * 100), 0)::int AS pct
+        FROM (SELECT created_at::date AS dia, COUNT(DISTINCT user_id) AS n
+              FROM public.audit_logs
+              WHERE created_at >= date_trunc('month', now())
+              GROUP BY 1) d
+        CROSS JOIN (SELECT COUNT(DISTINCT user_id) AS total
+                    FROM public.audit_logs
+                    WHERE created_at >= date_trunc('month', now())) t
+        GROUP BY t.total`),
+      this.db.query(`SELECT COUNT(*)::int AS n FROM public.users WHERE active = 'Y'`)
+    ])
+
+    // Últimos 5 usuarios en ingresar (eventos LOGIN de auth). Si aún no hay
+    // logins registrados (feature nueva), cae a la última actividad por usuario.
+    let ultimosAccesos = (await this.db.query(`
+      SELECT u.name, u.alias, MAX(a.created_at) AS ingreso
+      FROM public.audit_logs a
+      JOIN public.users u ON u.user_id = a.user_id
+      WHERE a.table_name = 'logins' AND a.action = 'LOGIN'
+      GROUP BY u.user_id, u.name, u.alias
+      ORDER BY ingreso DESC LIMIT 5`)).rows
+    let fuenteAccesos = 'logins'
+    if (!ultimosAccesos.length) {
+      fuenteAccesos = 'actividad'
+      ultimosAccesos = (await this.db.query(`
+        SELECT u.name, u.alias, MAX(a.created_at) AS ingreso
+        FROM public.audit_logs a
+        JOIN public.users u ON u.user_id = a.user_id
+        WHERE a.table_name <> 'logins'
+        GROUP BY u.user_id, u.name, u.alias
+        ORDER BY ingreso DESC LIMIT 5`)).rows
+    }
+
+    return {
+      ultimosAccesos,
+      fuenteAccesos,
+      actividadMensual: actividad.rows,
+      ingresosMensuales: ingresos.rows,
+      hoy: hoy.rows[0],
+      modulosPorMes: modulosPorMes.rows,
+      topUsuarios: topUsuarios.rows,
+      actividadPorHora: horas.rows,
+      recurrencia: recurrencia.rows[0]?.pct ?? 0,
+      usuariosHabilitados: habilitados.rows[0]?.n ?? 0
+    }
+  }
+
   async dashboardComercial ({ year, modality, date_start, date_end, month, period }) {
     const params = [year, modality]
     let sql = `
