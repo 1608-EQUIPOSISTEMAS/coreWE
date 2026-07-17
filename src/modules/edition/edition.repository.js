@@ -410,9 +410,15 @@ export class EditionRepository {
            e.registration_date::date                    AS enrolled_on,
            c_prof.alias                                 AS profile_alias,
            (ccert.alias = 'we_certificate_status_paid') AS has_certificate,
-           -- B2B: el doctype vive en el enrollment vendido (padre si es hijo
-           -- de paquete). agent_origin identifica el convenio/agente (JP39...).
-           (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NOT NULL) AS is_b2b,
+           -- B2B: doctype en el enrollment vendido (padre si es hijo de
+           -- paquete), O canal B2B con asesor convenio (users.alias NY12/JF39)
+           -- o sin asesor. MISMA regla que comm_bucket del cronograma: un
+           -- comercial con codigo B2B es VENTA, no B2B (fix 17/07 — antes solo
+           -- miraba doctype y la Lista de Notas/modal no cuadraban con el
+           -- contador del cronograma).
+           (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NOT NULL
+            OR (COALESCE(e_sold.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
+                AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39')))) AS is_b2b,
            -- BECA: la venta (enrollment vendido) va en total 0 y NO es B2B NI socio.
            -- B2B real = doctype, o canal B2B con asesor convenio (users.alias
            -- NY12/JF39) o sin asesor; un comercial con codigo B2B ya no es B2B.
@@ -440,6 +446,21 @@ export class EditionRepository {
            -- Membresia del alumno (persona) en ventas FICO: tier vigente y flag.
            mem.tier_name                                AS membership_tier_name,
            (mem.tier_name IS NOT NULL)                  AS membership_active,
+           -- MEMB del cronograma: membresia vigente que REGALA cursos (WE
+           -- BLACK/GOLD/PLAT). EXCLUYE 'MEMBRESIA PLUS' — un socio PLUS que
+           -- lleva un curso es VENTA/SEGUI real, no MEMB. Mismo EXISTS que
+           -- comm_bucket (fix 17/07: el modal del cronograma-vista contaba 6
+           -- MEM donde el cronograma contaba 4).
+           EXISTS (
+             SELECT 1
+               FROM public.enrollments em2
+               JOIN public.customers cm2         ON cm2.customer_id = em2.customer_id
+               JOIN public.program_versions pvm2 ON pvm2.program_version_id = em2.program_version_id
+               JOIN public.programs pm2          ON pm2.program_id = pvm2.program_id AND pm2.is_membership = true
+                                                 AND UPPER(TRIM(pm2.program_name)) <> 'MEMBRESIA PLUS'
+               JOIN public."catalog" cfm2        ON cfm2.catalog_id = em2.cat_fico_status AND cfm2.alias = 'we_enrollment_status_checked'
+              WHERE cm2.person_id = per.person_id AND em2.active = 'Y'
+           )                                            AS member_benefits,
            -- Promo LAPTOP: el descuento vive en el enrollment vendido (padre si
            -- es hijo de paquete). Mismo criterio que la etiqueta del panel FICO.
            EXISTS (
