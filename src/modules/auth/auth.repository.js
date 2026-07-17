@@ -10,6 +10,17 @@ export class AuthRepository {
   }
 
   async login (username, password) {
+    // Login con email: sp_auth_login solo entiende alias, así que un
+    // identificador con '@' se traduce a su alias antes de llamar al SP.
+    // Sin coincidencia se deja pasar el correo tal cual: el SP fallará con
+    // el mismo 401 genérico (no revela si el email existe).
+    if (username?.includes('@')) {
+      const { rows: [match] } = await this.db.query(
+        "SELECT alias FROM public.users WHERE lower(email) = lower($1) AND active = 'Y' LIMIT 1",
+        [username.trim()]
+      )
+      if (match) username = match.alias
+    }
     const rows = await this.sp(this.db, 'public.sp_auth_login', [username, password])
     return rows?.[0]?.result
   }
