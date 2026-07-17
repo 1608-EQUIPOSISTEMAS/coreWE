@@ -13,6 +13,7 @@ import {
   classroomGradesGetSchema,
   classroomGradesSaveSchema,
   classroomGradesObservationsSchema,
+  reportRecommendationsSchema,
   editionByWeekListSchema,
   weeklySessionsSchema,
   weeklyControlSchema,
@@ -117,6 +118,17 @@ export default async function editionRoutes (fastify) {
     schema: classroomGradesObservationsSchema,
     config: { timeout: 180000 }
   }, ctrl.classroomGradesObservationsHandler)
+
+  // Datos del Reporte Academico: consulta ligera dedicada (cursos + resumen
+  // de auditoria en una sola pasada). Sin body.
+  fastify.post('/academicreport', {}, ctrl.academicReportHandler)
+
+  // Recomendaciones IA del Reporte Academico (mismo Ollama local que las
+  // observaciones de notas). Dos intentos de ~60s cada uno como maximo.
+  fastify.post('/reportrecommendations', {
+    schema: reportRecommendationsSchema,
+    config: { timeout: 150000 }
+  }, ctrl.reportRecommendationsHandler)
 
   // Multipart: transcript_text + syllabus_image + edition_id + session_number.
   // Sin schema porque @fastify/multipart parsea manualmente; validamos en el

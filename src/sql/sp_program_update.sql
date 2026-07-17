@@ -10,8 +10,7 @@ DECLARE
     v_children jsonb;
     v_child_id int;
     v_child_order int;
-    v_new_active_version_id int; -- Para controlar cuál versión debe quedar activa
-BEGIN 
+BEGIN
     IF p_cur IS NULL THEN 
         p_cur := 'cur_sp_program_update';
     END IF;
@@ -43,27 +42,12 @@ BEGIN
     v_versions := p_program->'program_versions';
     
     IF v_versions IS NOT NULL AND jsonb_typeof(v_versions) = 'array' THEN
-        
-        -- **NUEVA LÓGICA: Identificar cuál versión debe quedar activa**
-        -- Buscamos si hay alguna versión en el JSON con active='Y'
-        SELECT NULLIF(elem->>'program_version_id','')::int INTO v_new_active_version_id
-        FROM jsonb_array_elements(v_versions) AS elem
-        WHERE NULLIF(elem->>'active','') = 'Y'
-        LIMIT 1;
-        
-        -- Si encontramos una versión que debe estar activa, 
-        -- desactivamos TODAS las demás versiones de este programa primero
-        IF v_new_active_version_id IS NOT NULL THEN
-            UPDATE public.program_versions
-            SET active = 'N',
-                user_modification_id = v_user_mod,
-                modification_date = NOW()
-            WHERE program_id = p_program_id 
-              AND program_version_id != v_new_active_version_id
-              AND active = 'Y';
-        END IF;
-        
-        -- Ahora procesamos cada versión del JSON
+
+        -- Nota (15/07/2026): se permite MÁS DE UNA versión activa por programa.
+        -- Cada versión conserva el flag 'active' que envía el formulario; ya no
+        -- se desactivan las demás al activar una.
+
+        -- Procesamos cada versión del JSON
         FOR v_elem IN SELECT elem FROM jsonb_array_elements(v_versions) AS t(elem) LOOP
             v_ver_id := NULLIF(v_elem->>'program_version_id','')::int;
             
@@ -87,19 +71,9 @@ BEGIN
                   AND pv.program_id = p_program_id;
                   
             ELSE 
-                ----------------------------------------------------- 
+                -----------------------------------------------------
                 -- B) CASO INSERT: Si NO viene ID, creamos
-                ----------------------------------------------------- 
-                -- Si este nuevo registro debe estar activo, desactivamos otros primero
-                IF NULLIF(v_elem->>'active','') = 'Y' THEN
-                    UPDATE public.program_versions
-                    SET active = 'N',
-                        user_modification_id = v_user_mod,
-                        modification_date = NOW()
-                    WHERE program_id = p_program_id 
-                      AND active = 'Y';
-                END IF;
-                
+                -----------------------------------------------------
                 INSERT INTO public.program_versions (
                     program_id,
                     version_code,

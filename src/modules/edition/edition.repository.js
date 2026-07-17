@@ -738,6 +738,103 @@ export class EditionRepository {
     return rows
   }
 
+  // Consulta ligera compartida por Reporte Academico, Aulas y el header de
+  // AulaDetail (editionId): solo cursos, solo las columnas que esas vistas
+  // usan, con resumen de auditoria + conteo de alumnos + horario unidos en la
+  // misma pasada. Existe porque sp_edition_list tarda 15s+ y pesa ~3MB
+  // (tree_detail, schedules) contra la BD remota; esta baja eso a ~1s/~300KB.
+  // La etiqueta cat_segment replica la logica del SP (A5/A6/A1/A2) para que
+  // la exclusion de cancelados en frontend siga funcionando igual.
+  async academicReportList ({ editionId = null } = {}) {
+    await this.ensureRubricTable()
+    const params = []
+    let where = "WHERE cat.alias = 'we_program_type_course'"
+    if (Number.isFinite(editionId)) {
+      params.push(editionId)
+      where += ' AND pe.edition_num_id = $1'
+    }
+    const { rows } = await this.db.query(`
+    WITH ec AS (
+      SELECT pv.program_id, COUNT(*) AS total_editions
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pe.program_version_id = pv.program_version_id
+      GROUP BY pv.program_id
+    ),
+    audit AS (
+      SELECT
+        s.program_edition_id,
+        COUNT(*) FILTER (WHERE s.manual_marked > 0)::int      AS sessions_manual,
+        COUNT(*) FILTER (WHERE s.ai_score20 IS NOT NULL)::int AS sessions_ai,
+        ROUND(AVG((s.manual_marked::numeric / 20.0) * 20.0)
+          FILTER (WHERE s.manual_marked > 0)::numeric, 2)     AS manual_avg_20,
+        ROUND(AVG(s.ai_score20)
+          FILTER (WHERE s.ai_score20 IS NOT NULL)::numeric, 2) AS ai_avg_20,
+        MAX(GREATEST(s.updated_at, COALESCE(s.ai_generated_at, '-infinity'::timestamptz)))
+                                                              AS last_activity_at
+      FROM (
+        SELECT car.program_edition_id, car.updated_at, car.ai_generated_at,
+          (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
+            AS manual_marked,
+          CASE
+            WHEN car.ai_report IS NOT NULL
+             AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
+            THEN (car.ai_report #>> '{metricas_rapidas,puntuacion_global}')::numeric * 4
+            ELSE NULL
+          END AS ai_score20
+        FROM public.classroom_audit_rubric car
+      ) s
+      GROUP BY s.program_edition_id
+    ),
+    st AS (
+      SELECT e.program_edition_id, COUNT(*)::int AS students
+      FROM public.enrollments e
+      JOIN public.catalog cf ON cf.catalog_id = e.cat_fico_status
+      WHERE e.active = 'Y'
+        AND cf.alias = 'we_enrollment_status_checked'
+        AND NOT EXISTS (SELECT 1 FROM public.enrollments c
+                        WHERE c.parent_enrollment_id = e.enrollment_id)
+      GROUP BY e.program_edition_id
+    )
+    SELECT
+      pe.edition_num_id,
+      pe.global_code,
+      pe.specific_code,
+      pv.version_code,
+      pv.abbreviation  AS program_abreviature,
+      pv.sessions      AS program_sessions,
+      cotm.description AS cat_model_modality_label,
+      INITCAP(CONCAT(per.first_name, ' ', per.last_name)) AS instructor,
+      pe.active,
+      pe.start_date,
+      pe.end_date,
+      dayc.description  AS day_combination_label,
+      hourc.description AS hour_combination_label,
+      st.students,
+      COALESCE(cota.description,
+        CASE WHEN pe.active = 'N' THEN 'A5'
+             WHEN COALESCE(ec.total_editions, 0) <= 2 THEN 'A6'
+             WHEN NOT EXISTS (SELECT 1 FROM public.edition_structure es
+                              WHERE es.child_edition_id = pe.edition_num_id) THEN 'A1'
+             ELSE 'A2' END) AS cat_segment,
+      a.sessions_manual, a.sessions_ai, a.manual_avg_20, a.ai_avg_20, a.last_activity_at
+    FROM public.program_editions pe
+    JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+    JOIN public.programs p          ON p.program_id = pv.program_id
+    JOIN public.catalog cat         ON cat.catalog_id = p.cat_type_program
+    JOIN public.catalog cotm        ON cotm.catalog_id = p.cat_model_modality
+    LEFT JOIN public.catalog cota   ON cota.catalog_id = pe.cat_segment
+    LEFT JOIN public.catalog dayc   ON dayc.catalog_id = pe.cat_day_combination_id
+    LEFT JOIN public.catalog hourc  ON hourc.catalog_id = pe.cat_hour_combination_id
+    LEFT JOIN public.instructors i  ON i.instructor_id = pe.instructor_id
+    LEFT JOIN public.persons per    ON per.person_id = i.person_id
+    LEFT JOIN ec      ON ec.program_id = p.program_id
+    LEFT JOIN audit a ON a.program_edition_id = pe.edition_num_id
+    LEFT JOIN st      ON st.program_edition_id = pe.edition_num_id
+    ${where}
+  `, params)
+    return rows
+  }
+
   // Carga toda la rubrica de evaluacion de una edicion (una fila por sesion
   // ya evaluada), ordenada por numero de sesion.
   async classroomAuditGet (id) {

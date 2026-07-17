@@ -18,6 +18,8 @@ import {
   resolveOllamaUrl,
   buildObservationPrompt,
   buildAulaSummaryPrompt,
+  buildReportRecommendationsPrompt,
+  parseReportRecommendations,
   OBS_SIN_NOTAS,
   GRADE_RULES
 } from './edition.entity.js'
@@ -518,6 +520,58 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
   }
 
   return { ok: true, data: { items, aula_summary: aulaSummary, errors } }
+}
+
+// Datos de Reporte Academico / Aulas en una sola consulta ligera (ver
+// repository). Con edition_id devuelve solo esa aula (header de AulaDetail).
+export async function academicReport ({ edition_id } = {}) {
+  const eid = Number(edition_id)
+  return repo.academicReportList({ editionId: Number.isFinite(eid) && eid > 0 ? eid : null })
+}
+
+// Recomendaciones del Reporte Academico con la IA local (la misma que redacta
+// las observaciones de notas). El frontend manda el snapshot de indicadores ya
+// calculados; el modelo solo redacta. Dos intentos porque un 7B a veces rompe
+// el JSON; si ambos fallan el frontend cae a sus cartas heuristicas.
+export async function reportRecommendations ({ snapshot } = {}) {
+  let baseUrl
+  try {
+    baseUrl = resolveOllamaUrl()
+  } catch (err) {
+    return { ok: false, message: err.message }
+  }
+
+  // Fail-fast: ping barato antes de comprometer al modelo. Con el tunel caido
+  // la request muere en ~2s en vez de colgarse 2 minutos entre reintentos.
+  try {
+    const ping = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(2000) })
+    if (!ping.ok) throw new Error(`status ${ping.status}`)
+  } catch (err) {
+    return { ok: false, message: `IA local no disponible (${err.message}). Verifica el tunel a Ollama.` }
+  }
+
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct'
+  const { system, user } = buildReportRecommendationsPrompt(snapshot || {})
+
+  let lastError = 'sin respuesta'
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let text
+    try {
+      text = await ollamaChat(baseUrl, model, system, user, 45000)
+    } catch (err) {
+      // Error de red/timeout con el servicio ya verificado: reintentar aqui
+      // solo duplica la espera. Salimos y que el frontend use su respaldo.
+      lastError = err.message
+      break
+    }
+    const items = parseReportRecommendations(text)
+    if (items.length === 3) {
+      return { ok: true, data: items }
+    }
+    // JSON invalido o incompleto: esto si merece un segundo intento.
+    lastError = `respuesta con ${items.length} recomendaciones validas (se esperaban 3)`
+  }
+  return { ok: false, message: `IA local no disponible (${lastError}). Verifica el tunel a Ollama.` }
 }
 
 // Proxy del analisis IA: reenvia transcript + imagen al sidecar FastAPI y

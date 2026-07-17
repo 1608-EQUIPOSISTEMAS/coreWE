@@ -289,6 +289,64 @@ export const classroomGradesObservationsSchema = {
   }
 }
 
+// Snapshot de indicadores del Reporte Academico para las recomendaciones IA.
+// Todo viene ya calculado del frontend; el backend solo redacta con el modelo.
+export const reportRecommendationsSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['snapshot'],
+    properties: {
+      snapshot: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          period_start: { type: 'string', maxLength: 10 },
+          period_end: { type: 'string', maxLength: 10 },
+          total: { type: 'integer', minimum: 0 },
+          evaluated: { type: 'integer', minimum: 0 },
+          at_risk: { type: 'integer', minimum: 0 },
+          avg_consolidated: { type: ['number', 'null'] },
+          avg_ia: { type: ['number', 'null'] },
+          avg_manual: { type: ['number', 'null'] },
+          goal: { type: 'number' },
+          coverage_pct: { type: 'integer', minimum: 0, maximum: 100 },
+          coverage_ia_pct: { type: 'integer', minimum: 0, maximum: 100 },
+          coverage_manual_pct: { type: 'integer', minimum: 0, maximum: 100 },
+          worst_teachers: {
+            type: 'array',
+            maxItems: 5,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', maxLength: 120 },
+                avg: { type: ['number', 'null'] },
+                at_risk: { type: 'integer', minimum: 0 },
+                total: { type: 'integer', minimum: 0 }
+              }
+            }
+          },
+          critical_aulas: {
+            type: 'array',
+            maxItems: 8,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                code: { type: 'string', maxLength: 30 },
+                name: { type: 'string', maxLength: 120 },
+                score: { type: ['number', 'null'] },
+                verdict: { type: 'string', maxLength: 20 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 export const classroomMetricsListSchema = {
   body: {
     type: 'object',

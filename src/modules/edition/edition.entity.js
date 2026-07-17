@@ -339,6 +339,71 @@ export function buildAulaSummaryPrompt (summary, rules = GRADE_RULES) {
   return { system, user }
 }
 
+// Prompt de recomendaciones del Reporte Academico. Recibe un snapshot con
+// indicadores YA calculados por el frontend (el modelo nunca calcula): la
+// tarea es solo redactar 3 recomendaciones accionables en tono constructivo.
+export function buildReportRecommendationsPrompt (s = {}) {
+  const system =
+    'Eres asesor del area academica de una escuela de posgrado. A partir de ' +
+    'indicadores ya calculados generas EXACTAMENTE 3 recomendaciones accionables ' +
+    'para esta semana: tono constructivo y propositivo, nunca alarmista. No ' +
+    'inventes datos ni cifras que no esten en los indicadores. Respondes ' +
+    'UNICAMENTE con un array JSON valido de 3 objetos con estas claves: ' +
+    '"etiqueta" (1-2 palabras en MAYUSCULAS), "titulo" (maximo 8 palabras), ' +
+    '"detalle" (2 frases, puede citar cifras provistas), "responsable" (rol del ' +
+    'equipo academico). Nada de texto fuera del JSON.'
+
+  const docentes = (s.worst_teachers || [])
+    .map((t) => `${t.name} (promedio ${t.avg ?? 'sin notas'}, ${t.at_risk} de ${t.total} aulas en riesgo)`)
+    .join('; ') || 'sin datos'
+  const aulas = (s.critical_aulas || [])
+    .map((a) => `${a.code} ${a.name} (consolidada ${a.score ?? 'sin nota'}, ${a.verdict})`)
+    .join('; ') || 'sin datos'
+
+  const user =
+    'Ejemplo del formato de respuesta (los valores son ilustrativos):\n' +
+    '[{"etiqueta":"COBERTURA","titulo":"Completar evaluaciones pendientes","detalle":"La cobertura del periodo es 62%. Priorizar la carga de sesiones sin evidencia para consolidar el promedio.","responsable":"Coordinadores de area"},' +
+    '{"etiqueta":"ACOMPANAMIENTO","titulo":"Mentoria para docentes con promedio bajo","detalle":"Dos docentes concentran las aulas en riesgo. Agendar sesiones de retroalimentacion esta semana.","responsable":"Jefatura Academica"},' +
+    '{"etiqueta":"RECONOCIMIENTO","titulo":"Difundir practicas de las mejores aulas","detalle":"Las aulas sobre la meta pueden servir de referencia. Documentar y compartir sus practicas con el resto.","responsable":"Direccion Academica"}]\n\n' +
+    `Indicadores del periodo ${s.period_start || ''} a ${s.period_end || ''}:\n` +
+    `- Aulas en el periodo: ${s.total ?? 0} (evaluadas: ${s.evaluated ?? 0}, en riesgo: ${s.at_risk ?? 0})\n` +
+    `- Promedio consolidado: ${s.avg_consolidated ?? 'sin notas'} sobre 20 (meta institucional ${s.goal ?? 17})\n` +
+    `- Promedio evaluacion IA: ${s.avg_ia ?? 'sin notas'} | Promedio rubrica manual: ${s.avg_manual ?? 'sin notas'}\n` +
+    `- Cobertura de evidencia: ${s.coverage_pct ?? 0}% (IA ${s.coverage_ia_pct ?? 0}%, manual ${s.coverage_manual_pct ?? 0}%)\n` +
+    `- Docentes con menor promedio: ${docentes}\n` +
+    `- Aulas mas criticas: ${aulas}\n\n` +
+    'Responde con el array JSON de exactamente 3 recomendaciones:'
+
+  return { system, user }
+}
+
+// Extrae y sanea el array JSON de recomendaciones de la respuesta del modelo.
+// Un 7B a veces envuelve el JSON en texto o markdown: tomamos del primer '['
+// al ultimo ']'. Devuelve [] si no hay 3 items validos que rescatar.
+export function parseReportRecommendations (text) {
+  const raw = String(text || '')
+  const start = raw.indexOf('[')
+  const end = raw.lastIndexOf(']')
+  if (start === -1 || end <= start) return []
+  let arr
+  try {
+    arr = JSON.parse(raw.slice(start, end + 1))
+  } catch {
+    return []
+  }
+  if (!Array.isArray(arr)) return []
+  const clean = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return arr
+    .map((r) => ({
+      etiqueta: clean(r?.etiqueta, 30).toUpperCase() || 'SUGERENCIA',
+      titulo: clean(r?.titulo, 90),
+      detalle: clean(r?.detalle, 400),
+      responsable: clean(r?.responsable, 60) || 'Area Academica'
+    }))
+    .filter((r) => r.titulo && r.detalle)
+    .slice(0, 3)
+}
+
 // Hosts permitidos para el sidecar de IA. Loopback siempre + los declarados en
 // AI_AUDITOR_ALLOWED_HOSTS. Funcion para diferir la lectura del env al primer
 // uso (no en import-time) y evitar que un host invalido tumbe el arranque.
