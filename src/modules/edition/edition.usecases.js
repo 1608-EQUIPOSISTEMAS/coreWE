@@ -143,7 +143,7 @@ export async function editionWeeklyControl ({ year, week } = {}) {
 }
 
 // Guarda el estado de una sesion (A/R/T, con nueva fecha si es R) y devuelve
-// la fila recalculada (la R se reubica cronologicamente). Se puede
+// la fila recalculada (una R corre las sesiones siguientes). Se puede
 // re-reprogramar la misma sesion; cada cambio de fecha consume una de las
 // MAX_EDITION_REPROS reprogramaciones del curso.
 export async function editionSessionControlSave ({ edition_num_id, session_number, status, new_date, user_id } = {}) {

@@ -225,25 +225,36 @@ describe('buildSessionSchedule (Control de ediciones)', () => {
     expect(s.map((x) => x.date)).toEqual(['2026-05-11', '2026-05-13', '2026-05-18', '2026-05-20'])
     expect(s.every((x) => x.status === null)).toBe(true)
   })
-  it('una R NO corre las demas: se reubica cronologicamente', () => {
-    // Caso real (EXCEL BASICO V2): 15/7, 22/7, 5/8, 12/8, 19/8, 26/8 y la
-    // S1 (15/7) se reprograma al 6/8 => 22/7, 5/8, 6/8(R), 12/8, 19/8, 26/8.
+  it('una R corre las sesiones siguientes desde la nueva fecha', () => {
+    // Caso real (POWER APPS AVANZ, Dom): 31/5, 7/6, 14/6, 21/6, 28/6, 5/7 y
+    // la S2 (7/6) se reprograma al 28/6 => 31/5, 28/6(R), 5/7, 12/7, 19/7, 26/7.
     const s = buildSessionSchedule({
-      startDateStr: '2026-07-15',
-      allowedDays: [3], // miercoles (frecuencia semanal simplificada)
-      holidaySet: new Set(['2026-07-29']),
+      startDateStr: '2026-05-31',
+      allowedDays: [0], // domingos
+      holidaySet: new Set(),
       totalSessions: 6,
-      overrides: new Map([[1, { status: 'R', new_date: '2026-08-06' }]])
+      overrides: new Map([[2, { status: 'R', new_date: '2026-06-28' }]])
     })
     expect(s.map((x) => x.date)).toEqual([
-      '2026-07-22', '2026-08-05', '2026-08-06', '2026-08-12', '2026-08-19', '2026-08-26'
+      '2026-05-31', '2026-06-28', '2026-07-05', '2026-07-12', '2026-07-19', '2026-07-26'
     ])
-    // La reprogramada conserva su identidad (session_number 1 = clave del override).
-    expect(s[2]).toMatchObject({
-      session_number: 1, planned_date: '2026-07-15', new_date: '2026-08-06', status: 'R'
+    // Solo la reprogramada lleva new_date (tachado); las demas solo corren.
+    expect(s[1]).toMatchObject({
+      session_number: 2, planned_date: '2026-06-07', new_date: '2026-06-28', status: 'R'
     })
-    // Las demas mantienen su fecha planificada intacta.
-    expect(s[0]).toMatchObject({ session_number: 2, date: '2026-07-22', new_date: null })
+    expect(s[2]).toMatchObject({ session_number: 3, date: '2026-07-05', new_date: null })
+  })
+  it('cambiar el inicio (R de la S1) corre todo el cronograma', () => {
+    // Caso Slack (CONT. FINANCIERA, Mar-Jue): inicio no fue 16/7 sino 21/7 y
+    // "las demas fechas solo corren": 21/7, 23/7, 28/7, 30/7...
+    const s = buildSessionSchedule({
+      startDateStr: '2026-07-16',
+      allowedDays: [2, 4], // Mar-Jue
+      holidaySet: new Set(),
+      totalSessions: 4,
+      overrides: new Map([[1, { status: 'R', new_date: '2026-07-21' }]])
+    })
+    expect(s.map((x) => x.date)).toEqual(['2026-07-21', '2026-07-23', '2026-07-28', '2026-07-30'])
   })
   it('un feriado corre la sesion planificada', () => {
     const s = buildSessionSchedule({ ...base, holidaySet: new Set(['2026-05-13']) })
@@ -261,19 +272,18 @@ describe('buildControlRow (derivados de gestion)', () => {
   }
   const ctx = { dayCombos: [{ catalog_id: 3012, variable_2: '[1,3]' }] }
   it('sesion actual = primera no dictada (una R futura sigue pendiente)', () => {
-    // Planificadas: 11/5, 13/5, 18/5. La S1 (11/5) se reprograma al 20/5 y
-    // las otras dos ya se dictaron => orden 13/5(A), 18/5(A), 20/5(R) y la
-    // actual es la 3ra posicion (la reprogramada aun no dictada).
+    // Planificadas: 11/5, 13/5, 18/5. La S1 se dicta, la S2 (13/5) se
+    // reprograma al 20/5 y la S3 corre al siguiente dia permitido (25/5).
+    // La actual es la S2 (reprogramada aun no dictada).
     const out = buildControlRow(row, {
       ...ctx,
       controls: [
-        { program_edition_id: 7, session_number: 1, status: 'R', new_date: '2026-05-20' },
-        { program_edition_id: 7, session_number: 2, status: 'A' },
-        { program_edition_id: 7, session_number: 3, status: 'A' }
+        { program_edition_id: 7, session_number: 1, status: 'A' },
+        { program_edition_id: 7, session_number: 2, status: 'R', new_date: '2026-05-20' }
       ]
     })
-    expect(out.sessions.map((s) => s.date)).toEqual(['2026-05-13', '2026-05-18', '2026-05-20'])
-    expect(out.current_label).toBe('S3')
+    expect(out.sessions.map((s) => s.date)).toEqual(['2026-05-11', '2026-05-20', '2026-05-25'])
+    expect(out.current_label).toBe('S2')
     expect(out.repro_count).toBe(1)
     expect(out.tardy_count).toBe(0)
   })

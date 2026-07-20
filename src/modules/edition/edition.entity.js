@@ -578,17 +578,18 @@ export const MAX_EDITION_REPROS = 3
 export const reproEventsOf = (c = {}) =>
   Math.max(Number(c.repro_times) || 0, c.new_date ? 1 : 0)
 
-// Cronograma completo de un aula aplicando overrides. Reprogramar NO corre
-// las demas sesiones: la sesion con new_date conserva su session_number (la
-// clave del override) pero se REUBICA cronologicamente entre las otras, y el
-// array sale ordenado por fecha efectiva (S1..Sn de la vista = posicion).
-// Ej.: 15/7 R->6/8 con resto 22/7, 5/8, 12/8... => 22/7, 5/8, 6/8(R), 12/8...
+// Cronograma completo de un aula aplicando overrides. Reprogramar CORRE las
+// sesiones siguientes: la sesion con new_date se dicta en su nueva fecha y
+// las posteriores continuan la frecuencia desde ahi (siguiente dia permitido
+// no feriado). Solo la reprogramada muestra tachado (new_date); las demas
+// simplemente "corren" con planned_date ya desplazada.
+// Ej.: Dom 31/5, 7/6, 14/6... y la S2 (7/6) R->28/6 => 31/5, 28/6(R), 5/7, 12/7...
 export function buildSessionSchedule ({
   startDateStr, allowedDays = [], holidaySet = new Set(),
   totalSessions = 0, overrides = new Map()
 }) {
   const out = []
-  const cursor = parseLocalDate(startDateStr)
+  let cursor = parseLocalDate(startDateStr)
   if (!cursor || !allowedDays.length || !totalSessions) return out
   for (let n = 1; n <= totalSessions; n++) {
     let guard = 0
@@ -606,9 +607,10 @@ export function buildSessionSchedule ({
       new_date: ov.new_date || null,
       repro_times: ov.repro_times || 0
     })
+    // Cascada: las siguientes sesiones parten de la fecha efectiva de esta.
+    if (ov.new_date) cursor = parseLocalDate(ov.new_date) || cursor
     cursor.setDate(cursor.getDate() + 1)
   }
-  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.session_number - b.session_number))
   return out
 }
 
