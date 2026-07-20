@@ -153,6 +153,12 @@ export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = fal
     // Importacion masiva: sin correo, sin Odoo, sin refresh por fila. El listado
     // se actualiza con un "Actualizar" manual o refreshEnrollmentList al final.
     if (!skipFollowup) {
+      // leads.pay_date gana en la cascada F.PAGO (listado y hojas de Sheets);
+      // alinearlo a la fecha real del pago registrado o queda con la fecha
+      // comercial y el sheet nunca refleja lo que muestra FICO.
+      const payIso = String(data.payment_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+      await repo.syncLeadPayDate(eid, payIso, userId)
+
       repo.refreshMv('on-register-sync')
 
       let registerJobId = null
@@ -836,8 +842,11 @@ export async function enrollmentUpdate ({ enrollmentId, fields, justificacion, u
     if (oldDateIso !== newDateIso) {
       const fmt = iso => iso ? iso.split('-').reverse().join('/') : '---'
       changes['Fecha de Pago'] = { old: fmt(oldDateIso), new: fmt(newDateIso) }
-      await repo.syncLeadPayDate(enrollmentId, newDateIso, userId)
     }
+    // Siempre, no solo cuando hay diff vs el pago: leads.pay_date puede haber
+    // quedado desalineado (ediciones previas) y es lo que manda en el F.PAGO
+    // de las hojas; re-guardar debe re-alinearlo.
+    if (newDateIso) await repo.syncLeadPayDate(enrollmentId, newDateIso, userId)
   }
 
   if (fields.installments && Array.isArray(fields.installments)) {

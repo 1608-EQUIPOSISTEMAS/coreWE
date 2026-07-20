@@ -29,6 +29,7 @@ import tokenRoutes from './modules/fico/tokens/token.routes.js'
 import botRoutes from './modules/bot/bot.routes.js'
 import configRoutes from './modules/config/config.routes.js'
 import importerRoutes from './modules/importer/importer.routes.js'
+import marketingRoutes from './modules/marketing/marketing.routes.js'
 import { setImporterPorts } from './modules/importer/importer.ports.js'
 import { ficoEnrollmentRegister } from './modules/fico/enrollment/enrollment.usecases.js'
 import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
@@ -207,6 +208,7 @@ export async function buildApp (opts = {}) {
   await app.register(botRoutes, { prefix: '/api/bot' })
   await app.register(configRoutes, { prefix: '/api/config' })
   await app.register(importerRoutes, { prefix: '/api/import' })
+  await app.register(marketingRoutes, { prefix: '/api/marketing' })
 
   app.get('/health', async () => ({ ok: true }))
 
