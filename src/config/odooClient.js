@@ -683,6 +683,247 @@ async function cancelSaleOrder (orderId) {
   }
 }
 
+// ─── Certificación masiva de aula ────────────────────────────────────────────
+// Reproduce el flujo manual de la intranet Odoo: escribir notas en
+// slide.group.evaluation → process.certification (masivo) → action_load_students
+// → action_load_filter_approved → action_process_certificates → generar el PDF
+// de cada issued.certificates (action_process_certificates NO genera el PDF).
+// grades: [{ enrollment_id, odoo_student_id|null, student_name, has_debt,
+//            midterm, final, participation, final_score }]
+// Los con deuda reciben notas pero se excluyen del proceso hasta pagar.
+
+// Tokens de nombre normalizados (sin tildes/puntuación) para el match de
+// respaldo: alumnos matriculados en Odoo sin pasar por el ERP no tienen
+// odoo_student_id guardado, pero sí figuran en Evaluaciones por nombre.
+function nameTokens (s) {
+  return new Set(
+    String(s || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ')
+      .replace(/V/g, 'B') // CORDOVA (ERP) vs CORDOBA (Odoo): typo B/V frecuente
+      .split(/\s+/).filter(Boolean)
+  )
+}
+
+// Match si un nombre es subconjunto del otro (≥2 tokens): tolera apellido
+// materno presente en un sistema y ausente en el otro.
+function nameTokensMatch (a, b) {
+  if (a.size < 2 || b.size < 2) return false
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a]
+  for (const t of small) if (!big.has(t)) return false
+  return true
+}
+
+async function certifyClassroom ({ groupName, grades }) {
+  const groups = await callKw('slide.group', 'search_read', [
+    [['name', '=', groupName]]
+  ], { fields: ['id', 'name', 'slide_channel_id'], limit: 1 })
+  const group = groups?.[0]
+  if (!group) return { success: false, error: `Grupo de curso no encontrado en Odoo: "${groupName}"` }
+  const slideGroupId = group.id
+  const slideChannelId = group.slide_channel_id?.[0]
+
+  // 1) Notas → slide.group.evaluation. Match por slide.group.student id y, si
+  // no hay id guardado, por nombre (único). Filas duplicadas: se escriben todas.
+  const evals = await callKw('slide.group.evaluation', 'search_read', [
+    [['slide_group_id', '=', slideGroupId]]
+  ], { fields: ['id', 'student_id', 'partner_id'], limit: 1000 })
+  const evalsByStudent = new Map()
+  for (const ev of (evals || [])) {
+    const sid = ev.student_id?.[0]
+    if (!sid) continue
+    if (!evalsByStudent.has(sid)) evalsByStudent.set(sid, [])
+    evalsByStudent.get(sid).push(ev)
+  }
+
+  const gradesApplied = []
+  const gradesMissing = []
+  const resolvedByName = []
+  const duplicateSids = new Set() // student_id duplicados de la misma persona: nota sí, certificado no
+  for (const g of grades) {
+    // allSids: todos los slide.group.student de la persona (Odoo a veces la
+    // tiene duplicada). El primero certifica; los demás solo reciben nota.
+    let allSids = (g.odoo_student_id && evalsByStudent.has(g.odoo_student_id)) ? [g.odoo_student_id] : null
+    if (!allSids) {
+      const gTokens = nameTokens(g.student_name)
+      const candidates = []
+      for (const [csid, list] of evalsByStudent) {
+        const odooName = list[0].partner_id?.[1] || list[0].student_id?.[1] || ''
+        if (nameTokensMatch(gTokens, nameTokens(odooName))) candidates.push({ sid: csid, name: odooName })
+      }
+      if (candidates.length === 1) {
+        allSids = [candidates[0].sid]
+      } else if (candidates.length > 1) {
+        // Solo si TODOS los candidatos son el mismo nombre = misma persona
+        // duplicada; nombres distintos = ambiguo, mejor no adivinar.
+        const keys = new Set(candidates.map(c => [...nameTokens(c.name)].sort().join(' ')))
+        if (keys.size === 1) allSids = candidates.map(c => c.sid)
+      }
+      if (allSids && g.enrollment_id) {
+        resolvedByName.push({ enrollment_id: g.enrollment_id, odoo_student_id: allSids[0] })
+      }
+    }
+    if (!allSids) { gradesMissing.push(g.student_name); continue }
+    for (const dup of allSids.slice(1)) duplicateSids.add(dup)
+    const evalIds = allSids.flatMap(sid => evalsByStudent.get(sid).map(e => e.id))
+    await callKw('slide.group.evaluation', 'write', [evalIds, {
+      midterm_exam:  g.midterm,
+      final_exam:    g.final,
+      participation: g.participation,
+      final_score:   g.final_score
+    }])
+    gradesApplied.push({ ...g, student_id: allSids[0], all_sids: allSids, eval_ids: evalIds })
+  }
+
+  // Verificación: si final_score es computado en Odoo puede diferir de lo escrito.
+  const scoreMismatches = []
+  if (gradesApplied.length) {
+    const ids = gradesApplied.flatMap(g => g.eval_ids)
+    const back = await callKw('slide.group.evaluation', 'read', [ids, ['student_id', 'final_score']])
+    const expected = new Map(gradesApplied.map(g => [g.student_id, g]))
+    for (const row of (back || [])) {
+      const g = expected.get(row.student_id?.[0])
+      if (g && Math.abs((row.final_score ?? 0) - g.final_score) > 0.01) {
+        scoreMismatches.push(`${g.student_name}: enviado ${g.final_score}, Odoo tiene ${row.final_score}`)
+      }
+    }
+  }
+
+  // 2) Certificados ya emitidos del grupo (en cualquier proceso): nunca se
+  // duplican. Un proceso publicado NO se reabre; los alumnos nuevos van en un
+  // proceso nuevo del mismo grupo.
+  const certsBefore = await callKw('issued.certificates', 'search_read', [
+    [['slide_group_id', '=', slideGroupId], ['state', '!=', 'cancel']]
+  ], { fields: ['id', 'student_id'], limit: 1000 })
+  const alreadyCertified = new Set((certsBefore || []).map(c => c.student_id?.[0]).filter(Boolean))
+
+  // Exclusión a nivel persona: deuda o certificado previo bajo CUALQUIERA de
+  // sus student_id (duplicados incluidos) la deja fuera del proceso.
+  const debtorIdSet = new Set(gradesApplied.filter(g => g.has_debt).flatMap(g => g.all_sids))
+  const dropSet = new Set(duplicateSids)
+  for (const g of gradesApplied) {
+    if (g.has_debt || g.all_sids.some(s => alreadyCertified.has(s))) {
+      for (const s of g.all_sids) dropSet.add(s)
+    }
+  }
+  const toCertify = gradesApplied.filter(g => !g.has_debt && !g.all_sids.some(s => alreadyCertified.has(s)))
+
+  // Proceso reutilizable = el más reciente del grupo aún no publicado.
+  let proc = (await callKw('process.certification', 'search_read', [
+    [['slide_group_id', '=', slideGroupId], ['state', '!=', 'published']]
+  ], { fields: ['id', 'name', 'state'], limit: 1, order: 'id desc' }))?.[0]
+
+  let procCreated = false
+  let newCertificates = 0
+  if (!proc && toCertify.length) {
+    const procId = await callKw('process.certification', 'create', [{
+      type: 'massive',
+      slide_channel_id: slideChannelId,
+      slide_group_id: slideGroupId
+    }])
+    proc = { id: procId, state: 'draft' }
+    procCreated = true
+  }
+
+  let procFinal = null
+  if (proc) {
+    if (proc.state === 'draft') {
+      await callKw('process.certification', 'action_load_students', [[proc.id]])
+      proc.state = 'load_students'
+    }
+    if (proc.state === 'load_students') {
+      await callKw('process.certification', 'action_load_filter_approved', [[proc.id]])
+      proc.state = 'approved'
+    }
+    if (proc.state === 'approved') {
+      // Fuera deudores, ya certificados y líneas duplicadas de una misma
+      // persona; quedan solo aprobados nuevos al día, una línea por persona.
+      const dropIds = [...new Set([...dropSet, ...alreadyCertified])]
+      if (dropIds.length) {
+        const lineIds = await callKw('process.certification.line', 'search', [
+          [['process_certification_id', '=', proc.id], ['student_id', 'in', dropIds]]
+        ], { limit: 500 })
+        if (lineIds?.length) await callKw('process.certification.line', 'unlink', [lineIds])
+      }
+      // issued.certificates exige student_names/student_surnames: los alumnos
+      // matriculados a mano en Odoo los tienen vacíos → se completan desde el
+      // ERP. Sin datos ni en el ERP, la línea sale del proceso (se reporta).
+      const remaining = await callKw('process.certification.line', 'search_read', [
+        [['process_certification_id', '=', proc.id]]
+      ], { fields: ['id', 'student_id', 'student_names', 'student_surnames'], limit: 500 })
+      const bySid = new Map(gradesApplied.flatMap(g => g.all_sids.map(s => [s, g])))
+      let processable = 0
+      for (const line of (remaining || [])) {
+        if (line.student_names && line.student_surnames) { processable++; continue }
+        const g = bySid.get(line.student_id?.[0])
+        const names = line.student_names || g?.first_name
+        const surnames = line.student_surnames || g?.last_name
+        if (names && surnames) {
+          await callKw('process.certification.line', 'write', [[line.id], {
+            student_names: names, student_surnames: surnames
+          }])
+          processable++
+        } else {
+          gradesMissing.push(`${line.student_id?.[1] || `línea ${line.id}`} (sin nombres/apellidos)`)
+          await callKw('process.certification.line', 'unlink', [[line.id]])
+        }
+      }
+      if (processable > 0) {
+        await callKw('process.certification', 'action_process_certificates', [[proc.id]])
+        newCertificates = processable
+      }
+    }
+    procFinal = (await callKw('process.certification', 'read', [[proc.id], ['name', 'state']]))?.[0]
+  }
+
+  // 3) Generar PDF de los certificados del grupo que aún no lo tengan
+  // (de cualquier proceso), salvo deudores.
+  const certs = await callKw('issued.certificates', 'search_read', [
+    [['slide_group_id', '=', slideGroupId], ['state', '!=', 'cancel']]
+  ], { fields: ['id', 'code', 'state', 'certificate_file', 'student_id'], limit: 1000 })
+
+  let pdfsGenerated = 0
+  const pdfErrors = []
+  for (const c of (certs || [])) {
+    if (c.certificate_file) continue
+    if (debtorIdSet.has(c.student_id?.[0])) continue
+    try {
+      await callKw('issued.certificates', 'action_generate_certificate', [[c.id]])
+      pdfsGenerated++
+    } catch (err) {
+      pdfErrors.push(`${c.code}: ${err.message}`)
+    }
+  }
+
+  // Código de certificado por enrollment (para marcar la fila de notas en el
+  // ERP): cubre también certificados de corridas/procesos anteriores del grupo.
+  const certified = []
+  for (const g of gradesApplied) {
+    const cert = (certs || []).find(c => c.state !== 'cancel' && g.all_sids.includes(c.student_id?.[0]))
+    if (cert && g.enrollment_id) certified.push({ enrollment_id: g.enrollment_id, cert_code: cert.code })
+  }
+
+  return {
+    success: true,
+    certified,
+    slide_group_id: slideGroupId,
+    process_id: proc?.id || null,
+    process_name: procFinal?.name || null,
+    process_state: procFinal?.state || null,
+    process_created: procCreated,
+    grades_applied: gradesApplied.length,
+    grades_missing: gradesMissing,
+    matched_by_name: resolvedByName.length,
+    resolved_by_name: resolvedByName,
+    already_certified: alreadyCertified.size,
+    new_certificates: newCertificates,
+    score_mismatches: scoreMismatches,
+    certificates_total: certs?.length || 0,
+    pdfs_generated: pdfsGenerated,
+    pdf_errors: pdfErrors
+  }
+}
+
 async function updateUserLogin (odooUserId, newLogin) {
   try {
     await callKw('res.users', 'write', [[odooUserId], { login: newLogin, email: newLogin }])
@@ -733,4 +974,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}
   }
 }
 
-export default { callKw, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

@@ -1,4 +1,6 @@
 import { editionRepository } from './edition.repository.js'
+import odooClient from '../../config/odooClient.js'
+import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
@@ -315,6 +317,70 @@ export async function classroomGradesGet ({ edition_id } = {}) {
   const id = Number(edition_id)
   if (!Number.isFinite(id)) return []
   return repo.classroomGradesGet(id)
+}
+
+// Certificar aula en Odoo: aplica las notas del ERP a slide.group.evaluation y
+// corre el proceso de certificación masiva (cargar → filtrar aprobados →
+// procesar → generar PDFs). Mapeo: Examen Parcial = partial_score, Examen
+// Final = final_deliv_score, Promedio final = final_grade, Participación =
+// nº de checks. Odoo decide quién aprueba con su propio filtro.
+export async function classroomOdooCertify ({ edition_id } = {}) {
+  const eid = Number(edition_id)
+  if (!Number.isFinite(eid)) return { ok: false, message: 'edition_id invalido' }
+
+  const rows = await repo.classroomOdooCertifyData(eid)
+  if (!rows.length) return { ok: false, message: 'Edición no encontrada' }
+
+  const { odoo_activation: odooActivation, start_date: startDate } = rows[0]
+  if (!odooActivation?.trim()) return { ok: false, message: 'El programa no tiene configurado odoo_activation' }
+  if (!startDate) return { ok: false, message: 'La edición no tiene fecha de inicio' }
+  const groupName = buildPresentialCourseName({ odooActivation: odooActivation.trim(), startDate })
+
+  const grades = []
+  let withoutGrades = 0
+  for (const r of rows) {
+    if (!r.enrollment_id) continue
+    const name = [r.last_name, r.first_name].filter(Boolean).join(' ') || `enrollment ${r.enrollment_id}`
+    if (r.final_grade == null) { withoutGrades++; continue }
+    const participationChecks = Object.values(r.participation || {}).filter(Boolean).length
+    grades.push({
+      enrollment_id:   r.enrollment_id,
+      // sin odoo_student_id igual entra: certifyClassroom lo resuelve por nombre
+      odoo_student_id: r.odoo_student_id || null,
+      student_name:    name,
+      first_name:      r.first_name || '',
+      last_name:       r.last_name || '',
+      // con deuda: notas sí, certificado no (hasta que pague)
+      has_debt:        Number(r.fin_overdue) > 0,
+      midterm:         Number(r.partial_score) || 0,
+      final:           Number(r.final_deliv_score) || 0,
+      participation:   participationChecks,
+      final_score:     Number(r.final_grade) || 0
+    })
+  }
+  if (!grades.length) return { ok: false, message: 'Ningún alumno tiene notas guardadas en el ERP' }
+
+  const result = await odooClient.certifyClassroom({ groupName, grades })
+  if (!result.success) return { ok: false, message: result.error }
+
+  // Backfill: los matcheados por nombre quedan vinculados para siempre.
+  if (result.resolved_by_name?.length) {
+    await repo.backfillOdooStudentIds(result.resolved_by_name)
+  }
+  // Marca los certificados emitidos en la fila de notas (columna Cert. del aula).
+  if (result.certified?.length) {
+    await repo.saveCertCodes(result.certified)
+  }
+
+  return {
+    ok: true,
+    data: {
+      group_name: groupName,
+      students_without_grades: withoutGrades,
+      students_with_debt: grades.filter(g => g.has_debt).map(g => g.student_name),
+      ...result
+    }
+  }
 }
 
 // Lista de Notas: bulk upsert de filas editadas. Sanea cada item (clamps por

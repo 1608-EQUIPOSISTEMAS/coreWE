@@ -85,6 +85,11 @@ export async function classroomGradesSaveHandler (req, reply) {
   return reply.code(result.ok ? 200 : 400).send(result)
 }
 
+export async function classroomOdooCertifyHandler (req, reply) {
+  const result = await usecases.classroomOdooCertify(req.body)
+  return reply.code(result.ok ? 200 : 400).send(result)
+}
+
 export async function classroomGradesObservationsHandler (req, reply) {
   const result = await usecases.classroomGradesObservations(req.body)
   return reply.code(result.ok ? 200 : 502).send(result)

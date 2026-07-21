@@ -273,6 +273,17 @@ export const classroomGradesSaveSchema = {
   }
 }
 
+export const classroomOdooCertifySchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_id'],
+    properties: {
+      edition_id: { type: 'integer' }
+    }
+  }
+}
+
 export const classroomGradesObservationsSchema = {
   body: {
     type: 'object',

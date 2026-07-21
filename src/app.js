@@ -5,6 +5,7 @@
 import 'dotenv/config'
 import './services/fico-mv-refresh.cron.js'
 import './services/job-worker.cron.js'
+import './services/social-sync.cron.js'
 import { buildApp } from './buildApp.js'
 
 const app = await buildApp()

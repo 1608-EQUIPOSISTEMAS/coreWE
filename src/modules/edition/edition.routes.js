@@ -13,6 +13,7 @@ import {
   classroomGradesGetSchema,
   classroomGradesSaveSchema,
   classroomGradesObservationsSchema,
+  classroomOdooCertifySchema,
   reportRecommendationsSchema,
   editionByWeekListSchema,
   weeklySessionsSchema,
@@ -111,6 +112,13 @@ export default async function editionRoutes (fastify) {
     schema: classroomGradesSaveSchema
     // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomGradesSaveHandler)
+
+  // Certifica el aula en Odoo: notas → evaluaciones + proceso de certificación
+  // masiva + PDFs. Son decenas de llamadas JSON-RPC; timeout amplio.
+  fastify.post('/classroomodoocertify', {
+    schema: classroomOdooCertifySchema,
+    config: { timeout: 300000 }
+  }, ctrl.classroomOdooCertifyHandler)
 
   // Genera borradores de observacion con el modelo IA local (Ollama via tunel).
   // Puede tardar ~30-60s con un aula completa; timeout de socket amplio.

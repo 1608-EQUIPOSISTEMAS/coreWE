@@ -936,6 +936,10 @@ export class EditionRepository {
       ON public.classroom_student_grades (program_edition_id);
     ALTER TABLE public.classroom_student_grades
       ADD COLUMN IF NOT EXISTS observation TEXT;
+    -- codigo del issued.certificate de Odoo cuando el alumno ya fue certificado
+    ALTER TABLE public.classroom_student_grades
+      ADD COLUMN IF NOT EXISTS odoo_cert_code TEXT,
+      ADD COLUMN IF NOT EXISTS odoo_cert_at TIMESTAMPTZ;
   `)
     this._gradesTableReady = true
   }
@@ -1157,12 +1161,70 @@ export class EditionRepository {
     SELECT enrollment_id, tests, participation, partial_criteria, final_criteria,
            test_score, participation_score, partial_score, final_deliv_score,
            final_grade, group_number, tracking_code, observation,
+           odoo_cert_code, odoo_cert_at,
            updated_by, updated_at
       FROM public.classroom_student_grades
      WHERE program_edition_id = $1
      ORDER BY enrollment_id
   `, [id])
     return rows
+  }
+
+  // Datos para certificar el aula en Odoo: cabecera de la edicion (nombre del
+  // grupo Odoo se arma con odoo_activation + start_date) + una fila por alumno
+  // con su odoo_student_id (slide.group.student) y sus notas guardadas.
+  async classroomOdooCertifyData (id) {
+    await this.ensureGradesTable()
+    const { rows } = await this.db.query(`
+    SELECT prog.odoo_activation, pe.start_date,
+           e.enrollment_id, e.odoo_student_id,
+           per.first_name, per.last_name,
+           g.partial_score, g.final_deliv_score, g.final_grade, g.participation,
+           fin.fin_overdue
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs prog ON prog.program_id = pv.program_id
+      LEFT JOIN public.enrollments e ON e.program_edition_id = pe.edition_num_id
+      LEFT JOIN public.customers cust ON cust.customer_id = e.customer_id
+      LEFT JOIN public.persons per ON per.person_id = cust.person_id
+      LEFT JOIN public.classroom_student_grades g ON g.enrollment_id = e.enrollment_id
+      -- deuda: cuotas vencidas impagas de la venta (padre si es hijo), misma
+      -- regla que el marcador "Con deuda pendiente" de la lista de alumnos.
+      LEFT JOIN LATERAL (
+        SELECT (SELECT COUNT(*)::int
+                  FROM public.payment_installments pi
+                  JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+                 WHERE pi.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+                   AND pi.installment_number > 0
+                   AND pi.due_date < CURRENT_DATE
+                   AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+               ) AS fin_overdue
+      ) fin ON TRUE
+     WHERE pe.edition_num_id = $1
+  `, [id])
+    return rows
+  }
+
+  // Backfill de odoo_student_id resueltos por nombre durante la certificación.
+  // Solo completa vacíos, nunca pisa un id ya guardado.
+  async backfillOdooStudentIds (items) {
+    for (const it of (items || [])) {
+      await this.db.query(`
+      UPDATE public.enrollments SET odoo_student_id = $1
+       WHERE enrollment_id = $2 AND odoo_student_id IS NULL
+    `, [it.odoo_student_id, it.enrollment_id])
+    }
+  }
+
+  // Marca en la fila de notas el certificado emitido en Odoo (código + fecha).
+  async saveCertCodes (items) {
+    for (const it of (items || [])) {
+      await this.db.query(`
+      UPDATE public.classroom_student_grades
+         SET odoo_cert_code = $1, odoo_cert_at = NOW()
+       WHERE enrollment_id = $2 AND odoo_cert_code IS DISTINCT FROM $1
+    `, [it.cert_code, it.enrollment_id])
+    }
   }
 
   // Bulk upsert transaccional de filas de notas. Los items llegan saneados y
