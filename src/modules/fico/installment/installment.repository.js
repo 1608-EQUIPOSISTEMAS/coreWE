@@ -113,7 +113,7 @@ export class InstallmentRepository {
         LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
        WHERE p.payment_id = $1 AND p.enrollment_id = $2 AND p.active = 'Y'
          AND p.installment_id IS NULL
-         AND p.cat_payment_type = (SELECT catalog_id FROM catalog WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+         AND p.cat_payment_type IN (SELECT catalog_id FROM catalog WHERE alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment'))
     `, [paymentId, enrollmentId])
     return rows?.[0] || null
   }

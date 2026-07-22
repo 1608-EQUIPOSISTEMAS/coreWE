@@ -131,9 +131,10 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
-  // Estado del certificado + pagos adicionales (certificado de becado) para el
-  // panel de detalle. Los adicionales son filas de payments sin cuota asociada
-  // con tipo we_payment_type_certificate.
+  // Estado del certificado + pagos adicionales para el panel de detalle (nav
+  // Adicionales). Los adicionales son filas de payments sin cuota asociada con
+  // tipo we_payment_type_certificate (becados) o we_payment_type_reassignment
+  // (proceso de reasignacion de curso jalado).
   async paymentDetailCertificate (enrollmentId) {
     const { rows } = await this.db.query(`
       SELECT c.alias AS certificate_status_alias, c.description AS certificate_status_label
@@ -151,14 +152,16 @@ export class EnrollmentRepository {
              e2.cat_currency,
              cm.description AS payment_method,
              cb.description AS business_entity,
-             ba.bank_name, ba.account_number
+             ba.bank_name, ba.account_number,
+             ct.alias AS payment_type_alias
         FROM payments p
         JOIN enrollments e2 ON e2.enrollment_id = p.enrollment_id
+        JOIN public."catalog" ct ON ct.catalog_id = p.cat_payment_type
         LEFT JOIN public."catalog" cm ON cm.catalog_id = p.cat_method_payment
         LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
         LEFT JOIN public."catalog" cb ON cb.catalog_id = ba.business_entity_catalog_id
        WHERE p.enrollment_id = $1 AND p.active = 'Y' AND p.installment_id IS NULL
-         AND p.cat_payment_type = (SELECT catalog_id FROM public."catalog" WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+         AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment')
        ORDER BY p.payment_id
     `, [enrollmentId])
 

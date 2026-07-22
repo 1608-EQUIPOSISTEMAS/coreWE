@@ -644,6 +644,7 @@ export function buildControlRow (r, { dayCombos = [], holidaySet = new Set(), co
     instructor: r.instructor,
     day_label: r.day_label,
     hour_label: r.hour_label,
+    new_methodology: r.new_methodology === 'Y',
     start_date: r.start_date,
     end_date: r.end_date,
     total_sessions: Number(r.total_sessions) || 0,

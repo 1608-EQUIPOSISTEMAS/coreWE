@@ -2,6 +2,25 @@
 // Transforman filas de BD en las matrices de celdas que se escriben en Sheets
 // y arman los bloques de presentacion de Slack.
 
+// ponytail: lista fija de alumnos que la sincronizacion FICO manda SIEMPRE con
+// monto 0 en TODAS las hojas con importe por alumno (Ventas, Aula, Consolidado,
+// Cuotas, Adicionales). Pedido de negocio: estos enrollments no deben sumar a
+// ingresos ni a los reportes. Match por correo normalizado (lower/trim); los
+// emails aqui van en minuscula. Mover a config/BD si la lista crece.
+export const ZERO_AMOUNT_EMAILS = new Set([
+  'joselujan.barton@gmail.com',
+  'kiara_acosta_30@hotmail.com',
+  'paolaalejandro56@gmail.com',
+  'betovahe8892@gmail.com',
+  'wchambi@bancoripley.com.pe'
+])
+
+// True si el correo esta en la lista de monto-cero. Tolera null/undefined.
+export function isZeroAmountEmail (correo) {
+  if (!correo) return false
+  return ZERO_AMOUNT_EMAILS.has(String(correo).trim().toLowerCase())
+}
+
 // Convierte un valor de BD a la representacion de celda de Sheets:
 // null/undefined -> '', Date -> 'YYYY-MM-DD HH:MM:SS', resto -> String(val).
 export function serializeSheetValue (val) {
@@ -18,20 +37,24 @@ export function serializeSheetRow (row, headers) {
 
 // Mapea un resultado de la query de ventas FICO a las 20 columnas A..T.
 export function buildSalesRow (r) {
+  const z = isZeroAmountEmail(r.correo)
+  const money = (v) => (z ? 0 : (v || ''))
   return [
     r.cod || '', r.ed || '', r.f_inicio || '', r.f_pago || '',
     r.dni || '', r.nombres || '', r.celular || '', r.correo || '',
-    r.ocup || '', r.asesor || '', r.estado || '', r.dsct || '',
-    r.al_dia || '', r.inicial || '', r.saldo || '', r.ingreso || '',
+    r.ocup || '', r.asesor || '', r.estado || '', money(r.dsct),
+    money(r.al_dia), money(r.inicial), money(r.saldo), money(r.ingreso),
     r.tipo_cliente || '', r.estado_alumno || '',
     r.membresia || '', r.flex || ''
   ]
 }
 
-// Hoja "Adicionales" (pagos de certificado de becados): 19 columnas A..S.
-// Fijas por regla de negocio: LINEA DE NEGOCIO='EN VIVO', ASUNTO='Cert. becas',
+// Hoja "Adicionales" (pagos sueltos: certificado de becados y reasignaciones):
+// 19 columnas A..S. Fijas por regla de negocio: LINEA DE NEGOCIO='EN VIVO',
 // ESTADO='EFECTUADO', REALIZADO?=TRUE, TIPO PROGRAMA='ADICIONALES'.
-// LINEA DE PRODUCTO y TIPO DE PAGO quedan vacias (las gestionan a mano).
+// ASUNTO viene de la query segun el tipo de pago ('Cert. becas' / 'REASIGNACIÓN').
+// LINEA DE PRODUCTO: prefijo del version_code solo para reasignaciones.
+// TIPO DE PAGO queda vacia (la gestionan a mano).
 export const ADICIONALES_HEADER_ROW = [
   'N°', 'LÍNEA DE NEGOCIO', 'PROGRAMA', 'ASUNTO', 'F. PAGO',
   'NOMBRES Y APELLIDOS', 'CELULAR', 'CORREO', 'ESTADO', 'REALIZADO?',
@@ -40,36 +63,41 @@ export const ADICIONALES_HEADER_ROW = [
 ]
 
 export function buildAdicionalesRow (r, idx) {
+  const monto = isZeroAmountEmail(r.correo) ? 0 : (r.monto || '')
   return [
-    String(idx + 1), 'EN VIVO', r.programa || '', 'Cert. becas',
+    String(idx + 1), 'EN VIVO', r.programa || '', r.asunto || 'Cert. becas',
     r.f_pago || '', r.nombres || '', r.celular || '', r.correo || '',
-    'EFECTUADO', 'TRUE', r.monto || '', r.tipo_moneda || '',
+    'EFECTUADO', 'TRUE', monto, r.tipo_moneda || '',
     r.medio_pago || '', r.entidad_empresa || '', r.entidad_financiera || '',
-    r.n_operacion || '', 'ADICIONALES', '', ''
+    r.n_operacion || '', 'ADICIONALES', r.linea_producto || '', ''
   ]
 }
 
 // Mapea un resultado de la query de aula FICO a las 16 columnas A..P.
 export function buildAulaRow (r) {
+  const z = isZeroAmountEmail(r.correo)
+  const money = (v) => (z ? 0 : (v || ''))
   return [
     r.curso || '', r.catg || '', r.f_inicio || '', r.dni || '',
     r.nombres || '', r.celular || '', r.correo || '', r.ocup || '',
-    r.asesor || '', r.estado_alumno || '', r.al_dia || '', r.saldo || '',
-    r.estado_pago || '', r.descuento || '', r.tipo_cliente || '', r.es_member || ''
+    r.asesor || '', r.estado_alumno || '', money(r.al_dia), money(r.saldo),
+    r.estado_pago || '', money(r.descuento), r.tipo_cliente || '', r.es_member || ''
   ]
 }
 
 // Mapea un resultado de la query de consolidado FICO a las 31 columnas A..AE.
 export function buildConsolidadoRow (r) {
+  const z = isZeroAmountEmail(r.correo)
+  const money = (v) => (z ? 0 : (v || ''))
   return [
     r.cod || '', r.ed || '', r.f_inicio || '', r.f_pago || '',
     r.dni || '', r.nombres || '', r.celular || '', r.correo || '',
-    r.ocup || '', r.asesor || '', r.estado || '', r.dsct || '',
-    r.status_pago || '', r.inicial || '',
-    r.fc1 || '', r.c1 || '', r.fc2 || '', r.c2 || '',
-    r.fc3 || '', r.c3 || '', r.fc4 || '', r.c4 || '',
-    r.fc5 || '', r.c5 || '',
-    r.saldo || '', r.ingreso || '',
+    r.ocup || '', r.asesor || '', r.estado || '', money(r.dsct),
+    r.status_pago || '', money(r.inicial),
+    r.fc1 || '', money(r.c1), r.fc2 || '', money(r.c2),
+    r.fc3 || '', money(r.c3), r.fc4 || '', money(r.c4),
+    r.fc5 || '', money(r.c5),
+    money(r.saldo), money(r.ingreso),
     r.tipo_moneda || '', r.medio_pago || '',
     r.entidad_empresa || '', r.entidad_financiera || '',
     r.n_operacion || ''
@@ -81,6 +109,7 @@ export function buildConsolidadoRow (r) {
 // Devuelve la fila aplanada junto con el detalle de cuotas truncadas (las que
 // exceden MAX_CUOTAS) para que el llamador pueda observar la perdida de datos.
 export function buildCuotasRow (r, MAX_CUOTAS) {
+  const z = isZeroAmountEmail(r.correo)
   const baseCols = [
     r.cod || '', r.ed || '', r.f_inicio || '',
     r.nombres || '', r.celular || '', r.correo || '',
@@ -96,7 +125,7 @@ export function buildCuotasRow (r, MAX_CUOTAS) {
     if (cuota) {
       cuotaCols.push(
         cuota.fc || '',
-        cuota.monto || '',
+        z ? 0 : (cuota.monto || ''),
         cuota.medio_pago || '',
         cuota.entidad_empresa || '',
         cuota.entidad_financiera || '',
@@ -104,7 +133,7 @@ export function buildCuotasRow (r, MAX_CUOTAS) {
       )
       proyeccionCols.push(
         cuota.fc_proyeccion || '',
-        cuota.monto_proyeccion || ''
+        z ? 0 : (cuota.monto_proyeccion || '')
       )
     } else {
       cuotaCols.push('', '', '', '', '', '')

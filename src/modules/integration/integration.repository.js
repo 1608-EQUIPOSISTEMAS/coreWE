@@ -416,11 +416,20 @@ export class IntegrationRepository {
       COALESCE(cm.description, '')                         AS medio_pago,
       COALESCE(cb.description, '')                         AS entidad_empresa,
       COALESCE(ba.bank_name, '')                           AS entidad_financiera,
-      COALESCE(p.transaction_code, '')                     AS n_operacion
+      COALESCE(p.transaction_code, '')                     AS n_operacion,
+      CASE WHEN ct.alias = 'we_payment_type_reassignment'
+           THEN 'REASIGNACIÓN' ELSE 'Cert. becas' END       AS asunto,
+      CASE WHEN ct.alias = 'we_payment_type_reassignment'
+           -- ponytail: mapa minimo prefijo->linea de producto FICO; extender si aparece otro
+           THEN CASE split_part(COALESCE(pv.version_code, ''), '-', 1)
+                WHEN 'EX' THEN 'EXCEL'
+                ELSE split_part(COALESCE(pv.version_code, ''), '-', 1) END
+           ELSE '' END AS linea_producto
     FROM public.payments p
     JOIN public.enrollments e   ON e.enrollment_id = p.enrollment_id AND e.active = 'Y'
     JOIN public.customers cust  ON cust.customer_id = e.customer_id
     JOIN public.persons per     ON per.person_id = cust.person_id
+    JOIN public."catalog" ct    ON ct.catalog_id = p.cat_payment_type
     LEFT JOIN public.leads l              ON l.enrollment_id = e.enrollment_id
     LEFT JOIN public.program_versions pv  ON pv.program_version_id = e.program_version_id
     LEFT JOIN public."catalog" c_curr     ON c_curr.catalog_id = e.cat_currency
@@ -429,7 +438,7 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" cb         ON cb.catalog_id = ba.business_entity_catalog_id
     WHERE p.active = 'Y'
       AND p.installment_id IS NULL
-      AND p.cat_payment_type = (SELECT catalog_id FROM public."catalog" WHERE alias = 'we_payment_type_certificate' LIMIT 1)
+      AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment')
     ORDER BY p.payment_date ASC, p.payment_id ASC
   `)
     return rows || []

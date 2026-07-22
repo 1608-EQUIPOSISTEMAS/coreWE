@@ -1016,6 +1016,7 @@ export class EditionRepository {
            pv.sessions               AS total_sessions,
            dayc.description          AS day_label,
            hourc.description         AS hour_label,
+           pe.new_methodology,
            INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor
       FROM public.program_editions pe
       JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id

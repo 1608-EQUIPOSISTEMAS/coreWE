@@ -479,6 +479,7 @@ export const editionUpdateSchema = {
           expedient: { type: ['string', 'null'] },
           preconfirmation: { type: ['string', 'null'] },
           confirmation: { type: ['string', 'null'] },
+          new_methodology: { type: ['string', 'null'] },
           active: { type: ['string', 'null'] },
           cat_day_combination_id: { type: ['integer', 'null'] },
           cat_hour_combination_id: { type: ['integer', 'null'] },
