@@ -25,6 +25,11 @@ export async function versionCallerHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function eventCategoryListHandler (req, reply) {
+  const data = await usecases.listEventCategories(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function priceListHandler (req, reply) {
   const data = await usecases.listPrices(req.body)
   return reply.code(200).send({ ok: true, data })

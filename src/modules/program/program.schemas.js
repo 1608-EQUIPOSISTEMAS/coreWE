@@ -140,6 +140,17 @@ export const programVersionCallerSchema = {
   }
 }
 
+export const eventCategoryListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['program_version_id'],
+    properties: {
+      program_version_id: { type: 'integer' }
+    }
+  }
+}
+
 export const priceListSchema = {
   body: {
     type: 'object',

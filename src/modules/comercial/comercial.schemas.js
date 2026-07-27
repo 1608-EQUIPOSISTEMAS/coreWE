@@ -208,6 +208,8 @@ export const enrollmentRegisterSchema = {
           observations: { type: ['string', 'null'] },
           student_attachment_url: { type: ['string', 'null'] },
           b2b_contract_id: { type: ['integer', 'null'] },
+          // Categoria de entrada (VIP/GENERAL/PREMIUM/VIRTUAL) para eventos.
+          cat_event_category: { type: ['integer', 'null'] },
 
           ticket_payment_urls: {
             type: 'array',

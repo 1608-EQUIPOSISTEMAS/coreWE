@@ -1,5 +1,6 @@
 import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../../shared/db/sp.js'
+import { attachEventCategory } from '../../../shared/event-category.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
@@ -44,12 +45,15 @@ export class EnrollmentRepository {
   // --- Listado, KPIs, asesores -------------------------------------------
 
   async listEnrollments (payload = {}) {
-    return callProcedureReturningRows(
+    const rows = await callProcedureReturningRows(
       pool,
       'public.sp_fico_enrollment_list',
       [JSON.stringify(payload)],
       { statementTimeoutMs: 25000 }
     )
+    // El SP no expone cat_event_category (ni la matview que lee): se enriquece
+    // aqui para que el detalle pueda mostrar VIP/GENERAL/PREMIUM/VIRTUAL.
+    return attachEventCategory(rows, pool)
   }
 
   async kpisDaily ({ today, yesterday }) {
@@ -161,7 +165,7 @@ export class EnrollmentRepository {
         LEFT JOIN bank_accounts ba ON ba.account_id = p.settled_in_account_id
         LEFT JOIN public."catalog" cb ON cb.catalog_id = ba.business_entity_catalog_id
        WHERE p.enrollment_id = $1 AND p.active = 'Y' AND p.installment_id IS NULL
-         AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment')
+         AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment', 'we_payment_type_course_change_diff')
        ORDER BY p.payment_id
     `, [enrollmentId])
 

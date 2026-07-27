@@ -9,7 +9,8 @@ import {
   programVersionListSchema,
   programVersionUpdateSchema,
   programCallerSchema,
-  programVersionDetailGetSchema
+  programVersionDetailGetSchema,
+  eventCategoryListSchema
 } from './program.schemas.js'
 import * as ctrl from './program.controller.js'
 
@@ -23,5 +24,6 @@ export default async function programRoutes (fastify) {
   fastify.post('/programversionlist', { schema: programVersionListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.versionListHandler)
   fastify.post('/programversionupdate', { schema: programVersionUpdateSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.versionUpdateHandler)
   fastify.post('/programcaller', { schema: programCallerSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.callerHandler)
+  fastify.post('/eventcategorylist', { schema: eventCategoryListSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.eventCategoryListHandler)
   fastify.post('/programversiondetailget', { schema: programVersionDetailGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.versionDetailGetHandler)
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import ExcelJS from 'exceljs'
 import { enrollmentFicoImporter, num } from '../importers/enrollment-fico.importer.js'
 import { setImporterPorts } from '../importer.ports.js'
 
@@ -364,5 +365,141 @@ describe('enrollment-fico commitRow — importacion solo inserta', () => {
     expect(out.ok).toBe(false)
     expect(out.message).toMatch(/ADVERTENCIA/)
     expect(out.message).toMatch(/aula 600/)
+  })
+})
+
+// --- ingest: como se reconstruye el dinero de la fila -------------------------
+// Estas dos reglas salen de la hoja real (SAP HANA, 2026-07-24) y tocan plata,
+// asi que se prueban sobre un workbook de verdad y no solo sobre resolveRow.
+function hojaFico (filas) {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('INS - N')
+  ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL',
+    'FC1', 'C1', 'FC2', 'C2', 'SALDO', 'INGRESO'])
+  for (const f of filas) ws.addRow(f)
+  return wb
+}
+
+describe('enrollment-fico ingest — total y cronograma', () => {
+  it('GIFT CARD: el saldo residual es el regalo, no deuda -> total = INGRESO', () => {
+    const { rows } = enrollmentFicoImporter.ingest(hojaFico([
+      ['111', 'A A', 'E31', 'IA-CZ-03', 'GIF CARD DE S/50', 200, '19/3/2026', 209, '5/4/2026', 201, 43, 610]
+    ]))
+    expect(rows[0].raw.total_amount).toBe(610) // 610 + 43 seria cobrarle el regalo
+    expect(rows[0].raw._installments).toEqual([
+      { installment_number: 1, amount: 209, due_date: '19/3/2026' },
+      { installment_number: 2, amount: 201, due_date: '5/4/2026' }
+    ])
+  })
+
+  it('Cn vacia con FCn con fecha = cuota programada NO pagada, por el SALDO', () => {
+    const { rows } = enrollmentFicoImporter.ingest(hojaFico([
+      ['222', 'B B', 'E31', 'IA-CZ-03', '', 250, '30/4/2026', 233, '23/5/2026', '', 234, 483]
+    ]))
+    const { total_amount: total, down_payment: inicial, _installments: plan } = rows[0].raw
+    expect(total).toBe(717)
+    expect(plan).toEqual([
+      { installment_number: 1, amount: 233, due_date: '30/4/2026' },
+      { installment_number: 2, amount: 234, due_date: '23/5/2026' }
+    ])
+    // El SP exige que el plan cierre contra el saldo a financiar.
+    expect(inicial + plan.reduce((s, i) => s + i.amount, 0)).toBe(total)
+  })
+
+  it('Cn vacia SIN fecha no inventa cuota (queda saldo sin cronograma)', () => {
+    const { rows } = enrollmentFicoImporter.ingest(hojaFico([
+      ['333', 'C C', 'E31', 'IA-CZ-03', '', 700, '', '', '', '', 155, 700]
+    ]))
+    expect(rows[0].raw.total_amount).toBe(855)
+    expect(rows[0].raw._installments).toEqual([])
+    expect(rows[0].raw.payment_way).toBe('contado')
+  })
+})
+
+describe('enrollment-fico resolveRow — miembro que SI paga su curso', () => {
+  it('WE PLUS con total > 0: se cobra, no es beneficio, y conserva el tier', async () => {
+    const { data, errors } = await enrollmentFicoImporter.resolveRow(
+      { ...baseRaw, member_type: 'WE BLACK', total_amount: 700, down_payment: 150 }, ctx, [])
+    expect(errors).toEqual([])
+    expect(data.total_amount).toBe(700)      // antes lo dejaba en 0 por ser miembro
+    expect(data.is_membership_benefit).toBe(false)
+    expect(data.is_scholarship).toBe(false)  // tampoco es beca
+    expect(data.membership_program_id).toBe(167) // el tier se conserva
+  })
+
+  it('WE BLACK con total 0 sigue siendo beneficio de membresia', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow(
+      { ...baseRaw, member_type: 'WE BLACK', total_amount: 0 }, ctx, [])
+    expect(data.is_membership_benefit).toBe(true)
+    expect(data.member_type).toBe('WE BLACK')
+    expect(data.membership_program_id).toBe(167)
+  })
+})
+
+describe('enrollment-fico ingest — reparto del saldo y gift card con monto', () => {
+  it('varias cuotas programadas sin monto: el saldo se reparte parejo', () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('INS - N')
+    ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL',
+      'FC1', 'C1', 'FC2', 'C2', 'FC3', 'C3', 'SALDO', 'INGRESO'])
+    ws.addRow(['444', 'D D', 'E31', 'IA-CZ-03', '', 200,
+      '15/3/2026', '', '1/4/2026', '', '1/5/2026', '', 750, 200])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installments).toEqual([
+      { installment_number: 1, amount: 250, due_date: '15/3/2026' },
+      { installment_number: 2, amount: 250, due_date: '1/4/2026' },
+      { installment_number: 3, amount: 250, due_date: '1/5/2026' }
+    ])
+    expect(raw.down_payment + raw._installments.reduce((s, i) => s + i.amount, 0)).toBe(raw.total_amount)
+  })
+
+  it('reparto con resto: la ultima cuota absorbe el centimo', () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('INS - N')
+    ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL', 'FC1', 'C1', 'FC2', 'C2', 'SALDO', 'INGRESO'])
+    ws.addRow(['555', 'E E', 'E31', 'IA-CZ-03', '', 0, '1/2/2026', '', '1/3/2026', '', 100.01, 0])
+    const plan = enrollmentFicoImporter.ingest(wb).rows[0].raw._installments
+    expect(plan.map(i => i.amount)).toEqual([50, 50.01])
+  })
+
+  it('gift card menor que el saldo: el saldo SI es deuda', () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('INS - N')
+    ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL', 'FC1', 'C1', 'SALDO', 'INGRESO'])
+    ws.addRow(['666', 'F F', 'E31', 'IA-CZ-03', 'GIF CARD S/30', 200, '31/3/2026', '', 625, 200])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw.total_amount).toBe(825) // 200 + 625, la tarjeta de 30 no cubre el saldo
+    expect(raw._installments).toEqual([{ installment_number: 1, amount: 625, due_date: '31/3/2026' }])
+  })
+})
+
+describe('enrollment-fico ingest — saldo que no entra en ninguna cuota', () => {
+  it('agrega una cuota extra con el vencimiento de la ultima, sin tocar las cobradas', () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('INS - N')
+    ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL',
+      'FC1', 'C1', 'FC2', 'C2', 'FC3', 'C3', 'SALDO', 'INGRESO'])
+    // Caso real MAMANI: 150 + 254*3 = 912 cobrados, total 963, sobran 51.
+    ws.addRow(['777', 'G G', 'E31', 'IA-CZ-03', '', 150,
+      '10/1/2026', 254, '17/1/2026', 254, '17/2/2026', 254, 51, 912])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw.total_amount).toBe(963)
+    expect(raw._installments).toEqual([
+      { installment_number: 1, amount: 254, due_date: '10/1/2026' },
+      { installment_number: 2, amount: 254, due_date: '17/1/2026' },
+      { installment_number: 3, amount: 254, due_date: '17/2/2026' },
+      { installment_number: 4, amount: 51, due_date: '17/2/2026' } // el resto, aparte
+    ])
+    expect(raw.down_payment + raw._installments.reduce((s, i) => s + i.amount, 0)).toBe(963)
+  })
+
+  it('contado con saldo no genera cuotas (no hay vencimiento del que colgarse)', () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('INS - N')
+    ws.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'ED', 'COD', 'OBS', 'INICIAL', 'FC1', 'C1', 'SALDO', 'INGRESO'])
+    ws.addRow(['888', 'H H', 'E31', 'IA-CZ-03', '', 700, '', '', 155, 700])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installments).toEqual([])
+    expect(raw.payment_way).toBe('contado')
   })
 })

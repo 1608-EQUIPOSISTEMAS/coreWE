@@ -45,7 +45,9 @@ export function hasModuleOrRole (moduleCodes, allowedRoles) {
 // ── Roles globales reutilizables ──────────────────────────────
 export const ADMIN_ONLY       = hasRole(['ADMIN'])
 export const ADMIN_COMERCIAL  = hasRole(['ADMIN', 'LIDER_COMERCIAL'])
-export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL'])
+// FUNDACION/LIDER_FUNDACION entran aqui porque /fundacion/leads registra y
+// lista sus consultas contra los mismos endpoints /comercial/lead*.
+export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION'])
 export const ADMIN_FICO  = hasRole(['ADMIN', 'LIDER_FICO'])
 export const ALL_FICO    = hasModuleOrRole('FICO', ['ADMIN', 'FICO', 'LIDER_FICO'])
 export const ADMIN_ACADEMICA  = hasRole(['ADMIN', 'LIDER_ACADEMICA'])
@@ -53,7 +55,9 @@ export const ALL_ACADEMICA    = hasModuleOrRole('ACADEMICA', ['ADMIN', 'ACADEMIC
 export const ADMIN_PRODUCTO  = hasRole(['ADMIN', 'LIDER_PRODUCTO'])
 export const ALL_PRODUCTO    = hasModuleOrRole('PRODUCTO', ['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO'])
 export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO'])
-export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA'])
+// Fundacion entra por los campos "Empresa vinculada" y "Convenio corporativo"
+// del formulario de leads, que consultan /b2b/companylist y /b2b/agreementlist.
+export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA', 'FUNDACION', 'LIDER_FUNDACION'])
 
 // Gates combinados (OR) — usar uno solo en preHandler.
 // Apilar varios hasRole en preHandler los AND-ea (todos deben pasar), por eso
@@ -62,7 +66,10 @@ export const PRODUCTO_COMERCIAL = hasModuleOrRole(['PRODUCTO', 'COMERCIAL', 'FIC
   'ADMIN',
   'PRODUCTO', 'LIDER_PRODUCTO',
   'COMERCIAL', 'LIDER_COMERCIAL',
-  'FICO', 'LIDER_FICO'
+  'FICO', 'LIDER_FICO',
+  // Fundacion necesita el buscador de programas (/program/programversioncaller)
+  // para registrar sus consultas.
+  'FUNDACION', 'LIDER_FUNDACION'
 ])
 export const ADMIN_PRODUCTO_COMERCIAL = PRODUCTO_COMERCIAL
 // '*' = cualquier módulo otorgado en la matriz cuenta como usuario interno.
@@ -72,5 +79,6 @@ export const ALL_INTERNAL = hasModuleOrRole(['*'], [
   'FICO', 'LIDER_FICO',
   'ACADEMICA', 'LIDER_ACADEMICA',
   'PRODUCTO', 'LIDER_PRODUCTO',
+  'FUNDACION', 'LIDER_FUNDACION',
   'B2B', 'GERENCIA'
 ])

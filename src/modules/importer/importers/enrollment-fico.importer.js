@@ -28,6 +28,8 @@ const H = {
   down_payment: ['inicial'],
   ingreso: ['ingreso'],
   saldo: ['saldo'],
+  // Observaciones libres. Solo se lee para detectar la GIFT CARD (ver ingest).
+  obs: ['obs', 'observacion', 'observaciones'],
   // Columna J: tipo de membresia (WE BLACK / WE GOLD / ...). Con valor = el
   // alumno es miembro y el curso es beneficio (precio 0 legitimo); vacia = no.
   member_type: ['tip_member', 'tip member', 'tipo de miembro', 'tipo miembro', 'membresia'],
@@ -82,18 +84,56 @@ function ingest (wb) {
     if (!documento) return // sin DNI no es una inscripcion (filas de relleno/totales)
 
     const get = (key) => col[key] ? cellText(row.getCell(col[key]).value) : ''
-    const total = num(get('ingreso')) + num(get('saldo'))
+    // GIFT CARD: la hoja NO la resta del precio (es un regalo, no un descuento),
+    // asi que deja un SALDO residual por su valor que el alumno no debe. Solo se
+    // ignora el saldo cuando CABE en la tarjeta ("GIF CARD S/50" con saldo 43);
+    // un saldo mayor es deuda de verdad y la tarjeta no lo explica.
+    const giftCard = num((/gi?ft? *card[^0-9]*([0-9]+(?:[.,][0-9]+)?)/i.exec(get('obs')) || [])[1])
+    const saldoHoja = num(get('saldo'))
+    const saldo = giftCard > 0 && saldoHoja <= giftCard ? 0 : saldoHoja
+    const total = num(get('ingreso')) + saldo
 
-    const installments = []
+    const crudas = []
     for (let n = 1; n <= MAX_CUOTAS; n++) {
       if (!cn[n]) continue
-      const amount = num(row.getCell(cn[n]).value)
-      if (amount <= 0) continue
-      installments.push({
-        installment_number: n,
-        amount,
-        due_date: fc[n] ? cellText(row.getCell(fc[n]).value) : ''
+      crudas.push({
+        n,
+        amount: num(row.getCell(cn[n]).value),
+        dueDate: fc[n] ? cellText(row.getCell(fc[n]).value) : ''
       })
+    }
+
+    // Cn vacia con FCn con fecha = cuota PROGRAMADA Y NO PAGADA (la columna Cn
+    // lleva lo COBRADO). Su monto no esta en la fila: sale del SALDO, repartido
+    // en partes iguales entre todas las cuotas programadas sin cobrar. El resto
+    // de la division va a la ultima para que el plan cierre al centimo.
+    const porCobrar = crudas.filter(c => c.amount <= 0 && c.dueDate)
+    const cuotaPareja = porCobrar.length ? Math.floor((saldo / porCobrar.length) * 100) / 100 : 0
+
+    const installments = []
+    let repartido = 0
+    for (const c of crudas) {
+      if (c.amount > 0) {
+        installments.push({ installment_number: c.n, amount: c.amount, due_date: c.dueDate })
+        continue
+      }
+      if (!c.dueDate || saldo <= 0) continue
+      const ultima = c === porCobrar[porCobrar.length - 1]
+      const monto = ultima ? Math.round((saldo - repartido) * 100) / 100 : cuotaPareja
+      repartido += monto
+      installments.push({ installment_number: c.n, amount: monto, due_date: c.dueDate })
+    }
+
+    // Sobra saldo y no hay cuota programada donde colgarlo: se agrega una cuota
+    // extra por la diferencia CON EL MISMO VENCIMIENTO de la ultima. Va aparte y
+    // no sumada a esa ultima cuota a proposito: las cuotas con monto ya estan
+    // cobradas, y engordarlas haria figurar como deuda plata que si entro.
+    // No se inventa ninguna fecha; sin cuotas previas (contado) no aplica.
+    const inicial = num(get('down_payment'))
+    const falta = Math.round((total - inicial - installments.reduce((s, i) => s + i.amount, 0)) * 100) / 100
+    if (installments.length > 0 && falta > 0.01) {
+      const ultima = installments[installments.length - 1]
+      installments.push({ installment_number: ultima.installment_number + 1, amount: falta, due_date: ultima.due_date })
     }
 
     rows.push({
@@ -113,6 +153,9 @@ function ingest (wb) {
         payment_date: get('payment_date'),
         down_payment: num(get('down_payment')),
         total_amount: total,
+        // Lo efectivamente cobrado segun la hoja. No lo usa el alta (el SP crea
+        // las cuotas pendientes), pero si el marcado posterior de cuotas pagadas.
+        ingreso: num(get('ingreso')),
         member_type: get('member_type'), // WE BLACK / WE GOLD / '' (col J)
         agent_code: get('agent_code'),    // codigo del asesor (col AS)
         business_entity: get('business_entity'), // ENTIDAD EMPRESA (razon social)
@@ -165,7 +208,11 @@ async function resolveRow (raw, ctx, installments = []) {
   // del SP. Vacia = inscripcion normal (precio debe ser > 0). Ademas se resuelve la
   // version del programa-membresia para crear la inscripcion que marca al miembro.
   const memberType = (raw.member_type || '').trim()
-  const isMembershipBenefit = memberType !== ''
+  const esMiembro = memberType !== ''
+  // Ser miembro NO implica que el curso sea gratis: un WE PLUS puede pagar su
+  // curso (la hoja lo trae con su precio y su cronograma). El beneficio es la
+  // fila de miembro CON total 0; si la hoja cobra, se respeta lo que cobra.
+  const isMembershipBenefit = esMiembro && (Number(raw.total_amount) || 0) <= 0
   // Precio 0 = pago cero via is_scholarship del SP (de otro modo rechaza list_price
   // <= 0). Aplica a: columna de descuento "BECA", o cualquier fila con total 0 que
   // no sea membresia (descuento 100%, B2B totalmente cubierto, etc.). Una membresia
@@ -174,7 +221,9 @@ async function resolveRow (raw, ctx, installments = []) {
     (normText(raw.scholarship).includes('beca') || (Number(raw.total_amount) || 0) <= 0)
   let membershipVersionId = null
   let membershipProgramId = null
-  if (isMembershipBenefit) {
+  // El tier se resuelve para todo miembro (pague o no): la columna MEMBRESIA del
+  // sheet sale de enrollments.membership_program_id.
+  if (esMiembro) {
     const tier = (ctx?.membershipByName || new Map()).get(normText(memberType)) || null
     membershipVersionId = tier?.version_id || null
     membershipProgramId = tier?.program_id || null

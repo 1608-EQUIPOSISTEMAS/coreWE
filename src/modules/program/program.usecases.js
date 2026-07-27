@@ -75,6 +75,11 @@ export async function callerProgramVersions (payload = {}) {
   return toVersionCallerDto(rows)
 }
 
+export async function listEventCategories ({ program_version_id }) {
+  const rows = await repo.eventCategoryList(program_version_id)
+  return { items: rows }
+}
+
 export async function getProgramVersionDetail ({ program_version_id }) {
   const rows = await repo.versionDetailGet(program_version_id)
   return { data: rows?.[0] || {} }

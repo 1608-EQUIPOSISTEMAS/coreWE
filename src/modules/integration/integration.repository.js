@@ -417,12 +417,16 @@ export class IntegrationRepository {
       COALESCE(cb.description, '')                         AS entidad_empresa,
       COALESCE(ba.bank_name, '')                           AS entidad_financiera,
       COALESCE(p.transaction_code, '')                     AS n_operacion,
-      CASE WHEN ct.alias = 'we_payment_type_reassignment'
-           THEN 'REASIGNACIÓN' ELSE 'Cert. becas' END       AS asunto,
-      CASE WHEN ct.alias = 'we_payment_type_reassignment'
-           -- ponytail: mapa minimo prefijo->linea de producto FICO; extender si aparece otro
+      CASE ct.alias
+           WHEN 'we_payment_type_reassignment'       THEN 'REASIGNACIÓN'
+           WHEN 'we_payment_type_course_change_diff' THEN 'PAGO DIFERENCIA POR CAMBIO DE CURSO'
+           ELSE 'Cert. becas' END                            AS asunto,
+      -- LINEA DE PRODUCTO: prefijo del version_code (mapeado) para adicionales no-certificado.
+      -- ponytail: mapa minimo prefijo->linea FICO; extender si aparece otro.
+      CASE WHEN ct.alias IN ('we_payment_type_reassignment', 'we_payment_type_course_change_diff')
            THEN CASE split_part(COALESCE(pv.version_code, ''), '-', 1)
                 WHEN 'EX' THEN 'EXCEL'
+                WHEN 'SA' THEN 'SAP'
                 ELSE split_part(COALESCE(pv.version_code, ''), '-', 1) END
            ELSE '' END AS linea_producto
     FROM public.payments p
@@ -438,7 +442,7 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" cb         ON cb.catalog_id = ba.business_entity_catalog_id
     WHERE p.active = 'Y'
       AND p.installment_id IS NULL
-      AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment')
+      AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment', 'we_payment_type_course_change_diff')
     ORDER BY p.payment_date ASC, p.payment_id ASC
   `)
     return rows || []

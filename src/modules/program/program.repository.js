@@ -138,6 +138,35 @@ export class ProgramRepository {
       { statementTimeoutMs: 25000 }
     )
   }
+
+  // Categorias de entrada de un evento (VIP/GENERAL/PREMIUM/VIRTUAL) con el
+  // precio cargado para esa version de programa. LEFT JOIN a proposito: las 4
+  // categorias siempre vuelven; sin fila de precio los montos llegan en 0 y el
+  // formulario cae al precio del programa.
+  // SQL directo (no SP) porque no depende de sp_catalog_list, que no expone
+  // catalogos nuevos sin tocarlo.
+  async eventCategoryList (programVersionId) {
+    const { rows } = await this.db.query(`
+      SELECT c.catalog_id AS cat_event_category,
+             c.alias,
+             c.description,
+             COALESCE(p.price_student_soles,       0) AS price_student_soles,
+             COALESCE(p.price_student_dollars,     0) AS price_student_dollars,
+             COALESCE(p.price_profesional_soles,   0) AS price_profesional_soles,
+             COALESCE(p.price_profesional_dollars, 0) AS price_profesional_dollars,
+             (p.program_version_id IS NOT NULL)       AS has_price
+        FROM public.catalog c
+        JOIN public.catalog parent ON parent.catalog_id = c.catalog_parent_id
+        LEFT JOIN public.event_category_prices p
+               ON p.cat_event_category  = c.catalog_id
+              AND p.program_version_id  = $1
+              AND p.active              = 'Y'
+       WHERE parent.alias = 'we_event_category'
+         AND c.active = 'Y'
+       ORDER BY c.description
+    `, [programVersionId])
+    return rows || []
+  }
 }
 
 export const programRepository = new ProgramRepository()
