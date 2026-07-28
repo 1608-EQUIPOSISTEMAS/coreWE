@@ -139,6 +139,36 @@ export async function getHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function eventEditionsListHandler (req, reply) {
+  const data = await usecases.eventEditionsList(req.body || {})
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventCategoriesGetHandler (req, reply) {
+  const data = await usecases.eventCategoriesGet(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventCategoriesSaveHandler (req, reply) {
+  const data = await usecases.eventCategoriesSave(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventResourcesGetHandler (req, reply) {
+  const data = await usecases.eventResourcesGet(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventBannerGetHandler (req, reply) {
+  const data = await usecases.eventBannerGet(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventResourcesSaveHandler (req, reply) {
+  const data = await usecases.eventResourcesSave(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function updateHandler (req, reply) {
   const response = await usecases.editionUpdate(req.body)
   return reply.code(201).send(response)

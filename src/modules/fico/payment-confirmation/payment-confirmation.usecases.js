@@ -3,6 +3,7 @@ import { jobQueue as defaultJobQueue } from '../../../shared/adapters/jobs/postg
 import { paymentConfirmationRepository } from './payment-confirmation.repository.js'
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
 import { getEnrollmentOdoo } from '../../../utils/fico-queries.sql.js'
+import { isEventEnrollment } from '../../../shared/event-category.js'
 import {
   targetInstallmentNumber,
   isIdempotencyEligible,
@@ -205,6 +206,11 @@ export async function confirmPayment (payload, deps = {}) {
       }
     }
 
+    // Congreso / evento: no se toca Odoo en ninguno de los dos bloques de abajo.
+    // No hay curso en el campus al que inscribir ni cuotas que activar; lo unico
+    // que recibe el asistente es el correo, que dispara el frontend despues.
+    const isEvent = await isEventEnrollment(payload.enrollment_id)
+
     // Bifurcacion membresia diferida: encolar job en vez de ejecutar Odoo + email
     // sincronicamente. El worker reclama el job al llegar runAt (9am Lima) y
     // dispara enrollMembershipInOdoo + sendMembershipEmail.
@@ -230,6 +236,11 @@ export async function confirmPayment (payload, deps = {}) {
       } catch (qErr) {
         console.error('[confirmPayment] No se pudo encolar membership_activation:', qErr.message)
       }
+    } else if (isEvent) {
+      console.log(`[confirmPayment] enrollment ${payload.enrollment_id} es evento: se omite Odoo`)
+      // El frontend anuncia "inscripcion en Odoo completada" tras confirmar. En
+      // un evento eso seria mentira, asi que se le avisa.
+      resp.odoo_skipped = true
     } else {
       // Flujo sincrono: cursos regulares + membresia inmediata.
       try {
@@ -265,7 +276,7 @@ export async function confirmPayment (payload, deps = {}) {
       }
     }
 
-    if (payload.action === CONFIRM_CONTADO) {
+    if (payload.action === CONFIRM_CONTADO && !isEvent) {
       try {
         const odooResult = await sideEffects.syncInstallmentPaymentToOdoo({
           enrollmentId: payload.enrollment_id,

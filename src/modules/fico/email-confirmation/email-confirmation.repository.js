@@ -43,9 +43,22 @@ export class EmailConfirmationRepository {
              per.first_name, per.last_name, per.mother_last_name, per.document_number,
              ${STUDENT_EMAIL_SQL} AS origin_email,
              pv.abbreviation AS program_name,
-             prog.banner_link,
+             COALESCE(NULLIF(pe.banner_link, ''), prog.banner_link) AS banner_link,
+             pe.edition_num_id,
+             pe.banner_mime,
+             (pe.banner_image IS NOT NULL) AS has_banner_image,
              prog.cat_model_modality,
              prog.cat_category,
+             prog.cat_type_program,
+             c_type.alias AS program_type_alias,
+             e.cat_event_category,
+             c_evt.alias AS event_category_alias,
+             c_evt.description AS event_category_label,
+             ecp.whatsapp_link AS event_whatsapp_link,
+             pe.certificate_form_link,
+             pe.business_card_link,
+             pe.session_detail_virtual,
+             pe.session_detail_onsite,
              pe.start_date, pe.whatsapp_link,
              curr.variable_2 AS currency_symbol,
              e.odoo_user_id,
@@ -60,6 +73,11 @@ export class EmailConfirmationRepository {
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = COALESCE($2::integer, e.program_edition_id)
       LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
+      LEFT JOIN catalog c_type ON c_type.catalog_id = prog.cat_type_program
+      LEFT JOIN catalog c_evt ON c_evt.catalog_id = e.cat_event_category
+      LEFT JOIN event_category_prices ecp
+             ON ecp.program_version_id = pv.program_version_id
+            AND ecp.cat_event_category = e.cat_event_category
       LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
       WHERE e.enrollment_id = $1
     `, [enrollmentId, editionId, programVersionId])
@@ -73,9 +91,22 @@ export class EmailConfirmationRepository {
              per.first_name, per.last_name, per.mother_last_name, per.document_number,
              ${STUDENT_EMAIL_SQL} AS origin_email,
              pv.abbreviation AS program_name,
-             prog.banner_link,
+             COALESCE(NULLIF(pe.banner_link, ''), prog.banner_link) AS banner_link,
+             pe.edition_num_id,
+             pe.banner_mime,
+             (pe.banner_image IS NOT NULL) AS has_banner_image,
              prog.cat_model_modality,
              prog.cat_category,
+             prog.cat_type_program,
+             c_type.alias AS program_type_alias,
+             e.cat_event_category,
+             c_evt.alias AS event_category_alias,
+             c_evt.description AS event_category_label,
+             ecp.whatsapp_link AS event_whatsapp_link,
+             pe.certificate_form_link,
+             pe.business_card_link,
+             pe.session_detail_virtual,
+             pe.session_detail_onsite,
              pe.start_date,
              pe.whatsapp_link,
              curr.variable_2 AS currency_symbol,
@@ -92,9 +123,28 @@ export class EmailConfirmationRepository {
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
+      LEFT JOIN catalog c_type ON c_type.catalog_id = prog.cat_type_program
+      LEFT JOIN catalog c_evt ON c_evt.catalog_id = e.cat_event_category
+      LEFT JOIN event_category_prices ecp
+             ON ecp.program_version_id = pv.program_version_id
+            AND ecp.cat_event_category = e.cat_event_category
       LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
+    return rows?.[0] || null
+  }
+
+  // Bytes del banner de una edicion. Query aparte a proposito: el bytea pesa
+  // cientos de KB y no debe viajar en la consulta que arma TODOS los correos,
+  // solo cuando hace falta incrustarlo.
+  async findEditionBanner (editionId) {
+    if (!editionId) return null
+    const { rows } = await this.db.query(
+      `SELECT banner_image, banner_mime
+         FROM public.program_editions
+        WHERE edition_num_id = $1 AND banner_image IS NOT NULL`,
+      [editionId]
+    )
     return rows?.[0] || null
   }
 

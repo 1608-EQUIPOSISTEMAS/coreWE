@@ -1,0 +1,1499 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`templates/bienvenida-membresia > membresia GOLD 1`] = `
+"<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+</head>
+<body style="margin:0; padding:0; background-color:#ffffff; font-family: Tahoma, sans-serif;">
+
+<table align="center" border="0" cellpadding="0" cellspacing="0" width="550" style="border-collapse: collapse; margin: 0 auto;">
+
+    <tr>
+        <td align="center" style="padding-bottom: 10px;">
+            <img src="https://lh3.googleusercontent.com/d/1_wXIDeem4GJiE6um_eKxH6GhNF-zq_pM" width="550" style="display: block; border: 0;" alt="Header">
+        </td>
+    </tr>
+
+    <tr>
+        <td align="center" style="padding: 5px 0;">
+            <font face="Tahoma" size="5" color="#000000"><strong>¡Hola Ana Lucia!</strong><img src="https://lh3.googleusercontent.com/d/1Q3NFnPS_d-c5yjh9ipAgoVCG1BVPZXew" width="36" height="36" style="vertical-align: middle; margin-left: 5px; display: inline-block;"></font><br><br>
+            <font face="Tahoma" size="2" color="#000000">Te damos la bienvenida a nuestra <b>Comunidad de Members W|E</b></font>
+        </td>
+    </tr>
+    <tr>
+        <td align="center" style="padding: 5px 0;">
+            <font face="Tahoma" size="2" color="#000000">¡Aprovecha al máximo tu <strong> MEMBRESÍA GOLD </strong>y certifícate a tu propio ritmo!</font>
+        </td>
+    </tr>
+
+    <tr>
+        <td align="center" style="padding: 10px 0;">
+            <table width="450" align="center">
+                <tr>
+                    <td align="left">
+                        <ol style="margin: 0; padding-left: 40px;">
+                            <font face="Tahoma" size="2">
+                            <li><strong>Duración :</strong> 6 meses</li>
+                            <li><strong>Fecha de activación :</strong> 15/08/2026</li>
+                            <li><strong>Fecha de renovación :</strong> 15/02/2027</li>
+                            </font>
+                        </ol>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    
+
+    <tr>
+        <td align="center" style="padding-top: 20px;text-align:center">
+            <div style="width: 450px; margin: 0 auto; text-align:center">
+                <font face="Tahoma" size="3"><img src="https://lh3.googleusercontent.com/d/1-LNLs1MkpM-1bpsRPu-MLLgqnyJdmqcd" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong></font> <br/>
+                <font face="Tahoma" size="2">Con los siguientes datos podrás <strong>acceder a tus cursos online:</strong></font> <br/>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td align="center" style="padding: 5px 0 10px 0;">
+            <table align="center" border="2" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 440px; border-color: #000000;">
+                <tr style="background-color: #ffffff; color: black;">
+                    <td align="center">
+                        <font face="Tahoma" size="2"><strong> ACCESO PERSONAL</strong></font>
+                    </td>
+                </tr>
+                <tr style="background-color: #ffffff; color:black; text-align: center;">
+                    <td align="center" style="padding: 10px;">
+                        <font face="Tahoma" size="2"><strong>USUARIO: ana.torres@weeducacion.edu.pe</strong></font><br>
+                        <font face="Tahoma" size="2"><strong>CONTRASEÑA: 1234567</strong></font>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+              <a href="https://we-educacion.com/web/login" target="_blank">
+                  <img src="https://lh3.googleusercontent.com/d/14Ue_o6uQiobvl43mNa9zwcybGOfPB0E8"
+                        alt="Campus Virtual"
+                        width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+              </a>
+          </td>
+    </tr>
+    <tr><td height="15"></td></tr>
+    <tr>
+      <td align="center" width="550">
+        <table width="100%" align="center">
+          <tr>
+            <td style="padding: 0 30px;">
+              <font face="Tahoma" size="3">
+                <img src="https://lh3.googleusercontent.com/d/1xh8OOUV535yhNLrk5UTLNnslAjCn-wUL"
+                    width="22" height="22"
+                    style="vertical-align: middle; margin-right:5px;">
+                Tu <strong>Membresía GOLD</strong> te brinda los siguientes beneficios</font>
+              <div style="height:8px;"></div>
+              <div style="text-align:left; font-family: Tahoma; font-size:13px;padding: 10px 0;">
+                
+        <ol style="margin-top:5px;">
+        <li><strong>Acceso al 100% de cursos online</strong> actuales y nuevos programas.</li>
+        <li>Acceso todo incluido a <strong>2 programas Zoom</strong>.<br>Comunicate: <a href="https://wa.me/51946912021?text=Hola.%20Soy%20Member%20GOLD%20y%20quiero%20inscribirme%20a%20un%20%2Aprograma%20Zoom%2A." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 946 912 021</strong></a></li>
+        <li>Acceso con 60% dscto. en otros programas Zoom.</li>
+        <li>Acceso al <strong>servidor SAP</strong> durante 6 meses.<br>Solicita usuario: <a href="https://wa.me/51943882766?text=Hola%20soy%20member%20we%2C%20solicito%20mi%20usuario%20y%20contrase%C3%B1a%20SAP." target="_blank" style="color:blue; text-decoration:none;"><strong>+51 986115148</strong></a></li>
+       </ol>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+              <a href="http://bit.ly/GBMBlackWe" target="_blank">
+                  <img src="https://lh3.googleusercontent.com/d/1Pw-3kthkk83mouM4D23m2AdnlVUmPdlX"
+                        alt="BENEFICIOS"
+                        width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+              </a>
+          </td>
+    </tr>
+
+    <tr>
+        <td align="center" style="padding-top: 20px;">
+            <hr width="400" align="center" color="#cccccc">
+        </td>
+    </tr>
+
+    <tr>
+        <td style="padding: 20px 20px;">
+            <div style="width: 450px; margin: 0 auto;text-align:center">
+                <font face="Tahoma" size="3"><img src="https://lh3.googleusercontent.com/d/1-LNLs1MkpM-1bpsRPu-MLLgqnyJdmqcd" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>RECUERDA</strong></font> <br/>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td align="left">
+            <ul style="font-family: Tahoma; font-size:13px;margin: 0;">
+                <font face="Tahoma" size="2">
+                  <li>Es importante completar la <strong>FICHA DE REGISTRO</strong> (datos como figura en el DNI) para acceder a tus beneficios</li>
+                </font>
+            </ul>
+        </td>
+    </tr>
+    <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+              <a href="https://docs.google.com/forms/d/e/1FAIpQLScBPUFPYM665vzPSPqoQR_c-W-gqziFsJYQQp441_SArEWQ8g/viewform" target="_blank">
+                  <img src="https://lh3.googleusercontent.com/d/1UBEVpKtw3_xx00W8Kn8VSa9jOBR8mc-z"
+                        alt="FICHA REGISTRO"
+                        width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+              </a>
+          </td>
+    </tr>
+
+    <tr>
+        <td align="left">
+            <ul style="font-family: Tahoma; font-size:13px;margin: 0;">
+                <font face="Tahoma" size="2">
+                  <li>Cualquier error en los datos personales del formulario será <strong>responsabilidad del participante.</strong></li>
+                </font>
+            </ul>
+        </td>
+    </tr>
+    <tr>
+        <td align="center" style="padding: 20px 0 10px 0;">
+            <hr width="400" align="center" color="#cccccc">
+        </td>
+    </tr>
+
+    <tr>
+        <td align="left" style="text-align:center">
+          <font face="Tahoma" size="2">
+            ¡Únete a nuestro <strong>GRUPO EXCLUSIVO de Members!</strong>
+          </font>
+        </td>
+    </tr>
+    <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+              <a href="https://chat.whatsapp.com/EcbSmYfB8Rb4aYBL1xVikZ" target="_blank">
+                  <img src="https://lh3.googleusercontent.com/d/1brFYxzYxWNeliQvIU9dhc62X888rlQJB"
+                        alt="GRUPO WHATSAPP"
+                        width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+              </a>
+          </td>
+    </tr>
+
+<footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="2"><b>Síguenos en nuestras redes para seguir en contacto</b></font>
+  </p>
+
+  <br><br>
+</footer>
+</table>
+
+<table align="left" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-left:0;">
+  <tr>
+    <td style="padding: 20px 20px 10px 20px;">
+      <table border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <td valign="top" style="padding-right:15px">
+            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96" height="96" alt="Logo WE">
+          </td>
+          <td valign="top" style="font-family: Tahoma, sans-serif; font-size: 12px; color: #000;">
+            <b>Raul Rivera</b><br>
+            Ejecutivo de <span style="background-color:#ffe599;">pagos</span><br>
+            <b>+51 943 882 766</b><br>
+            <span style="color:#444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span><br>
+            <a href="http://www.we-educacion/TC.com" style="color:#1155cc;" target="_blank">www.we-educacion/TC.com</a><br>
+            <span style="color:#1155cc;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</span>
+          </td>
+        </tr>
+      </table>
+      <br>
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros" width="500" style="max-width:100%; height:auto; display:block;">
+      <br>
+      <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+        <ol style="margin:0; padding-left:18px;">
+          <li>No se aceptan cambios ni devoluciones posteriores al pago</li>
+          <li>W|E se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+          <li>W|E se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+        </ol>
+      </div>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-evento > entrada VIRTUAL con los tres botones 1`] = `
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción</title>
+</head>
+<body>
+
+    <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td><img src="https://api.we-educacion.com/uploads/FIXTURE.jpg" style="width: 100%; max-width: 500px; height: auto;"></td></tr>
+      </table>
+    </div>
+  </header>
+
+  <main>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="5"><strong>¡Hola, Luis!</strong></font>
+          <br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE</font>
+          <br>
+          <font face="Tahoma" size="4">Confirmamos tu inscripción al:</font>
+          <br><br>
+          <font face="Tahoma" size="4"><strong>XXVI CONGRESO DE LOGISTICA: TECNOLOGIA, RESILIENCIA Y SOSTENIBILIDAD GLOBAL - VIRTUAL</strong></font>
+          <table align="center" style="margin-top:6px"><tr><td style="padding:3px 14px;border-radius:12px;background-color:#fef3c7;border:1px solid #fde68a">
+         <font face="Tahoma" size="2" color="#92400e"><strong>ENTRADA VIRTUAL</strong></font>
+       </td></tr></table>
+          <div style="margin-top:14px">
+         <font face="Tahoma" size="4">Dia 1: Viernes 19 de Junio de 5pm a 9:20pm - Via Zoom (Hora Peru)<br>Dia 2: Sabado 20 de Junio de 9am a 1pm - Via Zoom (Hora Peru)</font>
+       </div>
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="4"><strong>IMPORTANTE:</strong> 48 horas antes del evento, te enviaremos por correo electrónico los detalles para acceder al mismo.</font>
+          <br><br>
+          <hr width="400px" align="center">
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr><td>
+          <font face="Tahoma" size="4"><strong>RECUERDA:</strong></font>
+          <ol>
+            <li><font face="Tahoma" size="3">Es importante completar la FICHA DE REGISTRO (Datos como figura en el DNI) para la certificación.</font></li>
+            <li><font face="Tahoma" size="3">Cualquier error en los datos personales del formulario será responsabilidad del participante.</font></li>
+            <li><font face="Tahoma" size="3">La emisión de un nuevo certificado tendrá un costo adicional.</font></li>
+            <li><font face="Tahoma" size="3">Sube aquí tu tarjeta de presentación y conecta con profesionales, empresas y personas que apuestan por el crecimiento y la colaboración.</font></li>
+          </ol>
+        </td></tr>
+      </table>
+
+      <table align="center" style="padding: 7px;border-radius:9px;background-color:rgb(5,36,103); width: 450px; margin-top: 10px;">
+        <tr align="center"><td>
+          <a href="https://forms.gle/FIXTURECERT" target="_blank" style="text-decoration-line:none;color: white;">
+            <FONT FACE="tahoma" size="4"><strong>REGISTRA TUS DATOS PARA EL CERTIFICADO</strong></FONT>
+          </a>
+        </td></tr>
+      </table>
+      <table align="center" style="padding: 7px;border-radius:9px;background-color:rgb(240,173,20); width: 450px; margin-top: 10px;">
+        <tr align="center"><td>
+          <a href="https://chat.whatsapp.com/FIXTURE" target="_blank" style="text-decoration-line:none;color: white;">
+            <FONT FACE="tahoma" size="4"><strong>ÚNETE A GRUPO DE WHATSAPP AQUÍ</strong></FONT>
+          </a>
+        </td></tr>
+      </table>
+      <table align="center" style="padding: 7px;border-radius:9px;background-color:rgb(5,36,103); width: 450px; margin-top: 10px;">
+        <tr align="center"><td>
+          <a href="https://forms.gle/FIXTURECARD" target="_blank" style="text-decoration-line:none;color: white;">
+            <FONT FACE="tahoma" size="4"><strong>SUBE AQUÍ TU TARJETA DE PRESENTACIÓN</strong></FONT>
+          </a>
+        </td></tr>
+      </table>
+    </div>
+  </main>
+
+    <!-- FOOTER -->
+  <footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+  </p>
+
+  <br>
+  <br>
+
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+  </div>
+
+  <br>
+
+  <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+    <ol type="1" style="margin-top: 0; padding-left: 20px;">
+      <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+      <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+      <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+    </ol>
+  </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-evento > entrada presencial sin banner ni links 1`] = `
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción</title>
+</head>
+<body>
+
+    <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td></td></tr>
+      </table>
+    </div>
+  </header>
+
+  <main>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="5"><strong>¡Hola, Ana!</strong></font>
+          <br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE</font>
+          <br>
+          <font face="Tahoma" size="4">Confirmamos tu inscripción al:</font>
+          <br><br>
+          <font face="Tahoma" size="4"><strong>XXVI CONGRESO DE LOGISTICA</strong></font>
+          <table align="center" style="margin-top:6px"><tr><td style="padding:3px 14px;border-radius:12px;background-color:#fef3c7;border:1px solid #fde68a">
+         <font face="Tahoma" size="2" color="#92400e"><strong>ENTRADA VIP</strong></font>
+       </td></tr></table>
+          <div style="margin-top:14px">
+         <font face="Tahoma" size="4">Dia 1: Viernes 19 de Junio - Hotel Marriott, Miraflores</font>
+       </div>
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="4"><strong>IMPORTANTE:</strong> 48 horas antes del evento, te enviaremos por correo electrónico los detalles para acceder al mismo.</font>
+          <br><br>
+          <hr width="400px" align="center">
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr><td>
+          <font face="Tahoma" size="4"><strong>RECUERDA:</strong></font>
+          <ol>
+            <li><font face="Tahoma" size="3">Es importante completar la FICHA DE REGISTRO (Datos como figura en el DNI) para la certificación.</font></li>
+            <li><font face="Tahoma" size="3">Cualquier error en los datos personales del formulario será responsabilidad del participante.</font></li>
+            <li><font face="Tahoma" size="3">La emisión de un nuevo certificado tendrá un costo adicional.</font></li>
+            <li><font face="Tahoma" size="3">Sube aquí tu tarjeta de presentación y conecta con profesionales, empresas y personas que apuestan por el crecimiento y la colaboración.</font></li>
+          </ol>
+        </td></tr>
+      </table>
+
+    </div>
+  </main>
+
+    <!-- FOOTER -->
+  <footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+  </p>
+
+  <br>
+  <br>
+
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+  </div>
+
+  <br>
+
+  <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+    <ol type="1" style="margin-top: 0; padding-left: 20px;">
+      <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+      <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+      <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+    </ol>
+  </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-inscripcion > alumno nuevo, con cuotas y WhatsApp visible 1`] = `
+"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción</title>
+</head>
+<body>
+
+    <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr><td>
+          <img src="https://lh3.googleusercontent.com/d/FIXTUREBANNER" style="width: 100%; max-width: 500px; height: auto;">
+        </td></tr>
+      </table>
+      <table align="center" style="width:450px; text-align: center;">
+        <tr><td>
+          <font face="Tahoma" size="6"><strong>¡Hola Luis Alberto!</strong></font><br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE.
+          Confirmamos tu inscripción a:</font>
+        </td></tr>
+      </table>
+    </div>
+  </header>
+
+    <!-- MAIN -->
+  <main>
+    <div>
+      <!-- HORARIO, PROGRAMA -->
+      <table align="center" style="width: 100%; min-width: 470px; max-width: 600px;">
+        <tr>
+          <td align="center">
+            <table align="center" style="width: 100%; max-width: 440px;">
+              <tr>
+                <td align="left"> <ol style="margin-left: 20px;">
+                    <li><strong><font face="Tahoma" size="4">Programa:</font></strong> <font face="Tahoma" size="4">DIPLOMADO EN GESTION DE OPERACIONES</font></li>
+                    <li><strong><font face="Tahoma" size="4">Inicio:</font></strong> <font face="Tahoma" size="4">Sábado 15 de Agosto 2026</font></li>
+                    <li><strong><font face="Tahoma" size="4">Horario:</font></strong> <font face="Tahoma" size="4">Lunes, Miercoles 19:00 - 22:00 (
+                      <img src="https://lh3.googleusercontent.com/d/1gDkGBweHdVcdTyFAC4hUGs59Tv_8lrlg" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
+                      <img src="https://lh3.googleusercontent.com/d/1JW2PWvO0LW9UsE308zLR93nAVTLk-dlT" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
+                      <img src="https://lh3.googleusercontent.com/d/1wNwEHIIUMQdKtpz9Ouvg3LqU2v7gqNtJ" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"> GMT-5)</font></li>
+                  </ol>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr style="text-align:center"><td>
+          <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/100yF06wcwLvB-VoLDlR0PBHQM6t80O9B" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong> <br/>
+
+          <font face="Tahoma" size="4">Completa estos 3 pasos para iniciar tu experiencia W|E</font>
+          <br/><br/>
+
+          <font face="Tahoma" size="4">Para asegurar una correcta comunicación, acceso a contenidos y emisión </font><br/>
+
+          <font face="Tahoma" size="4">de tu certificado, es indispensable que completes los siguientes pasos:</font><br/><br/>
+        </td></tr>
+
+        <!--DATOS DE BOTONES LINKS-->
+        
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1pBX3L1-9k-9q8TON5W1OhatayiYBUxWr" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Únete al grupo oficial de WhatsApp</strong>
+              <br/><br/>
+              <font face="Tahoma" size="4">Únete aquí al grupo de WhatsApp de tu programa aquí:</font>
+              <br/>
+
+            </td>
+        </tr>
+        <tr>
+              <td align="center" style="padding: 5px 0 10px 0;">
+                  <a href="https://chat.whatsapp.com/FIXTURE" target="_blank">
+                      <img src="https://lh3.googleusercontent.com/d/1e6GYu7I85fF9CZY6pwWRS65oB5cw7BGN"
+                            alt="Unirse al Grupo de WhatsApp"
+                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+                  </a>
+              </td>
+        </tr>
+        
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>
+              <br/>
+              <font face="Tahoma" size="4"> La información que registres será utilizada tal cual para la emisión </font>
+              <br/>
+
+              <font face="Tahoma" size="4">de tu certificado digital</font><br/>
+
+              <i style="color: #666666;"> <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1slHkjdJETgxA1ARW8vxy8CMSdXpI9fWM" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">Revisa cuidadosamente tus datos antes de enviar el formulario.</font></i><br/>
+
+            </td>
+        </tr>
+        <tr>
+              <td align="center" style="padding: 5px 0 10px 0;">
+                  <a href="https://we-educacion-certificacion.com/" target="_blank">
+                      <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
+                            alt="Completar datos certificado"
+                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+                  </a>
+              </td>
+        </tr>
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1LLBfsoK3XzSZNuC1oQTLEvqy-Ky1tgQb" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
+              <br/>  <br/>
+              <font face="Tahoma" size="4">Dentro de <strong>max. 24 horas</strong> en el campus encontrarás: </font>
+              <br/>
+
+              <font face="Tahoma" size="4">
+                  <span style="text-decoration: underline; text-decoration-color: black;">
+                      cursos online gratuitos, recursos complementarios y el reglamento.
+                  </span>
+              </font>
+              <br/>
+              <font face="Tahoma" size="4">Te enviaremos otro email confirmando lo anterior.</font><br/>
+            </td>
+        </tr>
+      </table>
+
+      <!-- ACCESOS -->
+      <br>
+      <table align="center" border="2" cellpadding="2" cellspacing="-1" style="border-collapse:collapse;margin:1 auto;width:420px">
+          <tr style="text-align:center" align="center"><td>
+            <font face="Tahoma" size="4">ACCESO PERSONAL</font>
+          </td></tr>
+          <tr style="color:black;text-align:center;max-height:50px"><td>
+            <font face="Tahoma" size="4"><strong>USUARIO: </strong> luis.alberto@weeducacion.edu.pe</font>
+            <br>
+            <font face="Tahoma" size="4"><strong>CONTRASEÑA: </strong> 1234567</font>
+          </td></tr>
+        </table>
+
+      <!-- BOTON CAMPUS -->
+      <table align="center" style="width: 100%; max-width: 450px;">
+        <tr>
+              <td align="center" style="padding: 5px 0 10px 0;">
+                  <a href="https://we-educacion.com/web/login" target="_blank">
+                      <img src="https://lh3.googleusercontent.com/d/14Ue_o6uQiobvl43mNa9zwcybGOfPB0E8"
+                            alt="Ingresar al Campus Virtual"
+                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+                  </a>
+              </td>
+        </tr>
+      </table>
+
+      <!-- VIDEO -->
+      <table align="center" style="width:500px">
+        <tr>
+            <td>
+                <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank">
+                    <img src="https://lh3.googleusercontent.com/d/1dQnzpVcHtkt4ftvGIVfw9ilHTcx0CT1R"
+                         alt="Ver en YouTube"
+                         style="max-width:500px; width:100%; display:block;"
+                         class="CToWUd">
+                </a>
+            </td>
+        </tr>
+      </table>
+      <br>
+
+      <!-- TABLA CRONOGRAMA -->
+      
+      <table width="450px" border="2" align="center" border-collapse="collapse" style="border-collapse: collapse;text-align: center; height: 75; ">
+        <thead>
+          <tr>
+            <td colspan="3" style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3">CRONOGRAMA DE PAGOS</font></td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3">Fechas</font></td>
+            <td><font face="Tahoma" size="3">15 Ago</font></td><td><font face="Tahoma" size="3">15 Sep</font></td>
+          </tr>
+          <tr>
+            <td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3">Pago</font></td>
+            <td><font face="Tahoma" size="3">S/. 500</font></td><td><font face="Tahoma" size="3">S/. 500</font></td>
+          </tr>
+        </tbody>
+      </table>
+      <table align="center" style="width:450px">
+        <tr><td><p>Se cobrarán S/. 2 por día de mora</p></td></tr>
+      </table>
+      <table align="center" style="padding: 7px;border-radius:9px;background-color:rgb(5,36,103); width: 450px;">
+        <tr align="center"><td>
+          <a href="https://drive.google.com/file/d/1_adDqUIAv-lxAkBuihQnBBcJmwJfj9wx/view" target="_blank" style="text-decoration-line:none;color: white;">
+            <FONT FACE="tahoma" size="4"><strong>MEDIOS DE PAGO</strong></FONT>
+          </a>
+        </td></tr>
+      </table>
+
+      <br>
+      <!-- RECUERDA -->
+      <table align="center" style="width:450px">
+        <tr style="text-align:center"><td><font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1-LNLs1MkpM-1bpsRPu-MLLgqnyJdmqcd" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>RECUERDA:</strong></font></td></tr>
+        <tr><td>
+          <ol type="1">
+            <font face="Tahoma" size="4">
+              <li>Inscripciones el mismo día del inicio: se enviará <br>el <strong>enlace Teams por WhatsApp.</strong></li>
+              <br>
+              <li>Podrás <strong> reprogramar tu curso hasta 72 horas</strong> antes del inicio y evitar gastos administrativos.</li>
+              <br>
+            </font>
+          </ol>
+        </td></tr>
+
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><strong>¿Necesitas ayuda?</strong>
+              <br/>
+              <font face="Tahoma" size="4">Comunícate al WhatsApp  <a href="https://wa.me/51922744702" style="color: #0056b3; text-decoration: underline;">+51 922744702</a> </font>
+            </td>
+        </tr>
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"> <a href="https://we-educacion.com/terminos-condiciones" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank"><br><br>Términos y Condiciones</a> </font>
+            </td>
+        </tr>
+      </table>
+    </div>
+
+  </main>
+
+    <!-- FOOTER -->
+  <footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+  </p>
+
+  <br>
+  <br>
+
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+  </div>
+
+  <br>
+
+  <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+    <ol type="1" style="margin-top: 0; padding-left: 20px;">
+      <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+      <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+      <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+    </ol>
+  </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y con WhatsApp oculto 1`] = `
+"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción</title>
+</head>
+<body>
+
+    <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr><td>
+          
+        </td></tr>
+      </table>
+      <table align="center" style="width:450px; text-align: center;">
+        <tr><td>
+          <font face="Tahoma" size="6"><strong>¡Hola Maria!</strong></font><br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE.
+          Confirmamos tu inscripción a:</font>
+        </td></tr>
+      </table>
+    </div>
+  </header>
+
+    <!-- MAIN -->
+  <main>
+    <div>
+      <!-- HORARIO, PROGRAMA -->
+      <table align="center" style="width: 100%; min-width: 470px; max-width: 600px;">
+        <tr>
+          <td align="center">
+            <table align="center" style="width: 100%; max-width: 440px;">
+              <tr>
+                <td align="left"> <ol style="margin-left: 20px;">
+                    <li><strong><font face="Tahoma" size="4">Programa:</font></strong> <font face="Tahoma" size="4">ESP. EN LOGISTICA INTEGRAL</font></li>
+                    <li><strong><font face="Tahoma" size="4">Inicio:</font></strong> <font face="Tahoma" size="4">Sábado 15 de Agosto 2026</font></li>
+                    <li><strong><font face="Tahoma" size="4">Horario:</font></strong> <font face="Tahoma" size="4">Sabados 09:00 - 13:00 (
+                      <img src="https://lh3.googleusercontent.com/d/1gDkGBweHdVcdTyFAC4hUGs59Tv_8lrlg" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
+                      <img src="https://lh3.googleusercontent.com/d/1JW2PWvO0LW9UsE308zLR93nAVTLk-dlT" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
+                      <img src="https://lh3.googleusercontent.com/d/1wNwEHIIUMQdKtpz9Ouvg3LqU2v7gqNtJ" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"> GMT-5)</font></li>
+                  </ol>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr style="text-align:center"><td>
+          <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/100yF06wcwLvB-VoLDlR0PBHQM6t80O9B" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong> <br/>
+
+          <font face="Tahoma" size="4">Completa estos 3 pasos para iniciar tu experiencia W|E</font>
+          <br/><br/>
+
+          <font face="Tahoma" size="4">Para asegurar una correcta comunicación, acceso a contenidos y emisión </font><br/>
+
+          <font face="Tahoma" size="4">de tu certificado, es indispensable que completes los siguientes pasos:</font><br/><br/>
+        </td></tr>
+
+        <!--DATOS DE BOTONES LINKS-->
+        
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma académico</strong>
+              <br/><br/>
+              <font face="Tahoma" size="4">Adjuntamos en este correo el <strong>cronograma completo del programa</strong> en formato PDF con las fechas, docentes, horarios y sesiones de cada módulo.</font>
+              <br/><br/>
+            </td>
+        </tr>
+        
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>
+              <br/>
+              <font face="Tahoma" size="4"> La información que registres será utilizada tal cual para la emisión </font>
+              <br/>
+
+              <font face="Tahoma" size="4">de tu certificado digital</font><br/>
+
+              <i style="color: #666666;"> <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1slHkjdJETgxA1ARW8vxy8CMSdXpI9fWM" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">Revisa cuidadosamente tus datos antes de enviar el formulario.</font></i><br/>
+
+            </td>
+        </tr>
+        <tr>
+              <td align="center" style="padding: 5px 0 10px 0;">
+                  <a href="https://we-educacion-certificacion.com/" target="_blank">
+                      <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
+                            alt="Completar datos certificado"
+                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+                  </a>
+              </td>
+        </tr>
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1LLBfsoK3XzSZNuC1oQTLEvqy-Ky1tgQb" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
+              <br/>  <br/>
+              <font face="Tahoma" size="4">Dentro de <strong>max. 24 horas</strong> en el campus encontrarás: </font>
+              <br/>
+
+              <font face="Tahoma" size="4">
+                  <span style="text-decoration: underline; text-decoration-color: black;">
+                      cursos online gratuitos, recursos complementarios y el reglamento.
+                  </span>
+              </font>
+              <br/>
+              <font face="Tahoma" size="4">Te enviaremos otro email confirmando lo anterior.</font><br/>
+            </td>
+        </tr>
+      </table>
+
+      <!-- ACCESOS -->
+      <br>
+      <table align="center" style="width:450px">
+          <tr style="text-align:center; height: 40px;"><td>
+            <font face="Tahoma" size="4"><strong>Usuario: </strong>maria.perez@weeducacion.edu.pe</font>
+          </td></tr>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4"> Tu usuario ya está registrado en el Campus Virtual.</font>
+          </td></tr>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4"> Debes usar la misma contraseña para ingresar. </font><br/>
+          </td></tr><br/>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4">¿Olvidaste tu contraseña? </font><a href="https://we-educacion.com/web/reset_password" target="_blank"><font face="Tahoma" size="4">Haz clic Aquí</font></a>
+          </td></tr>
+        </table>
+
+      <!-- BOTON CAMPUS -->
+      <table align="center" style="width: 100%; max-width: 450px;">
+        <tr>
+              <td align="center" style="padding: 5px 0 10px 0;">
+                  <a href="https://we-educacion.com/web/login" target="_blank">
+                      <img src="https://lh3.googleusercontent.com/d/14Ue_o6uQiobvl43mNa9zwcybGOfPB0E8"
+                            alt="Ingresar al Campus Virtual"
+                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+                  </a>
+              </td>
+        </tr>
+      </table>
+
+      <!-- VIDEO -->
+      <table align="center" style="width:500px">
+        <tr>
+            <td>
+                <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank">
+                    <img src="https://lh3.googleusercontent.com/d/1dQnzpVcHtkt4ftvGIVfw9ilHTcx0CT1R"
+                         alt="Ver en YouTube"
+                         style="max-width:500px; width:100%; display:block;"
+                         class="CToWUd">
+                </a>
+            </td>
+        </tr>
+      </table>
+      <br>
+
+      <!-- TABLA CRONOGRAMA -->
+      
+
+      <br>
+      <!-- RECUERDA -->
+      <table align="center" style="width:450px">
+        <tr style="text-align:center"><td><font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1-LNLs1MkpM-1bpsRPu-MLLgqnyJdmqcd" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>RECUERDA:</strong></font></td></tr>
+        <tr><td>
+          <ol type="1">
+            <font face="Tahoma" size="4">
+              <li>Inscripciones el mismo día del inicio: se enviará <br>el <strong>enlace Teams por WhatsApp.</strong></li>
+              <br>
+              <li>Podrás <strong> reprogramar tu curso hasta 72 horas</strong> antes del inicio y evitar gastos administrativos.</li>
+              <br>
+            </font>
+          </ol>
+        </td></tr>
+
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"><strong>¿Necesitas ayuda?</strong>
+              <br/>
+              <font face="Tahoma" size="4">Comunícate al WhatsApp  <a href="https://wa.me/51922744702" style="color: #0056b3; text-decoration: underline;">+51 922744702</a> </font>
+            </td>
+        </tr>
+        <tr style="text-align:center">
+            <td>
+              <font face="Tahoma" size="4"> <a href="https://we-educacion.com/terminos-condiciones" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank"><br><br>Términos y Condiciones</a> </font>
+            </td>
+        </tr>
+      </table>
+    </div>
+
+  </main>
+
+    <!-- FOOTER -->
+  <footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+  </p>
+
+  <br>
+  <br>
+
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+  </div>
+
+  <br>
+
+  <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+    <ol type="1" style="margin-top: 0; padding-left: 20px;">
+      <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+      <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+      <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+    </ol>
+  </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-online > con credenciales SAP 1`] = `
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción Online</title>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr><td>
+          <img src="https://api.we-educacion.com/uploads/onlineCorreo.jpg" style="width: 100%; max-width: 500px; height: auto;">
+        </td></tr>
+      </table>
+      <table align="center" style="width:450px; text-align: center;">
+        <tr><td>
+          <font face="Tahoma" size="6"><strong>¡Hola Jose!</strong></font><br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE.<br>
+          Confirmamos tu inscripción al curso:</font><br><br>
+          <font face="Tahoma" size="5"><strong>SAP MM ONLINE</strong></font>
+        </td></tr>
+      </table>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+    <div>
+      <!-- Banner azul: PASOS PARA INGRESAR -->
+      <table align="center" style="width:100%; max-width: 500px; margin: 20px auto;">
+        <tr>
+          <td align="center" style="background-color:#052467; color:white; border-radius: 25px; padding: 12px;">
+            <font face="Tahoma" size="4" color="#ffffff"><strong>PASOS PARA INGRESAR AL CAMPUS VIRTUAL</strong></font>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Pasos i-iv -->
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr>
+          <td align="left" style="padding: 0 30px;">
+            <ol type="i" style="font-family: Tahoma, sans-serif; font-size: 16px; line-height: 1.8;">
+              <li>Dar clic en el botón "Ingresar" <a href="https://we-educacion.com/web/login" target="_blank" style="color:#1155cc;">aquí</a>.</li>
+              <li>Ingresa tu usuario y contraseña.</li>
+              <li>Dar clic en "Iniciar sesión".</li>
+              <li>Ir al Panel y hacer clic en "Cursos Online".</li>
+            </ol>
+          </td>
+        </tr>
+      </table>
+
+      <!-- ACCESO PERSONAL -->
+      <br>
+      <table align="center" style="width:450px">
+          <tr style="text-align:center; height: 40px;"><td>
+            <font face="Tahoma" size="4"><strong>Usuario: </strong>jose.ramos@weeducacion.edu.pe</font>
+          </td></tr>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4"> Tu usuario ya está registrado en el Campus Virtual.</font>
+          </td></tr>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4"> Debes usar la misma contraseña para ingresar.</font><br/>
+          </td></tr>
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="4">¿Olvidaste tu contraseña? </font><a href="https://we-educacion.com/web/reset_password" target="_blank"><font face="Tahoma" size="4">Haz clic Aquí</font></a>
+          </td></tr>
+        </table>
+
+      <br>
+        <table align="center" border="2" cellpadding="2" cellspacing="-1" style="border-collapse:collapse;margin:1 auto;width:420px;border-color:#052467">
+          <tr style="background-color:#052467;color:white;text-align:center"><td>
+            <font face="Tahoma" size="4"><strong>ACCESO AL SERVIDOR SAP</strong></font>
+          </td></tr>
+          <tr style="color:black;text-align:center;max-height:50px"><td>
+            <font face="Tahoma" size="4"><strong>USUARIO: </strong>FIXTUREUSER</font>
+            <br>
+            <font face="Tahoma" size="4"><strong>CONTRASEÑA: </strong>FIXTUREPASS</font>
+          </td></tr>
+        </table>
+        <table align="center" style="width:450px">
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="3" color="#052467"><i>Estas credenciales son personales y te dan acceso al servidor SAP durante tu curso.</i></font>
+          </td></tr>
+        </table>
+
+      <!-- Botón video tutorial (naranja) -->
+      <br>
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+            <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank" style="display: inline-block; background-color:#f4a623; color:#000000; padding: 12px 40px; border-radius: 8px; text-decoration: none; font-family: Tahoma, sans-serif; font-size: 16px; font-weight: bold;">
+              ACCEDE AL VIDEO TUTORIAL
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Video thumbnail -->
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td>
+            <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank">
+              <img src="https://lh3.googleusercontent.com/d/1dQnzpVcHtkt4ftvGIVfw9ilHTcx0CT1R"
+                   alt="Ver video tutorial"
+                   style="max-width:500px; width:100%; display:block;">
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Botón: completar datos para certificado -->
+      <br>
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+            <a href="https://we-educacion-certificacion.com/" target="_blank">
+              <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
+                   alt="Completar datos certificado"
+                   width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <br>
+      <!-- Ayuda y TC -->
+      <table align="center" style="width:450px">
+        <tr style="text-align:center">
+          <td>
+            <font face="Tahoma" size="4"><strong>¿Necesitas ayuda?</strong>
+            <br/>
+            Comunícate al WhatsApp <a href="https://wa.me/51922744702" style="color: #0056b3; text-decoration: underline;">+51 922744702</a>
+            </font>
+          </td>
+        </tr>
+        <tr style="text-align:center">
+          <td>
+            <font face="Tahoma" size="4"><a href="https://we-educacion.com/terminos-condiciones" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank"><br><br>Términos y Condiciones</a></font>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <hr width="400px" align="center">
+
+    <table align="center">
+      <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+      </tr>
+    </table>
+
+    <p style="text-align:center">
+      <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+    </p>
+
+    <br><br>
+
+    <table border="0" cellpadding="0" cellspacing="0">
+      <tbody>
+        <tr>
+          <td valign="top" style="padding-right:15px">
+            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+          </td>
+          <td valign="top">
+            <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+              <tbody>
+                <tr><td><b>Raul Rivera</b></td></tr>
+                <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+                <tr><td><b>+51 943 882 766</b></td></tr>
+                <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+                <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+                <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <br>
+
+    <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+    </div>
+
+    <br>
+
+    <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+      <ol type="1" style="margin-top: 0; padding-left: 20px;">
+        <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+        <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+        <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+      </ol>
+    </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
+exports[`templates/confirmacion-online > sin credenciales SAP 1`] = `
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción Online</title>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr><td>
+          <img src="https://api.we-educacion.com/uploads/onlineCorreo.jpg" style="width: 100%; max-width: 500px; height: auto;">
+        </td></tr>
+      </table>
+      <table align="center" style="width:450px; text-align: center;">
+        <tr><td>
+          <font face="Tahoma" size="6"><strong>¡Hola Jose!</strong></font><br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE.<br>
+          Confirmamos tu inscripción al curso:</font><br><br>
+          <font face="Tahoma" size="5"><strong>CURSO ONLINE DE EXCEL - ONLINE</strong></font>
+        </td></tr>
+      </table>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+    <div>
+      <!-- Banner azul: PASOS PARA INGRESAR -->
+      <table align="center" style="width:100%; max-width: 500px; margin: 20px auto;">
+        <tr>
+          <td align="center" style="background-color:#052467; color:white; border-radius: 25px; padding: 12px;">
+            <font face="Tahoma" size="4" color="#ffffff"><strong>PASOS PARA INGRESAR AL CAMPUS VIRTUAL</strong></font>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Pasos i-iv -->
+      <table align="center" style="width: 100%; max-width: 500px;">
+        <tr>
+          <td align="left" style="padding: 0 30px;">
+            <ol type="i" style="font-family: Tahoma, sans-serif; font-size: 16px; line-height: 1.8;">
+              <li>Dar clic en el botón "Ingresar" <a href="https://we-educacion.com/web/login" target="_blank" style="color:#1155cc;">aquí</a>.</li>
+              <li>Ingresa tu usuario y contraseña.</li>
+              <li>Dar clic en "Iniciar sesión".</li>
+              <li>Ir al Panel y hacer clic en "Cursos Online".</li>
+            </ol>
+          </td>
+        </tr>
+      </table>
+
+      <!-- ACCESO PERSONAL -->
+      <br>
+      <table align="center" border="2" cellpadding="2" cellspacing="-1" style="border-collapse:collapse;margin:1 auto;width:420px">
+          <tr style="text-align:center" align="center"><td>
+            <font face="Tahoma" size="4"><strong>ACCESO PERSONAL</strong></font>
+          </td></tr>
+          <tr style="color:black;text-align:center;max-height:50px"><td>
+            <font face="Tahoma" size="4"><strong>USUARIO: </strong> jose.ramos@weeducacion.edu.pe</font>
+            <br>
+            <font face="Tahoma" size="4"><strong>CONTRASEÑA: </strong> 1234567</font>
+          </td></tr>
+        </table>
+        <br>
+        <table align="center" style="width:450px">
+          <tr style="text-align:center"><td>
+            <font face="Tahoma" size="3" color="#cc0000"><i>Si cuentas con un usuario registrado con tu correo DEBES de usar la contraseña que creaste</i></font>
+          </td></tr>
+        </table>
+
+      
+
+      <!-- Botón video tutorial (naranja) -->
+      <br>
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+            <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank" style="display: inline-block; background-color:#f4a623; color:#000000; padding: 12px 40px; border-radius: 8px; text-decoration: none; font-family: Tahoma, sans-serif; font-size: 16px; font-weight: bold;">
+              ACCEDE AL VIDEO TUTORIAL
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Video thumbnail -->
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td>
+            <a href="https://www.youtube.com/watch?v=LgP2fc6ttgg" target="_blank">
+              <img src="https://lh3.googleusercontent.com/d/1dQnzpVcHtkt4ftvGIVfw9ilHTcx0CT1R"
+                   alt="Ver video tutorial"
+                   style="max-width:500px; width:100%; display:block;">
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Botón: completar datos para certificado -->
+      <br>
+      <table align="center" style="width:100%; max-width: 500px;">
+        <tr>
+          <td align="center" style="padding: 5px 0 10px 0;">
+            <a href="https://we-educacion-certificacion.com/" target="_blank">
+              <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
+                   alt="Completar datos certificado"
+                   width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <br>
+      <!-- Ayuda y TC -->
+      <table align="center" style="width:450px">
+        <tr style="text-align:center">
+          <td>
+            <font face="Tahoma" size="4"><strong>¿Necesitas ayuda?</strong>
+            <br/>
+            Comunícate al WhatsApp <a href="https://wa.me/51922744702" style="color: #0056b3; text-decoration: underline;">+51 922744702</a>
+            </font>
+          </td>
+        </tr>
+        <tr style="text-align:center">
+          <td>
+            <font face="Tahoma" size="4"><a href="https://we-educacion.com/terminos-condiciones" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank"><br><br>Términos y Condiciones</a></font>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <hr width="400px" align="center">
+
+    <table align="center">
+      <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+      </tr>
+    </table>
+
+    <p style="text-align:center">
+      <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+    </p>
+
+    <br><br>
+
+    <table border="0" cellpadding="0" cellspacing="0">
+      <tbody>
+        <tr>
+          <td valign="top" style="padding-right:15px">
+            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+          </td>
+          <td valign="top">
+            <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+              <tbody>
+                <tr><td><b>Raul Rivera</b></td></tr>
+                <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+                <tr><td><b>+51 943 882 766</b></td></tr>
+                <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+                <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+                <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <br>
+
+    <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+    </div>
+
+    <br>
+
+    <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+      <ol type="1" style="margin-top: 0; padding-left: 20px;">
+        <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+        <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+        <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+      </ol>
+    </div>
+
+  </footer>
+
+</body>
+</html>"
+`;

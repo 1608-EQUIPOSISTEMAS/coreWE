@@ -153,6 +153,182 @@ export class EditionRepository {
     return rowCount
   }
 
+  // ── RECURSOS DE EVENTO POR EDICION ────────────────────────────────────
+  // Banner, formularios y detalle de sesiones que consume la plantilla de
+  // correo confirmacion-evento.js.
+  //
+  // SQL directo y no sp_edition_update / sp_edition_tree_get: esos SPs reciben
+  // el objeto `edition` serializado y no conocen las columnas nuevas, no estan
+  // versionados en este repo y no se pueden editar a ciegas. Mismo criterio que
+  // updateWhatsappLink (arriba) y academicReportList (abajo).
+  async getEventResources (editionNumId) {
+    const { rows } = await this.db.query(`
+      SELECT pe.edition_num_id,
+             pe.banner_mime,
+             (pe.banner_image IS NOT NULL) AS has_banner_image,
+             pe.banner_link,
+             pe.whatsapp_link,
+             pe.certificate_form_link,
+             pe.business_card_link,
+             pe.session_detail_virtual,
+             pe.session_detail_onsite,
+             COALESCE(NULLIF(pe.banner_link, ''), prog.banner_link) AS effective_banner_link
+        FROM public.program_editions pe
+        JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+        JOIN public.programs prog ON prog.program_id = pv.program_id
+       WHERE pe.edition_num_id = $1
+    `, [editionNumId])
+    return rows?.[0] || null
+  }
+
+  // Ediciones que alimentan el selector del modulo de Eventos (Fundacion).
+  //
+  // El tipo de programa en el catalogo se llama "Congreso / Evento", no
+  // "Evento": por eso no basta con el alias. Se aceptan CUATRO senales, unidas
+  // con OR, para que ninguna edicion desaparezca del selector por un dato mal
+  // puesto en otra pantalla:
+  //   1. el alias canonico del catalogo,
+  //   2. la etiqueta del tipo (congreso / evento), por si el alias difiere,
+  //   3. que ya tenga recursos cargados,
+  //   4. que tenga inscritos con categoria de entrada (solo los eventos la usan).
+  //
+  // Tampoco se filtra por pe.active: un congreso ya pasado se desactiva, y sus
+  // recursos siguen necesitando correccion. Los activos van primero en el orden.
+  async listEventEditions (search = null) {
+    const { rows } = await this.db.query(`
+      SELECT pe.edition_num_id,
+             pe.global_code,
+             pe.specific_code,
+             pe.start_date,
+             pe.active,
+             pv.abbreviation,
+             c_type.alias       AS program_type_alias,
+             c_type.description AS program_type_label,
+             (pe.banner_image IS NOT NULL) AS has_banner_image,
+             (pe.certificate_form_link IS NOT NULL
+               OR pe.business_card_link IS NOT NULL
+               OR pe.session_detail_virtual IS NOT NULL
+               OR pe.session_detail_onsite IS NOT NULL) AS has_resources
+        FROM public.program_editions pe
+        JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+        JOIN public.programs prog ON prog.program_id = pv.program_id
+        LEFT JOIN public.catalog c_type ON c_type.catalog_id = prog.cat_type_program
+       WHERE (
+           c_type.alias = 'we_program_type_event'
+           OR c_type.description ILIKE '%congreso%'
+           OR c_type.description ILIKE '%evento%'
+           OR pe.banner_image IS NOT NULL
+           OR pe.certificate_form_link IS NOT NULL
+           OR pe.session_detail_virtual IS NOT NULL
+           OR pe.session_detail_onsite IS NOT NULL
+           OR EXISTS (SELECT 1 FROM public.enrollments e
+                       WHERE e.program_edition_id = pe.edition_num_id
+                         AND e.cat_event_category IS NOT NULL)
+         )
+         AND ($1::text IS NULL OR pv.abbreviation ILIKE '%' || $1 || '%')
+       ORDER BY (pe.active = 'Y') DESC, pe.start_date DESC NULLS LAST
+       LIMIT 200
+    `, [search])
+    return rows || []
+  }
+
+  // Bytes del banner para previsualizarlo en el modal. Query aparte: no debe
+  // viajar en el get general de recursos.
+  async getEventBannerImage (editionNumId) {
+    const { rows } = await this.db.query(
+      `SELECT banner_image, banner_mime
+         FROM public.program_editions
+        WHERE edition_num_id = $1 AND banner_image IS NOT NULL`,
+      [editionNumId]
+    )
+    return rows?.[0] || null
+  }
+
+  // ── CATEGORIAS DE ENTRADA POR EVENTO ──────────────────────────────────
+  // Las categorias y sus precios cuelgan de program_version_id, no de la
+  // edicion: es la llave de event_category_prices. El modulo de Fundacion
+  // trabaja por edicion, asi que aqui se traduce una en la otra.
+  async getEventProgramVersion (editionNumId) {
+    const { rows } = await this.db.query(
+      `SELECT program_version_id FROM public.program_editions WHERE edition_num_id = $1`,
+      [editionNumId]
+    )
+    return rows?.[0]?.program_version_id || null
+  }
+
+  // Siempre devuelve las cuatro del catalogo: la pantalla necesita mostrar las
+  // apagadas para poder encenderlas. `enabled` dice cuales se venden hoy.
+  async getEventCategories (programVersionId) {
+    const { rows } = await this.db.query(`
+      SELECT c.catalog_id AS cat_event_category,
+             c.alias,
+             c.description,
+             COALESCE(p.active, 'N') = 'Y'             AS enabled,
+             COALESCE(p.price_student_soles,       0)  AS price_student_soles,
+             COALESCE(p.price_student_dollars,     0)  AS price_student_dollars,
+             COALESCE(p.price_profesional_soles,   0)  AS price_profesional_soles,
+             COALESCE(p.price_profesional_dollars, 0)  AS price_profesional_dollars,
+             p.whatsapp_link
+        FROM public.catalog c
+        JOIN public.catalog parent ON parent.catalog_id = c.catalog_parent_id
+        LEFT JOIN public.event_category_prices p
+               ON p.cat_event_category = c.catalog_id
+              AND p.program_version_id = $1
+       WHERE parent.alias = 'we_event_category'
+         AND c.active = 'Y'
+       ORDER BY c.description
+    `, [programVersionId])
+    return rows || []
+  }
+
+  // Upsert de las cuatro filas en una sola sentencia. Apagar una categoria la
+  // deja en active='N' y NO la borra: hay inscripciones que la referencian y su
+  // precio es parte del historico de la venta.
+  async saveEventCategories (programVersionId, categories) {
+    if (!categories.length) return 0
+    const values = []
+    const params = [programVersionId]
+    for (const c of categories) {
+      const i = params.length
+      params.push(
+        c.cat_event_category, c.enabled ? 'Y' : 'N',
+        c.price_student_soles, c.price_student_dollars,
+        c.price_profesional_soles, c.price_profesional_dollars,
+        c.whatsapp_link
+      )
+      values.push(`($1, $${i + 1}::integer, $${i + 2}::char(1), $${i + 3}::numeric, $${i + 4}::numeric, $${i + 5}::numeric, $${i + 6}::numeric, $${i + 7}::text)`)
+    }
+    const { rowCount } = await this.db.query(`
+      INSERT INTO public.event_category_prices
+        (program_version_id, cat_event_category, active,
+         price_student_soles, price_student_dollars,
+         price_profesional_soles, price_profesional_dollars, whatsapp_link)
+      VALUES ${values.join(', ')}
+      ON CONFLICT (program_version_id, cat_event_category) DO UPDATE
+        SET active                    = EXCLUDED.active,
+            price_student_soles       = EXCLUDED.price_student_soles,
+            price_student_dollars     = EXCLUDED.price_student_dollars,
+            price_profesional_soles   = EXCLUDED.price_profesional_soles,
+            price_profesional_dollars = EXCLUDED.price_profesional_dollars,
+            whatsapp_link             = EXCLUDED.whatsapp_link
+    `, params)
+    return rowCount
+  }
+
+  // Solo escribe las claves presentes en `fields`: guardar un campo suelto no
+  // debe pisar los otros cinco a NULL. Los nombres vienen ya filtrados contra
+  // una whitelist en el usecase, nunca directo del request.
+  async saveEventResources (editionNumId, fields) {
+    const names = Object.keys(fields)
+    if (!names.length) return 0
+    const sets = names.map((name, i) => `${name} = $${i + 2}`).join(', ')
+    const { rowCount } = await this.db.query(
+      `UPDATE public.program_editions SET ${sets} WHERE edition_num_id = $1`,
+      [editionNumId, ...names.map(n => fields[n])]
+    )
+    return rowCount
+  }
+
   // Conteo de alumnos por edicion (aula): inscripciones FICO-aprobadas, activas
   // y solo hojas del arbol. HOJA = sin hijos: un destino de cambio de curso
   // hacia un paquete tiene padre (el origen) Y sus propios hijos SEG; el que

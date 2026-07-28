@@ -47,6 +47,68 @@ describe('wiring HTTP (sin BD)', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  // Recursos de evento por edicion: rutas nuevas, sin BD.
+  it('/api/edition/eventresourcesget sin token responde 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/eventresourcesget',
+      payload: { edition_num_id: 1 }
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('/api/edition/eventresourcessave exige edition_num_id', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['ADMIN'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/eventresourcessave',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { banner_link: 'https://ejemplo/x.jpg' }
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  // Documenta el comportamiento REAL de AJV en este servidor: @fastify/ajv-compiler
+  // trae removeAdditional:true por defecto, asi que additionalProperties:false
+  // BORRA en silencio los campos no declarados en vez de devolver 400. Verificado
+  // en node_modules/@fastify/ajv-compiler/lib/default-ajv-options.js.
+  //
+  // Por eso el usecase tiene ademas su propia whitelist (EVENT_RESOURCE_FIELDS):
+  // sin ella, un campo colado llegaria al SET del UPDATE. Es el mismo motivo por
+  // el que whatsapp_link se pierde hoy en /editionupdate sin avisar.
+  it('/api/edition/eventresourcessave descarta campos no declarados sin fallar', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['ADMIN'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/eventresourcessave',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { edition_num_id: 1, campo_inventado: 'x' }
+    })
+    // Sin campos validos que escribir el usecase corta antes de tocar la BD.
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toEqual({ updated: 0 })
+  })
+
+  it('/api/edition/eventcategoriessave exige la lista de categorias', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['ADMIN'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/eventcategoriessave',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { edition_num_id: 1 }
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('/api/edition/eventcategoriesget sin token responde 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/eventcategoriesget',
+      payload: { edition_num_id: 1 }
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
   it('ruta inexistente responde 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/no-existe-esta-ruta' })
     expect(res.statusCode).toBe(404)

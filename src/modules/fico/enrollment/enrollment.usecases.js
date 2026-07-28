@@ -332,8 +332,9 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
 
   // Las membresias (WE PLUS/GOLD/PLAT/BLACK) no tienen program_editions: el CC
   // hacia una membresia llega sin new_edition_id y crea la inscripcion destino con
-  // program_edition_id null (igual que una venta de membresia normal). Para cursos
-  // regulares la edicion sigue siendo obligatoria.
+  // program_edition_id null (igual que una venta de membresia normal). Lo mismo
+  // aplica a programas online sin ediciones vigentes; si el destino si tiene
+  // ediciones para elegir, la edicion sigue siendo obligatoria.
   let newEd
   if (newEditionId) {
     newEd = await repo.getCourseChangeDestEdition(newEditionId, newProgramVersionId)
@@ -341,7 +342,9 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   } else {
     newEd = await repo.getCourseChangeDestProgram(newProgramVersionId)
     if (!newEd) throw new DomainError('El programa destino no existe')
-    if (!newEd.is_membership) throw new DomainError('Debe seleccionar una edicion destino')
+    // Sin edicion solo se acepta si el destino realmente no tiene ninguna que
+    // elegir: membresia, o programa online sin ediciones vigentes publicadas.
+    if (!newEd.is_membership && newEd.has_editions) throw new DomainError('Debe seleccionar una edicion destino')
   }
 
   const ccNote = `Cambio de curso desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`

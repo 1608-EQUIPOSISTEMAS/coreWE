@@ -498,7 +498,12 @@ export class EnrollmentRepository {
     const { rows } = await this.db.query(`
       SELECT NULL::int AS edition_num_id, NULL::text AS global_code, NULL::date AS start_date,
              pv.abbreviation AS new_program_name, pv.program_version_id,
-             COALESCE(prog.is_membership, false) AS is_membership
+             COALESCE(prog.is_membership, false) AS is_membership,
+             EXISTS (
+               SELECT 1 FROM program_editions pe
+               WHERE pe.program_version_id = pv.program_version_id
+                 AND pe.active = 'Y' AND pe.start_date >= CURRENT_DATE
+             ) AS has_editions
       FROM program_versions pv
       JOIN programs prog ON prog.program_id = pv.program_id
       WHERE pv.program_version_id = $1

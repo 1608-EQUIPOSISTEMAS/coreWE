@@ -449,6 +449,83 @@ export const editionGetSchema = {
   }
 }
 
+export const eventEditionsListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      q: { type: ['string', 'null'] }
+    }
+  }
+}
+
+// Categorias de entrada del evento. Los ids se cotejan igual contra el catalogo
+// en el usecase: este schema solo valida la forma, no la pertenencia.
+export const eventCategoriesSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_num_id', 'categories'],
+    properties: {
+      edition_num_id: { type: 'integer' },
+      categories: {
+        type: 'array',
+        maxItems: 20,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['cat_event_category'],
+          properties: {
+            cat_event_category: { type: 'integer' },
+            enabled: { type: 'boolean' },
+            price_student_soles: { type: ['number', 'string', 'null'] },
+            price_student_dollars: { type: ['number', 'string', 'null'] },
+            price_profesional_soles: { type: ['number', 'string', 'null'] },
+            price_profesional_dollars: { type: ['number', 'string', 'null'] },
+            whatsapp_link: { type: ['string', 'null'] }
+          }
+        }
+      }
+    }
+  }
+}
+
+export const eventResourcesGetSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_num_id'],
+    properties: {
+      edition_num_id: { type: 'integer' }
+    }
+  }
+}
+
+export const eventResourcesSaveSchema = {
+  // El banner viaja en base64: 2 MB de imagen son ~2.7 MB de body. El default
+  // de Fastify (1 MB) lo rechazaria con 413. Se deja holgura sobre el tope real
+  // (2 MB, edition.usecases.js) para que quien pase pase lo rechace el usecase
+  // con un mensaje claro y no un 413 seco de Fastify.
+  bodyLimit: 5 * 1024 * 1024,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_num_id'],
+    properties: {
+      edition_num_id: { type: 'integer' },
+      // Banner en base64 dentro del JSON. Se valida tamano y mime en el usecase.
+      banner_image_base64: { type: ['string', 'null'] },
+      banner_mime: { type: ['string', 'null'] },
+      banner_link: { type: ['string', 'null'] },
+      whatsapp_link: { type: ['string', 'null'] },
+      certificate_form_link: { type: ['string', 'null'] },
+      business_card_link: { type: ['string', 'null'] },
+      session_detail_virtual: { type: ['string', 'null'] },
+      session_detail_onsite: { type: ['string', 'null'] }
+    }
+  }
+}
+
 export const editionUpdateSchema = {
   body: {
     type: 'object',

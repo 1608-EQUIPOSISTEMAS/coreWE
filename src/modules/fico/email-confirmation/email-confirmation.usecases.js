@@ -10,8 +10,7 @@ import {
 } from '../../../utils/fico-formatters.js'
 import { getEnrollmentOdoo } from '../../../utils/fico-queries.sql.js'
 import { email } from '../../../shared/adapters/email/email.adapter.js'
-import { buildConfirmacionHTML } from '../../../templates/confirmacion-inscripcion.js'
-import { buildConfirmacionOnlineHTML } from '../../../templates/confirmacion-online.js'
+import { renderConfirmationEmail, resolveConfirmationTemplate } from './email-confirmation.render.js'
 import { buildConfirmacionPagoHTML } from '../../../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../../../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from '../../../services/pdf.service.js'
@@ -94,6 +93,40 @@ async function resolveModeFromDb ({ enrollmentId, odooEmail }) {
 // ---------------------------------------------------------------------------
 // PREVIEW
 
+
+// ── BANNER DEL EVENTO ────────────────────────────────────────────────────────
+// El banner vive como bytea en program_editions, no como archivo servido por
+// HTTP. Asi no depende de que /uploads este publicado ni de que el volumen del
+// contenedor sobreviva un redeploy: la BD ya persiste por definicion.
+//
+// El correo lo lleva incrustado como adjunto CID. El preview no puede usar
+// cid: (lo renderiza un navegador, no un cliente de correo), asi que ahi se
+// devuelve un data: URI con los mismos bytes.
+const EVENT_BANNER_CID = 'evento-banner'
+
+async function resolveEventBanner ({ data, isEvent, forPreview }) {
+  if (!isEvent || !data.has_banner_image) return { bannerUrl: null, attachments: [] }
+
+  const row = await repo.findEditionBanner(data.edition_num_id)
+  if (!row?.banner_image) return { bannerUrl: null, attachments: [] }
+
+  const mime = row.banner_mime || data.banner_mime || 'image/jpeg'
+  const buffer = Buffer.isBuffer(row.banner_image) ? row.banner_image : Buffer.from(row.banner_image)
+
+  if (forPreview) {
+    return { bannerUrl: `data:${mime};base64,${buffer.toString('base64')}`, attachments: [] }
+  }
+  return {
+    bannerUrl: `cid:${EVENT_BANNER_CID}`,
+    attachments: [{
+      filename: `banner.${mime.includes('png') ? 'png' : 'jpg'}`,
+      content: buffer,
+      cid: EVENT_BANNER_CID,
+      contentDisposition: 'inline'
+    }]
+  }
+}
+
 export async function previewConfirmationEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null, sapUsername = null, sapPassword = null, overrideInstallments = null }) {
   // overrideProgramVersionId: el cambio de curso previsualiza el correo con el
   // programa destino (el enrollment nuevo aun no existe en este punto).
@@ -142,36 +175,22 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
 
   const isParentProgram = await repo.isParentProgram(enrollmentId)
 
-  const htmlBody = isOnline
-    ? buildConfirmacionOnlineHTML({
-      studentName: `${firstName} ${lastName}`,
-      programName: data.program_name,
-      email: odooEmail,
-      isNew,
-      sapUser: sapCredentials?.sap_username || null,
-      sapPassword: sapCredentials?.sap_password || null
-    })
-    : buildConfirmacionHTML({
-      studentName: `${firstName} ${lastName}`,
-      programName: data.program_name,
-      startDate: data.start_date,
-      frequency,
-      schedule,
-      whatsappLink: data.whatsapp_link || '',
-      email: odooEmail,
-      isNew,
-      bannerUrl: data.banner_link || '',
-      installments: isSinglePayment(data.payment_plan_alias) ? [] : instRows,
-      currencySymbol: data.currency_symbol || 'S/.',
-      hideWhatsapp: isParentProgram
-    })
+  const { isEvent } = resolveConfirmationTemplate(data)
+  const { bannerUrl } = await resolveEventBanner({ data, isEvent, forPreview: true })
+
+  const { html: htmlBody, kind } = renderConfirmationEmail({
+    data, firstName, lastName, odooEmail, isNew,
+    frequency, schedule, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
+  })
+  // Un evento no lleva PDF de cronograma: no tiene sesiones semanales.
+  const isEventKind = kind === 'evento'
 
   return {
     html: htmlBody,
     to: data.origin_email || '---',
     subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
-    hasAttachment: isParentProgram && !isOnline,
-    attachmentName: (isParentProgram && !isOnline) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null,
+    hasAttachment: isParentProgram && !isOnline && !isEventKind,
+    attachmentName: (isParentProgram && !isOnline && !isEventKind) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null,
     // Senal para que el front muestre el formulario de credenciales SAP.
     isSapOnline
   }
@@ -238,9 +257,19 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
     return sendMembershipEmail({ enrollmentId })
   }
 
+  const data = await repo.findConfirmationDataForSend(enrollmentId)
+  if (!data) return { success: false, error: 'Inscripcion no encontrada' }
+
+  // Se resuelve antes que nada porque un evento se salta Odoo por completo.
+  const { isEvent } = resolveConfirmationTemplate(data)
+
   // Sin odoo_user_id las credenciales del correo son ficticias: reintentar la
   // creacion en Odoo antes de mandar nada.
-  if (check && !check.odoo_user_id) {
+  //
+  // Los eventos quedan fuera: un congreso no se dicta en el campus, no hay
+  // curso al que inscribir y el correo no lleva credenciales. Exigir un alumno
+  // en Odoo bloqueaba el envio con "No se pudo crear el alumno en Odoo".
+  if (!isEvent && check && !check.odoo_user_id) {
     console.log(`[sendConfirmationEmail] enrollment ${enrollmentId}: sin odoo_user_id, reintentando enrollInOdoo`)
     const odooRetry = await safeAsync('[sendConfirmationEmail][Odoo] retry', () => deps.enrollInOdoo({ enrollmentId }))
     if (odooRetry?.success) {
@@ -259,9 +288,6 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
       }
     }
   }
-
-  const data = await repo.findConfirmationDataForSend(enrollmentId)
-  if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
   const onlineModalityId = await getCatalogIdByAlias(ALIAS.MODALITY_ONLINE)
   const isOnline = data.cat_model_modality === onlineModalityId
@@ -315,36 +341,23 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   // PDF de cronograma: solo programas padre no-online. Si el PDF falla, NO se
   // manda el correo (no shipear artefactos rotos en silencio).
   const attachments = []
-  if (isParentProgram && !isOnline) {
+  // Un evento tampoco lleva PDF de cronograma: no tiene sesiones semanales.
+  // `isEvent` ya se resolvio arriba, antes del bloque de Odoo.
+  if (isParentProgram && !isOnline && !isEvent) {
     console.log(`[sendConfirmationEmail] Generando PDF cronograma para parent enrollment #${enrollmentId}`)
     const pdfResult = await buildCronogramaAttachment({ enrollmentId, programName: data.program_name })
     if (pdfResult.error) return { success: false, error: pdfResult.error }
     attachments.push(...pdfResult.attachments)
   }
 
-  const htmlBody = isOnline
-    ? buildConfirmacionOnlineHTML({
-      studentName: `${firstName} ${lastName}`,
-      programName: data.program_name,
-      email: odooEmail,
-      isNew,
-      sapUser: sapCredentials?.sap_username || null,
-      sapPassword: sapCredentials?.sap_password || null
-    })
-    : buildConfirmacionHTML({
-      studentName: `${firstName} ${lastName}`,
-      programName: data.program_name,
-      startDate: data.start_date,
-      frequency,
-      schedule,
-      whatsappLink: data.whatsapp_link || '',
-      email: odooEmail,
-      isNew,
-      bannerUrl: data.banner_link || '',
-      installments: isSinglePayment(data.payment_plan_alias) ? [] : instRows,
-      currencySymbol: data.currency_symbol || 'S/.',
-      hideWhatsapp: isParentProgram
-    })
+  const { bannerUrl, attachments: bannerAttachments } =
+    await resolveEventBanner({ data, isEvent, forPreview: false })
+  attachments.push(...bannerAttachments)
+
+  const { html: htmlBody } = renderConfirmationEmail({
+    data, firstName, lastName, odooEmail, isNew,
+    frequency, schedule, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
+  })
 
   // CC en cascada: parametro explicito (override) -> enrollments.email_cc.
   const ccResolved = parseEmailCc(cc != null ? cc : data.email_cc)

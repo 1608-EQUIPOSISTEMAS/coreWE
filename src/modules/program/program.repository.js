@@ -139,10 +139,18 @@ export class ProgramRepository {
     )
   }
 
-  // Categorias de entrada de un evento (VIP/GENERAL/PREMIUM/VIRTUAL) con el
-  // precio cargado para esa version de programa. LEFT JOIN a proposito: las 4
-  // categorias siempre vuelven; sin fila de precio los montos llegan en 0 y el
-  // formulario cae al precio del programa.
+  // Categorias de entrada que se venden en un evento, con su precio.
+  //
+  // No todos los congresos tienen las cuatro: unos son VIP/PREMIUM/VIRTUAL y
+  // otros suman GENERAL. La fila en event_category_prices ES la definicion de
+  // que esa categoria existe para ese evento (se configura en
+  // Fundacion > Eventos), por eso el filtro final:
+  //
+  //   - si la version ya tiene categorias configuradas -> solo esas,
+  //   - si no tiene ninguna -> las cuatro del catalogo, que es el
+  //     comportamiento anterior y evita dejar sin opciones a los eventos que
+  //     todavia no se configuraron.
+  //
   // SQL directo (no SP) porque no depende de sp_catalog_list, que no expone
   // catalogos nuevos sin tocarlo.
   async eventCategoryList (programVersionId) {
@@ -163,6 +171,11 @@ export class ProgramRepository {
               AND p.active              = 'Y'
        WHERE parent.alias = 'we_event_category'
          AND c.active = 'Y'
+         AND (
+           p.program_version_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM public.event_category_prices q
+                           WHERE q.program_version_id = $1 AND q.active = 'Y')
+         )
        ORDER BY c.description
     `, [programVersionId])
     return rows || []

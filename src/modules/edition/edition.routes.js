@@ -21,6 +21,10 @@ import {
   sessionControlSaveSchema,
   editionGetSchema,
   editionUpdateSchema,
+  eventEditionsListSchema,
+  eventResourcesGetSchema,
+  eventResourcesSaveSchema,
+  eventCategoriesSaveSchema,
   editionCallerSchema,
   editionExtraInfoCallerSchema,
   editionTreeUpdateSchema,
@@ -150,6 +154,14 @@ export default async function editionRoutes (fastify) {
     // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.getHandler)
 
+  // Recursos del correo de evento. Endpoint propio con SQL directo porque
+  // sp_edition_update no conoce estas columnas (ver edition.repository.js).
+  fastify.post('/eventeditionslist', { schema: eventEditionsListSchema }, ctrl.eventEditionsListHandler)
+  fastify.post('/eventresourcesget', { schema: eventResourcesGetSchema }, ctrl.eventResourcesGetHandler)
+  fastify.post('/eventbannerget', { schema: eventResourcesGetSchema }, ctrl.eventBannerGetHandler)
+  fastify.post('/eventresourcessave', { schema: eventResourcesSaveSchema }, ctrl.eventResourcesSaveHandler)
+  fastify.post('/eventcategoriesget', { schema: eventResourcesGetSchema }, ctrl.eventCategoriesGetHandler)
+  fastify.post('/eventcategoriessave', { schema: eventCategoriesSaveSchema }, ctrl.eventCategoriesSaveHandler)
   fastify.post('/editionupdate', {
     schema: editionUpdateSchema
     // preHandler: [authenticate, ALL_ADMIN]

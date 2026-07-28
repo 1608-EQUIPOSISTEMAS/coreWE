@@ -1,4 +1,5 @@
 import { editionRepository } from './edition.repository.js'
+import { DomainError, NotFoundError } from '../../shared/errors.js'
 import odooClient from '../../config/odooClient.js'
 import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
@@ -196,6 +197,167 @@ export async function editionGet ({ id } = {}) {
   if (!editionId) return null
   const rows = await repo.treeGet(editionId)
   return rows?.[0] || null
+}
+
+// ── RECURSOS DE EVENTO POR EDICION ─────────────────────────────────────────
+// Whitelist explicita: es lo unico que puede llegar al SET del UPDATE.
+const EVENT_RESOURCE_FIELDS = [
+  'banner_image',
+  'banner_mime',
+  'banner_link',
+  'whatsapp_link',
+  'certificate_form_link',
+  'business_card_link',
+  'session_detail_virtual',
+  'session_detail_onsite'
+]
+
+// Tope del banner. El correo lo lleva incrustado, asi que su peso se multiplica
+// por cada asistente: 2 MB x 800 inscritos serian 1.6 GB de salida.
+const MAX_BANNER_BYTES = 2 * 1024 * 1024
+const ALLOWED_BANNER_MIMES = ['image/jpeg', 'image/png']
+
+// Las columnas de recursos las crea Backend/scripts/add-event-edition-resources.sql,
+// que se corre a mano. Si falta, Postgres tira 42703 (undefined_column) y el
+// error handler global lo enmascara como "Error interno" en produccion: el
+// modulo entero parece vacio y nadie sabe por que. Se traduce a un mensaje que
+// dice exactamente que falta.
+async function withMissingColumnHint (fn) {
+  try {
+    return await fn()
+  } catch (err) {
+    if (err?.code === '42703') {
+      throw new DomainError(
+        'Faltan las columnas de recursos de evento en la base de datos. ' +
+        'Corre Backend/scripts/add-event-edition-resources.sql.',
+        { statusCode: 503, code: 'EVENT_RESOURCES_SCHEMA_MISSING' }
+      )
+    }
+    throw err
+  }
+}
+
+export async function eventResourcesGet ({ edition_num_id } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return null
+  return withMissingColumnHint(() => repo.getEventResources(editionId))
+}
+
+// Selector del modulo de Eventos (Fundacion).
+export async function eventEditionsList ({ q = null } = {}) {
+  const search = q && String(q).trim() ? String(q).trim() : null
+  const items = await withMissingColumnHint(() => repo.listEventEditions(search))
+  return { items }
+}
+
+// ── CATEGORIAS DE ENTRADA DEL EVENTO ────────────────────────────────────
+// Que categorias se venden (no todos los congresos tienen las cuatro), su
+// tarifa y el grupo de WhatsApp de cada una.
+
+export async function eventCategoriesGet ({ edition_num_id } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return { program_version_id: null, items: [] }
+  return withMissingColumnHint(async () => {
+    const versionId = await repo.getEventProgramVersion(editionId)
+    if (!versionId) return { program_version_id: null, items: [] }
+    return { program_version_id: versionId, items: await repo.getEventCategories(versionId) }
+  })
+}
+
+function toAmount (value) {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+export async function eventCategoriesSave ({ edition_num_id, categories = [] } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return { updated: 0 }
+
+  return withMissingColumnHint(async () => {
+    const versionId = await repo.getEventProgramVersion(editionId)
+    if (!versionId) throw new NotFoundError('La edicion no existe')
+
+    // El cliente manda catalog_ids. Se cotejan contra las categorias reales del
+    // catalogo en vez de confiar en el numero que llego: sin esto el endpoint
+    // escribe filas contra cualquier catalog_id del sistema.
+    const valid = new Set((await repo.getEventCategories(versionId)).map(c => c.cat_event_category))
+
+    const clean = []
+    for (const raw of categories) {
+      const id = Number(raw?.cat_event_category) || null
+      if (!id || !valid.has(id)) continue
+      const link = raw.whatsapp_link == null ? '' : String(raw.whatsapp_link).trim()
+      clean.push({
+        cat_event_category: id,
+        enabled: !!raw.enabled,
+        price_student_soles: toAmount(raw.price_student_soles),
+        price_student_dollars: toAmount(raw.price_student_dollars),
+        price_profesional_soles: toAmount(raw.price_profesional_soles),
+        price_profesional_dollars: toAmount(raw.price_profesional_dollars),
+        whatsapp_link: link || null
+      })
+    }
+    if (!clean.length) return { updated: 0 }
+
+    // Un evento sin ninguna categoria encendida vuelve al fallback de "las
+    // cuatro" en el formulario de leads, que no es lo que el usuario quiso.
+    if (!clean.some(c => c.enabled)) {
+      throw new DomainError('Deja al menos una categoria de entrada activa', { statusCode: 400 })
+    }
+
+    const updated = await repo.saveEventCategories(versionId, clean)
+    return { updated }
+  })
+}
+
+// Devuelve el banner como data URI para previsualizarlo en el modal.
+export async function eventBannerGet ({ edition_num_id } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return null
+  const row = await withMissingColumnHint(() => repo.getEventBannerImage(editionId))
+  if (!row?.banner_image) return null
+  const buffer = Buffer.isBuffer(row.banner_image) ? row.banner_image : Buffer.from(row.banner_image)
+  return { data_url: `data:${row.banner_mime || 'image/jpeg'};base64,${buffer.toString('base64')}` }
+}
+
+export async function eventResourcesSave (payload = {}) {
+  const editionId = Number(payload.edition_num_id) || null
+  if (!editionId) return { updated: 0 }
+
+  // Cadena vacia -> NULL: el correo distingue "sin cargar" (omite el bloque) de
+  // un string vacio, y COALESCE/NULLIF aguas abajo esperan NULL.
+  const fields = {}
+  for (const name of EVENT_RESOURCE_FIELDS) {
+    if (name === 'banner_image' || name === 'banner_mime') continue
+    if (!Object.prototype.hasOwnProperty.call(payload, name)) continue
+    const raw = payload[name]
+    fields[name] = raw == null || String(raw).trim() === '' ? null : String(raw).trim()
+  }
+
+  // El banner llega en base64 dentro del JSON. Se acepta null explicito para
+  // borrarlo; si no viene la clave, no se toca lo ya guardado.
+  if (Object.prototype.hasOwnProperty.call(payload, 'banner_image_base64')) {
+    const b64 = payload.banner_image_base64
+    if (b64 == null || String(b64).trim() === '') {
+      fields.banner_image = null
+      fields.banner_mime = null
+    } else {
+      const mime = String(payload.banner_mime || '').toLowerCase()
+      if (!ALLOWED_BANNER_MIMES.includes(mime)) {
+        throw new DomainError('El banner debe ser JPG o PNG', { statusCode: 400 })
+      }
+      const buffer = Buffer.from(String(b64).replace(/^data:[^,]+,/, ''), 'base64')
+      if (!buffer.length) throw new DomainError('El banner llego vacio', { statusCode: 400 })
+      if (buffer.length > MAX_BANNER_BYTES) {
+        throw new DomainError('El banner supera 2 MB. Comprimelo antes de subirlo.', { statusCode: 400 })
+      }
+      fields.banner_image = buffer
+      fields.banner_mime = mime
+    }
+  }
+
+  const updated = await withMissingColumnHint(() => repo.saveEventResources(editionId, fields))
+  return { updated }
 }
 
 // Logs de auditoria agrupados por transaccion.

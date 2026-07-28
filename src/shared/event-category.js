@@ -47,3 +47,33 @@ export async function attachEventCategory (rows, db = pool) {
   }
   return rows
 }
+
+// Un congreso no se dicta en el campus: no hay curso en Odoo al que inscribir,
+// ni cuotas que activar, ni credenciales que entregar. Lo unico que recibe el
+// asistente es el correo de confirmacion.
+//
+// Se pregunta por DOS vias, igual que email-confirmation.render.js: la
+// categoria de entrada (que solo tienen los eventos) o el tipo de programa.
+// Basta cualquiera de las dos.
+const IS_EVENT_SQL = `
+  SELECT (e.cat_event_category IS NOT NULL OR c_type.alias = 'we_program_type_event') AS is_event
+    FROM public.enrollments e
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.programs prog ON prog.program_id = pv.program_id
+    LEFT JOIN public.catalog c_type ON c_type.catalog_id = prog.cat_type_program
+   WHERE e.enrollment_id = $1
+`
+
+// Ante la duda devuelve false: saltarse Odoo por error dejaria una inscripcion
+// de curso sin alumno en el campus, que es mucho peor que crear uno de mas.
+export async function isEventEnrollment (enrollmentId, db = pool) {
+  const id = Number(enrollmentId)
+  if (!Number.isInteger(id)) return false
+  try {
+    const { rows } = await db.query(IS_EVENT_SQL, [id])
+    return rows?.[0]?.is_event === true
+  } catch (err) {
+    console.error('[isEventEnrollment] no se pudo determinar si es evento:', err.message)
+    return false
+  }
+}
