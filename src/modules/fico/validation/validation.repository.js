@@ -21,9 +21,17 @@ export class ValidationRepository {
     return rows?.[0] || null
   }
 
+  // has_own_editions distingue el modulo ONLINE (no tiene program_editions por
+  // diseno, como las membresias) del modulo mal configurado (tiene ediciones pero
+  // ninguna asignada en el arbol del padre). buildEditionPlan usa ese flag para
+  // inscribir al primero con edicion NULL y seguir saltando al segundo.
   async findChildrenStructure (programVersionId) {
     const { rows } = await this.db.query(`
-    SELECT pvs.child_program_version_id, pvs.sort_order, pv.abbreviation AS child_name
+    SELECT pvs.child_program_version_id, pvs.sort_order, pv.abbreviation AS child_name,
+           EXISTS (
+             SELECT 1 FROM program_editions pe
+              WHERE pe.program_version_id = pvs.child_program_version_id
+           ) AS has_own_editions
       FROM program_version_structure pvs
       JOIN program_versions pv ON pv.program_version_id = pvs.child_program_version_id
      WHERE pvs.parent_program_version_id = $1

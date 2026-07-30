@@ -455,6 +455,7 @@ export class EnrollmentRepository {
     const { rows } = await this.db.query(`
       SELECT e.enrollment_id, e.program_version_id, e.program_edition_id,
              e.customer_id, e.seller_agent_id, e.agent_origin, e.email_cc,
+             e.parent_enrollment_id,
              e.total_amount, e.discount_amount, e.cat_currency,
              e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
              per.first_name, per.last_name, per.document_number, per.cat_type_document,

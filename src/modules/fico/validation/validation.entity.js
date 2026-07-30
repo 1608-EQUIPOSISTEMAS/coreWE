@@ -54,6 +54,10 @@ export function findUnassignableChildren ({ childrenStruct, validatedSet, editio
     if (validatedSet.has(childPvId)) continue
     const inTree = !!editionMap[childPvId]
     const hasCustom = !!customEditions[childPvId]
+    // Modulo ONLINE (sin program_editions por diseno): no es un bloqueo, se
+    // inscribe con edicion null. Mismo criterio que buildEditionPlan; sin esta
+    // excepcion las especializaciones online no se podrian confirmar.
+    if (ch.has_own_editions === false) continue
     if (!inTree && !hasCustom) {
       errors.push({
         child_program_version_id: childPvId,
@@ -69,7 +73,9 @@ export function findUnassignableChildren ({ childrenStruct, validatedSet, editio
 //
 // Para cada hijo NO convalidado define su edicion final con la regla de
 // precedencia: custom_edition_id gana sobre la edicion del arbol del padre. Un
-// hijo sin ninguna de las dos se reporta en `skipped` (se saltara). Un hijo cuya
+// hijo sin ninguna de las dos se reporta en `skipped` (se saltara), SALVO que sea
+// un modulo online (has_own_editions === false), que entra al plan con
+// editionId null. Un hijo cuya
 // edicion final no proviene del arbol esta "fuera del arbol": si al menos uno lo
 // esta, el escenario es E0 (el padre se desinscribe y los hijos van individuales).
 //
@@ -86,14 +92,34 @@ export function buildEditionPlan ({ childrenStruct, validatedSet, editionMap, cu
 
     const treeEdition = editionMap[childPvId]
     const customEdId = customEditions[childPvId]
-    const isOutsideTree = !treeEdition
-    if (isOutsideTree) anyOutsideTree = true
-
     const editionId = customEdId || treeEdition?.editionId
+
     if (!editionId) {
+      // Modulo ONLINE: no tiene program_editions por diseno (igual que las
+      // membresias en Cambio de Curso, que se registran con edicion null). Se
+      // inscribe el hijo SEG con editionId null en vez de saltarlo, y NO cuenta
+      // como "fuera del arbol": no hay edicion individual que justifique E0.
+      if (ch.has_own_editions === false) {
+        editionPlan.push({
+          childPvId,
+          childName: ch.child_name,
+          editionId: null,
+          isOutsideTree: false,
+          globalCode: '(online sin edicion)',
+          sortOrder: ch.sort_order ?? 0
+        })
+        continue
+      }
+      // El modulo SI tiene ediciones pero ninguna asignada: mala configuracion
+      // real. Se mantiene el salto (findUnassignableChildren lo bloquea antes) y
+      // el mismo efecto sobre anyOutsideTree que tenia esta rama.
+      anyOutsideTree = true
       skipped.push({ childPvId, childName: ch.child_name })
       continue
     }
+
+    const isOutsideTree = !treeEdition
+    if (isOutsideTree) anyOutsideTree = true
 
     editionPlan.push({
       childPvId,

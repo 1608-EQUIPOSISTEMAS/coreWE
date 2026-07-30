@@ -216,6 +216,9 @@ export function buildCourseChangeInscription ({
     // list_price <= 0. El SP crea una cuota pagada de 0 sin fila de pago.
     is_scholarship: !(Number(totalAmount) > 0),
     cat_b2b_doctype: null,
+    // Mismo criterio que el RP: un CC sobre un modulo SEG cambia el curso dentro
+    // del paquete, no lo saca de el. Null para inscripciones normales.
+    parent_enrollment_id: old.parent_enrollment_id || null,
     seller_agent_id: null,
     agent_origin: 'SA',
     // El SP exige perfil cuando la edicion destino existe. Se hereda del origen;
@@ -277,6 +280,10 @@ export function buildReprogramInscription ({ old, newEditionId, rpNote, today })
     saved_money: 0,
     is_scholarship: true,
     cat_b2b_doctype: null,
+    // RP de un modulo SEG: el destino sigue colgando del mismo paquete. Sin esto
+    // nacia como ACT huerfano de S/0 (una "venta" fantasma en las hojas). El SP
+    // ya fuerza SEG + pago cero cuando llega parent_enrollment_id.
+    parent_enrollment_id: old.parent_enrollment_id || null,
     seller_agent_id: old.seller_agent_id,
     agent_origin: old.agent_origin,
     client_profile: old.old_profile_alias === 'we_profile_student' ? 'estudiante' : 'profesional',

@@ -1,0 +1,79 @@
+{
+  "enrollment": [
+    {
+      "enrollment_id": 10598,
+      "program_edition_id": 15305,
+      "total_amount": "1530.00",
+      "registration_date": "2026-06-25T22:29:21.057Z",
+      "cat_type_status": 3100,
+      "cat_certificate_status": 2569,
+      "user_validator_id": null,
+      "b2b_contract_id": null,
+      "parent_enrollment_id": null,
+      "active": "Y",
+      "user_registration_id": 9,
+      "user_modification_id": null,
+      "modification_date": null,
+      "cat_inscription_modality": 2626,
+      "program_version_id": 73,
+      "student_attachment_url": null,
+      "cat_fico_status": 3052,
+      "customer_id": 17124,
+      "seller_agent_id": 5,
+      "cat_payment_plan": 2467,
+      "discount_amount": "0.00",
+      "cat_currency": 3041,
+      "notes": "Importacion masiva FICO (hoja)",
+      "cat_profile_id": 3086,
+      "list_price": "1530.00",
+      "cat_anulment_reason": null,
+      "cat_academic_result": null,
+      "flag_send": "N",
+      "cat_payment_channel": 4301,
+      "odoo_user_id": null,
+      "odoo_student_id": null,
+      "odoo_password": null,
+      "agreement_id": null,
+      "odoo_email": null,
+      "odoo_order_id": null,
+      "cat_b2b_doctype": null,
+      "agent_origin": null,
+      "email_cc": null,
+      "membership_activation_date": null,
+      "membership_program_id": null,
+      "cat_event_category": null
+    }
+  ],
+  "installments": [
+    {
+      "installment_id": 11374,
+      "enrollment_id": 10598,
+      "installment_number": 0,
+      "amount": "300.00",
+      "penalty_amount": "0.00",
+      "due_date": "2026-06-25T05:00:00.000Z",
+      "cat_status": 2471,
+      "notes": "Reserva / Pago inicial - Pago verificado, pendiente liquidacion bancaria"
+    }
+  ],
+  "payments": [
+    {
+      "payment_id": 4694,
+      "enrollment_id": 10598,
+      "installment_id": 11374,
+      "amount": "300.00",
+      "payment_date": "2025-12-26T05:00:00.000Z",
+      "transaction_code": null,
+      "evidence_url": null,
+      "cat_method_payment": 3208,
+      "cat_payment_type": 3113,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 1,
+      "active": "Y",
+      "user_registration_id": 9,
+      "registration_date": "2026-06-25T22:29:21.057Z",
+      "cat_token_provider": null
+    }
+  ],
+  "discounts": []
+}

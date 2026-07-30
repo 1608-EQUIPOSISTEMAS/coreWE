@@ -1,0 +1,29 @@
+{
+  "enrollment": [
+    {
+      "enrollment_id": 14709,
+      "customer_id": 18387,
+      "odoo_user_id": null,
+      "odoo_student_id": null,
+      "odoo_email": null
+    }
+  ],
+  "persona_dup": [
+    {
+      "person_id": 19629,
+      "active": "Y"
+    }
+  ],
+  "contactos_dup": [
+    {
+      "person_contact_id": 24905,
+      "active": "Y",
+      "value": "carlotaazucenaflores@gmail.com"
+    },
+    {
+      "person_contact_id": 24906,
+      "active": "Y",
+      "value": "936543621"
+    }
+  ]
+}

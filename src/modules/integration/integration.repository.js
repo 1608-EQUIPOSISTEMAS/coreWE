@@ -72,9 +72,10 @@ async function ensureSheetExists (googleSheets, spreadsheetId, sheetName, header
 // Doble condicion: (1) la fila no es import; (2) su PADRE no es import. Las hijas
 // de paquete deberian heredar el note 'hijo de paquete', pero hay hijas creadas
 // sin el (paquetes viejos / via SP), asi que se excluyen mirando el note del
-// padre. En las 3 queries que ya filtran parent_enrollment_id IS NULL el NOT
-// EXISTS es trivialmente verdadero; en getFicoAula (incluye hijas) es el que las
-// atrapa.
+// padre. En getFicoAula (incluye hijas) es el que las atrapa. En las otras 3 el
+// NOT EXISTS ya no es trivial: desde PARENT_OR_CC_DESTINATION esas queries
+// admiten destinos de CC, que SI tienen padre, y este chequeo los deja fuera si
+// el origen del cambio venia de la importacion masiva.
 // ponytail: quitar ${EXCLUDE_IMPORTED} de las 4 CTEs `approved` cuando la migracion termine.
 export const EXCLUDE_IMPORTED = `
          AND COALESCE(e.notes, '') NOT LIKE '%masiva FICO%'
@@ -85,6 +86,22 @@ export const EXCLUDE_IMPORTED = `
              )`
 // Token que el note de la importacion masiva debe contener para ser excluido.
 export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
+
+// El destino de un Cambio de Curso lleva parent_enrollment_id = origen (lo setea
+// finalizeCourseChange), asi que el filtro "parent_enrollment_id IS NULL" que deja
+// fuera a las hijas de paquete tambien lo dejaba fuera de las hojas de ventas: la
+// venta del curso nuevo (y su pago) quedaba invisible. `course_changes` es
+// justamente la tabla que separa "hijo por CC" de "hijo de paquete", asi que se
+// usa para readmitir SOLO a los destinos de CC.
+export const PARENT_OR_CC_DESTINATION = `
+         AND (
+           e.parent_enrollment_id IS NULL
+           OR EXISTS (
+                SELECT 1 FROM public.course_changes cc
+                 WHERE cc.enrollment_destination_id = e.enrollment_id
+                   AND cc.active = 'Y'
+              )
+         )`
 
 // Corte temporal del sync FICO -> Sheets: solo ventas desde esta fecha.
 // El corte usa la MISMA fecha efectiva que la columna F. PAGO de las hojas
@@ -223,7 +240,7 @@ export class IntegrationRepository {
         JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
-         AND e.parent_enrollment_id IS NULL
+         ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${SYNC_FROM}
     ),
@@ -603,7 +620,7 @@ export class IntegrationRepository {
         JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
-         AND e.parent_enrollment_id IS NULL
+         ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${SYNC_FROM}
     )
@@ -829,7 +846,7 @@ export class IntegrationRepository {
         JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
        WHERE cf.alias = 'we_enrollment_status_checked'
          AND e.active = 'Y'
-         AND e.parent_enrollment_id IS NULL
+         ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${SYNC_FROM}
     )
