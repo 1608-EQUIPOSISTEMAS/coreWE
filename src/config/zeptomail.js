@@ -51,7 +51,7 @@ export async function sendEmail ({ to, subject, htmlBody, replyTo, attachments, 
   }
 }
 
-export async function sendFicoEmail ({ to, subject, htmlBody }) {
+export async function sendFicoEmail ({ to, subject, htmlBody, cc }) {
   if (!process.env.ZEPTOMAIL_FICO_API_KEY) {
     console.warn('[ZeptoMail-FICO] API key no configurada, email no enviado')
     return { success: false, error: 'FICO API key no configurada' }
@@ -62,9 +62,11 @@ export async function sendFicoEmail ({ to, subject, htmlBody }) {
       from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
       to,
       subject,
-      html: htmlBody
+      html: htmlBody,
+      ...(cc && { cc })
     })
-    console.log(`[ZeptoMail-FICO] Email enviado a ${to} | messageId: ${info.messageId}`)
+    const ccTag = cc ? ` (cc: ${Array.isArray(cc) ? cc.join(',') : cc})` : ''
+    console.log(`[ZeptoMail-FICO] Email enviado a ${to}${ccTag} | messageId: ${info.messageId}`)
     return { success: true, messageId: info.messageId }
   } catch (err) {
     console.error(`[ZeptoMail-FICO] Error enviando a ${to}:`, err.message)

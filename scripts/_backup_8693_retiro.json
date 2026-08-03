@@ -1,0 +1,37 @@
+[
+  {
+    "enrollment_id": 8693,
+    "parent_enrollment_id": null,
+    "version_code": "EX-EZ-03",
+    "cat_type_status": 3245,
+    "estado": "R"
+  },
+  {
+    "enrollment_id": 8694,
+    "parent_enrollment_id": 8693,
+    "version_code": "EX-CZ-06",
+    "cat_type_status": 3245,
+    "estado": "R"
+  },
+  {
+    "enrollment_id": 8695,
+    "parent_enrollment_id": 8693,
+    "version_code": "EX-CZ-02",
+    "cat_type_status": 3245,
+    "estado": "R"
+  },
+  {
+    "enrollment_id": 8696,
+    "parent_enrollment_id": 8693,
+    "version_code": "EX-CZ-03",
+    "cat_type_status": 3245,
+    "estado": "R"
+  },
+  {
+    "enrollment_id": 8697,
+    "parent_enrollment_id": 8693,
+    "version_code": "EX-CZ-04",
+    "cat_type_status": 3245,
+    "estado": "R"
+  }
+]

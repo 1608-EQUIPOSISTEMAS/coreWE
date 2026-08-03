@@ -1,7 +1,7 @@
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
-import { parseEmailCc } from '../../../utils/email-cc.js'
+import { resolveCc } from '../../../utils/email-cc.js'
 import {
   MEMBERSHIP_DURATION_MONTHS,
   formatCalendarDate,
@@ -254,7 +254,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
 
   const check = await repo.findMembershipCheck(enrollmentId)
   if (check && isMembership(check.abbreviation, check.is_membership)) {
-    return sendMembershipEmail({ enrollmentId })
+    return sendMembershipEmail({ enrollmentId, cc })
   }
 
   const data = await repo.findConfirmationDataForSend(enrollmentId)
@@ -360,7 +360,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   })
 
   // CC en cascada: parametro explicito (override) -> enrollments.email_cc.
-  const ccResolved = parseEmailCc(cc != null ? cc : data.email_cc)
+  const ccResolved = resolveCc(cc, data.email_cc)
   const ccForTransport = ccResolved.length > 0 ? ccResolved : undefined
 
   const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
@@ -397,7 +397,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
 // ---------------------------------------------------------------------------
 // ENVIO: confirmacion de cuota / pago completado
 
-export async function sendPaymentConfirmationEmail ({ enrollmentId }) {
+export async function sendPaymentConfirmationEmail ({ enrollmentId, cc }) {
   const data = await repo.findPaymentConfirmationData(enrollmentId)
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
@@ -421,7 +421,13 @@ export async function sendPaymentConfirmationEmail ({ enrollmentId }) {
     ? `Pago Completado - ${data.program_name || 'WE Educacion'}`
     : `Confirmacion de Cuota - ${data.program_name || 'WE Educacion'}`
 
-  const result = await deps.sendFicoEmail({ to: toEmail, subject, htmlBody })
+  const ccResolved = resolveCc(cc, data.email_cc)
+  const result = await deps.sendFicoEmail({
+    to: toEmail,
+    subject,
+    htmlBody,
+    cc: ccResolved.length > 0 ? ccResolved : undefined
+  })
 
   try {
     await repo.insertEmailLog({
@@ -442,16 +448,16 @@ export async function sendPaymentConfirmationEmail ({ enrollmentId }) {
 // ---------------------------------------------------------------------------
 // ENVIO: bienvenida membresia
 
-export async function sendMembershipEmail ({ enrollmentId }) {
+export async function sendMembershipEmail ({ enrollmentId, cc }) {
   try {
-    return await sendMembershipEmailInner({ enrollmentId })
+    return await sendMembershipEmailInner({ enrollmentId, cc })
   } catch (err) {
     console.error('[sendMembershipEmail] Throw inesperado:', err.message, err.stack)
     return { success: false, error: `sendMembershipEmail: ${err.message}` }
   }
 }
 
-async function sendMembershipEmailInner ({ enrollmentId }) {
+async function sendMembershipEmailInner ({ enrollmentId, cc }) {
   let data = await repo.findMembershipDataForSend(enrollmentId)
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
@@ -527,13 +533,15 @@ async function sendMembershipEmailInner ({ enrollmentId }) {
 
   const tipo = detectMembershipType(data.program_name)
   const subject = `Bienvenido a tu Membresia ${tipo} - WE Educacion`
+  const ccResolved = resolveCc(cc, data.email_cc)
   // Las membresias se mandan desde pagos@we-educacion.com (mismo sender que el GAS).
   const result = await deps.sendEmail({
     to: toEmail,
     subject,
     htmlBody,
     fromEmail: 'pagos@we-educacion.com',
-    fromName: 'WE Educacion Ejecutiva'
+    fromName: 'WE Educacion Ejecutiva',
+    cc: ccResolved.length > 0 ? ccResolved : undefined
   })
 
   try {

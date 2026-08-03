@@ -4,6 +4,14 @@
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// CC en cascada: el parametro explicito manda solo si trae algo usable; si no,
+// gana el guardado en enrollments.email_cc. Un cc:'' o cc:[] del caller NO debe
+// borrar el CC del enrollment (antes lo hacia: '' no es null).
+export function resolveCc (explicit, stored) {
+  const list = parseEmailCc(explicit)
+  return list.length > 0 ? list : parseEmailCc(stored)
+}
+
 export function parseEmailCc (raw) {
   if (!raw) return []
   if (Array.isArray(raw)) {

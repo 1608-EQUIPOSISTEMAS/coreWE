@@ -487,8 +487,12 @@ export class EditionRepository {
           -- criterio que mem.tier_name de classroomStudentsList: un socio (aunque
           -- sea PLUS) con venta en 0 NO es beca; asi la Lista de Notas y el
           -- cronograma cuentan las mismas becas.
+          -- Ademas de la busqueda por persona, vale el tier grabado EN LA VENTA
+          -- (enrollments.membership_program_id): la membresia puede estar en OTRA
+          -- fila de persons (el SP crea persona nueva cuando la venta va sin DNI)
+          -- y entonces la busqueda por person_id falla y el socio caia a BECA.
           SELECT
-            EXISTS (
+            (EXISTS (
               SELECT 1
                 FROM public.enrollments em
                 JOIN public.customers cm         ON cm.customer_id = em.customer_id
@@ -497,8 +501,13 @@ export class EditionRepository {
                                                   AND UPPER(TRIM(pm.program_name)) <> 'MEMBRESIA PLUS'
                 JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
                WHERE cm.person_id = cust.person_id AND em.active = 'Y'
-            ) AS is_member,
-            EXISTS (
+            ) OR EXISTS (
+              SELECT 1 FROM public.programs pmv
+               WHERE pmv.program_id = COALESCE(par.membership_program_id, e.membership_program_id)
+                 AND pmv.is_membership = true
+                 AND UPPER(TRIM(pmv.program_name)) <> 'MEMBRESIA PLUS'
+            )) AS is_member,
+            (EXISTS (
               SELECT 1
                 FROM public.enrollments em
                 JOIN public.customers cm         ON cm.customer_id = em.customer_id
@@ -506,7 +515,7 @@ export class EditionRepository {
                 JOIN public.programs pm          ON pm.program_id = pvm.program_id AND pm.is_membership = true
                 JOIN public."catalog" cfm        ON cfm.catalog_id = em.cat_fico_status AND cfm.alias = 'we_enrollment_status_checked'
                WHERE cm.person_id = cust.person_id AND em.active = 'Y'
-            ) AS has_membership
+            ) OR COALESCE(par.membership_program_id, e.membership_program_id) IS NOT NULL) AS has_membership
         ) mem ON TRUE
        WHERE e.program_edition_id = ANY($1::int[])
          AND e.active = 'Y'
@@ -606,6 +615,10 @@ export class EditionRepository {
                      AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39')))
             AND COALESCE(e_sold.total_amount, e.total_amount, 0) = 0
             AND mem.tier_name IS NULL
+            -- tier grabado en la propia venta: la membresia puede vivir en otra
+            -- fila de persons (venta sin DNI => persona nueva) y mem.tier_name
+            -- daria NULL. Un curso vendido con membresia NUNCA es beca.
+            AND COALESCE(e_sold.membership_program_id, e.membership_program_id) IS NULL
             AND COALESCE(e_sold.notes, '') NOT ILIKE '%desde inscripcion #%'
             AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
                              WHERE ccx.enrollment_destination_id = e_sold.enrollment_id)) AS is_beca,
@@ -620,8 +633,8 @@ export class EditionRepository {
            odoo_src.odoo_user_id                        AS odoo_user_id,
            COALESCE(prog_sold.is_membership, false)     AS is_member,
            -- Membresia del alumno (persona) en ventas FICO: tier vigente y flag.
-           mem.tier_name                                AS membership_tier_name,
-           (mem.tier_name IS NOT NULL)                  AS membership_active,
+           COALESCE(mem.tier_name, pv_memb.abbreviation) AS membership_tier_name,
+           (COALESCE(mem.tier_name, pv_memb.abbreviation) IS NOT NULL) AS membership_active,
            -- MEMB del cronograma: membresia vigente que REGALA cursos (WE
            -- BLACK/GOLD/PLAT). EXCLUYE 'MEMBRESIA PLUS' — un socio PLUS que
            -- lleva un curso es VENTA/SEGUI real, no MEMB. Mismo EXISTS que
@@ -636,6 +649,13 @@ export class EditionRepository {
                                                  AND UPPER(TRIM(pm2.program_name)) <> 'MEMBRESIA PLUS'
                JOIN public."catalog" cfm2        ON cfm2.catalog_id = em2.cat_fico_status AND cfm2.alias = 'we_enrollment_status_checked'
               WHERE cm2.person_id = per.person_id AND em2.active = 'Y'
+           ) OR EXISTS (
+             -- tier grabado en la venta (ver is_beca): cubre al socio cuya
+             -- membresia quedo en otra fila de persons.
+             SELECT 1 FROM public.programs pmv
+              WHERE pmv.program_id = COALESCE(e_sold.membership_program_id, e.membership_program_id)
+                AND pmv.is_membership = true
+                AND UPPER(TRIM(pmv.program_name)) <> 'MEMBRESIA PLUS'
            )                                            AS member_benefits,
            -- Promo LAPTOP: el descuento vive en el enrollment vendido (padre si
            -- es hijo de paquete). Mismo criterio que la etiqueta del panel FICO.
@@ -728,6 +748,14 @@ export class EditionRepository {
          ORDER BY em.enrollment_id DESC
          LIMIT 1
       ) mem ON TRUE
+ LEFT JOIN LATERAL (
+        -- Etiqueta del tier cuando solo lo sabemos por la venta
+        -- (enrollments.membership_program_id) y no por la persona.
+        SELECT pvx.abbreviation
+          FROM public.program_versions pvx
+         WHERE pvx.program_id = COALESCE(e_sold.membership_program_id, e.membership_program_id)
+         ORDER BY pvx.program_version_id DESC LIMIT 1
+      ) pv_memb ON TRUE
  LEFT JOIN LATERAL (
         SELECT pc.value
           FROM public.person_contacts pc

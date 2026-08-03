@@ -135,6 +135,27 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
+  // Descuentos aplicados, para el tooltip del panel. El texto plano del Sheet
+  // ("DSTC. PRINCIPAL") no distingue tipos: en los promos de tipo "Monto fijo"
+  // el value es el precio FINAL al que queda el curso, no lo descontado, asi que
+  // "S/. 150.00 - PROMO FLASH 450" se leia como un descuento de 150 cuando en
+  // realidad descuenta 670. Aqui devolvemos value y calculated_amount separados.
+  async paymentDetailDiscounts (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT d.description,
+             d.value,
+             ed.calculated_amount,
+             ct.alias       AS discount_type_alias,
+             ct.description AS discount_type
+        FROM enrollment_discounts ed
+        JOIN discounts d ON d.discount_id = ed.discount_id
+        LEFT JOIN public."catalog" ct ON ct.catalog_id = d.cat_discount_type
+       WHERE ed.enrollment_id = $1
+       ORDER BY ed.order_applied
+    `, [enrollmentId])
+    return rows || []
+  }
+
   // Estado del certificado + pagos adicionales para el panel de detalle (nav
   // Adicionales). Los adicionales son filas de payments sin cuota asociada con
   // tipo we_payment_type_certificate (becados) o we_payment_type_reassignment
@@ -987,7 +1008,7 @@ export class EnrollmentRepository {
 
   async getEditStudentCurrent (enrollmentId) {
     const { rows } = await this.db.query(`
-      SELECT per.first_name, per.last_name, per.document_number, per.person_id,
+      SELECT per.first_name, per.last_name, per.mother_last_name, per.document_number, per.person_id,
              ${STUDENT_EMAIL_SQL} AS origin_email,
              ${STUDENT_PHONE_SQL} AS origin_phone,
              l.lead_id,

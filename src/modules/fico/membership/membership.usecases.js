@@ -11,7 +11,7 @@ import {
   assertReschedulable
 } from './membership.entity.js'
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
-import { buildUniqueOdooEmail } from '../../../utils/fico-odoo.helper.js'
+import { buildUniqueOdooEmail, buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   MEMBERSHIP_DURATION_MONTHS,
   formatCalendarDate,
@@ -172,7 +172,14 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
     }
   }
 
-  const fullName = `${(data.last_name || '').trim()} ${(data.first_name || '').trim()}`.trim().toUpperCase()
+  // names/surnames: campos partidos del partner que lee Certificacion.
+  // fullName = "APELLIDOS NOMBRES", materno incluido.
+  const { names, surnames } = buildOdooNameParts({
+    firstName: data.first_name,
+    lastName: data.last_name,
+    motherLastName: data.mother_last_name
+  })
+  const fullName = `${surnames} ${names}`.trim()
   // createEmail UNICO: si otro alumno con apellido.nombre ya tiene ese login en
   // Odoo, buildUniqueOdooEmail agrega sufijo numerico para evitar reutilizar el
   // user de otra persona.
@@ -197,7 +204,9 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
     fullName,
     password,
     phone: data.origin_phone,
-    documentNumber: data.document_number
+    documentNumber: data.document_number,
+    names,
+    surnames
   })
 
   if (result.success) {

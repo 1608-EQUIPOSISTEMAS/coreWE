@@ -177,7 +177,7 @@ export class EmailConfirmationRepository {
              ${STUDENT_EMAIL_SQL} AS origin_email,
              pv.abbreviation AS program_name,
              pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
-             e.membership_activation_date,
+             e.membership_activation_date, e.email_cc,
              curr.variable_2 AS currency_symbol,
              c_plan.alias AS payment_plan_alias
       FROM enrollments e
@@ -201,7 +201,8 @@ export class EmailConfirmationRepository {
              ${STUDENT_EMAIL_SQL} AS origin_email,
              pv.abbreviation AS program_name,
              curr.variable_2 AS currency_symbol,
-             c_cat.description AS category_description
+             c_cat.description AS category_description,
+             e.email_cc
       FROM enrollments e
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id

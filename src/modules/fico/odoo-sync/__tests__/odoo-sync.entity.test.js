@@ -49,6 +49,11 @@ describe('buildOdooFullName', () => {
     expect(buildOdooFullName({ firstName: '  Ana ', lastName: ' Lopez ' })).toBe('LOPEZ ANA')
   })
 
+  it('incluye el apellido materno cuando existe', () => {
+    expect(buildOdooFullName({ firstName: 'Bianca', lastName: 'Cueva', motherLastName: 'Vargas' }))
+      .toBe('CUEVA VARGAS BIANCA')
+  })
+
   it('tolera nombre o apellido vacio', () => {
     expect(buildOdooFullName({ firstName: 'Juan', lastName: '' })).toBe('JUAN')
     expect(buildOdooFullName({ firstName: '', lastName: 'Diaz' })).toBe('DIAZ')

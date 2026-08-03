@@ -1,0 +1,46 @@
+{
+  "cabecera": [
+    {
+      "enrollment_id": 122,
+      "list_price": "3450.00",
+      "discount_amount": "1552.50",
+      "total_amount": "1897.00",
+      "cat_payment_plan": 2466,
+      "cat_profile_id": 3087,
+      "notes": "Ahora abonó S/100 y la diferencia de S/150 hasta el 01/04 y luego continua con el esquema de cuotas brindado\nImportacion masiva FICO (hoja)"
+    }
+  ],
+  "cuotas": [
+    {
+      "installment_id": 95,
+      "n": 1,
+      "amount": "1897.00",
+      "due_date": "2026-03-03T05:00:00.000Z",
+      "cat_status": 2470,
+      "notes": "Pago vía link/token – Pendiente confirmación de proveedor"
+    }
+  ],
+  "pagos": [
+    {
+      "payment_id": 78,
+      "installment_id": 95,
+      "amount": "1897.00",
+      "payment_date": "2026-03-03T05:00:00.000Z",
+      "cat_method_payment": null,
+      "cat_payment_type": 3113,
+      "cat_settlement_status": 2470,
+      "settled_in_account_id": null,
+      "active": "Y"
+    }
+  ],
+  "descuentos": [
+    {
+      "enrollment_id": 122,
+      "discount_id": 11,
+      "applied_at": "2026-03-03T21:02:46.951Z",
+      "user_registration_id": 2,
+      "order_applied": 1,
+      "calculated_amount": "1552.50"
+    }
+  ]
+}

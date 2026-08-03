@@ -2,7 +2,7 @@ import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
-import { buildUniqueOdooEmail } from '../../../utils/fico-odoo.helper.js'
+import { buildUniqueOdooEmail, buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
 import { odooSyncRepository } from './odoo-sync.repository.js'
 import {
@@ -168,7 +168,17 @@ export async function enrollInOdoo ({ enrollmentId }) {
     originEmail: data.origin_email,
     existingUserByRealEmailLogin: existingByRealLogin
   })
-  const fullName = buildOdooFullName({ firstName: data.first_name, lastName: data.last_name })
+  const fullName = buildOdooFullName({
+    firstName: data.first_name,
+    lastName: data.last_name,
+    motherLastName: data.mother_last_name
+  })
+  // names/surnames: campos partidos del partner que lee Certificacion.
+  const { names, surnames } = buildOdooNameParts({
+    firstName: data.first_name,
+    lastName: data.last_name,
+    motherLastName: data.mother_last_name
+  })
   const password = ODOO_DEFAULT_PASSWORD
 
   let searchName
@@ -190,7 +200,9 @@ export async function enrollInOdoo ({ enrollmentId }) {
       password,
       slideChannelId,
       phone: data.origin_phone,
-      documentNumber: data.document_number
+      documentNumber: data.document_number,
+      names,
+      surnames
     })
   } else {
     const startDate = data.start_date
@@ -209,7 +221,9 @@ export async function enrollInOdoo ({ enrollmentId }) {
       password,
       slideGroupId,
       phone: data.origin_phone,
-      documentNumber: data.document_number
+      documentNumber: data.document_number,
+      names,
+      surnames
     })
   }
 

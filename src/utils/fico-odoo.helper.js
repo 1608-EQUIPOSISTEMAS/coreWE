@@ -15,6 +15,19 @@ function normalizeNamePart (s) {
     .replace(/[^a-z\s]/g, '').trim()
 }
 
+// Odoo guarda el nombre partido en dos campos propios de res.partner: `names`
+// (nombres) y `surnames` (apellidos, paterno + materno juntos). El modulo de
+// Certificacion lee de ahi, NO del `name` completo: si van vacios el alumno se
+// ve bien en Usuarios pero su ficha de Estudiante sale sin nombre y no se puede
+// certificar. Devuelve strings vacios si no hay dato (el caller los descarta).
+export function buildOdooNameParts ({ firstName, lastName, motherLastName } = {}) {
+  const clean = v => String(v || '').trim().replace(/\s+/g, ' ')
+  return {
+    names: clean(firstName).toUpperCase(),
+    surnames: [clean(lastName), clean(motherLastName)].filter(Boolean).join(' ').toUpperCase()
+  }
+}
+
 // Password sintetico para el usuario Odoo. Sin caracteres confundibles
 // (0/O, 1/l/I) y mezcla mayusculas/minusculas/numeros.
 export function generatePassword (length = 8) {

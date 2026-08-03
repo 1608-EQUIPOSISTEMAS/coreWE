@@ -1,0 +1,29 @@
+{
+  "enrollment_id": 14889,
+  "antes": [
+    {
+      "enrollment_id": 14889,
+      "discount_id": 15,
+      "order_applied": 1,
+      "calculated_amount": "630.50",
+      "applied_at": "2026-08-01T15:32:49.688Z",
+      "user_registration_id": 21,
+      "description": "GLOBAL 65%"
+    },
+    {
+      "enrollment_id": 14889,
+      "discount_id": 19,
+      "order_applied": 3,
+      "calculated_amount": "50.00",
+      "applied_at": "2026-08-01T15:32:49.688Z",
+      "user_registration_id": 21,
+      "description": "GIFT CARD 50"
+    }
+  ],
+  "cabecera": {
+    "list_price": "970.00",
+    "discount_amount": "680.50",
+    "total_amount": "289.00",
+    "notes": "TRAERA SU PROPIA LAPTOP"
+  }
+}

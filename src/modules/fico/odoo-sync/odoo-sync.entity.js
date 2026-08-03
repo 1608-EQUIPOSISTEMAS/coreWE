@@ -24,9 +24,13 @@ export function resolveCurrencyCode (currencyAlias) {
   return currencyAlias === 'we_currency_usd' ? 'USD' : 'PEN'
 }
 
-// Nombre del alumno como lo espera Odoo: "APELLIDO NOMBRE" en mayusculas.
-export function buildOdooFullName ({ firstName, lastName }) {
-  return `${(lastName || '').trim()} ${(firstName || '').trim()}`.trim().toUpperCase()
+// Nombre del alumno como lo espera Odoo: "APELLIDOS NOMBRES" en mayusculas.
+// El materno va incluido: sin el, el partner quedaba como "CUEVA BIANCA" en vez
+// de "CUEVA VARGAS BIANCA".
+export function buildOdooFullName ({ firstName, lastName, motherLastName }) {
+  return [lastName, motherLastName, firstName]
+    .map(v => String(v || '').trim().replace(/\s+/g, ' '))
+    .filter(Boolean).join(' ').toUpperCase()
 }
 
 // Construye el nombre de busqueda del curso presencial en Odoo a partir de la

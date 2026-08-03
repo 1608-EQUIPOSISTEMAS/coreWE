@@ -208,6 +208,16 @@ async function createPortalUser ({ login, name, password }) {
   return userId
 }
 
+// Campos de nombre partido del partner (`names` / `surnames`). Van SIEMPRE que
+// se toque el partner: Certificacion los usa para emitir el certificado y el
+// `name` completo no le sirve. Solo escribe lo que viene con valor (nunca borra).
+function buildPartnerNameVals ({ names, surnames } = {}) {
+  const vals = {}
+  if (names && String(names).trim() !== '') vals.names = String(names).trim()
+  if (surnames && String(surnames).trim() !== '') vals.surnames = String(surnames).trim()
+  return vals
+}
+
 async function searchSlideGroup (courseName) {
   const rows = await callKw('slide.group', 'search_read', [
     [['name', 'ilike', courseName]]
@@ -238,7 +248,7 @@ async function enrollStudentInCourse ({ partnerId, slideGroupId, slideChannelId,
   return { student_id: studentId, already_enrolled: false }
 }
 
-async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password, slideGroupId, phone, documentNumber }) {
+async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password, slideGroupId, phone, documentNumber, names, surnames }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     if (!user && createEmail !== searchEmail) {
@@ -263,14 +273,14 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
     // Sincroniza phone/vat (DNI) en res.partner. Se ejecuta tanto en creacion
     // como en reuso del partner existente: si el alumno ya tenia cuenta sin
     // estos datos, los completamos; nunca los borra (solo escribe si vienen).
-    const partnerVals = {}
+    const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
     if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
       } catch (partnerErr) {
-        console.error('[odooClient] syncStudentToOdoo: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+        console.error('[odooClient] syncStudentToOdoo: no se pudo escribir names/surnames/phone/vat en partner', odooPartnerId, partnerErr.message)
       }
     }
 
@@ -324,7 +334,7 @@ async function enrollStudentInChannelOnly ({ partnerId, slideChannelId }) {
   return { channel_partner_id: channelPartnerId, already_enrolled: false }
 }
 
-async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, password, slideChannelId, phone, documentNumber }) {
+async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, password, slideChannelId, phone, documentNumber, names, surnames }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     if (!user && createEmail !== searchEmail) {
@@ -346,14 +356,14 @@ async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, pa
       return { success: false, error: 'No se pudo obtener partner_id', odoo_user_id: odooUserId }
     }
 
-    const partnerVals = {}
+    const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
     if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
       } catch (partnerErr) {
-        console.error('[odooClient] syncStudentToOdooOnline: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+        console.error('[odooClient] syncStudentToOdooOnline: no se pudo escribir names/surnames/phone/vat en partner', odooPartnerId, partnerErr.message)
       }
     }
 
@@ -379,7 +389,7 @@ async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, pa
   }
 }
 
-async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber }) {
+async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber, names, surnames }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     let odooUserId, odooPartnerId, created = false
@@ -398,14 +408,14 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
       return { success: false, error: 'No se pudo obtener partner_id', odoo_user_id: odooUserId }
     }
 
-    const partnerVals = {}
+    const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
     if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
       } catch (partnerErr) {
-        console.error('[odooClient] enrollInAllOnlineCourses: no se pudo escribir phone/vat en partner', odooPartnerId, partnerErr.message)
+        console.error('[odooClient] enrollInAllOnlineCourses: no se pudo escribir names/surnames/phone/vat en partner', odooPartnerId, partnerErr.message)
       }
     }
 
@@ -939,7 +949,7 @@ async function updateUserLogin (odooUserId, newLogin) {
  * Solo escribe los campos que vienen definidos (undefined = no tocar).
  * Nunca lanza al caller — captura errores y devuelve { success, error }.
  */
-async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}) {
+async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names, surnames } = {}) {
   if (!odooUserId) return { success: false, error: 'odooUserId requerido' }
 
   try {
@@ -957,7 +967,7 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat } = {}
     const partnerId = user?.partner_id?.[0] ?? null
 
     if (partnerId) {
-      const partnerVals = {}
+      const partnerVals = buildPartnerNameVals({ names, surnames })
       if (userVals.name)     partnerVals.name   = userVals.name
       if (userVals.email)    partnerVals.email  = userVals.email
       if (phone !== undefined && phone !== null && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()

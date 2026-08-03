@@ -2,6 +2,7 @@ import { DomainError, NotFoundError } from '../../../shared/errors.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
 import { enrollmentRepository, ALIAS } from './enrollment.repository.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
+import { buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   fmtAgent,
   flattenDailyKpis,
@@ -88,6 +89,12 @@ export async function paymentDetailGet ({ enrollment_id }) {
       }
     } catch (err) {
       console.error('[paymentDetailGet] edition dates:', err.message)
+    }
+    try {
+      result.discounts = await repo.paymentDetailDiscounts(enrollment_id)
+    } catch (err) {
+      console.error('[paymentDetailGet] discounts:', err.message)
+      result.discounts = []
     }
     try {
       const cert = await repo.paymentDetailCertificate(enrollment_id)
@@ -751,12 +758,21 @@ export async function editStudent ({ enrollmentId, firstName, lastName, document
   if (needsOdooSync) {
     const finalFirst = changes['Nombre'] ? firstName : current.first_name
     const finalLast = changes['Apellido'] ? lastName : current.last_name
-    const fullName = [finalFirst, finalLast].filter(Boolean).join(' ').trim()
+    // names/surnames: campos partidos del partner que lee Certificacion.
+    // El name completo va en la misma convencion que el alta: "APELLIDOS NOMBRES".
+    const { names, surnames } = buildOdooNameParts({
+      firstName: finalFirst,
+      lastName: finalLast,
+      motherLastName: current.mother_last_name
+    })
+    const fullName = `${surnames} ${names}`.trim()
     await repo.syncStudentToOdoo(current.odoo_user_id, {
       name: fullName || undefined,
       login: changes['Correo Odoo'] ? odooEmail : undefined,
       phone: changes['Telefono'] ? originPhone : undefined,
-      vat: changes['Documento'] ? documentNumber : undefined
+      vat: changes['Documento'] ? documentNumber : undefined,
+      names,
+      surnames
     })
   }
 
