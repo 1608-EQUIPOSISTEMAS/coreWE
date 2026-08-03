@@ -326,7 +326,23 @@ export class TokenRepository {
       [leadId, userId || 9, JSON.stringify(payload)],
       { statementTimeoutMs: 25000 }
     )
-    return rows?.[0] || null
+    const res = rows?.[0] || null
+
+    // Mismo UPDATE aparte que comercial.repository.enrollmentRegister: el SP no
+    // conoce cat_event_category. Sin esto, un congreso de fundacion vendido por
+    // token pierde la categoria de entrada (VIP/GENERAL/PREMIUM) al confirmarse.
+    // No revierte la inscripcion si falla: la venta ya quedo registrada.
+    if (res?.result === 1 && res.enrollment_id && payload?.inscription?.cat_event_category) {
+      try {
+        await this.db.query(
+          'UPDATE public.enrollments SET cat_event_category = $1 WHERE enrollment_id = $2',
+          [payload.inscription.cat_event_category, res.enrollment_id]
+        )
+      } catch (err) {
+        console.error('[registerEnrollment] no se pudo guardar cat_event_category:', err.message)
+      }
+    }
+    return res
   }
 
   async replaceInstallments ({ enrollmentId, adelanto, plan, catDraft }) {
