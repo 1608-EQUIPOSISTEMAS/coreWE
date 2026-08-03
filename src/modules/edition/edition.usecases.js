@@ -441,11 +441,17 @@ export async function classroomStudentsList ({ edition_id } = {}) {
   return repo.classroomStudentsList(id)
 }
 
-// Historial del aula: alumnos que estuvieron pero ya no estan en la lista activa.
+// Tab Historial del aula. Dos grupos que NO son lo mismo y por eso viajan
+// separados: `left` = estuvieron matriculados y salieron (retiro/CC/RP/baja);
+// `validated` = nunca van a asistir porque el modulo se les convalido.
 export async function classroomStudentsHistory ({ edition_id } = {}) {
   const id = Number(edition_id)
-  if (!Number.isFinite(id)) return []
-  return repo.classroomStudentsHistory(id)
+  if (!Number.isFinite(id)) return { left: [], validated: [] }
+  const [left, validated] = await Promise.all([
+    repo.classroomStudentsHistory(id),
+    repo.classroomValidatedList(id)
+  ])
+  return { left, validated }
 }
 
 // Resumen agregado de auditoria por aula.

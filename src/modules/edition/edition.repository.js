@@ -897,6 +897,110 @@ export class EditionRepository {
     return rows
   }
 
+  // CONVALIDADOS de esta aula: alumnos que compraron el PADRE (paquete) pero NO
+  // tienen matricula aqui porque el modulo se les convalido — ya lo llevaron
+  // antes. No es un hueco de datos: la convalidacion vive en
+  // enrollment_validations y buildEditionPlan (validation.entity.js) se salta ese
+  // hijo al crear los SEG. Por eso el aula cuenta uno menos que las ventas del
+  // padre y Academica no los ve por ningun lado.
+  //
+  // Que aula le tocaba se resuelve por edition_structure (padre -> hijos); el
+  // curso convalidado, por program_version (ev.child_version_id = el de ESTA
+  // edicion). Solo se listan los que TIENEN registro de convalidacion: un hijo
+  // faltante sin fila en enrollment_validations es un error de datos y no debe
+  // disfrazarse de convalidacion (decision de negocio, 2026-08-03).
+  // ponytail: un padre E0 (program_edition_id NULL) no tiene arbol, asi que sus
+  // convalidaciones no se pueden atribuir a un aula y no salen aqui.
+  async classroomValidatedList (id) {
+    const { rows } = await this.db.query(`
+    SELECT ev.validation_id,
+           p.enrollment_id                              AS parent_enrollment_id,
+           per.person_id,
+           per.document_number                          AS dni,
+           TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
+           per.first_name,
+           per.last_name,
+           per.mother_last_name,
+           pv_par.abbreviation                          AS parent_program_name,
+           -- codigo como lo lee Academica ("E5-26"), no el global interno.
+           COALESCE(NULLIF(pe_par.specific_code, ''), pe_par.global_code) AS parent_edition_code,
+           ev.notes                                     AS validation_notes,
+           ev.created_at                                AS validated_at,
+           -- ASESOR de la venta del paquete, con el mismo criterio que la Lista
+           -- de Notas (agent_code): manda quien pidio el token de pago sobre
+           -- seller_agent_id, porque una inscripcion nacida de token queda
+           -- grabada a nombre del usuario FICO que la confirmo, no del comercial.
+           COALESCE(NULLIF(TRIM(tok.alias), ''), usr_sell.alias, p.agent_origin) AS agent_code,
+           prev.enrollment_id                           AS prev_enrollment_id,
+           prev.edition_code                            AS prev_edition_code,
+           prev.start_date                              AS prev_start_date,
+           prev.end_date                                AS prev_end_date
+      FROM public.enrollment_validations ev
+      -- el padre: la venta del paquete, vigente y FICO-aprobada
+      JOIN public.enrollments p        ON p.enrollment_id = ev.enrollment_id AND p.active = 'Y'
+      JOIN public."catalog" cfp        ON cfp.catalog_id = p.cat_fico_status
+                                      AND cfp.alias = 'we_enrollment_status_checked'
+ LEFT JOIN public."catalog" ctsp       ON ctsp.catalog_id = p.cat_type_status
+      JOIN public.customers cust       ON cust.customer_id = p.customer_id
+      JOIN public.persons per          ON per.person_id = cust.person_id
+ LEFT JOIN public.program_versions pv_par ON pv_par.program_version_id = p.program_version_id
+ LEFT JOIN public.program_editions pe_par ON pe_par.edition_num_id = p.program_edition_id
+ LEFT JOIN public.users usr_sell      ON usr_sell.user_id = p.seller_agent_id
+ LEFT JOIN LATERAL (
+        SELECT u.alias
+          FROM public.payment_tokens pt
+          LEFT JOIN public.users u ON u.user_id = COALESCE(pt.requested_by, pt.created_by)
+         WHERE pt.enrollment_id = p.enrollment_id
+         ORDER BY pt.token_id ASC
+         LIMIT 1
+      ) tok ON TRUE
+      -- esta aula tiene que colgar del arbol de la edicion del padre...
+      JOIN public.edition_structure es ON es.parent_edition_id = p.program_edition_id
+                                      AND es.child_edition_id = $1
+      -- ...y la convalidacion tiene que ser de ESTE curso (misma program_version)
+      JOIN public.program_editions pe  ON pe.edition_num_id = es.child_edition_id
+                                      AND pe.program_version_id = ev.child_version_id
+      -- donde SI lo llevo: otra edicion del mismo curso, suya y aprobada. Se
+      -- prefiere una anterior a esta aula; si solo hay posteriores, se muestra esa.
+ LEFT JOIN LATERAL (
+        SELECT e2.enrollment_id,
+               COALESCE(NULLIF(pe2.specific_code, ''), pe2.global_code) AS edition_code,
+               pe2.start_date, pe2.end_date
+          FROM public.enrollments e2
+          JOIN public.customers cu2        ON cu2.customer_id = e2.customer_id
+          JOIN public.program_editions pe2 ON pe2.edition_num_id = e2.program_edition_id
+          JOIN public."catalog" cf2        ON cf2.catalog_id = e2.cat_fico_status
+                                          AND cf2.alias = 'we_enrollment_status_checked'
+         WHERE cu2.person_id = per.person_id
+           AND pe2.program_version_id = pe.program_version_id
+           AND pe2.edition_num_id <> pe.edition_num_id
+           AND e2.active = 'Y'
+         ORDER BY (pe2.start_date < pe.start_date) DESC, pe2.start_date DESC
+         LIMIT 1
+      ) prev ON TRUE
+     WHERE COALESCE(ev.validation_type, 'same_edition') <> 'edition_override'
+       -- el padre sigue vivo en su aula: si se retiro / cambio / reprogramo, su
+       -- convalidacion ya no pinta nada aqui (mismo criterio que el contador).
+       AND (ctsp.alias IS NULL OR ctsp.alias NOT IN (
+              'we_enrollment_status_retired',
+              'we_enrollment_status_course_changed',
+              'we_enrollment_status_reprogrammed'
+            ))
+       -- guarda: si pese a la convalidacion tiene matricula viva en esta aula,
+       -- entonces SI asiste y va en la lista activa, no aqui.
+       AND NOT EXISTS (
+              SELECT 1
+                FROM public.enrollments e3
+                JOIN public.customers cu3 ON cu3.customer_id = e3.customer_id
+               WHERE e3.program_edition_id = $1
+                 AND cu3.person_id = per.person_id
+                 AND e3.active = 'Y'
+            )
+     ORDER BY per.last_name, per.first_name
+  `, [id])
+    return rows
+  }
+
   // Crea la tabla classroom_audit_rubric si no existe (auto-migracion idempotente),
   // para que el deploy no dependa de correr migraciones manuales. Tras la primera
   // verificacion exitosa se cachea en memoria y las siguientes llamadas la saltan.

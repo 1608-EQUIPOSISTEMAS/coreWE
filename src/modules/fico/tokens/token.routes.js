@@ -5,8 +5,11 @@ import {
 } from './token.schemas.js'
 import * as ctrl from './token.controller.js'
 
-const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
-const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL']
+// FUNDACION/LIDER_FUNDACION entran aqui porque /fundacion/leads usa el mismo
+// formulario que comercial (useLeadForm) y su boton INSCRIPCION TOKEN pega a
+// estos endpoints. Sin ellos el asesor veia "Error inesperado" (403).
+const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION']
+const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION']
 const LINK_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
 const CONFIRM_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
