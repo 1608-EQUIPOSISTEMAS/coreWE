@@ -1,151 +1,84 @@
 [
   {
-    "enrollment_id": 14980,
+    "enrollment_id": 15687,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 14981,
-        "cat_type_status": 3243
-      }
-    ]
-  },
-  {
-    "enrollment_id": 15012,
-    "cat_type_status": 3100,
-    "hijas": [
-      {
-        "enrollment_id": 15013,
-        "cat_type_status": 3243
-      }
-    ]
-  },
-  {
-    "enrollment_id": 15076,
-    "cat_type_status": 3100,
-    "hijas": []
-  },
-  {
-    "enrollment_id": 15095,
-    "cat_type_status": 3100,
-    "hijas": [
-      {
-        "enrollment_id": 15096,
+        "enrollment_id": 15688,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15097,
+        "enrollment_id": 15689,
         "cat_type_status": 3243
       }
     ]
   },
   {
-    "enrollment_id": 15216,
+    "enrollment_id": 15718,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 15218,
+        "enrollment_id": 15720,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15219,
+        "enrollment_id": 15721,
         "cat_type_status": 3243
       }
     ]
   },
   {
-    "enrollment_id": 15227,
+    "enrollment_id": 15731,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 15228,
+        "enrollment_id": 15732,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15229,
+        "enrollment_id": 15733,
         "cat_type_status": 3243
       }
     ]
   },
   {
-    "enrollment_id": 15288,
+    "enrollment_id": 15740,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 15289,
+        "enrollment_id": 15741,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15290,
+        "enrollment_id": 15742,
         "cat_type_status": 3243
       }
     ]
   },
   {
-    "enrollment_id": 15330,
+    "enrollment_id": 15777,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 15331,
+        "enrollment_id": 15778,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15332,
+        "enrollment_id": 15779,
         "cat_type_status": 3243
       }
     ]
   },
   {
-    "enrollment_id": 15350,
+    "enrollment_id": 15796,
     "cat_type_status": 3100,
     "hijas": [
       {
-        "enrollment_id": 15351,
+        "enrollment_id": 15797,
         "cat_type_status": 3243
       },
       {
-        "enrollment_id": 15352,
-        "cat_type_status": 3243
-      }
-    ]
-  },
-  {
-    "enrollment_id": 15381,
-    "cat_type_status": 3100,
-    "hijas": [
-      {
-        "enrollment_id": 15382,
-        "cat_type_status": 3243
-      },
-      {
-        "enrollment_id": 15383,
-        "cat_type_status": 3243
-      }
-    ]
-  },
-  {
-    "enrollment_id": 670,
-    "cat_type_status": 3100,
-    "hijas": [
-      {
-        "enrollment_id": 5801,
-        "cat_type_status": 3243
-      },
-      {
-        "enrollment_id": 6138,
-        "cat_type_status": 3243
-      }
-    ]
-  },
-  {
-    "enrollment_id": 15571,
-    "cat_type_status": 3100,
-    "hijas": [
-      {
-        "enrollment_id": 15572,
-        "cat_type_status": 3243
-      },
-      {
-        "enrollment_id": 15573,
+        "enrollment_id": 15798,
         "cat_type_status": 3243
       }
     ]

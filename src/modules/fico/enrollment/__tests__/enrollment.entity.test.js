@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DomainError } from '../../../../shared/errors.js'
 import {
   fmtAgent,
+  advisorObservationOrNull,
   composeAdvisorName,
   resolveProgramTypeLabel,
   flattenDailyKpis,
@@ -150,6 +151,15 @@ describe('buildDirectInscription', () => {
   })
   it('is_scholarship solo true si === true', () => {
     expect(buildDirectInscription({ is_scholarship: 'yes' }).is_scholarship).toBe(false)
+  })
+  // Si se cae, la inscripcion a un congreso llega sin categoria de entrada y el
+  // correo sale sin el grupo de WhatsApp ni el detalle de sesiones correcto.
+  it('propaga la categoria de entrada y el asiento del evento', () => {
+    const insc = buildDirectInscription({ cat_event_category: 5069, event_seat: 'A-12' })
+    expect(insc.cat_event_category).toBe(5069)
+    expect(insc.event_seat).toBe('A-12')
+    expect(buildDirectInscription({}).cat_event_category).toBeNull()
+    expect(buildDirectInscription({}).event_seat).toBeNull()
   })
 })
 
@@ -307,5 +317,23 @@ describe('buildReprogramInscription', () => {
     expect(insc.agent_origin).toBe('B2C')
     expect(insc.client_profile).toBe('estudiante')
     expect(insc.installment_plan).toBeNull()
+  })
+})
+
+describe('advisorObservationOrNull', () => {
+  it('devuelve la observacion que escribio el asesor', () => {
+    expect(advisorObservationOrNull('  Copiar al supervisor de la empresa  '))
+      .toBe('Copiar al supervisor de la empresa')
+  })
+
+  it('oculta los marcadores automaticos: no los escribio una persona', () => {
+    expect(advisorObservationOrNull('Registro directo FICO')).toBeNull()
+    expect(advisorObservationOrNull('Importacion masiva FICO')).toBeNull()
+    expect(advisorObservationOrNull('Migracion masiva FICO - membresia WE BLACK (sin pago)')).toBeNull()
+  })
+
+  it('vacio y nulo se tratan igual', () => {
+    expect(advisorObservationOrNull('   ')).toBeNull()
+    expect(advisorObservationOrNull(null)).toBeNull()
   })
 })

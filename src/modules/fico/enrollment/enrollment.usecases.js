@@ -5,6 +5,7 @@ import { isMembership } from '../../../utils/fico-formatters.js'
 import { buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   fmtAgent,
+  advisorObservationOrNull,
   flattenDailyKpis,
   resolveSellerAgentChange,
   assertChecked,
@@ -86,6 +87,12 @@ export async function paymentDetailGet ({ enrollment_id }) {
         result.membership_program_id = ed.membership_program_id || null
         result.membership_program_name = ed.membership_program_name || null
         result.cat_type_status_alias = ed.cat_type_status_alias || null
+        // Correo en copia: el valor guardado, el flag que comercial levanto y la
+        // observacion cruda del asesor (enrollments.notes) que la pidio. FICO ve
+        // los tres en el preview del correo y decide; nunca se parsea la nota.
+        result.email_cc = ed.email_cc || null
+        result.requires_email_cc = ed.requires_email_cc === true
+        result.advisor_observation = advisorObservationOrNull(ed.advisor_observation)
       }
     } catch (err) {
       console.error('[paymentDetailGet] edition dates:', err.message)
@@ -450,11 +457,25 @@ export async function getEnrollmentSnapshot (enrollmentId) {
   return repo.getEnrollmentSnapshot(enrollmentId)
 }
 
-export async function rejectEnrollment ({ enrollmentId, reason, userId }) {
+export async function rejectEnrollment ({ enrollmentId, reason, clearCcRequirement = false, userId }) {
   const data = await repo.getRejectTarget(enrollmentId)
   if (!data) throw new DomainError('Inscripcion no encontrada')
 
   await repo.setObservedStatus(enrollmentId)
+
+  // El flag de copia requerida bloquea el envio del correo. Solo se puede bajar
+  // aca: observar devuelve la venta al asesor, o sea que alguien queda enterado
+  // de que la copia que pidio ya no se va a mandar. Queda en la auditoria.
+  if (clearCcRequirement) {
+    await repo.clearEmailCcRequirement(enrollmentId)
+    await repo.logAudit({
+      enrollmentId,
+      action: 'observed',
+      userId,
+      justificacion: reason,
+      details: 'Requerimiento de correo en copia retirado por FICO'
+    })
+  }
   const snapshot = await repo.getEnrollmentSnapshot(enrollmentId)
 
   await repo.logAudit({

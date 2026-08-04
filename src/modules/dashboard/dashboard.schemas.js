@@ -42,10 +42,33 @@ export const programGoalsSaveSchema = {
           properties: {
             edition_num_id: { type: 'integer' },
             target_vacants: { type: ['integer', 'null'], default: 0 },
-            target_revenue: { type: ['number', 'null'], default: 0 }
+            target_revenue: { type: ['number', 'null'], default: 0 },
+            // Sin default: omitirlos debe dejar las metas de canal como están.
+            target_leads: { type: ['integer', 'null'] },
+            channel_goals: {
+              type: ['object', 'null'],
+              additionalProperties: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  consultas: { type: 'integer', default: 0 },
+                  ventas: { type: 'integer', default: 0 }
+                }
+              }
+            }
           }
         }
       }
+    }
+  }
+}
+
+export const gerenciaFunnelSchema = {
+  body: {
+    type: 'object',
+    properties: {
+      year: { type: 'integer', default: 2026 },
+      month_num: { type: 'integer', default: 1 }
     }
   }
 }

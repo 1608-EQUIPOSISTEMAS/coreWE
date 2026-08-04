@@ -15,6 +15,11 @@ export async function programGoalsHandler (req, reply) {
   return reply.send({ ok: true, data })
 }
 
+export async function gerenciaFunnelHandler (req, reply) {
+  const data = await usecases.gerenciaFunnelList(req.body)
+  return reply.send({ ok: true, data })
+}
+
 export async function programGoalsSaveHandler (req, reply) {
   const data = await usecases.saveProgramGoals({ goals: req.body.goals, userId: req.user.id })
   return reply.send({ ok: true, data })

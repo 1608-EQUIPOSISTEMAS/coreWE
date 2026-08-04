@@ -83,6 +83,33 @@ async function buildCronogramaAttachment ({ enrollmentId, programName }) {
   }
 }
 
+// CC del envio, con las dos reglas del flujo comercial -> FICO:
+//
+//   1. PERSISTE. El CC que FICO escribe en el preview se pega al enrollment, asi
+//      las cuotas, la membresia y el RP heredado salen con copia sin re-tipearlo.
+//   2. BLOQUEA. Si comercial marco `requires_email_cc` y no hay CC por ningun
+//      lado, no sale el correo. Es el mismo gate que la UI, repetido aca porque
+//      hay entradas que no pasan por el preview (panel lateral, reenvios, cola).
+//      Bajar el flag es decision de FICO y pasa por observar la inscripcion.
+//
+// Devuelve { list, error }: si `error` viene, el caller aborta sin enviar.
+const CC_REQUIRED_ERROR = 'Esta venta requiere correo en copia: el asesor lo pidio al enviarla. Ingresa el CC en el preview antes de enviar, o quita el requerimiento observando la inscripcion.'
+
+async function resolveCcForSend ({ enrollmentId, cc, stored }) {
+  const list = resolveCc(cc, stored)
+
+  if (list.length > 0) {
+    const joined = list.join(',')
+    if (joined !== (stored || '')) {
+      await safeAsync('[resolveCcForSend] persistir email_cc', () => repo.saveEmailCc(enrollmentId, joined))
+    }
+    return { list }
+  }
+
+  const requires = await repo.requiresEmailCc(enrollmentId)
+  return requires ? { list, error: CC_REQUIRED_ERROR } : { list }
+}
+
 // Determina si el correo de confirmacion va como alumno nuevo o retornante.
 async function resolveModeFromDb ({ enrollmentId, odooEmail }) {
   const isFirstSend = !(await repo.hasPriorSuccessfulSend(enrollmentId, 'confirmacion'))
@@ -360,7 +387,8 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   })
 
   // CC en cascada: parametro explicito (override) -> enrollments.email_cc.
-  const ccResolved = resolveCc(cc, data.email_cc)
+  const { list: ccResolved, error: ccError } = await resolveCcForSend({ enrollmentId, cc, stored: data.email_cc })
+  if (ccError) return { success: false, error: ccError }
   const ccForTransport = ccResolved.length > 0 ? ccResolved : undefined
 
   const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
@@ -421,7 +449,8 @@ export async function sendPaymentConfirmationEmail ({ enrollmentId, cc }) {
     ? `Pago Completado - ${data.program_name || 'WE Educacion'}`
     : `Confirmacion de Cuota - ${data.program_name || 'WE Educacion'}`
 
-  const ccResolved = resolveCc(cc, data.email_cc)
+  const { list: ccResolved, error: ccError } = await resolveCcForSend({ enrollmentId, cc, stored: data.email_cc })
+  if (ccError) return { success: false, error: ccError }
   const result = await deps.sendFicoEmail({
     to: toEmail,
     subject,
@@ -533,7 +562,8 @@ async function sendMembershipEmailInner ({ enrollmentId, cc }) {
 
   const tipo = detectMembershipType(data.program_name)
   const subject = `Bienvenido a tu Membresia ${tipo} - WE Educacion`
-  const ccResolved = resolveCc(cc, data.email_cc)
+  const { list: ccResolved, error: ccError } = await resolveCcForSend({ enrollmentId, cc, stored: data.email_cc })
+  if (ccError) return { success: false, error: ccError }
   // Las membresias se mandan desde pagos@we-educacion.com (mismo sender que el GAS).
   const result = await deps.sendEmail({
     to: toEmail,

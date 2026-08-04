@@ -210,6 +210,8 @@ export const enrollmentRegisterSchema = {
           b2b_contract_id: { type: ['integer', 'null'] },
           // Categoria de entrada (VIP/GENERAL/PREMIUM/VIRTUAL) para eventos.
           cat_event_category: { type: ['integer', 'null'] },
+          // Asiento asignado de la entrada VIP.
+          event_seat: { type: ['string', 'null'] },
 
           ticket_payment_urls: {
             type: 'array',

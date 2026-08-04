@@ -12,6 +12,22 @@ export const PAID_INSTALLMENT_CAT_IDS = [4454, 2471]
 // Ventana maxima de activacion diferida de membresias (meses).
 export const MEMBERSHIP_ACTIVATION_WINDOW_MONTHS = 6
 
+// enrollments.notes guarda la observacion que escribio el asesor, pero tambien
+// los marcadores que ponen los flujos automaticos cuando no hay observacion
+// ('Registro directo FICO', 'Importacion masiva FICO', 'Migracion masiva...').
+// El panel de FICO solo debe mostrar texto que escribio una persona.
+const SYSTEM_NOTE_PREFIXES = [
+  'Registro directo FICO',
+  'Importacion masiva FICO',
+  'Migracion masiva FICO'
+]
+
+export function advisorObservationOrNull (notes) {
+  const text = (notes || '').trim()
+  if (!text) return null
+  return SYSTEM_NOTE_PREFIXES.some(p => text.startsWith(p)) ? null : text
+}
+
 // Composicion del nombre de "Asesor" tal como se muestra en el listado FICO y
 // en los audit logs: 'origin - alias' / alias / origin / placeholder.
 export function fmtAgent (alias, origin) {
@@ -143,6 +159,11 @@ export function buildDirectInscription (data) {
     program_version_id: data.program_version_id,
     program_edition_id: data.program_edition_id,
     cat_insc_modality: data.cat_insc_modality,
+    // Categoria de entrada del evento. El SP no la conoce: registerDirect la
+    // escribe aparte (ver utils/inscription-loose-fields.js).
+    cat_event_category: data.cat_event_category || null,
+    // Asiento asignado de la entrada VIP.
+    event_seat: data.event_seat || null,
     cat_payment_channel: data.cat_payment_channel || null,
     cat_currency: data.cat_currency,
     cat_payment_way: data.cat_payment_way,

@@ -1,5 +1,6 @@
 import { pool } from '../../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../../shared/db/sp.js'
+import { saveLooseInscriptionFields } from '../../../utils/inscription-loose-fields.js'
 
 // Aliases de situacion del lead que marcan canal B2B. Cualquiera de los dos
 // activa el prefijo 'B2B - ' en los nombres de asesor del token y el flag is_b2b.
@@ -329,18 +330,11 @@ export class TokenRepository {
     const res = rows?.[0] || null
 
     // Mismo UPDATE aparte que comercial.repository.enrollmentRegister: el SP no
-    // conoce cat_event_category. Sin esto, un congreso de fundacion vendido por
-    // token pierde la categoria de entrada (VIP/GENERAL/PREMIUM) al confirmarse.
-    // No revierte la inscripcion si falla: la venta ya quedo registrada.
-    if (res?.result === 1 && res.enrollment_id && payload?.inscription?.cat_event_category) {
-      try {
-        await this.db.query(
-          'UPDATE public.enrollments SET cat_event_category = $1 WHERE enrollment_id = $2',
-          [payload.inscription.cat_event_category, res.enrollment_id]
-        )
-      } catch (err) {
-        console.error('[registerEnrollment] no se pudo guardar cat_event_category:', err.message)
-      }
+    // conoce estos campos. Sin esto, un congreso de fundacion vendido por token
+    // pierde la categoria de entrada (VIP/GENERAL/PREMIUM) y el correo en copia
+    // que pidio el asesor se perderia al confirmarse el token.
+    if (res?.result === 1 && res.enrollment_id) {
+      await saveLooseInscriptionFields(this.db, res.enrollment_id, payload?.inscription || {})
     }
     return res
   }

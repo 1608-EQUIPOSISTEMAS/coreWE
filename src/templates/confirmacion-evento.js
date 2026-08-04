@@ -49,7 +49,10 @@ export function buildConfirmacionEventoHTML (data) {
     bannerUrl,
     whatsappLink,
     certificateFormLink,
-    businessCardLink
+    businessCardLink,
+    // Solo llega con contenido en las entradas VIP: el render lo filtra por
+    // categoria antes de pasarlo (ver email-confirmation.render.js).
+    seat = null
   } = data
 
   const nombre = capitalizeName(studentName)
@@ -63,6 +66,18 @@ export function buildConfirmacionEventoHTML (data) {
   const categoryBadge = categoryLabel
     ? `<table align="center" style="margin-top:6px"><tr><td style="padding:3px 14px;border-radius:12px;background-color:#fef3c7;border:1px solid #fde68a">
          <font face="Tahoma" size="2" color="#92400e"><strong>ENTRADA ${String(categoryLabel).toUpperCase()}</strong></font>
+       </td></tr></table>`
+    : ''
+
+  // Asiento asignado de la entrada VIP. Va inmediatamente debajo del badge de
+  // categoria porque es el dato que la persona busca al llegar a la sala, y en
+  // cuerpo grande para que se lea de un vistazo en el celular. Se omite entero
+  // en cualquier entrada que no sea VIP.
+  const seatText = String(seat || '').trim()
+  const seatBlock = seatText
+    ? `<table align="center" style="margin-top:10px"><tr><td style="padding:10px 26px;border-radius:9px;background-color:#fffbeb;border:1px solid #fde68a" align="center">
+         <font face="Tahoma" size="2" color="#92400e"><strong>TU ASIENTO</strong></font><br>
+         <font face="Tahoma" size="6" color="#92400e"><strong>${escapeMultiline(seatText)}</strong></font>
        </td></tr></table>`
     : ''
 
@@ -111,6 +126,7 @@ export function buildConfirmacionEventoHTML (data) {
           <font face="Tahoma" size="4"><strong>${evento}</strong></font>
           ${categoryBadge}
           ${sessionBlock}
+          ${seatBlock}
         </td></tr>
       </table>
 

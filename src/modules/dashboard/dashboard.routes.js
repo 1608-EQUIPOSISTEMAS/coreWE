@@ -3,6 +3,7 @@ import {
   dashboardListSchema,
   programGoalsSchema,
   programGoalsSaveSchema,
+  gerenciaFunnelSchema,
   leadsPerEditionSchema,
   targetRegisterSchema,
   detailLeadsSchema,
@@ -21,6 +22,7 @@ export default async function dashboardRoutes (fastify) {
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
   fastify.post('/program-goals/save', { schema: programGoalsSaveSchema }, ctrl.programGoalsSaveHandler)
+  fastify.post('/gerencia-funnel', { schema: gerenciaFunnelSchema, preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.gerenciaFunnelHandler)
   fastify.post('/leads-per-edition', { schema: leadsPerEditionSchema }, ctrl.leadsPerEditionHandler)
   fastify.post('/dashboardtargetregister', { schema: targetRegisterSchema }, ctrl.targetRegisterHandler)
   fastify.post('/detailleads', { schema: detailLeadsSchema }, ctrl.detailLeadsHandler)

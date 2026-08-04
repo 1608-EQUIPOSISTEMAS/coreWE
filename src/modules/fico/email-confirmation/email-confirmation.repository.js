@@ -52,6 +52,7 @@ export class EmailConfirmationRepository {
              prog.cat_type_program,
              c_type.alias AS program_type_alias,
              e.cat_event_category,
+             e.event_seat,
              c_evt.alias AS event_category_alias,
              c_evt.description AS event_category_label,
              ecp.whatsapp_link AS event_whatsapp_link,
@@ -100,6 +101,7 @@ export class EmailConfirmationRepository {
              prog.cat_type_program,
              c_type.alias AS program_type_alias,
              e.cat_event_category,
+             e.event_seat,
              c_evt.alias AS event_category_alias,
              c_evt.description AS event_category_label,
              ecp.whatsapp_link AS event_whatsapp_link,
@@ -214,6 +216,24 @@ export class EmailConfirmationRepository {
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
     return rows?.[0] || null
+  }
+
+  // Correo en copia: se persiste el CC que FICO confirmo en el preview para que
+  // los envios posteriores (cuota, membresia, RP heredado) lo hereden.
+  async saveEmailCc (enrollmentId, ccJoined) {
+    await this.db.query(
+      'UPDATE public.enrollments SET email_cc = $1 WHERE enrollment_id = $2',
+      [ccJoined, enrollmentId]
+    )
+  }
+
+  // Flag que levanta comercial al mandar la venta: bloquea el envio sin CC.
+  async requiresEmailCc (enrollmentId) {
+    const { rows } = await this.db.query(
+      'SELECT requires_email_cc FROM public.enrollments WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+    return rows?.[0]?.requires_email_cc === true
   }
 
   // Credenciales SAP que el operador ingreso a mano, persistidas como registro

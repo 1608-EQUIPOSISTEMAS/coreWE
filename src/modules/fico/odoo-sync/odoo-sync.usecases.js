@@ -4,6 +4,7 @@ import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
 import { buildUniqueOdooEmail, buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
+import { isEventEnrollment } from '../../../shared/event-category.js'
 import { odooSyncRepository } from './odoo-sync.repository.js'
 import {
   ODOO_DEFAULT_PASSWORD,
@@ -108,6 +109,16 @@ async function createOdooOrderAndActivate ({ enrollmentId, result, odooActivatio
 // genera la orden de venta con cuotas y activa los fees. Firma compatible con el
 // job-worker (step odoo de register_followup).
 export async function enrollInOdoo ({ enrollmentId }) {
+  // Un congreso no se dicta en el campus: no hay curso al que inscribir ni
+  // odoo_activation configurado. Sin este skip el step 'odoo' del job
+  // register_followup revienta con "El programa no tiene configurado
+  // odoo_activation" y el step 'email' (que va despues) nunca corre: la
+  // inscripcion al evento se queda sin correo de confirmacion.
+  if (await isEventEnrollment(enrollmentId)) {
+    console.log(`[enrollInOdoo] Skip - enrollment #${enrollmentId} es de evento/congreso (no se dicta en el campus).`)
+    return { success: true, skipped: true, reason: 'event', odoo_user_id: null }
+  }
+
   // Skip si la inscripcion esta en E0 (program_edition_id NULL) Y es padre con hijos.
   // En ese caso los hijos se inscriben individualmente; el padre no se sincroniza con Odoo.
   const e0Check = await repo.findE0Check(enrollmentId)

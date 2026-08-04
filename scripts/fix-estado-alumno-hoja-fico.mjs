@@ -86,7 +86,9 @@ for (const o of objetivo) {
 }
 
 if (aplicar && backup.length) {
-  await writeFile(new URL('./_backup_estados_hoja_fico.json', import.meta.url), JSON.stringify(backup, null, 2))
+  // Un respaldo por CSV de origen: dos tandas distintas no se pisan.
+  const nombre = `_backup_estados_${csv.replace(/^.*[\\/]/, '').replace(/\.csv$/i, '')}.json`
+  await writeFile(new URL(`./${nombre}`, import.meta.url), JSON.stringify(backup, null, 2))
   await q('REFRESH MATERIALIZED VIEW public.mv_enrollment_report_system')
   console.log(`\naplicado a ${backup.length} inscripcion(es); respaldo en scripts/_backup_estados_hoja_fico.json; matview refrescada`)
 } else {

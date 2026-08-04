@@ -15,6 +15,7 @@ import { isSinglePayment } from './email-confirmation.entity.js'
 
 const EVENT_PROGRAM_TYPE_ALIAS = 'we_program_type_event'
 const VIRTUAL_TICKET_ALIAS = 'we_event_category_virtual'
+const VIP_TICKET_ALIAS = 'we_event_category_vip'
 
 // Un enrollment es de evento si tiene categoria de entrada asignada O si el
 // tipo de programa es evento.
@@ -71,6 +72,10 @@ export function renderConfirmationEmail ({
         categoryLabel: data.event_category_label || '',
         sessionDetail: resolveSessionDetail(data, isVirtualTicket),
         bannerUrl: bannerUrl || data.banner_link || '',
+        // El asiento asignado es propio de la entrada VIP. Se filtra aca y no
+        // en la plantilla para que un cambio de categoria (VIP -> GENERAL) deje
+        // de mostrarlo sin tener que borrar el dato.
+        seat: data.event_category_alias === VIP_TICKET_ALIAS ? data.event_seat : null,
         // Cada categoria tiene su propio grupo (los VIP no van al de los
         // VIRTUAL). El de la edicion queda como red: eventos configurados
         // antes de que existiera el link por categoria siguen funcionando.

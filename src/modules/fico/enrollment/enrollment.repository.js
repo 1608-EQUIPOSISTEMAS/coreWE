@@ -18,6 +18,7 @@ import { enqueue as enqueueJob, getLatestJobByEnrollment } from '../../../servic
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
 import slackClient from '../../../config/slack.js'
 import { parseEmailCc } from '../../../utils/email-cc.js'
+import { saveLooseInscriptionFields } from '../../../utils/inscription-loose-fields.js'
 
 // Puertos de efectos cruzados de otros subdominios FICO (audit/odoo/email/hijos),
 // cableados por el composition root (fico.bootstrap.js). logAudit es best-effort
@@ -124,7 +125,10 @@ export class EnrollmentRepository {
              e.membership_activation_date,
              e.membership_program_id,
              mp.program_name AS membership_program_name,
-             cts.alias AS cat_type_status_alias
+             cts.alias AS cat_type_status_alias,
+             e.email_cc,
+             e.requires_email_cc,
+             e.notes AS advisor_observation
       FROM enrollments e
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
@@ -288,7 +292,22 @@ export class EnrollmentRepository {
       [userId, JSON.stringify({ inscription })],
       { statementTimeoutMs: 25000 }
     )
-    return rows?.[0] || { result: 0, message: 'Sin respuesta del SP' }
+    const res = rows?.[0] || { result: 0, message: 'Sin respuesta del SP' }
+    // Campos que el SP no conoce (categoria de entrada del evento). Mismo
+    // camino que comercial: un UPDATE aparte que nunca revierte el alta.
+    if (res.result === 1 && res.enrollment_id) {
+      await saveLooseInscriptionFields(pool, res.enrollment_id, inscription)
+    }
+    return res
+  }
+
+  // Baja el flag que bloquea el envio sin copia. Solo lo llama la observacion
+  // de la inscripcion (ver rejectEnrollment): no hay otra via para desactivarlo.
+  async clearEmailCcRequirement (enrollmentId) {
+    await this.db.query(
+      'UPDATE enrollments SET requires_email_cc = false WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
   }
 
   async saveEmailCc (enrollmentId, ccArray) {

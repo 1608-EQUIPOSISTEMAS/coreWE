@@ -178,6 +178,7 @@ export async function rejectEnrollmentHandler (req, reply) {
   const data = await usecases.rejectEnrollment({
     enrollmentId: req.body.enrollment_id,
     reason: req.body.reason,
+    clearCcRequirement: req.body.clear_cc_requirement === true,
     userId: req.user?.id ?? req.body.user_id
   })
   return reply.code(200).send({ ok: true, data })

@@ -167,15 +167,32 @@ export class DashboardRepository {
     return rows
   }
 
+  // Embudo consultas -> ventas por edición y canal (reporte de Gerencia).
+  async gerenciaFunnel ({ year, month_num }) {
+    const sql = `
+    SELECT * FROM public.v_gerencia_funnel
+    WHERE anio = $1
+      AND mes_num = $2
+    ORDER BY fecha_inicio ASC
+  `
+    const { rows } = await this.db.query(sql, [year, month_num])
+    return rows
+  }
+
   // Upsert masivo de metas por edición (UNIQUE en edition_num_id).
   async saveProgramGoals ({ goals, userId }) {
     const sql = `
       INSERT INTO public.program_edition_goals
-        (edition_num_id, vacant_goal, revenue_goal, user_registration_id)
-      SELECT * FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[])
+        (edition_num_id, vacant_goal, revenue_goal, lead_goal, channel_goals, user_registration_id)
+      SELECT * FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[], $5::jsonb[], $6::int[])
+      -- Producto->Cronograma llama a este mismo upsert sin mandar lead_goal ni
+      -- channel_goals: sin el COALESCE, guardar desde ahi borraria las metas de
+      -- canal que Gerencia cargo. null = "no me lo mandaron", no "ponlo en cero".
       ON CONFLICT (edition_num_id) DO UPDATE SET
         vacant_goal = EXCLUDED.vacant_goal,
         revenue_goal = EXCLUDED.revenue_goal,
+        lead_goal = COALESCE(EXCLUDED.lead_goal, program_edition_goals.lead_goal),
+        channel_goals = COALESCE(EXCLUDED.channel_goals, program_edition_goals.channel_goals),
         user_modification_id = EXCLUDED.user_registration_id,
         modification_date = now()
     `
@@ -183,6 +200,8 @@ export class DashboardRepository {
       goals.map(g => g.edition_num_id),
       goals.map(g => g.target_vacants ?? 0),
       goals.map(g => g.target_revenue ?? 0),
+      goals.map(g => g.target_leads ?? null),
+      goals.map(g => (g.channel_goals ? JSON.stringify(g.channel_goals) : null)),
       goals.map(() => userId)
     ]
     const { rowCount } = await this.db.query(sql, params)

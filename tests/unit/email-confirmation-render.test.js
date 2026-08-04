@@ -148,6 +148,50 @@ describe('renderConfirmationEmail', () => {
     expect(html).toContain('https://chat.whatsapp.com/EDICION')
   })
 
+  // El asiento es propio de la entrada VIP. Si esto se cae, o el VIP llega a la
+  // sala sin saber donde sentarse, o una entrada GENERAL muestra un asiento
+  // que nadie le asigno.
+  it('muestra el asiento en la entrada VIP', () => {
+    const { html } = renderConfirmationEmail({
+      ...CTX,
+      data: {
+        ...BASE,
+        cat_event_category: 5103,
+        event_category_alias: 'we_event_category_vip',
+        event_seat: 'A-12'
+      }
+    })
+    expect(html).toContain('TU ASIENTO')
+    expect(html).toContain('A-12')
+  })
+
+  it('no lo muestra fuera de VIP aunque el dato exista', () => {
+    const { html } = renderConfirmationEmail({
+      ...CTX,
+      data: {
+        ...BASE,
+        cat_event_category: 5100,
+        event_category_alias: 'we_event_category_general',
+        event_seat: 'A-12'
+      }
+    })
+    expect(html).not.toContain('TU ASIENTO')
+    expect(html).not.toContain('A-12')
+  })
+
+  it('sin asiento no emite el bloque', () => {
+    const { html } = renderConfirmationEmail({
+      ...CTX,
+      data: {
+        ...BASE,
+        cat_event_category: 5103,
+        event_category_alias: 'we_event_category_vip',
+        event_seat: null
+      }
+    })
+    expect(html).not.toContain('TU ASIENTO')
+  })
+
   it('online sin evento usa la plantilla online', () => {
     const { kind } = renderConfirmationEmail({
       ...CTX,

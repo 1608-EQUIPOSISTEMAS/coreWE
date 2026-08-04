@@ -3,6 +3,7 @@ import { aggregateVentasCanal } from './dashboard.entity.js'
 import {
   toDashboardDto,
   toProgramGoalsDto,
+  toGerenciaFunnelDto,
   toLiderDto,
   toContactabilityDto,
   toAvailableWeeksDto,
@@ -84,6 +85,12 @@ export async function programGoalsList (payload = {}) {
   const { year = 2026, month_num = 1 } = payload
   const rows = await repo.programGoals({ year, month_num })
   return toProgramGoalsDto(rows)
+}
+
+export async function gerenciaFunnelList (payload = {}) {
+  const { year = 2026, month_num = 1 } = payload
+  const rows = await repo.gerenciaFunnel({ year, month_num })
+  return toGerenciaFunnelDto(rows)
 }
 
 export async function saveProgramGoals ({ goals = [], userId }) {

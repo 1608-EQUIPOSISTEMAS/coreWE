@@ -1,6 +1,7 @@
 import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { attachEventCategory } from '../../shared/event-category.js'
+import { saveLooseInscriptionFields } from '../../utils/inscription-loose-fields.js'
 
 // Persistencia del dominio comercial. Envuelve los stored procedures
 // sp_comercial_* y el SQL directo de leads, inscripciones y busquedas que el
@@ -96,22 +97,10 @@ export class ComercialRepository {
     )
     const res = rows?.[0] || { result: 0, message: 'No response from DB', enrollment_id: null }
 
-    // ponytail: la categoria de entrada se escribe con un UPDATE aparte en vez
-    // de meterla dentro de sp_comercial_enrollment_register. Es un campo suelto
-    // que no participa de ningun calculo del SP, y asi no hay que reescribir un
-    // procedimiento grande. Si algun dia el SP necesita leerla, mover el campo
-    // al JSON y borrar esto.
-    // No revierte la inscripcion si falla: la venta ya quedo registrada y el
-    // dato es de reporte. Queda en log para poder corregirlo.
-    if (res.result === 1 && res.enrollment_id && payload?.inscription?.cat_event_category) {
-      try {
-        await this.db.query(
-          'UPDATE public.enrollments SET cat_event_category = $1 WHERE enrollment_id = $2',
-          [payload.inscription.cat_event_category, res.enrollment_id]
-        )
-      } catch (err) {
-        console.error('[enrollmentRegister] no se pudo guardar cat_event_category:', err.message)
-      }
+    // Campos sueltos que el SP no conoce (categoria de entrada, correo en copia
+    // y el flag de copia requerida). Ver utils/inscription-loose-fields.js.
+    if (res.result === 1 && res.enrollment_id) {
+      await saveLooseInscriptionFields(this.db, res.enrollment_id, payload?.inscription || {})
     }
     return res
   }

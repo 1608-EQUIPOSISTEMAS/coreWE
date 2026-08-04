@@ -94,6 +94,63 @@ export function mapProgramGoalRow (r) {
   }
 }
 
+// Los 4 grupos y 3 momentos del embudo. El orden es el del reporte, no alfabetico.
+export const FUNNEL_GROUPS = ['MARKETING', 'WEB', 'COMERCIAL', 'OTROS']
+export const FUNNEL_MOMENTS = ['NUEVO', 'LEAD', 'COMUNIDAD']
+
+// Fila de v_gerencia_funnel a DTO del reporte de Gerencia. Aplana `canales` y
+// `metas_canal` (dos jsonb con la misma clave GRUPO_MOMENTO) en una sola lista,
+// para que el front no tenga que cruzarlos celda por celda.
+export function mapGerenciaFunnelRow (r) {
+  const reales = parseJsonbObject(r.canales)
+  const metas = parseJsonbObject(r.metas_canal)
+
+  const canales = []
+  for (const grupo of FUNNEL_GROUPS) {
+    for (const momento of FUNNEL_MOMENTS) {
+      const key = `${grupo}_${momento}`
+      const real = reales[key] || {}
+      const meta = metas[key] || {}
+      const consultas = Number(real.consultas || 0)
+      const ventas = Number(real.ventas || 0)
+      const metaConsultas = Number(meta.consultas || 0)
+      const metaVentas = Number(meta.ventas || 0)
+      // Una celda sin meta ni movimiento no aporta: no la mandamos.
+      if (!consultas && !ventas && !metaConsultas && !metaVentas) continue
+      canales.push({ key, grupo, momento, consultas, ventas, meta_consultas: metaConsultas, meta_ventas: metaVentas })
+    }
+  }
+
+  const consultas = Number(r.consultas || 0)
+  const ventas = Number(r.ventas || 0)
+
+  return {
+    edition_id: r.edition_num_id,
+    categoria: r.categoria,
+    linea: r.linea,
+    programa: r.programa,
+    tipo: r.tipo,
+    inicio: r.fecha_inicio,
+    codigo: r.codigo_edicion,
+    meta_consultas: Number(r.meta_consultas || 0),
+    meta_ventas: Number(r.meta_ventas || 0),
+    meta_monto: Number(r.meta_monto || 0),
+    consultas,
+    ventas,
+    venta_monto: Number(r.venta_monto || 0),
+    // Ventas con lead detras. `ventas - ventas_trazadas` = venta sin canal conocido.
+    ventas_trazadas: Number(r.ventas_trazadas || 0),
+    // La metrica que la hoja nunca calcula, teniendo ambas columnas al lado.
+    conversion_pct: consultas > 0 ? Math.round((ventas / consultas) * 1000) / 10 : null,
+    canales
+  }
+}
+
+// Igual que parseJsonbField pero el vacio es objeto, no array.
+function parseJsonbObject (val) {
+  return typeof val === 'string' ? JSON.parse(val) : (val || {})
+}
+
 // Fila de v_dashboard_lider a DTO de liderazgo.
 export function mapLiderRow (r) {
   return {

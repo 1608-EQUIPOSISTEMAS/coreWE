@@ -244,7 +244,9 @@ export const rejectEnrollmentSchema = {
     additionalProperties: true,
     properties: {
       enrollment_id: { type: 'integer' },
-      reason: { type: 'string', minLength: 1 }
+      reason: { type: 'string', minLength: 1 },
+      // Unica via para bajar el flag de copia requerida que levanto comercial.
+      clear_cc_requirement: { type: 'boolean' }
     }
   }
 }

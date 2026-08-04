@@ -139,6 +139,36 @@ describe('templates/confirmacion-evento', () => {
     expect(html).toMatchSnapshot()
   })
 
+  // Cada entrada VIP tiene su asiento: es lo que la persona busca al llegar.
+  it('entrada VIP con asiento asignado', () => {
+    const html = buildConfirmacionEventoHTML({
+      studentName: 'ana',
+      eventName: 'V Congreso de Direccion de Proyectos',
+      categoryLabel: 'VIP',
+      sessionDetail: 'Dia 1: Viernes 5 de Setiembre - Hotel Marriott, Miraflores',
+      bannerUrl: '',
+      whatsappLink: 'https://chat.whatsapp.com/FIXTUREVIP',
+      certificateFormLink: '',
+      businessCardLink: '',
+      seat: 'A-12'
+    })
+    expect(html).toMatchSnapshot()
+  })
+
+  // El asiento lo tipea un operador y va directo al HTML de un correo.
+  it('escapa el asiento', () => {
+    const html = buildConfirmacionEventoHTML({
+      studentName: 'test',
+      eventName: 'Evento',
+      categoryLabel: 'VIP',
+      sessionDetail: '',
+      bannerUrl: '', whatsappLink: '', certificateFormLink: '', businessCardLink: '',
+      seat: '<script>alert(1)</script>'
+    })
+    expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html).toContain('&lt;script&gt;')
+  })
+
   it('escapa el texto libre del detalle de sesiones', () => {
     const html = buildConfirmacionEventoHTML({
       studentName: 'test',

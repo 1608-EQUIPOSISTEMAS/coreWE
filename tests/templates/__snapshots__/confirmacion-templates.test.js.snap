@@ -243,6 +243,149 @@ exports[`templates/bienvenida-membresia > membresia GOLD 1`] = `
 </html>"
 `;
 
+exports[`templates/confirmacion-evento > entrada VIP con asiento asignado 1`] = `
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Inscripción</title>
+</head>
+<body>
+
+    <!-- HEADER -->
+  <header>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td></td></tr>
+      </table>
+    </div>
+  </header>
+
+  <main>
+    <div>
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="5"><strong>¡Hola, Ana!</strong></font>
+          <br><br>
+          <font face="Tahoma" size="4">Estamos encantados de que formes parte de nuestra comunidad WE</font>
+          <br>
+          <font face="Tahoma" size="4">Confirmamos tu inscripción al:</font>
+          <br><br>
+          <font face="Tahoma" size="4"><strong>V CONGRESO DE DIRECCION DE PROYECTOS</strong></font>
+          <table align="center" style="margin-top:6px"><tr><td style="padding:3px 14px;border-radius:12px;background-color:#fef3c7;border:1px solid #fde68a">
+         <font face="Tahoma" size="2" color="#92400e"><strong>ENTRADA VIP</strong></font>
+       </td></tr></table>
+          <div style="margin-top:14px">
+         <font face="Tahoma" size="4">Dia 1: Viernes 5 de Setiembre - Hotel Marriott, Miraflores</font>
+       </div>
+          <table align="center" style="margin-top:10px"><tr><td style="padding:10px 26px;border-radius:9px;background-color:#fffbeb;border:1px solid #fde68a" align="center">
+         <font face="Tahoma" size="2" color="#92400e"><strong>TU ASIENTO</strong></font><br>
+         <font face="Tahoma" size="6" color="#92400e"><strong>A-12</strong></font>
+       </td></tr></table>
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr align="center"><td>
+          <br>
+          <font face="Tahoma" size="4"><strong>IMPORTANTE:</strong> 48 horas antes del evento, te enviaremos por correo electrónico los detalles para acceder al mismo.</font>
+          <br><br>
+          <hr width="400px" align="center">
+        </td></tr>
+      </table>
+
+      <table align="center" style="width:100%;max-width:500px">
+        <tr><td>
+          <font face="Tahoma" size="4"><strong>RECUERDA:</strong></font>
+          <ol>
+            <li><font face="Tahoma" size="3">Es importante completar la FICHA DE REGISTRO (Datos como figura en el DNI) para la certificación.</font></li>
+            <li><font face="Tahoma" size="3">Cualquier error en los datos personales del formulario será responsabilidad del participante.</font></li>
+            <li><font face="Tahoma" size="3">La emisión de un nuevo certificado tendrá un costo adicional.</font></li>
+            <li><font face="Tahoma" size="3">Sube aquí tu tarjeta de presentación y conecta con profesionales, empresas y personas que apuestan por el crecimiento y la colaboración.</font></li>
+          </ol>
+        </td></tr>
+      </table>
+
+      <table align="center" style="padding: 7px;border-radius:9px;background-color:rgb(240,173,20); width: 450px; margin-top: 10px;">
+        <tr align="center"><td>
+          <a href="https://chat.whatsapp.com/FIXTUREVIP" target="_blank" style="text-decoration-line:none;color: white;">
+            <FONT FACE="tahoma" size="4"><strong>ÚNETE A GRUPO DE WHATSAPP AQUÍ</strong></FONT>
+          </a>
+        </td></tr>
+      </table>
+    </div>
+  </main>
+
+    <!-- FOOTER -->
+  <footer>
+  <hr width="400px" align="center">
+
+  <table align="center">
+    <tr>
+        <td><a href="https://www.facebook.com/WE.Educacion" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ruZs5Q4oCfD6VTLuljARmfLD5R08b573" style="width:35px"></a></td>
+        <td><a href="https://we-educacion.com/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1KP1A8uyvC548JcDFU0pAJcdxjwLIdrZL" style="width: 35px;"></a></td>
+        <td><a href="https://www.instagram.com/we.educacion/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1iDkuUEUx7cB2i2UujZDYEiJlmEiZSrIO" style="width:35px"></a></td>
+        <td><a href="https://www.youtube.com/channel/UC1S6B-SesTdxvQvzpib3gYA?view_as=subscriber" target="_blank"><img src="https://lh3.googleusercontent.com/d/1ts8pZaf5tWpZdnq_yW9ZlLJ7skV-r8u-" style="width:35px"></a></td>
+        <td><a href="https://pe.linkedin.com/school/we-educacion-ejecutiva1/" target="_blank"><img src="https://lh3.googleusercontent.com/d/1cVuOKQb2NlxblGfvYwGc1AKoO4yXtKxF" style="width:35px"></a></td>
+        <td><a href="https://www.tiktok.com/@weeducacionejecutiva" target="_blank"><img src="https://lh3.googleusercontent.com/d/1XHO8x0z4BmS1UczTBuQmL1WV5lB3kUTw" style="width: 35px;"></a></td>
+    </tr>
+  </table>
+
+  <p style="text-align:center">
+    <font face="Tahoma" size="3">Síguenos en nuestras redes para seguir en contacto</font>
+  </p>
+
+  <br>
+  <br>
+
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <br>
+
+  <div style="width: 100%; max-width: 500px;">
+      <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
+           alt="Empresas que confían en nosotros"
+           style="width: 100%; height: auto; display: block;">
+  </div>
+
+  <br>
+
+  <div style="font-family: Tahoma, sans-serif; font-size: 11px; color: #cc0000; font-style: italic; line-height: 1.4;">
+    <ol type="1" style="margin-top: 0; padding-left: 20px;">
+      <li style="margin-bottom: 5px;">No se aceptan cambios ni devoluciones posteriores al pago</li>
+      <li style="margin-bottom: 5px;">WE se reserva el derecho de apertura de curso sujeto al mínimo de participantes, la apertura se confirmará 2 días previos al inicio del curso.</li>
+      <li>WE se reserva el derecho a cambio o modificación de plana docentes en caso de fuerza mayor</li>
+    </ol>
+  </div>
+
+  </footer>
+
+</body>
+</html>"
+`;
+
 exports[`templates/confirmacion-evento > entrada VIRTUAL con los tres botones 1`] = `
 "<!DOCTYPE html>
 <html lang="es">
@@ -280,6 +423,7 @@ exports[`templates/confirmacion-evento > entrada VIRTUAL con los tres botones 1`
           <div style="margin-top:14px">
          <font face="Tahoma" size="4">Dia 1: Viernes 19 de Junio de 5pm a 9:20pm - Via Zoom (Hora Peru)<br>Dia 2: Sabado 20 de Junio de 9am a 1pm - Via Zoom (Hora Peru)</font>
        </div>
+          
         </td></tr>
       </table>
 
@@ -433,6 +577,7 @@ exports[`templates/confirmacion-evento > entrada presencial sin banner ni links 
           <div style="margin-top:14px">
          <font face="Tahoma" size="4">Dia 1: Viernes 19 de Junio - Hotel Marriott, Miraflores</font>
        </div>
+          
         </td></tr>
       </table>
 
