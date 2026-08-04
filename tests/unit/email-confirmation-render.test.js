@@ -148,6 +148,22 @@ describe('renderConfirmationEmail', () => {
     expect(html).toContain('https://chat.whatsapp.com/EDICION')
   })
 
+  // La categoria sale en TODOS los correos de evento, no solo en los VIP.
+  it('muestra la categoria en las cuatro entradas', () => {
+    for (const label of ['VIP', 'GENERAL', 'PREMIUM', 'VIRTUAL']) {
+      const { html } = renderConfirmationEmail({
+        ...CTX,
+        data: {
+          ...BASE,
+          cat_event_category: 5100,
+          event_category_alias: `we_event_category_${label.toLowerCase()}`,
+          event_category_label: label
+        }
+      })
+      expect(html).toContain(`ENTRADA ${label}`)
+    }
+  })
+
   // El asiento es propio de la entrada VIP. Si esto se cae, o el VIP llega a la
   // sala sin saber donde sentarse, o una entrada GENERAL muestra un asiento
   // que nadie le asigno.

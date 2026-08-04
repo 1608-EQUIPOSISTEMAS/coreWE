@@ -24,6 +24,11 @@ export default async function programRoutes (fastify) {
   fastify.post('/programversionlist', { schema: programVersionListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.versionListHandler)
   fastify.post('/programversionupdate', { schema: programVersionUpdateSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.versionUpdateHandler)
   fastify.post('/programcaller', { schema: programCallerSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.callerHandler)
-  fastify.post('/eventcategorylist', { schema: eventCategoryListSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.eventCategoryListHandler)
+  // PRODUCTO_COMERCIAL y no ALL_COMERCIAL: nacio para el form de Comercial, pero
+  // FICO tambien inscribe a eventos desde /fico/inscripciones/new y ALL_COMERCIAL
+  // deja fuera a FICO/LIDER_FICO — el select de categoria salia vacio con un 403
+  // que el front solo logueaba en consola. Es el mismo gate que las demas rutas
+  // de lectura de programa que ese formulario ya consume.
+  fastify.post('/eventcategorylist', { schema: eventCategoryListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.eventCategoryListHandler)
   fastify.post('/programversiondetailget', { schema: programVersionDetailGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.versionDetailGetHandler)
 }
