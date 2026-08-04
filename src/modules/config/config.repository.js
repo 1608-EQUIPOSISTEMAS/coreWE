@@ -212,6 +212,60 @@ export class ConfigRepository {
       return moduleIds.length
     })
   }
+
+  // ── Cursos online incluidos en la membresia ───────────────
+
+  // DDL idempotente ejecutado una sola vez por proceso. Mismo criterio que
+  // edition.repository (ADD COLUMN IF NOT EXISTS inline): el repo no tiene
+  // sistema de migraciones y una tabla faltante en prod romperia Configuracion
+  // y la activacion de membresias a la vez.
+  // ponytail: memoizado en memoria; si algun dia entran migraciones de verdad,
+  // esto sale y el DDL se mueve alla.
+  async ensureMembershipCoursesTable () {
+    if (!this._membershipCoursesReady) {
+      this._membershipCoursesReady = this.db.query(`
+        CREATE TABLE IF NOT EXISTS public.membership_online_courses (
+          odoo_channel_id INTEGER PRIMARY KEY,
+          name            TEXT,
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_by      INTEGER
+        )
+      `).catch(err => {
+        this._membershipCoursesReady = null // reintenta al proximo llamado
+        throw err
+      })
+    }
+    return this._membershipCoursesReady
+  }
+
+  async membershipCourseList () {
+    await this.ensureMembershipCoursesTable()
+    const { rows } = await this.db.query(`
+      SELECT odoo_channel_id, name, updated_at
+        FROM public.membership_online_courses
+       ORDER BY name NULLS LAST, odoo_channel_id
+    `)
+    return rows
+  }
+
+  // Reemplazo completo: el formulario siempre manda la lista final (mismo
+  // contrato que permissionReplace). En transaccion para que un fallo a medias
+  // no deje la membresia con media lista.
+  async membershipCourseReplace (courses = [], userId = null) {
+    await this.ensureMembershipCoursesTable()
+    return withTransaction(async (client) => {
+      await client.query('DELETE FROM public.membership_online_courses')
+      for (const c of courses) {
+        await client.query(
+          `INSERT INTO public.membership_online_courses (odoo_channel_id, name, updated_by)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (odoo_channel_id) DO UPDATE SET name = EXCLUDED.name`,
+          [c.id, c.name ?? null, userId]
+        )
+      }
+      return courses.length
+    })
+  }
 }
 
 export const configRepository = new ConfigRepository()

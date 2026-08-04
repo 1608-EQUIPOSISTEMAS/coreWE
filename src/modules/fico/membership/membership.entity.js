@@ -47,19 +47,30 @@ export function classifyActivation ({ isTodayOrPast, outOfWindow, activationDate
   return { mode: 'deferred', activationDate, runAt }
 }
 
-// Mensaje de rechazo por fecha fuera de la ventana permitida. Centralizado para
-// que resolve y update emitan exactamente el mismo texto.
-export function outOfWindowMessage () {
-  return `activation_date excede la ventana permitida (${MEMBERSHIP_ACTIVATION_WINDOW_MONTHS} meses)`
-}
-
-// Defensa pura usada por enroll/email: dada la fecha de activacion persistida y
-// el "hoy" (ambos YYYY-MM-DD en TZ Lima), indica si la activacion sigue siendo
-// futura. Cuando es futura, los efectos externos deben abortar y dejar que el
-// job en cola los procese al llegar la fecha.
-export function isActivationDeferred (activationDate, todayLima) {
-  if (!activationDate) return false
-  return String(activationDate) > String(todayLima)
+// ── Catalogo de cursos online incluidos en la membresia ─────────────────────
+//
+// Hasta ahora "todos los cursos online" era literal: enrollInAllOnlineCourses
+// inscribia en CUALQUIER slide.channel con website_published = true. Publicar un
+// curso nuevo en el Campus lo metia solo a toda membresia activada despues, que
+// es el "agrega de mas" reportado. Ahora Configuracion mantiene una lista
+// curada (tabla membership_online_courses) y esta funcion decide el set final.
+//
+// publishedChannels: [{ id, name }] leidos de Odoo en el momento de activar.
+// configuredIds:     ids guardados en Configuracion (puede venir vacio).
+// Devuelve { channels, usedFallback }.
+//
+// Lista vacia => se inscribe en TODOS los publicados y se marca usedFallback,
+// que el usecase deja en el audit log. Es la opcion conservadora a proposito:
+// una membresia activada con cero cursos no da error en ningun lado y solo se
+// descubre cuando el alumno reclama.
+//
+// Un id configurado que ya no esta publicado en Odoo se ignora sin ruido: el
+// resultado es la interseccion contra lo que Odoo devuelve hoy.
+export function resolveMembershipChannels (publishedChannels = [], configuredIds = []) {
+  const published = publishedChannels || []
+  const wanted = new Set(configuredIds || [])
+  if (wanted.size === 0) return { channels: published, usedFallback: true }
+  return { channels: published.filter(c => wanted.has(c.id)), usedFallback: false }
 }
 
 // Reglas de reprogramacion de fecha (FICO mueve la activacion). Recibe el estado

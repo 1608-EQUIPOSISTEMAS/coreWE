@@ -74,12 +74,18 @@ export function normalizePhones (rawPhones) {
   return phones
 }
 
-export function normalizeRoleIds (rawRoleIds) {
-  if (rawRoleIds == null) return []
-  if (!Array.isArray(rawRoleIds)) {
-    throw new DomainError('roles debe ser una lista de rol_id', { statusCode: 400 })
+// Lista de ids enteros positivos, sin duplicados. null/ausente = lista vacia
+// (el formulario que no manda nada esta pidiendo "ninguno", no es un error).
+export function normalizeIntList (raw, field) {
+  if (raw == null) return []
+  if (!Array.isArray(raw)) {
+    throw new DomainError(`${field} debe ser una lista`, { statusCode: 400 })
   }
-  return [...new Set(rawRoleIds.map(id => requireId(id, 'rol_id')))]
+  return [...new Set(raw.map(id => requireId(id, field)))]
+}
+
+export function normalizeRoleIds (rawRoleIds) {
+  return normalizeIntList(rawRoleIds, 'rol_id')
 }
 
 export function validateUserInput (user = {}, { isNew = false } = {}) {

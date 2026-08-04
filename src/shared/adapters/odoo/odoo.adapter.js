@@ -13,6 +13,7 @@ export function createOdooAdapter (client = odooClient) {
     searchSlideGroup: (...args) => client.searchSlideGroup(...args),
     searchSlideChannelByName: (...args) => client.searchSlideChannelByName(...args),
     enrollStudentInChannelOnly: (...args) => client.enrollStudentInChannelOnly(...args),
+    listOnlineChannels: (...args) => client.listOnlineChannels(...args),
     enrollInAllOnlineCourses: (...args) => client.enrollInAllOnlineCourses(...args),
     createSaleOrderWithFees: (...args) => client.createSaleOrderWithFees(...args),
     activateFees: (...args) => client.activateFees(...args),

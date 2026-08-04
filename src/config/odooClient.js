@@ -389,7 +389,20 @@ async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, pa
   }
 }
 
-async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber, names, surnames }) {
+// Canales publicados del Campus. Lo consumen Configuracion (para pintar la
+// lista de cursos de membresia) y enrollInAllOnlineCourses cuando el caller no
+// le pasa un set ya resuelto.
+// Sin `limit`: Odoo devuelve todo. El limit 200 anterior truncaba en silencio.
+async function listOnlineChannels () {
+  const rows = await callKw('slide.channel', 'search_read', [
+    [['website_published', '=', true]]
+  ], { fields: ['id', 'name'], order: 'name asc' })
+  return rows || []
+}
+
+// `channels` (opcional): [{ id, name }] ya curado por Configuracion. Si no
+// viene, se cae a todos los publicados — comportamiento historico.
+async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, password, phone, documentNumber, names, surnames, channels: presetChannels = null }) {
   try {
     let user = await searchUserByEmail(searchEmail)
     let odooUserId, odooPartnerId, created = false
@@ -419,9 +432,7 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
       }
     }
 
-    const channels = await callKw('slide.channel', 'search_read', [
-      [['website_published', '=', true]]
-    ], { fields: ['id', 'name'], limit: 200 })
+    const channels = presetChannels ?? await listOnlineChannels()
 
     let enrolled = 0
     for (const ch of (channels || [])) {
@@ -984,4 +995,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names
   }
 }
 
-export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

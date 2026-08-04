@@ -13,19 +13,6 @@ export class MembershipRepository {
     this.db = db
   }
 
-  // Lee abbreviation + flag is_membership de la inscripcion para clasificar el
-  // programa. Usado por resolveMembershipActivation antes de validar fecha.
-  async findMembershipProbe (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT pv.abbreviation, prog.is_membership
-      FROM enrollments e
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-      LEFT JOIN programs prog ON prog.program_id = pv.program_id
-      WHERE e.enrollment_id = $1
-    `, [enrollmentId])
-    return rows?.[0] || null
-  }
-
   // Probe ampliado para la reprogramacion: ademas de la clasificacion, resuelve
   // si ya existe un correo de bienvenida enviado (membresia/sent). Un solo round
   // trip para evitar TOCTOU.
@@ -111,64 +98,19 @@ export class MembershipRepository {
     `, [odooUserId, enrollmentId, odooEmail, odooPassword])
   }
 
-  // Datos completos para armar y enviar el correo de bienvenida de membresia.
-  async findEnrollmentForEmail (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT e.enrollment_id, per.first_name, per.last_name, per.mother_last_name,
-             ${STUDENT_EMAIL_SQL} AS origin_email,
-             pv.abbreviation AS program_name,
-             pe.start_date, e.odoo_user_id, e.odoo_email, e.odoo_password,
-             e.membership_activation_date,
-             curr.variable_2 AS currency_symbol,
-             c_plan.alias AS payment_plan_alias
-      FROM enrollments e
-      JOIN customers cust ON cust.customer_id = e.customer_id
-      JOIN persons per ON per.person_id = cust.person_id
-      LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-      LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
-      LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
-      LEFT JOIN catalog c_plan ON c_plan.catalog_id = e.cat_payment_plan
-      WHERE e.enrollment_id = $1
-    `, [enrollmentId])
-    return rows?.[0] || null
-  }
-
-  // Compara en TZ Lima si la fecha de activacion persistida sigue siendo futura.
-  async isActivationDateDeferred (activationDate) {
-    const { rows } = await this.db.query(`
-      SELECT $1::date > (NOW() AT TIME ZONE 'America/Lima')::date AS is_deferred
-    `, [activationDate])
-    return !!rows?.[0]?.is_deferred
-  }
-
-  // Cuotas del cronograma (excluye el adelanto installment_number=0).
-  async findInstallments (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT installment_number, amount, due_date
-      FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0
-      ORDER BY installment_number
-    `, [enrollmentId])
-    return rows
-  }
-
-  // Indica si ya hubo un envio exitoso del correo de membresia (para distinguir
-  // primer envio con credenciales de reenvio con link de recuperacion).
-  async hasPriorMembershipSend (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT 1 FROM public.email_logs
-      WHERE enrollment_id = $1 AND template_type = 'membresia' AND status = 'sent'
-      LIMIT 1
-    `, [enrollmentId])
-    return !!rows?.[0]
-  }
-
-  // Registra el resultado del envio en email_logs.
-  async logEmail ({ enrollmentId, toEmail, subject, messageId, status }) {
-    await this.db.query(`
-      INSERT INTO public.email_logs (enrollment_id, to_email, subject, message_id, template_type, status)
-      VALUES ($1, $2, $3, $4, 'membresia', $5)
-    `, [enrollmentId, toEmail, subject, messageId, status])
+  // Ids de canal Odoo que Configuracion marco como incluidos en la membresia.
+  // Si la tabla aun no existe (instalacion sin pasar por Configuracion) devuelve
+  // [] y resolveMembershipChannels cae al comportamiento historico.
+  async findMembershipCourseIds () {
+    try {
+      const { rows } = await this.db.query(
+        'SELECT odoo_channel_id FROM public.membership_online_courses'
+      )
+      return rows.map(r => r.odoo_channel_id)
+    } catch (err) {
+      console.warn('[membership] No se pudo leer membership_online_courses:', err.message)
+      return []
+    }
   }
 
   // Inserta un evento en el audit log. Best-effort: un fallo de auditoria no debe

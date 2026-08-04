@@ -44,3 +44,13 @@ export async function myModulesHandler (req, reply) {
   const data = await usecases.myModules(req.user?.roles || [])
   return reply.code(200).send({ ok: true, data })
 }
+
+export async function membershipCourseListHandler (req, reply) {
+  const data = await usecases.listMembershipCourses()
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function membershipCourseSaveHandler (req, reply) {
+  const data = await usecases.saveMembershipCourses(req.body)
+  return reply.code(200).send({ ok: true, ...data })
+}

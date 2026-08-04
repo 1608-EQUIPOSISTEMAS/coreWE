@@ -8,7 +8,9 @@ import {
   configRoleUpdateSchema,
   configModuleListSchema,
   configMyModulesSchema,
-  configPermissionUpdateSchema
+  configPermissionUpdateSchema,
+  configMembershipCourseListSchema,
+  configMembershipCourseSaveSchema
 } from './config.schemas.js'
 import * as ctrl from './config.controller.js'
 
@@ -27,4 +29,8 @@ export default async function configRoutes (fastify) {
   // Sin gate de rol: cada usuario consulta sus propios módulos (sidebar dinámico).
   fastify.post('/mymodules', { schema: configMyModulesSchema, preHandler: [authenticate] }, ctrl.myModulesHandler)
   fastify.post('/permissionupdate', { schema: configPermissionUpdateSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.permissionUpdateHandler)
+
+  // Catalogo de cursos online que entran a la membresia.
+  fastify.post('/membershipcourselist', { schema: configMembershipCourseListSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.membershipCourseListHandler)
+  fastify.post('/membershipcoursesave', { schema: configMembershipCourseSaveSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.membershipCourseSaveHandler)
 }

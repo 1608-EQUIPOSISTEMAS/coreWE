@@ -5,9 +5,8 @@ import {
   isMembership,
   validateActivationDateFormat,
   classifyActivation,
-  outOfWindowMessage,
-  isActivationDeferred,
-  assertReschedulable
+  assertReschedulable,
+  resolveMembershipChannels
 } from '../membership.entity.js'
 
 describe('isMembership (flag explicito prioritario)', () => {
@@ -46,25 +45,6 @@ describe('classifyActivation', () => {
   it('futuro dentro de ventana es diferido (job a las 09:00)', () => {
     expect(classifyActivation({ isTodayOrPast: false, outOfWindow: false, activationDate: '2026-08-01', runAt: 'RUNAT' }))
       .toEqual({ mode: 'deferred', activationDate: '2026-08-01', runAt: 'RUNAT' })
-  })
-})
-
-describe('outOfWindowMessage', () => {
-  it('menciona la ventana de meses configurada', () => {
-    expect(outOfWindowMessage()).toContain(String(MEMBERSHIP_ACTIVATION_WINDOW_MONTHS))
-  })
-})
-
-describe('isActivationDeferred (defensa pura)', () => {
-  it('true cuando la fecha es estrictamente futura', () => {
-    expect(isActivationDeferred('2026-08-01', '2026-05-29')).toBe(true)
-  })
-  it('false cuando es hoy o pasado', () => {
-    expect(isActivationDeferred('2026-05-29', '2026-05-29')).toBe(false)
-    expect(isActivationDeferred('2026-01-01', '2026-05-29')).toBe(false)
-  })
-  it('false cuando no hay fecha de activacion', () => {
-    expect(isActivationDeferred(null, '2026-05-29')).toBe(false)
   })
 })
 
@@ -111,5 +91,39 @@ describe('assertReschedulable', () => {
       { found: true, isMembershipProgram: true, emailAlreadySent: false },
       { mode: 'out_of_window' }
     )).toThrow(/ventana permitida/i)
+  })
+})
+
+describe('resolveMembershipChannels (curaduria del catalogo de membresia)', () => {
+  const published = [
+    { id: 10, name: 'Excel Avanzado' },
+    { id: 11, name: 'Power BI' },
+    { id: 12, name: 'Curso recien publicado' }
+  ]
+
+  it('inscribe solo los canales configurados', () => {
+    const { channels, usedFallback } = resolveMembershipChannels(published, [10, 11])
+    expect(channels.map(c => c.id)).toEqual([10, 11])
+    expect(usedFallback).toBe(false)
+  })
+
+  it('un curso nuevo publicado en el Campus NO entra solo', () => {
+    const { channels } = resolveMembershipChannels(published, [10, 11])
+    expect(channels.map(c => c.id)).not.toContain(12)
+  })
+
+  it('ignora ids configurados que ya no existen en Odoo', () => {
+    const { channels } = resolveMembershipChannels(published, [10, 999])
+    expect(channels.map(c => c.id)).toEqual([10])
+  })
+
+  it('sin lista configurada cae a todos los publicados y lo marca', () => {
+    const { channels, usedFallback } = resolveMembershipChannels(published, [])
+    expect(channels).toHaveLength(3)
+    expect(usedFallback).toBe(true)
+  })
+
+  it('tolera argumentos ausentes', () => {
+    expect(resolveMembershipChannels().channels).toEqual([])
   })
 })

@@ -145,3 +145,27 @@ export const configPermissionUpdateSchema = {
     }
   }
 }
+
+export const configMembershipCourseListSchema = {
+  tags: ['Config'],
+  summary: 'Canales publicados en Odoo marcados con si entran o no a la membresia',
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { user_id: { type: ['integer', 'null'] } }
+  }
+}
+
+export const configMembershipCourseSaveSchema = {
+  tags: ['Config'],
+  summary: 'Reemplaza la lista de cursos online incluidos en la membresia',
+  body: {
+    type: 'object',
+    required: ['channel_ids'],
+    additionalProperties: false,
+    properties: {
+      user_id: { type: ['integer', 'null'] },
+      channel_ids: { type: 'array', items: { type: 'integer' } }
+    }
+  }
+}
