@@ -24,6 +24,7 @@ import {
   editionGetSchema,
   editionUpdateSchema,
   eventEditionsListSchema,
+  eventGoalsSaveSchema,
   eventResourcesGetSchema,
   eventResourcesSaveSchema,
   eventCategoriesSaveSchema,
@@ -173,6 +174,10 @@ export default async function editionRoutes (fastify) {
   fastify.post('/eventresourcesget', { schema: eventResourcesGetSchema }, ctrl.eventResourcesGetHandler)
   fastify.post('/eventbannerget', { schema: eventResourcesGetSchema }, ctrl.eventBannerGetHandler)
   fastify.post('/eventresourcessave', { schema: eventResourcesSaveSchema }, ctrl.eventResourcesSaveHandler)
+  // Reporte de objetivos (Fundacion > Objetivos): avance real por area vs la
+  // meta manual guardada en program_edition_goals.channel_goals.
+  fastify.post('/eventgoalsreport', { schema: eventResourcesGetSchema }, ctrl.eventGoalsReportHandler)
+  fastify.post('/eventgoalssave', { schema: eventGoalsSaveSchema }, ctrl.eventGoalsSaveHandler)
   fastify.post('/eventcategoriesget', { schema: eventResourcesGetSchema }, ctrl.eventCategoriesGetHandler)
   fastify.post('/eventcategoriessave', { schema: eventCategoriesSaveSchema }, ctrl.eventCategoriesSaveHandler)
   fastify.post('/editionupdate', {

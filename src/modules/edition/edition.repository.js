@@ -232,6 +232,161 @@ export class EditionRepository {
     return rows || []
   }
 
+  // ── REPORTE DE OBJETIVOS DEL EVENTO (Fundacion > Objetivos) ────────────
+  //
+  // A que area se le acredita una venta. No hay columna "area": se deduce de
+  // como llego la inscripcion, en ESTE orden (el primero que engancha gana):
+  //
+  //   Members   el cliente ya tiene una membresia vigente
+  //   B2B       agent_origin 'B2B', contrato b2b, o el lead marcado b2b
+  //   Fundacion agent_origin 'FWE' o vendida por un asesor de Fundacion
+  //   Comercial el lead trae Estrategia (campo lleno = trabajo del asesor)
+  //   Marketing el lead llego por redes (FB / IG / LinkedIn / Estados)
+  //   Web       agent_origin 'WEB' o el lead marcado web
+  //   Otros     no llego por ningun canal: entro solo y consulto
+  //
+  // ponytail: el orden ES la regla de negocio, por eso va en un solo CASE y no
+  // repartido en siete queries. Members primero segun lo pedido; si algun dia
+  // una venta de socio debe acreditarse a su canal, se baja esa rama y listo.
+  static AREA_CASE = `
+    CASE
+      WHEN i.tier IS NOT NULL                                        THEN '1.7'
+      WHEN i.agent_origin = 'B2B' OR i.b2b_contract_id IS NOT NULL
+           OR i.lead_b2b = 'Y'                                       THEN '1.4'
+      WHEN i.agent_origin = 'FWE' OR i.asesor ILIKE '%FUN%'          THEN '1.5'
+      WHEN i.cat_type_strategy IS NOT NULL                           THEN '1.1'
+      WHEN i.canal_alias IN ('we_social_media_facebook','we_social_media_instagram',
+                             'we_social_media_linkedin','we_social_media_estados')  THEN '1.2'
+      WHEN i.agent_origin = 'WEB' OR i.lead_web = 'Y'
+           OR i.canal_alias = 'we_social_media_wechat'               THEN '1.3'
+      ELSE '1.6'
+    END`
+
+  // Avance real por area y modalidad. Una inscripcion cuenta si esta viva:
+  // active='Y' y sin estado de baja (R / RP / CC). No se exige pago.
+  async eventReportAreas (editionId) {
+    const { rows } = await this.db.query(`
+      WITH miembros AS (
+        SELECT em.customer_id, max(em.membership_program_id) AS tier
+          FROM public.enrollments em
+          LEFT JOIN public.catalog sm ON sm.catalog_id = em.cat_type_status
+         WHERE em.membership_program_id IS NOT NULL
+           AND em.active = 'Y'
+           AND coalesce(sm.alias, '') NOT IN ('we_enrollment_status_retired',
+                                              'we_enrollment_status_reprogrammed',
+                                              'we_enrollment_status_course_changed')
+         GROUP BY em.customer_id
+      ),
+      i AS (
+        SELECT e.enrollment_id,
+               e.cat_event_category,
+               e.agent_origin,
+               e.b2b_contract_id,
+               u.alias                AS asesor,
+               l.cat_type_strategy,
+               l.b2b                  AS lead_b2b,
+               l.web                  AS lead_web,
+               ch.alias               AS canal_alias,
+               m.tier,
+               pm.program_name        AS tier_name
+          FROM public.enrollments e
+          LEFT JOIN public.users u ON u.user_id = e.seller_agent_id
+          LEFT JOIN public.catalog st ON st.catalog_id = e.cat_type_status
+          LEFT JOIN LATERAL (
+                 SELECT l2.cat_type_strategy, l2.cat_channel, l2.b2b, l2.web
+                   FROM public.leads l2
+                  WHERE l2.enrollment_id = e.enrollment_id
+                  ORDER BY l2.lead_id LIMIT 1
+               ) l ON true
+          LEFT JOIN public.catalog ch ON ch.catalog_id = l.cat_channel
+          LEFT JOIN miembros m ON m.customer_id = e.customer_id
+          LEFT JOIN public.programs pm ON pm.program_id = m.tier
+         WHERE e.program_edition_id = $1
+           AND e.active = 'Y'
+           AND coalesce(st.alias, '') NOT IN ('we_enrollment_status_retired',
+                                              'we_enrollment_status_reprogrammed',
+                                              'we_enrollment_status_course_changed')
+      )
+      SELECT ${EditionRepository.AREA_CASE} AS area_code,
+             i.tier,
+             i.tier_name,
+             count(*)                                                       AS avance,
+             count(*) FILTER (WHERE c.alias = 'we_event_category_vip')       AS vip,
+             count(*) FILTER (WHERE c.alias = 'we_event_category_premium')   AS premium,
+             count(*) FILTER (WHERE c.alias = 'we_event_category_general')   AS general,
+             count(*) FILTER (WHERE c.alias = 'we_event_category_virtual')   AS virtual,
+             count(*) FILTER (WHERE i.cat_event_category IS NULL)            AS sin_categoria
+        FROM i
+        LEFT JOIN public.catalog c ON c.catalog_id = i.cat_event_category
+       GROUP BY 1, 2, 3
+    `, [editionId])
+    return rows || []
+  }
+
+  // Consultas (leads) por area. Misma regla, con lo que un lead sí tiene:
+  // no hay agent_origin, así que Fundacion se reconoce por su estrategia o por
+  // el usuario que registro el lead.
+  async eventReportLeads (editionId) {
+    const { rows } = await this.db.query(`
+      SELECT CASE
+               WHEN l.b2b = 'Y'                                    THEN '1.4'
+               WHEN st.description ILIKE 'fundaci%'
+                    OR u.alias ILIKE '%FUN%'                       THEN '1.5'
+               WHEN l.cat_type_strategy IS NOT NULL                THEN '1.1'
+               WHEN ch.alias IN ('we_social_media_facebook','we_social_media_instagram',
+                                 'we_social_media_linkedin','we_social_media_estados') THEN '1.2'
+               WHEN l.web = 'Y' OR ch.alias = 'we_social_media_wechat' THEN '1.3'
+               ELSE '1.6'
+             END AS area_code,
+             count(*) AS consultas
+        FROM public.leads l
+        LEFT JOIN public.catalog st ON st.catalog_id = l.cat_type_strategy
+        LEFT JOIN public.catalog ch ON ch.catalog_id = l.cat_channel
+        LEFT JOIN public.users u ON u.user_id = l.user_registration_id
+       WHERE l.program_edition_id = $1 AND l.active = 'Y'
+       GROUP BY 1
+    `, [editionId])
+    return rows || []
+  }
+
+  // Que categorias de entrada se venden en este congreso. Sin fila activa en
+  // event_category_prices la columna no se dibuja: el cuadro del cliente tiene
+  // tres modalidades porque PREMIUM esta apagado, no porque no exista.
+  async eventReportCategories (editionId) {
+    const { rows } = await this.db.query(`
+      SELECT c.catalog_id, c.alias, c.description
+        FROM public.program_editions pe
+        JOIN public.event_category_prices ecp ON ecp.program_version_id = pe.program_version_id
+        JOIN public.catalog c ON c.catalog_id = ecp.cat_event_category
+       WHERE pe.edition_num_id = $1 AND ecp.active = 'Y'
+       ORDER BY c.catalog_id
+    `, [editionId])
+    return rows || []
+  }
+
+  // El objetivo es MANUAL y vive en el jsonb que ya tenia la tabla de metas:
+  // no hace falta tabla nueva para una matriz de 7 areas x 4 modalidades.
+  async eventGoalsGet (editionId) {
+    const { rows } = await this.db.query(
+      `SELECT channel_goals FROM public.program_edition_goals WHERE edition_num_id = $1`,
+      [editionId]
+    )
+    return rows[0]?.channel_goals || {}
+  }
+
+  async eventGoalsSave (editionId, goals, uid) {
+    const { rows } = await this.db.query(`
+      INSERT INTO public.program_edition_goals (edition_num_id, channel_goals, user_registration_id, registration_date)
+      VALUES ($1, $2::jsonb, $3, NOW())
+      ON CONFLICT (edition_num_id) DO UPDATE
+         SET channel_goals = EXCLUDED.channel_goals,
+             user_modification_id = $3,
+             modification_date = NOW()
+      RETURNING channel_goals
+    `, [editionId, JSON.stringify(goals || {}), uid || null])
+    return rows[0]?.channel_goals || {}
+  }
+
   // Bytes del banner para previsualizarlo en el modal. Query aparte: no debe
   // viajar en el get general de recursos.
   async getEventBannerImage (editionNumId) {

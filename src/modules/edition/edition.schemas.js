@@ -459,6 +459,35 @@ export const eventEditionsListSchema = {
   }
 }
 
+// Objetivo de ventas del evento: matriz area (codigo del organigrama) x
+// modalidad de entrada. Las llaves se filtran de nuevo en el usecase contra el
+// catalogo de areas; aqui solo se acota la forma y el tamano.
+export const eventGoalsSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_num_id', 'goals'],
+    properties: {
+      edition_num_id: { type: 'integer' },
+      user_id: { type: ['integer', 'null'] },
+      goals: {
+        type: 'object',
+        maxProperties: 30,
+        additionalProperties: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            vip: { type: ['integer', 'null'], minimum: 0 },
+            premium: { type: ['integer', 'null'], minimum: 0 },
+            general: { type: ['integer', 'null'], minimum: 0 },
+            virtual: { type: ['integer', 'null'], minimum: 0 }
+          }
+        }
+      }
+    }
+  }
+}
+
 // Categorias de entrada del evento. Los ids se cotejan igual contra el catalogo
 // en el usecase: este schema solo valida la forma, no la pertenencia.
 export const eventCategoriesSaveSchema = {

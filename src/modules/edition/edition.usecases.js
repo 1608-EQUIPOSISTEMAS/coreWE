@@ -254,6 +254,119 @@ export async function eventEditionsList ({ q = null } = {}) {
   return { items }
 }
 
+// ── OBJETIVOS DEL EVENTO (Fundacion > Objetivos) ────────────────────────
+//
+// El catalogo de areas es fijo y vive aqui, no en la BD: son las cajas del
+// organigrama de ventas, no data. El codigo ('1.1') es la llave con la que se
+// guarda el objetivo en channel_goals, asi que renombrar un area es gratis
+// pero cambiarle el codigo pierde su meta.
+const REPORT_AREAS = [
+  { code: '1.1', name: 'Comercial' },
+  { code: '1.2', name: 'Marketing' },
+  { code: '1.3', name: 'Web' },
+  { code: '1.4', name: 'B2B' },
+  { code: '1.5', name: 'Fundación WE' },
+  { code: '1.6', name: 'Otros' },
+  { code: '1.7', name: 'Members' }
+]
+
+const MODALIDAD_KEYS = ['vip', 'premium', 'general', 'virtual']
+
+function emptyRow (code, name) {
+  return { code, name, avance: 0, vip: 0, premium: 0, general: 0, virtual: 0, sin_categoria: 0, consultas: 0 }
+}
+
+function addInto (row, src) {
+  row.avance += Number(src.avance) || 0
+  row.sin_categoria += Number(src.sin_categoria) || 0
+  for (const k of MODALIDAD_KEYS) row[k] += Number(src[k]) || 0
+}
+
+export async function eventGoalsReport ({ edition_num_id } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return null
+
+  return withMissingColumnHint(async () => {
+    const [areasRaw, leadsRaw, categorias, goals] = await Promise.all([
+      repo.eventReportAreas(editionId),
+      repo.eventReportLeads(editionId),
+      repo.eventReportCategories(editionId),
+      repo.eventGoalsGet(editionId)
+    ])
+
+    const byCode = new Map(REPORT_AREAS.map(a => [a.code, emptyRow(a.code, a.name)]))
+    // Members se abre por tier. Los hijos salen de la data (solo aparece el
+    // tier que compro alguien), no de una lista fija que quedaria en ceros.
+    const membersChildren = new Map()
+
+    for (const r of areasRaw) {
+      const row = byCode.get(r.area_code)
+      if (!row) continue
+      addInto(row, r)
+      if (r.area_code === '1.7' && r.tier) {
+        const key = String(r.tier)
+        if (!membersChildren.has(key)) {
+          membersChildren.set(key, emptyRow(`1.7.${key}`, r.tier_name || `Tier ${key}`))
+        }
+        addInto(membersChildren.get(key), r)
+      }
+    }
+
+    for (const r of leadsRaw) {
+      const row = byCode.get(r.area_code)
+      if (row) row.consultas = Number(r.consultas) || 0
+    }
+
+    const areas = REPORT_AREAS.map(a => {
+      const row = byCode.get(a.code)
+      if (a.code === '1.7' && membersChildren.size) {
+        row.children = [...membersChildren.values()].sort((x, y) => x.name.localeCompare(y.name))
+      }
+      return row
+    })
+
+    // Modalidades que de verdad se venden. Sin configuracion de precios se
+    // muestran las cuatro: es preferible una columna vacia a esconder ventas.
+    const modalidades = categorias.length
+      ? categorias.map(c => ({ key: String(c.alias).replace('we_event_category_', ''), label: c.description, catalog_id: c.catalog_id }))
+      : MODALIDAD_KEYS.map(k => ({ key: k, label: k.toUpperCase(), catalog_id: null }))
+
+    return {
+      areas,
+      // Orden de negocio (VIP primero), no el del catalogo: el cuadro que
+      // llena Fundacion se lee de arriba abajo en ese orden.
+      modalidades: modalidades
+        .filter(m => MODALIDAD_KEYS.includes(m.key))
+        .sort((a, b) => MODALIDAD_KEYS.indexOf(a.key) - MODALIDAD_KEYS.indexOf(b.key)),
+      goals: goals || {},
+      leads_total: areas.reduce((acc, a) => acc + a.consultas, 0),
+      avance_total: areas.reduce((acc, a) => acc + a.avance, 0)
+    }
+  })
+}
+
+// El objetivo lo tipea Fundacion. Se guarda saneado: solo areas conocidas,
+// solo modalidades conocidas, solo enteros >= 0. Sin esto el jsonb termina
+// guardando cualquier cosa que mande el cliente.
+export async function eventGoalsSave ({ edition_num_id, goals = {}, user_id = null } = {}) {
+  const editionId = Number(edition_num_id) || null
+  if (!editionId) return { goals: {} }
+
+  const validCodes = new Set(REPORT_AREAS.map(a => a.code))
+  const clean = {}
+  for (const [code, row] of Object.entries(goals || {})) {
+    if (!validCodes.has(code) || !row || typeof row !== 'object') continue
+    const cell = {}
+    for (const k of MODALIDAD_KEYS) {
+      const n = Math.trunc(Number(row[k]))
+      if (Number.isFinite(n) && n > 0) cell[k] = n
+    }
+    if (Object.keys(cell).length) clean[code] = cell
+  }
+
+  return withMissingColumnHint(async () => ({ goals: await repo.eventGoalsSave(editionId, clean, user_id) }))
+}
+
 // ── CATEGORIAS DE ENTRADA DEL EVENTO ────────────────────────────────────
 // Que categorias se venden (no todos los congresos tienen las cuatro), su
 // tarifa y el grupo de WhatsApp de cada una.

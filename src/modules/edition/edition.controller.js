@@ -144,6 +144,16 @@ export async function eventEditionsListHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function eventGoalsReportHandler (req, reply) {
+  const data = await usecases.eventGoalsReport(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function eventGoalsSaveHandler (req, reply) {
+  const data = await usecases.eventGoalsSave({ ...req.body, user_id: req.user?.id ?? req.body?.user_id ?? null })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function eventCategoriesGetHandler (req, reply) {
   const data = await usecases.eventCategoriesGet(req.body)
   return reply.code(200).send({ ok: true, data })
