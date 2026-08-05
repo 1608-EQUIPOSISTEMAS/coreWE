@@ -13,6 +13,8 @@ import {
   classroomGradesGetSchema,
   classroomGradesSaveSchema,
   classroomGradesObservationsSchema,
+  b2bTrackingListSchema,
+  b2bAttendanceSaveSchema,
   classroomOdooCertifySchema,
   reportRecommendationsSchema,
   editionByWeekListSchema,
@@ -130,6 +132,17 @@ export default async function editionRoutes (fastify) {
     schema: classroomGradesObservationsSchema,
     config: { timeout: 180000 }
   }, ctrl.classroomGradesObservationsHandler)
+
+  // Seguimiento B2B: alumnos B2B en aulas EN VIVO + asistencia manual propia
+  // (tabla b2b_attendance, independiente de la Lista de Notas). La nota final
+  // viaja de solo lectura desde classroom_student_grades.
+  fastify.post('/b2btrackinglist', {
+    schema: b2bTrackingListSchema
+  }, ctrl.b2bTrackingListHandler)
+
+  fastify.post('/b2battendancesave', {
+    schema: b2bAttendanceSaveSchema
+  }, ctrl.b2bAttendanceSaveHandler)
 
   // Datos del Reporte Academico: consulta ligera dedicada (cursos + resumen
   // de auditoria en una sola pasada). Sin body.

@@ -66,6 +66,22 @@ describe('saveLooseInscriptionFields', () => {
     expect(db.calls).toHaveLength(0)
   })
 
+  // En los canales WE el canal ES el asesor: el listado debe decir 'FWE', no
+  // 'FWE - VAFUN'.
+  it('escribe el canal FWE y borra el asesor', async () => {
+    const db = fakeDb()
+    await saveLooseInscriptionFields(db, 15805, { agent_origin: 'FWE' })
+    expect(db.calls[0].text).toContain('agent_origin = $1')
+    expect(db.calls[0].text).toContain('seller_agent_id = NULL')
+    expect(db.calls[0].params).toEqual(['FWE', 15805])
+  })
+
+  it('ignora un agent_origin fuera de la whitelist', async () => {
+    const db = fakeDb()
+    await saveLooseInscriptionFields(db, 1, { agent_origin: 'B2B' })
+    expect(db.calls).toHaveLength(0)
+  })
+
   it('no propaga el error de BD: la venta ya quedo registrada', async () => {
     const db = { query: async () => { throw new Error('socket muerto') } }
     await expect(saveLooseInscriptionFields(db, 1, { email_cc: 'a@b.com' })).resolves.toBeUndefined()

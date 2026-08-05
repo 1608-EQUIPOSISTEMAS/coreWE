@@ -10,6 +10,10 @@ import {
   isoWeekRange,
   buildWeeklySessionDays,
   buildControlRow,
+  buildSessionSchedule,
+  getAllowedDays,
+  b2bAttendanceSummary,
+  B2B_ATTENDANCE_STATES,
   reproEventsOf,
   MAX_EDITION_REPROS,
   buildA5Payload,
@@ -880,3 +884,101 @@ export async function classroomAuditRunAi ({
   return { ok: true, row: rows[0] }
 }
 
+
+// =====================================================================
+// Seguimiento B2B (Academica)
+// =====================================================================
+
+// Alumnos B2B en aulas EN VIVO, agrupados por aula, con el cronograma S1..Sn
+// DERIVADO igual que Control de Ediciones (misma frecuencia, mismos feriados,
+// mismas reprogramaciones) para que las fechas de asistencia cuadren con el
+// dictado real. La asistencia sale de b2b_attendance; la nota final se lee de
+// la Lista de Notas y no se escribe nunca desde aqui.
+export async function b2bTrackingList ({ scope = 'curso' } = {}) {
+  const [rows, catalog] = await Promise.all([repo.b2bTrackingList(), getCatalog()])
+  if (!rows.length) return []
+
+  const editionIds = [...new Set(rows.map((r) => Number(r.edition_num_id)))]
+  const controls = await repo.sessionControlsList(editionIds)
+  const dayCombos = catalog.we_day_combination || []
+  const holidaySet = new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean))
+
+  const byEdition = new Map()
+  for (const r of rows) {
+    const id = Number(r.edition_num_id)
+    if (!byEdition.has(id)) {
+      const overrides = new Map(
+        controls
+          .filter((c) => Number(c.program_edition_id) === id)
+          .map((c) => [Number(c.session_number), {
+            status: c.status || null,
+            new_date: c.new_date ? String(c.new_date).slice(0, 10) : null
+          }])
+      )
+      const sessions = buildSessionSchedule({
+        startDateStr: r.start_date,
+        allowedDays: getAllowedDays(dayCombos, Number(r.cat_day_combination_id), r.start_date),
+        holidaySet,
+        totalSessions: Number(r.total_sessions) || 0,
+        overrides
+      })
+      byEdition.set(id, {
+        edition_num_id: id,
+        specific_code: r.specific_code,
+        abbreviation: r.abbreviation,
+        version_code: r.version_code,
+        instructor: r.instructor,
+        day_label: r.day_label,
+        hour_label: r.hour_label,
+        start_date: r.start_date,
+        end_date: r.end_date,
+        total_sessions: Number(r.total_sessions) || 0,
+        sessions,
+        students: []
+      })
+    }
+    const ed = byEdition.get(id)
+    const attendance = r.attendance || {}
+    ed.students.push({
+      enrollment_id: Number(r.enrollment_id),
+      dni: r.dni,
+      full_name: r.full_name,
+      email: r.email,
+      phone: r.phone,
+      agent_origin: r.agent_origin,
+      final_grade: r.final_grade === null ? null : Number(r.final_grade),
+      attendance,
+      attendance_updated_at: r.attendance_updated_at,
+      summary: b2bAttendanceSummary(attendance, ed.total_sessions)
+    })
+  }
+
+  const editions = [...byEdition.values()]
+  if (scope === 'todas') return editions
+  // "En curso" sobre el cronograma REAL derivado: ya empezo y aun no termina.
+  const today = new Date().toISOString().slice(0, 10)
+  return editions.filter((e) => {
+    const first = e.sessions[0]?.date || e.start_date
+    const last = e.sessions[e.sessions.length - 1]?.date || e.end_date
+    return (!first || first <= today) && (!last || last >= today)
+  })
+}
+
+// Marca una celda de asistencia. status null = volver a "sin marcar".
+export async function b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status, user_id } = {}) {
+  const eid = Number(enrollment_id)
+  const peid = Number(program_edition_id)
+  const sn = Number(session_number)
+  if (!Number.isFinite(eid) || !Number.isFinite(peid) || !Number.isFinite(sn) || sn < 1) {
+    return { ok: false, message: 'Parametros invalidos' }
+  }
+  const st = status || null
+  if (st && !B2B_ATTENDANCE_STATES.includes(st)) {
+    return { ok: false, message: `Estado invalido: ${st}` }
+  }
+  const row = await repo.b2bAttendanceSave(
+    { enrollment_id: eid, program_edition_id: peid, session_number: sn, status: st },
+    user_id || null
+  )
+  return { ok: true, data: row }
+}

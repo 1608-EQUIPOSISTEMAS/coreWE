@@ -31,6 +31,17 @@ export function resolveConfirmationTemplate (data = {}) {
   return { isEvent, isVirtualTicket }
 }
 
+// Asunto del correo de confirmacion. Vive aca y no en el usecase porque estaba
+// duplicado en preview y send: dos plantillas literales identicas que se
+// desincronizaban. En eventos lleva la modalidad (VIP / GENERAL / VIRTUAL): es
+// lo primero que el asistente necesita distinguir en su bandeja.
+export function buildConfirmationSubject (data = {}) {
+  const base = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
+  const { isEvent } = resolveConfirmationTemplate(data)
+  const category = String(data.event_category_label || '').trim().toUpperCase()
+  return (isEvent && category) ? `${base} - ENTRADA ${category}` : base
+}
+
 // Detalle de sesiones segun la entrada, con fallback cruzado: si la edicion
 // solo cargo uno de los dos textos, se usa ese. Mejor un detalle aproximado que
 // un correo sin ninguna indicacion de cuando y donde es el evento.

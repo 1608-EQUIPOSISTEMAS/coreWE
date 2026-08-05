@@ -10,6 +10,7 @@ import {
   isValidAiAuditorHost,
   resolveAiAuditorUrl,
   formatStartDate,
+  b2bAttendanceSummary,
   isoWeekRange,
   getAllowedDays,
   sessionNumbersForRange,
@@ -334,5 +335,21 @@ describe('buildWeeklySessionDays', () => {
     expect(days[0].editions[0]).toMatchObject({ abbreviation: 'POWER BI', session_number: 3 })
     expect(days[2].editions[0].session_number).toBe(4)
     expect(days[1].editions).toHaveLength(0)
+  })
+})
+
+describe('b2bAttendanceSummary (Seguimiento B2B)', () => {
+  it('cuenta la tardanza como asistida y calcula sobre lo YA marcado', () => {
+    const s = b2bAttendanceSummary({ 1: 'P', 2: 'T', 3: 'F' }, 6)
+    expect(s).toMatchObject({ present: 1, tardy: 1, absent: 1, taken: 3, pending: 3 })
+    expect(s.pct).toBe(67) // (1 presente + 1 tardanza) / 3 tomadas
+  })
+
+  it('sin sesiones marcadas no inventa 0%: pct null y todo pendiente', () => {
+    expect(b2bAttendanceSummary({}, 6)).toMatchObject({ pct: null, taken: 0, pending: 6 })
+  })
+
+  it('mas marcas que sesiones del curso no da pendientes negativos', () => {
+    expect(b2bAttendanceSummary({ 1: 'P', 2: 'P', 3: 'P' }, 2).pending).toBe(0)
   })
 })

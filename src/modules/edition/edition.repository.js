@@ -1591,6 +1591,137 @@ export class EditionRepository {
       client.release()
     }
   }
+
+  // ===================================================================
+  // Seguimiento B2B (Academica): asistencia MANUAL de los alumnos B2B en
+  // aulas EN VIVO. Deliberadamente separada de la Lista de Notas: tabla
+  // propia, nadie escribe en la otra. Lo unico que viaja de notas hacia
+  // aca es final_grade, de solo lectura.
+  // ===================================================================
+  async ensureB2bAttendanceTable () {
+    if (this._b2bAttendanceReady) return
+    await this.db.query(`
+    CREATE TABLE IF NOT EXISTS public.b2b_attendance (
+      enrollment_id      INTEGER PRIMARY KEY REFERENCES public.enrollments(enrollment_id) ON DELETE CASCADE,
+      program_edition_id INTEGER NOT NULL REFERENCES public.program_editions(edition_num_id) ON DELETE CASCADE,
+      -- {"1":"P","2":"T","3":"F"} — solo las sesiones ya marcadas
+      sessions           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_by         INTEGER REFERENCES public.users(user_id),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_b2ba_edition
+      ON public.b2b_attendance (program_edition_id);
+  `)
+    this._b2bAttendanceReady = true
+  }
+
+  // Una fila por alumno B2B matriculado en un aula EN VIVO
+  // (programs.cat_model_modality = we_modality_live).
+  //
+  // "Es B2B" usa LA MISMA regla que classroomStudentsList / el contador del
+  // cronograma: doctype B2B en la venta (padre si es hijo de paquete), O canal
+  // B2B con asesor de convenio (users.alias NY12/JF39) o sin asesor. Un
+  // comercial con codigo B2B es VENTA, no B2B.
+  //
+  // Mismas exclusiones que la Lista de Notas: solo FICO-aprobados, sin los que
+  // salieron del aula (retiro / CC / RP) y solo HOJAS (un padre de paquete no
+  // asiste, asisten sus hijos).
+  async b2bTrackingList () {
+    await this.ensureB2bAttendanceTable()
+    const { rows } = await this.db.query(`
+    SELECT pe.edition_num_id,
+           pe.specific_code,
+           pe.start_date::date::text                    AS start_date,
+           pe.end_date::date::text                      AS end_date,
+           pe.cat_day_combination_id,
+           pv.abbreviation,
+           pv.version_code,
+           pv.sessions                                  AS total_sessions,
+           dayc.description                             AS day_label,
+           hourc.description                            AS hour_label,
+           INITCAP(CONCAT(ins.first_name, ' ', ins.last_name)) AS instructor,
+           e.enrollment_id,
+           per.document_number                          AS dni,
+           TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
+           contact_email.value                          AS email,
+           contact_phone.value                          AS phone,
+           COALESCE(es.agent_origin, e.agent_origin)    AS agent_origin,
+           -- Solo lectura desde la Lista de Notas. Este modulo NUNCA la escribe.
+           g.final_grade,
+           COALESCE(att.sessions, '{}'::jsonb)          AS attendance,
+           att.updated_at                               AS attendance_updated_at
+      FROM public.enrollments e
+      JOIN public.customers cu        ON cu.customer_id = e.customer_id
+      JOIN public.persons per         ON per.person_id  = cu.person_id
+      JOIN public."catalog" cf        ON cf.catalog_id  = e.cat_fico_status
+                                     AND cf.alias = 'we_enrollment_status_checked'
+      JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs p          ON p.program_id = pv.program_id
+      JOIN public."catalog" cm        ON cm.catalog_id = p.cat_model_modality
+                                     AND cm.alias = 'we_modality_live'
+ LEFT JOIN public."catalog" cts       ON cts.catalog_id = e.cat_type_status
+ LEFT JOIN public.enrollments es      ON es.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+ LEFT JOIN public."catalog" cts_sold  ON cts_sold.catalog_id = es.cat_type_status
+ LEFT JOIN public.users usold         ON usold.user_id = COALESCE(es.seller_agent_id, e.seller_agent_id)
+ LEFT JOIN public."catalog" dayc      ON dayc.catalog_id = pe.cat_day_combination_id
+ LEFT JOIN public."catalog" hourc     ON hourc.catalog_id = pe.cat_hour_combination_id
+ LEFT JOIN public.instructors i       ON i.instructor_id = pe.instructor_id
+ LEFT JOIN public.persons ins         ON ins.person_id = i.person_id
+ LEFT JOIN public.classroom_student_grades g ON g.enrollment_id = e.enrollment_id
+ LEFT JOIN public.b2b_attendance att  ON att.enrollment_id = e.enrollment_id
+ LEFT JOIN LATERAL (
+        SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+                                 AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1
+      ) contact_email ON TRUE
+ LEFT JOIN LATERAL (
+        SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+                                 AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1
+      ) contact_phone ON TRUE
+     WHERE e.active = 'Y'
+       AND pe.active = 'Y'
+       AND (COALESCE(e.cat_b2b_doctype, es.cat_b2b_doctype) IS NOT NULL
+            OR (COALESCE(es.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
+                AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39'))))
+       AND (cts.alias IS NULL OR cts.alias NOT IN (
+              'we_enrollment_status_retired',
+              'we_enrollment_status_course_changed',
+              'we_enrollment_status_reprogrammed'))
+       AND (cts_sold.alias IS NULL OR cts_sold.alias <> 'we_enrollment_status_reprogrammed')
+       AND NOT EXISTS (SELECT 1 FROM public.enrollments c
+                        WHERE c.parent_enrollment_id = e.enrollment_id)
+     ORDER BY pe.start_date DESC, pe.edition_num_id, per.last_name, per.first_name
+  `)
+    return rows
+  }
+
+  // Marca/desmarca UNA celda de asistencia. status null borra la clave para
+  // que la sesion vuelva a "sin marcar" (y no quede como falta implicita).
+  async b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status }, uid) {
+    await this.ensureB2bAttendanceTable()
+    const { rows } = await this.db.query(`
+    INSERT INTO public.b2b_attendance (enrollment_id, program_edition_id, sessions, updated_by, updated_at)
+    VALUES ($1, $2,
+            CASE WHEN $4::text IS NULL THEN '{}'::jsonb
+                 ELSE jsonb_build_object($3::text, $4::text) END,
+            $5, NOW())
+    ON CONFLICT (enrollment_id) DO UPDATE
+       SET sessions = CASE WHEN $4::text IS NULL
+                           THEN public.b2b_attendance.sessions - $3::text
+                           ELSE public.b2b_attendance.sessions || jsonb_build_object($3::text, $4::text) END,
+           program_edition_id = EXCLUDED.program_edition_id,
+           updated_by = EXCLUDED.updated_by,
+           updated_at = NOW()
+    RETURNING enrollment_id, sessions, updated_at
+  `, [enrollment_id, program_edition_id, String(session_number), status, uid])
+    return rows[0]
+  }
 }
 
 export const editionRepository = new EditionRepository()

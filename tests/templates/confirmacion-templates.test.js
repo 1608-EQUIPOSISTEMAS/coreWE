@@ -139,6 +139,20 @@ describe('templates/confirmacion-evento', () => {
     expect(html).toMatchSnapshot()
   })
 
+  // Los links de grupo se cargan a mano y llegan sin esquema: 'bit.ly/PROYECVIP'
+  // sin https es un enlace relativo y el boton no lleva a ningun lado.
+  it('completa el esquema del link de whatsapp cargado sin http', () => {
+    const html = buildConfirmacionEventoHTML({
+      studentName: 'ana',
+      eventName: 'V Congreso',
+      categoryLabel: 'VIP',
+      whatsappLink: 'bit.ly/PROYECVIP',
+      certificateFormLink: 'https://bit.ly/FichaCert'
+    })
+    expect(html).toContain('href="https://bit.ly/PROYECVIP"')
+    expect(html).toContain('href="https://bit.ly/FichaCert"')
+  })
+
   // Cada entrada VIP tiene su asiento: es lo que la persona busca al llegar.
   it('entrada VIP con asiento asignado', () => {
     const html = buildConfirmacionEventoHTML({

@@ -24,6 +24,18 @@ export async function saveLooseInscriptionFields (db, enrollmentId, inscription 
     sets.push(`event_seat = $${params.push(seat)}`)
   }
 
+  // Canal de la venta cuando lo fija el modulo de origen (Fundacion => 'FWE').
+  // Whitelist: el SP no lo escribe y esto entra por el body del request.
+  //
+  // El asesor se borra a proposito: en los canales WE el canal ES el asesor, no
+  // se acredita a la persona que tipeo la venta. Misma convencion que el alta
+  // directa de FICO (categoria WE => seller_agent_id null). Sin esto el listado
+  // muestra 'FWE - VAFUN' en vez de 'FWE'.
+  if (['FWE', 'TWE'].includes(inscription.agent_origin)) {
+    sets.push(`agent_origin = $${params.push(inscription.agent_origin)}`)
+    sets.push('seller_agent_id = NULL')
+  }
+
   const ccList = parseEmailCc(inscription.email_cc)
   if (ccList.length > 0) {
     sets.push(`email_cc = $${params.push(ccList.join(','))}`)

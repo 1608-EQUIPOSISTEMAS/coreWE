@@ -214,3 +214,13 @@ export async function schedulePdfHandler (req, reply) {
     .header('Content-Disposition', `attachment; filename="programacion-${child_edition_id}.pdf"`)
     .send(pdfBuffer)
 }
+
+export async function b2bTrackingListHandler (req, reply) {
+  const data = await usecases.b2bTrackingList(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function b2bAttendanceSaveHandler (req, reply) {
+  const result = await usecases.b2bAttendanceSave(req.body)
+  return reply.code(result.ok ? 200 : 400).send(result)
+}

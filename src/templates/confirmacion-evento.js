@@ -30,6 +30,10 @@ function escapeMultiline (text) {
 // Devuelve '' si no hay link: nunca debe emitirse un <a href=""> muerto.
 function buildButton (href, label, background = 'rgb(5,36,103)') {
   if (!href) return ''
+  // Producto carga los links a mano y suele pegarlos sin esquema
+  // ('bit.ly/PROYECVIP'). Sin http:// el cliente de correo lo resuelve como
+  // ruta relativa y el boton no lleva a ningun lado.
+  if (!/^https?:\/\//i.test(href)) href = `https://${href}`
   return `
       <table align="center" style="padding: 7px;border-radius:9px;background-color:${background}; width: 450px; margin-top: 10px;">
         <tr align="center"><td>

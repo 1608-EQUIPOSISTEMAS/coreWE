@@ -666,3 +666,33 @@ export function formatStartDate (startDate) {
   }
   return startDate
 }
+
+// =====================================================================
+// Seguimiento B2B: asistencia manual, separada de la Lista de Notas.
+// =====================================================================
+
+// Estados de asistencia. Sin marcar (clave ausente) NO es falta: es
+// "pendiente de tomar", que es distinto de "el alumno no vino".
+export const B2B_ATTENDANCE_STATES = ['P', 'T', 'F']
+
+// REGLA DE NEGOCIO — % de asistencia. Se calcula sobre las sesiones YA
+// MARCADAS (no sobre el total del curso), asi un curso a mitad de camino no
+// muestra 30% solo por tener sesiones futuras. La tardanza CUENTA como
+// asistida (el alumno estuvo en clase) pero se reporta aparte en `tardy`.
+// Si academica decide que la tardanza vale medio punto o que las sesiones ya
+// dictadas sin marcar son falta, este es el unico lugar que cambia.
+export function b2bAttendanceSummary (sessionsMap = {}, totalSessions = 0) {
+  const marks = Object.values(sessionsMap || {})
+  const present = marks.filter((s) => s === 'P').length
+  const tardy = marks.filter((s) => s === 'T').length
+  const absent = marks.filter((s) => s === 'F').length
+  const taken = present + tardy + absent
+  return {
+    present,
+    tardy,
+    absent,
+    taken,
+    pending: Math.max(0, (Number(totalSessions) || 0) - taken),
+    pct: taken ? Math.round(((present + tardy) / taken) * 100) : null
+  }
+}

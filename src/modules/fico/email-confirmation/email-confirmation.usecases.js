@@ -10,7 +10,7 @@ import {
 } from '../../../utils/fico-formatters.js'
 import { getEnrollmentOdoo } from '../../../utils/fico-queries.sql.js'
 import { email } from '../../../shared/adapters/email/email.adapter.js'
-import { renderConfirmationEmail, resolveConfirmationTemplate } from './email-confirmation.render.js'
+import { renderConfirmationEmail, resolveConfirmationTemplate, buildConfirmationSubject } from './email-confirmation.render.js'
 import { buildConfirmacionPagoHTML } from '../../../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../../../templates/bienvenida-membresia.js'
 import { generateCronogramaPdf } from '../../../services/pdf.service.js'
@@ -215,7 +215,7 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
   return {
     html: htmlBody,
     to: data.origin_email || '---',
-    subject: `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`,
+    subject: buildConfirmationSubject(data),
     hasAttachment: isParentProgram && !isOnline && !isEventKind,
     attachmentName: (isParentProgram && !isOnline && !isEventKind) ? `Cronograma-${(data.program_name || 'Programa').replace(/[^a-zA-Z0-9]+/g, '-')}.pdf` : null,
     // Senal para que el front muestre el formulario de credenciales SAP.
@@ -391,7 +391,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   if (ccError) return { success: false, error: ccError }
   const ccForTransport = ccResolved.length > 0 ? ccResolved : undefined
 
-  const subject = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
+  const subject = buildConfirmationSubject(data)
   const result = await deps.sendEmail({ to: toEmail, subject, htmlBody, attachments, cc: ccForTransport })
 
   try {

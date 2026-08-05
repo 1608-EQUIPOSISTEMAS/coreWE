@@ -172,7 +172,7 @@ export const editSellerAgentSchema = {
     properties: {
       enrollment_id: { type: 'integer' },
       new_seller_agent_id: { type: ['integer', 'null'] },
-      new_agent_origin: { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'SA', null] },
+      new_agent_origin: { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'TWE', 'FWE', 'SA', null] },
       justificacion: { type: 'string', minLength: 1 }
     }
   }

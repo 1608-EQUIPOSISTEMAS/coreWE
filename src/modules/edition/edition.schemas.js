@@ -742,3 +742,29 @@ export const schedulePdfSchema = {
     }
   }
 }
+
+// Seguimiento B2B. scope: 'curso' (aulas dictandose hoy) | 'todas'.
+export const b2bTrackingListSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      scope: { type: 'string', enum: ['curso', 'todas'] }
+    }
+  }
+}
+
+export const b2bAttendanceSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['enrollment_id', 'program_edition_id', 'session_number'],
+    properties: {
+      enrollment_id: { type: 'integer' },
+      program_edition_id: { type: 'integer' },
+      session_number: { type: 'integer', minimum: 1 },
+      status: { type: ['string', 'null'], enum: ['P', 'T', 'F', null] },
+      user_id: { type: ['integer', 'null'] }
+    }
+  }
+}

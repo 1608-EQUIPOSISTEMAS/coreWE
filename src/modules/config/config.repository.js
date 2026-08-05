@@ -185,6 +185,7 @@ export class ConfigRepository {
         ) AS submodules
       FROM public.modules m
       LEFT JOIN public.submodules s ON s.module_id = m.module_id
+      WHERE m.active = 'Y'
       GROUP BY m.module_id, m.code, m.name, m.icon, m.route, m.sort_order, m.active
       ORDER BY m.sort_order, m.module_id
     `)
