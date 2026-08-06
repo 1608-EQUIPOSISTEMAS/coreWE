@@ -1,4 +1,4 @@
-import { authenticate, ADMIN_ONLY } from '../../shared/http/auth.middleware.js'
+import { authenticate, ADMIN_ONLY, hasModuleOrRole } from '../../shared/http/auth.middleware.js'
 import {
   configUserListSchema,
   configUserRegisterSchema,
@@ -16,6 +16,8 @@ import * as ctrl from './config.controller.js'
 
 // Administración del sistema: solo ADMIN puede gestionar usuarios, roles y
 // permisos por módulo.
+const CONFIG_FICO = hasModuleOrRole('CONFIGURACION', ['ADMIN', 'FICO', 'LIDER_FICO'])
+
 export default async function configRoutes (fastify) {
   fastify.post('/userlist', { schema: configUserListSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.userListHandler)
   fastify.post('/userregister', { schema: configUserRegisterSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.userRegisterHandler)
@@ -30,7 +32,10 @@ export default async function configRoutes (fastify) {
   fastify.post('/mymodules', { schema: configMyModulesSchema, preHandler: [authenticate] }, ctrl.myModulesHandler)
   fastify.post('/permissionupdate', { schema: configPermissionUpdateSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.permissionUpdateHandler)
 
-  // Catalogo de cursos online que entran a la membresia.
-  fastify.post('/membershipcourselist', { schema: configMembershipCourseListSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.membershipCourseListHandler)
-  fastify.post('/membershipcoursesave', { schema: configMembershipCourseSaveSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.membershipCourseSaveHandler)
+  // Catalogo de cursos online que entran a la membresia. A diferencia del resto
+  // de Configuracion, esta vista la opera FICO (es quien activa membresias), no
+  // solo ADMIN. Union con la matriz: cualquier rol con el modulo CONFIGURACION
+  // otorgado tambien entra.
+  fastify.post('/membershipcourselist', { schema: configMembershipCourseListSchema, preHandler: [authenticate, CONFIG_FICO] }, ctrl.membershipCourseListHandler)
+  fastify.post('/membershipcoursesave', { schema: configMembershipCourseSaveSchema, preHandler: [authenticate, CONFIG_FICO] }, ctrl.membershipCourseSaveHandler)
 }

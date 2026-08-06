@@ -277,10 +277,12 @@ export class EmailConfirmationRepository {
   }
 
   // Cuotas (installment_number > 0) para construir el cronograma del correo.
+  // ponytail: se excluyen las de monto 0 (destino de CC/RP arrastra un pago 0
+  // como cuota); una cuota de S/. 0.00 no le dice nada al alumno.
   async findInstallments (enrollmentId) {
     const { rows } = await this.db.query(`
       SELECT installment_number, amount, due_date
-      FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0 ORDER BY installment_number
+      FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0 AND amount > 0 ORDER BY installment_number
     `, [enrollmentId])
     return rows || []
   }
