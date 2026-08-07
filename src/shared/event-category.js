@@ -13,6 +13,7 @@ import { pool } from './db/pool.js'
 const SQL = `
   SELECT e.enrollment_id,
          e.cat_event_category,
+         e.event_seat,
          c.alias       AS event_category_alias,
          c.description AS event_category_label
     FROM public.enrollments e
@@ -20,8 +21,8 @@ const SQL = `
    WHERE e.enrollment_id = ANY($1::int[])
 `
 
-// Agrega event_category_label / _alias / cat_event_category a cada fila que
-// tenga enrollment_id. Muta y devuelve las filas recibidas.
+// Agrega event_category_label / _alias / cat_event_category / event_seat a cada
+// fila que tenga enrollment_id. Muta y devuelve las filas recibidas.
 // Nunca lanza: es informacion de apoyo, no debe tumbar el detalle completo si
 // la tabla o la columna todavia no existen en ese ambiente.
 export async function attachEventCategory (rows, db = pool) {
@@ -41,6 +42,7 @@ export async function attachEventCategory (rows, db = pool) {
       row.cat_event_category   = hit.cat_event_category
       row.event_category_alias = hit.event_category_alias
       row.event_category_label = hit.event_category_label
+      row.event_seat           = hit.event_seat
     }
   } catch (err) {
     console.error('[attachEventCategory] no se pudo resolver la categoria:', err.message)

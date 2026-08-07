@@ -67,15 +67,6 @@ DECLARE
     v_remainder              numeric(10,2);
 
     v_voucher_url            text;
-
-    v_dsct_pct_id            int;
-    v_dsct_stk_id            int;
-    v_discount_val           numeric(10,2);
-    v_applied_amt            numeric(10,2);
-    v_saldo                  numeric(10,2);
-    v_total_discount         numeric(10,2);
-    v_ben_order              int;
-    v_ben_solo_badge         boolean;
 BEGIN
     IF p_cur IS NULL THEN
         p_cur := 'cur_sp_fico_enrollment_register_direct';
@@ -254,70 +245,6 @@ BEGIN
     )
     RETURNING enrollment_id INTO v_enrollment_id;
 
-    -- 2.b Desglose de descuentos (porcentaje -> promo -> beneficios).
-    --
-    -- Por que existe: sin filas en enrollment_discounts el panel FICO no puede
-    -- mostrar el badge CUENTA PERSONAL ni el de laptop — se derivan del TEXTO de
-    -- los descuentos (useEnrollmentFormatters.hasClaudeAccount / hasLaptopPromo).
-    -- Antes el SP recibia dsct_* en el payload y los tiraba: un beneficio
-    -- registrado desde FICO no dejaba rastro y el area nunca se enteraba.
-    --
-    -- A diferencia del alta comercial, aca NO se recalcula total_amount: en el
-    -- registro directo el monto lo decide FICO y ya quedo escrito arriba. Esto
-    -- solo deja constancia de QUE se aplico.
-    v_dsct_pct_id    := NULLIF(j_insc->>'dsct_porcent_id', '')::int;
-    v_dsct_stk_id    := NULLIF(j_insc->>'dsct_stick_id',   '')::int;
-    v_saldo          := COALESCE(v_list_price, 0);
-    v_total_discount := 0;
-
-    IF v_dsct_pct_id IS NOT NULL THEN
-        SELECT value INTO v_discount_val FROM public.discounts WHERE discount_id = v_dsct_pct_id;
-        v_applied_amt    := ROUND(v_saldo * (COALESCE(v_discount_val, 0) / 100.0), 2);
-        v_saldo          := v_saldo - v_applied_amt;
-        v_total_discount := v_total_discount + v_applied_amt;
-        INSERT INTO public.enrollment_discounts (enrollment_id, discount_id, order_applied, calculated_amount, applied_at, user_registration_id)
-        VALUES (v_enrollment_id, v_dsct_pct_id, 1, v_applied_amt, NOW(), p_user_id);
-    END IF;
-
-    IF v_dsct_stk_id IS NOT NULL THEN
-        SELECT value INTO v_discount_val FROM public.discounts WHERE discount_id = v_dsct_stk_id;
-        v_applied_amt    := GREATEST(ROUND(v_saldo - COALESCE(v_discount_val, 0), 2), 0);
-        v_saldo          := ROUND(COALESCE(v_discount_val, 0), 2);
-        v_total_discount := v_total_discount + v_applied_amt;
-        INSERT INTO public.enrollment_discounts (enrollment_id, discount_id, order_applied, calculated_amount, applied_at, user_registration_id)
-        VALUES (v_enrollment_id, v_dsct_stk_id, 2, v_applied_amt, NOW(), p_user_id);
-    END IF;
-
-    -- Beca / hijo de paquete / cortesia de membresia: el alumno no paga, asi que
-    -- el beneficio entra en 0 y vale por su etiqueta. Misma regla que el alta
-    -- comercial (v_ben_solo_badge) y que computeDiscounts.js en el front.
-    v_ben_solo_badge := v_is_zero_payment OR v_saldo <= 0;
-    v_ben_order      := 3;
-
-    FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(j_insc -> 'dsct_benefit_ids', '[]'::jsonb))
-    LOOP
-        SELECT value INTO v_discount_val FROM public.discounts WHERE discount_id = (v_item->>'value')::int;
-
-        IF v_discount_val IS NOT NULL THEN
-            v_applied_amt    := CASE WHEN v_ben_solo_badge THEN 0 ELSE ROUND(v_discount_val, 2) END;
-            v_saldo          := v_saldo - v_applied_amt;
-            v_total_discount := v_total_discount + v_applied_amt;
-
-            INSERT INTO public.enrollment_discounts (enrollment_id, discount_id, order_applied, calculated_amount, applied_at, user_registration_id)
-            VALUES (v_enrollment_id, (v_item->>'value')::int, v_ben_order, v_applied_amt, NOW(), p_user_id);
-
-            v_ben_order := v_ben_order + 1;
-        END IF;
-    END LOOP;
-
-    -- Pago cero ya dejo discount_amount = list_price arriba (convencion propia):
-    -- no se pisa. En el resto, la cabecera pasa a cuadrar con la suma del desglose.
-    IF NOT v_is_zero_payment AND v_total_discount > 0 THEN
-        UPDATE public.enrollments
-           SET discount_amount = v_total_discount
-         WHERE enrollment_id = v_enrollment_id;
-    END IF;
-
     -- 3. Comprobantes
     j_payment_files := COALESCE(j_insc -> 'ticket_payment_urls', '[]'::jsonb);
     v_voucher_url := NULL;
@@ -429,3 +356,4 @@ EXCEPTION
             SELECT 0 AS result, SQLERRM AS message, NULL::int AS enrollment_id;
 END;
 $procedure$
+
