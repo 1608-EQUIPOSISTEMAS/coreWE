@@ -1,13 +1,16 @@
-﻿// ===== Consolidado Mensual: tablero de una hoja, metricas en filas y meses en columnas =====
+﻿// ===== Reporte Consolidado: tablero de una hoja, metricas en filas y meses en columnas =====
 // Idempotente: borra y rehace la pestana. Toda la data sale de 'Fuente Estatico'.
 // Fila 4 (oculta) = primer dia de cada mes; todas las formulas cuelgan de ahi.
 // OJO: el locale del archivo usa ';' como separador de argumentos y setFormula NO traduce.
 function construirConsolidado() {
   var ANIO = 2026;
   var ss = SpreadsheetApp.getActive();
-  var vieja = ss.getSheetByName('Consolidado Mensual');
-  if (vieja) ss.deleteSheet(vieja);
-  var sh = ss.insertSheet('Consolidado Mensual', ss.getNumSheets());
+  // El origen se resuelve ANTES de borrar nada: si la hoja de ingresos falta, la corrida se
+  // cae sin haber dejado una pestana vacia a medio construir.
+  var diario = hojaIngresos(ss);
+  var vieja = ss.getSheetByName(TABLERO);
+  // La vieja NO se borra todavia: primero hay que copiarle el encabezado a la nueva.
+  var sh = ss.insertSheet(TABLERO + ' (nuevo)', ss.getNumSheets());
 
   var FE = "'Fuente Estatico'!";
   var MES = FE + '$B:$B;">="&C$4;' + FE + '$B:$B;"<="&EOMONTH(C$4;0)';
@@ -29,13 +32,11 @@ function construirConsolidado() {
       ? '=IF(C{trx}=0;0;IFERROR(COUNTUNIQUE(FILTER(' + COR + ';' + DES + ';' + COR + '<>"";' + uni + '));0))'
       : '=IFERROR(COUNTUNIQUE(FILTER(' + COR + ';' + COR + '<>"";' + uni + '));0)';
   }
-  // ---- bloque de INGRESOS POR UNIDAD, leido de 'Ingresos Diarios' ----
+  // ---- bloque de INGRESOS POR UNIDAD, leido de la hoja de ingresos diarios ----
   // No se redefine la taxonomia aqui: se toma tal cual de esa hoja (col B = etiqueta,
   // col A oculta = clave de 'Fuente Estatico'!T). Asi las dos hojas no pueden divergir.
   // Tipo de fila por su etiqueta:  '1. Algo' = metrica  |  'SUBTOTAL...' = suma  |  resto = banda.
-  function bloqueUnidades(ss, FE, MES) {
-    var diario = ss.getSheets().filter(function (s) { return /ingresos\s*diarios/i.test(s.getName()); })[0];
-    if (!diario) throw new Error('No encuentro la hoja Ingresos Diarios');
+  function bloqueUnidades(diario, FE, MES) {
     var ab = diario.getRange(5, 1, 44, 2).getDisplayValues();
 
     var filas = [], subs = [], desde = null, hasta = null, n = 0;
@@ -76,7 +77,7 @@ function construirConsolidado() {
     return { filas: filas, subs: subs };
   }
   // t: sec | mon | num | pct ;  f: formula de la columna C ;  o: formula del total
-  var UNI = bloqueUnidades(ss, FE, MES);
+  var UNI = bloqueUnidades(diario, FE, MES);
   var UNIDADES = UNI.filas;
   var RESTO_C = '=ROUND(C{ing}-(' + UNI.subs.map(function (k) { return 'C{' + k + '}'; }).join('+') + ');0)';
   var RESTO_O = '=ROUND(O{ing}-(' + UNI.subs.map(function (k) { return 'O{' + k + '}'; }).join('+') + ');0)';
@@ -185,11 +186,54 @@ function construirConsolidado() {
   sh.getRange(rTop + 1, 2).setFormula('=QUERY(' + FE + '$A:$T;"' + qtxt + '";0)');
 
   formatearConsolidado(sh, F, r0, fila, rTop);
+  // El encabezado lo mantiene el equipo a mano y el tablero se rehace borrando la hoja: hay
+  // que llevarselo puesto o cada corrida se come el diseno. Se copia DESPUES de formatear,
+  // asi lo hecho a mano gana sobre lo que escribio el script.
+  if (vieja) {
+    adoptarEncabezado(vieja, sh);
+    ss.deleteSheet(vieja);
+  }
+  sh.setName(TABLERO);
   SpreadsheetApp.flush();
 
   console.log('Consolidado listo. Metricas en filas ' + r0 + '-' + (r0 + F.length - 1) + ', top en ' + rTop + '.');
   ['ing', 'nocl', 'alt', 'ali', 'alc'].forEach(function (k) {
     console.log(k + ': ' + sh.getRange(fila[k], 3, 1, 13).getDisplayValues()[0].join(' | '));
+  });
+}
+
+// Las pestanas se renombraron en agosto 2026: 'Ingresos Diarios' -> 'Reporte Ingresos' y
+// 'Consolidado Mensual' -> 'Reporte Consolidado'. El tablero se busca por nombre exacto
+// (hay que crearlo), pero el origen se busca por coincidencia parcial para que el proximo
+// renombre no vuelva a romper la generacion.
+var TABLERO = 'Reporte Consolidado';
+
+function hojaIngresos(ss) {
+  var hoja = ss.getSheets().filter(function (s) { return /ingresos/i.test(s.getName()); })[0];
+  if (!hoja) throw new Error('No encuentro la hoja de ingresos diarios (hoy: Reporte Ingresos)');
+  return hoja;
+}
+
+// Filas 1-3 = encabezado editable a mano (logo, titulo, leyenda). De la 4 hacia abajo manda el
+// script: la 4 son las fechas ocultas y de la 5 al final, el tablero.
+var FILAS_ENCABEZADO = 3;
+
+function adoptarEncabezado(origen, destino) {
+  var cols = Math.min(origen.getMaxColumns(), destino.getMaxColumns());
+  origen.getRange(1, 1, FILAS_ENCABEZADO, cols).copyTo(destino.getRange(1, 1));
+  for (var r = 1; r <= FILAS_ENCABEZADO; r++) destino.setRowHeight(r, origen.getRowHeight(r));
+  copiarImagenes(origen, destino);
+}
+
+// copyTo no arrastra las imagenes sobre la cuadricula, y el logo es una de ellas: van aparte.
+function copiarImagenes(origen, destino) {
+  origen.getImages().forEach(function (img) {
+    var ancla = img.getAnchorCell();
+    if (ancla.getRow() > FILAS_ENCABEZADO) return;
+    destino.insertImage(img.getBlob(), ancla.getColumn(), ancla.getRow(),
+                        img.getAnchorCellXOffset(), img.getAnchorCellYOffset())
+           .setWidth(img.getWidth())
+           .setHeight(img.getHeight());
   });
 }
 

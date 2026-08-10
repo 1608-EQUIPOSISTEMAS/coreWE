@@ -8,7 +8,9 @@
 // vista incluye los descuentos con calculated_amount = 0.
 import { q, pool } from './db.mjs'
 
-const IDS = [13946, 14054, 14523, 14766, 15658, 9474, 13827]
+// Sin argv verifica el lote original; con argv, las inscripciones que se pasen.
+const ARGV_IDS = process.argv.slice(2).filter(a => /^\d+$/.test(a)).map(Number)
+const IDS = ARGV_IDS.length ? ARGV_IDS : [13946, 14054, 14523, 14766, 15658, 9474, 13827]
 
 // Que es "v" dentro del SP.
 const { rows: [{ def }] } = await q(`

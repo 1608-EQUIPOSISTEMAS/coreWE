@@ -12,7 +12,10 @@
 //     (utils/student-contacts.sql.js), no de customers/persons.
 import { q, pool } from './db.mjs'
 
-const EMAILS = [
+// Los correos se pueden pasar por argv para sondear un lote nuevo:
+//   node scripts/probe-cuenta-claude.mjs alguien@gmail.com otro@gmail.com
+const EMAILS = process.argv.slice(2).filter(a => a.includes('@')).map(a => a.toLowerCase())
+const EMAILS_LOTE_ORIGINAL = [
   'mauricio10019@gmail.com',
   'pedroangel20082001ci@gmail.com',
   'rolly.str.03@gmail.com',
@@ -21,6 +24,7 @@ const EMAILS = [
   'johnespinozak96@gmail.com',
   'jesuscelisarias@gmail.com',
 ]
+if (!EMAILS.length) EMAILS.push(...EMAILS_LOTE_ORIGINAL)
 
 const show = (titulo, rows) => {
   console.log(`\n=== ${titulo} (${rows.length}) ===`)

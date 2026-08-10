@@ -318,8 +318,22 @@ export class IntegrationRepository {
       'ACT'                                                AS estado_alumno,
       -- MEMBRESIA: la propia venta de membresia muestra su abreviatura (WE BLACK...);
       -- los cursos comprados bajo membresia muestran el tier normalizado del enrollment.
+      -- Sufijo -DESC cuando el socio pago ese curso usando el 60% de beneficio de la
+      -- membresia (WE PLUS-DESC / WE GOLD-DESC). Desde el 2026-08-03 ese beneficio
+      -- tiene descuento propio ("60% - MEMBRESIA", alias 60_membresia), pero las
+      -- ventas anteriores se cargaron con el generico "GLOBAL 60%": por eso el
+      -- criterio es "cualquier porcentaje de 60", no el alias del descuento.
       CASE WHEN COALESCE(prog.is_membership, false) THEN COALESCE(pv.abbreviation, '')
-           ELSE COALESCE(mtier.abbreviation, '')
+           WHEN mtier.abbreviation IS NULL THEN ''
+           WHEN EXISTS (
+             SELECT 1 FROM public.enrollment_discounts ed
+               JOIN public.discounts d       ON d.discount_id  = ed.discount_id
+               JOIN public."catalog" c_dtype ON c_dtype.catalog_id = d.cat_discount_type
+              WHERE ed.enrollment_id = e.enrollment_id
+                AND c_dtype.alias = 'we_discount_type_percentage'
+                AND ROUND(d.value) = 60
+           ) THEN mtier.abbreviation || '-DESC'
+           ELSE mtier.abbreviation
       END                                                  AS membresia,
       CASE WHEN c_mod.alias = 'we_insc_modality_flexible' THEN 'FLEX' ELSE '' END AS flex
     FROM public.enrollments e
