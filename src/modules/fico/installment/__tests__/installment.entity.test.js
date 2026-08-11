@@ -7,6 +7,7 @@ import {
   assertAddAmount,
   normalizeDueDate,
   nextInstallmentNumber,
+  splitInstallmentDetraction,
   validateReschedule,
   validateCampaign,
   summarizeOdooError,
@@ -364,6 +365,38 @@ describe('buildRescheduleAuditDetails', () => {
   it('refleja fallo de Odoo con el resumen de error', () => {
     const d = buildRescheduleAuditDetails({ reasonCode: 'academico', count: 1, odooResult: { success: false }, hasOrder: true, odooErrorSummary: 'boom' })
     expect(d).toBe('Motivo: Academico — 1 cuota(s) reprogramada(s) | Odoo: FALLO (boom)')
+  })
+})
+
+describe('splitInstallmentDetraction', () => {
+  it('sin detraccion, el pago cubre toda la cuota', () => {
+    expect(splitInstallmentDetraction(5000, null)).toEqual({ amount: 5000, detractionAmount: 0 })
+  })
+
+  it('con detraccion, el pago es el resto y la suma cuadra por construccion', () => {
+    const { amount, detractionAmount } = splitInstallmentDetraction(5000, { amount: 600 })
+    expect(amount).toBe(4400)
+    expect(detractionAmount).toBe(600)
+    expect(amount + detractionAmount).toBe(5000)
+  })
+
+  it('redondea a dos decimales el 12% tipico de servicios', () => {
+    // 12% de 1234.55 = 148.146 -> el asesor tipea 148.15
+    const { amount, detractionAmount } = splitInstallmentDetraction(1234.55, { amount: 148.15 })
+    expect(detractionAmount).toBe(148.15)
+    expect(amount).toBe(1086.4)
+  })
+
+  it('rechaza una detraccion que se come toda la cuota', () => {
+    expect(() => splitInstallmentDetraction(5000, { amount: 5000 })).toThrow(DomainError)
+    expect(() => splitInstallmentDetraction(5000, { amount: 5001 })).toThrow(/no puede cubrir toda la cuota/)
+  })
+
+  it('rechaza montos invalidos', () => {
+    expect(() => splitInstallmentDetraction(5000, { amount: 0 })).toThrow(DomainError)
+    expect(() => splitInstallmentDetraction(5000, { amount: -10 })).toThrow(DomainError)
+    expect(() => splitInstallmentDetraction(5000, { amount: 'mucho' })).toThrow(DomainError)
+    expect(() => splitInstallmentDetraction(5000, {})).toThrow(DomainError)
   })
 })
 

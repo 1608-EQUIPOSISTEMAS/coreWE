@@ -10,6 +10,7 @@ import {
   CAT_SETTLEMENT_STATUS_PAID,
   PAID_STATUS_ALIASES
 } from './installment.entity.js'
+import { ALIAS } from '../../../utils/catalog-aliases.js'
 
 // Etiqueta legible del tipo de programa para el correo de confirmacion de pago.
 function resolveProgramTypeLabel (categoryDescription) {
@@ -53,7 +54,12 @@ export class InstallmentRepository {
 
   // Las cuatro escrituras de la confirmacion (estado de cuota, registro de pago,
   // moneda y token) se aplican de forma atomica.
-  async confirmInstallmentTx ({ installmentId, enrollmentId, amount, paidAt, transactionCode, catPaymentMedium, bankAccountId, voucherUrl, catCurrency, userId }) {
+  //
+  // detraction (opcional): segundo deposito de la misma cuota, con su propio
+  // voucher, numero de operacion y cuenta (la de detracciones del Banco de la
+  // Nacion). Va como una fila mas de payments contra el MISMO installment_id, no
+  // como un pago suelto: los dos depositos saldan una unica cuota.
+  async confirmInstallmentTx ({ installmentId, enrollmentId, amount, paidAt, transactionCode, catPaymentMedium, bankAccountId, voucherUrl, catCurrency, userId, detraction = null }) {
     await withTransaction(async client => {
       await client.query(
         'UPDATE payment_installments SET cat_status = $1 WHERE installment_id = $2',
@@ -66,6 +72,25 @@ export class InstallmentRepository {
           settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Y', $11, NOW())
       `, [enrollmentId, installmentId, amount, paidAt, transactionCode || '', catPaymentMedium || null, CAT_PAYMENT_TYPE_INSTALLMENT, CAT_SETTLEMENT_STATUS_PAID, bankAccountId || null, voucherUrl || null, userId])
+
+      if (detraction) {
+        // Sin el catalogo sembrado la fila entraria con cat_payment_type NULL y
+        // la detraccion quedaria indistinguible de un pago: preferimos abortar.
+        const { rows } = await client.query(
+          'SELECT catalog_id FROM catalog WHERE alias = $1', [ALIAS.PAYMENT_TYPE_DETRACTION]
+        )
+        const catDetraction = rows?.[0]?.catalog_id
+        if (!catDetraction) {
+          throw new Error(`Falta el catalogo ${ALIAS.PAYMENT_TYPE_DETRACTION}: corre scripts/seed-payment-type-detraction.mjs`)
+        }
+
+        await client.query(`
+          INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
+            cat_method_payment, cat_payment_type, cat_settlement_status,
+            settled_in_account_id, evidence_url, active, user_registration_id, registration_date)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Y', $11, NOW())
+        `, [enrollmentId, installmentId, detraction.amount, paidAt, detraction.transactionCode || '', catPaymentMedium || null, catDetraction, CAT_SETTLEMENT_STATUS_PAID, detraction.bankAccountId || null, detraction.voucherUrl || null, userId])
+      }
 
       if (catCurrency) {
         await client.query('UPDATE enrollments SET cat_currency = $1 WHERE enrollment_id = $2', [catCurrency, enrollmentId])

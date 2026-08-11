@@ -1,12 +1,13 @@
-// Despliega scripts/sp_comercial_enrollment_register.sql, probandolo antes
-// contra la BD real dentro de una transaccion que SIEMPRE se revierte.
+// Despliega scripts/sp_comercial_enrollment_register.sql, probandolo antes contra
+// la BD real dentro de una transaccion que SIEMPRE se revierte.
 //
-// Que prueba (los dos lados de la regla del beneficio):
-//   A) Beca 100% + beneficio  -> la venta pasa y el beneficio queda en 0.00
-//      (vale por su etiqueta CUENTA PERSONAL, no por su monto).
-//   B) Sin beca + beneficio   -> el beneficio descuenta sus S/100 como siempre.
-// Si B dejara de descontar, la regla se habria comido dinero real de una venta
-// normal; por eso las dos van juntas.
+// Es el SP que usan TODOS los asesores para inscribir, asi que la prueba cubre
+// las dos ramas que conviven tras el cambio de OS/OP:
+//   A) venta normal al contado -> cuota 1 pendiente + placeholder en payments
+//                                 (el comportamiento de siempre, no puede moverse)
+//   B) venta con Orden de Servicio -> cuota 1 pendiente y NINGUN payment: la
+//                                     empresa deposita semanas despues
+//   C) OS + plan de cuotas -> rechazada, en vez de perder el plan en silencio
 //
 //   node scripts/deploy-sp-comercial-enrollment-register.mjs --dry   # solo prueba
 //   node scripts/deploy-sp-comercial-enrollment-register.mjs         # prueba y aplica
@@ -15,50 +16,15 @@ import { pool } from './db.mjs'
 
 const DRY = process.argv.includes('--dry')
 const SQL_PATH = new URL('./sp_comercial_enrollment_register.sql', import.meta.url)
-const DISCOUNT_CUENTA_CLAUDE = 49
 
 const catalogId = async (client, alias) => {
-  const { rows } = await client.query(`SELECT catalog_id FROM public.catalog WHERE alias = $1 LIMIT 1`, [alias])
+  const { rows } = await client.query('SELECT catalog_id FROM public.catalog WHERE alias = $1 LIMIT 1', [alias])
   if (!rows.length) throw new Error(`catalogo ${alias} inexistente`)
   return rows[0].catalog_id
 }
 
-// Lead matriculable: con version de programa, con fecha de pago pasada, sin
-// inscripcion previa y sin intentos de contacto pendientes (las cuatro guardas
-// que el SP valida antes de tocar dinero).
-async function findLeadMatriculable (client) {
-  const { rows } = await client.query(`
-    SELECT l.lead_id
-    FROM public.leads l
-    WHERE l.enrollment_id IS NULL
-      AND l.program_version_id IS NOT NULL
-      AND l.pay_date IS NOT NULL AND l.pay_date <= CURRENT_DATE
-      AND NOT EXISTS (
-        SELECT 1 FROM public.lead_contact_attempts a
-        WHERE a.lead_id = l.lead_id AND a.cat_result = 3169   -- mismo guard que el SP
-      )
-    ORDER BY l.lead_id DESC
-    LIMIT 1
-  `)
-  if (!rows.length) throw new Error('no hay lead matriculable para la prueba')
-  return rows[0].lead_id
-}
-
-// Descuento porcentual del 100% (la "beca" del catalogo).
-async function findBeca100 (client) {
-  const { rows } = await client.query(`
-    SELECT d.discount_id, d.description
-    FROM public.discounts d
-    JOIN public.catalog c ON c.catalog_id = d.cat_discount_type
-    WHERE c.alias = 'we_discount_type_percentage' AND d.value = 100
-    ORDER BY d.discount_id LIMIT 1
-  `)
-  if (!rows.length) throw new Error('no existe un descuento porcentual de 100%')
-  return rows[0]
-}
-
 async function callRegister (client, leadId, userId, inscription) {
-  const cursor = 'cur_smoke'
+  const cursor = 'cur_smoke_comercial'
   await client.query('CALL public.sp_comercial_enrollment_register($1,$2,$3,$4)',
     [leadId, userId, JSON.stringify({ inscription }), cursor])
   const { rows } = await client.query(`FETCH ALL FROM ${cursor}`)
@@ -66,62 +32,65 @@ async function callRegister (client, leadId, userId, inscription) {
   return rows[0] ?? { result: 0, message: 'sin respuesta' }
 }
 
-async function inspect (client, enrollmentId) {
-  const { rows: [head] } = await client.query(
-    `SELECT list_price, discount_amount, total_amount FROM public.enrollments WHERE enrollment_id = $1`,
-    [enrollmentId]
-  )
-  const { rows: dsc } = await client.query(
-    `SELECT ed.discount_id, d.description, ed.order_applied, ed.calculated_amount
-       FROM public.enrollment_discounts ed
-       JOIN public.discounts d ON d.discount_id = ed.discount_id
-      WHERE ed.enrollment_id = $1 ORDER BY ed.order_applied`,
-    [enrollmentId]
-  )
-  return { head, dsc }
-}
-
-// Cada escenario corre en su propio SAVEPOINT: el SP consume el lead (le setea
-// enrollment_id) y el segundo escenario necesita ese lead virgen otra vez.
-async function scenario (client, { titulo, leadId, userId, base, becaId, esperado }) {
+async function scenario (client, ctx, { titulo, extra, esperado }) {
   await client.query('SAVEPOINT esc')
+  // El SP exige fecha de pago en el lead antes de matricular; se revierte con
+  // el savepoint igual que el resto.
+  await client.query('UPDATE public.leads SET pay_date = NOW()::date WHERE lead_id = $1', [ctx.leadId])
 
   const insc = {
-    email: 'smoke.test@we-educacion.local',
-    document: '99999901',
-    full_name: 'SMOKE', last_name: 'TEST', mother_last_name: 'ROLLBACK',
-    cat_certificate_status: await catalogId(client, 'we_certificate_status_not_requested'),
-    cat_insc_modality: await catalogId(client, 'we_insc_modality_normal'),
-    cat_payment_channel: await catalogId(client, 'we_channel_general'),
-    cat_type_payment: await catalogId(client, 'we_payment_way_single'),
-    cat_method_payment: await catalogId(client, 'we_payment_method_transfer'),
+    document: '99999903',
+    cat_type_document: ctx.catTypeDoc,
+    full_name: 'SMOKE', last_name: 'TEST COMERCIAL', mother_last_name: 'X',
+    email: 'smoke.comercial@we-educacion.local',
+    cat_insc_modality: ctx.catInscModality,
+    cat_certificate_status: ctx.catCertificate,
+    cat_payment_channel: ctx.channelGeneral,
+    cat_type_payment: ctx.paymentSingle,
+    cat_method_payment: ctx.methodTransfer,
     cat_currency: 1,
+    list_price: 1000,
+    total_amount: 1000,
     observations: 'smoke test (revertido)',
-    list_price: base,
-    total_amount: esperado.total,
-    dsct_porcent_id: becaId,
-    dsct_benefit_ids: [{ value: DISCOUNT_CUENTA_CLAUDE, label: 'CUENTA CLAUDE' }],
-    ticket_payment_urls: [{ url: 'http://smoke/x.png', name: 'x.png', type: 'image/png' }]
+    // El canal General exige adjunto. En una venta OS/OP este archivo es la
+    // orden, no un voucher, pero viaja por el mismo campo.
+    ticket_payment_urls: [{ url: 'http://smoke.local/comprobante.pdf', name: 'smoke.pdf', type: 'application/pdf' }],
+    ...extra
   }
 
-  const res = await callRegister(client, leadId, userId, insc)
+  const res = await callRegister(client, ctx.leadId, ctx.userId, insc)
   console.log(`\n── ${titulo}`)
   console.log(`   respuesta: result=${res.result} ${res.message ?? ''}`)
 
-  let ok = res.result === 1
-  if (ok) {
-    const { head, dsc } = await inspect(client, res.enrollment_id)
-    console.table(dsc)
-    console.log(`   cabecera: list_price=${head.list_price} discount_amount=${head.discount_amount} total_amount=${head.total_amount}`)
+  let ok = res.result === esperado.result
+  if (!ok) console.log(`   ✗ result ${res.result}, esperado ${esperado.result}`)
 
-    const badge = dsc.find(r => r.discount_id === DISCOUNT_CUENTA_CLAUDE)
-    ok = !!badge && Number(badge.calculated_amount) === esperado.beneficio
-                 && Number(head.total_amount) === esperado.total
-    if (!badge) console.log('   ✗ no se registro la fila del beneficio: sin ella no hay badge')
-    else if (Number(badge.calculated_amount) !== esperado.beneficio) {
-      console.log(`   ✗ beneficio ${badge.calculated_amount}, esperado ${esperado.beneficio}`)
-    } else if (Number(head.total_amount) !== esperado.total) {
-      console.log(`   ✗ total ${head.total_amount}, esperado ${esperado.total}`)
+  // Un rechazo tiene que serlo por el motivo esperado: sin esto un guard previo
+  // que corta antes daria la prueba por buena.
+  if (ok && esperado.mensaje && !(res.message || '').includes(esperado.mensaje)) {
+    ok = false; console.log(`   ✗ el rechazo no menciona "${esperado.mensaje}"`)
+  }
+
+  if (ok && res.result === 1) {
+    const { rows: [head] } = await client.query(
+      'SELECT total_amount, cat_b2b_doctype FROM public.enrollments WHERE enrollment_id = $1', [res.enrollment_id])
+    const { rows: cuotas } = await client.query(
+      'SELECT installment_number, amount, cat_status FROM public.payment_installments WHERE enrollment_id = $1', [res.enrollment_id])
+    const { rows: [pagos] } = await client.query(
+      'SELECT COUNT(*)::int AS n FROM public.payments WHERE enrollment_id = $1', [res.enrollment_id])
+
+    console.log(`   cabecera: total=${head.total_amount} doctype=${head.cat_b2b_doctype ?? 'null'}`)
+    console.log(`   cuotas: ${cuotas.length} (${cuotas.map(c => `#${c.installment_number}=${c.amount}/${c.cat_status}`).join(' ')}) · payments: ${pagos.n}`)
+
+    if (String(head.cat_b2b_doctype ?? 'null') !== String(esperado.doctype)) {
+      ok = false; console.log(`   ✗ doctype ${head.cat_b2b_doctype}, esperado ${esperado.doctype}`)
+    }
+    if (ok && cuotas.length !== 1) { ok = false; console.log(`   ✗ ${cuotas.length} cuotas, esperada 1`) }
+    if (ok && Number(cuotas[0].cat_status) !== ctx.instPending) {
+      ok = false; console.log(`   ✗ cuota en estado ${cuotas[0].cat_status}, esperado pendiente (${ctx.instPending})`)
+    }
+    if (ok && pagos.n !== esperado.payments) {
+      ok = false; console.log(`   ✗ ${pagos.n} payments, esperados ${esperado.payments}`)
     }
   }
   console.log(ok ? '   ✓ OK' : '   ✗ FALLA')
@@ -134,27 +103,52 @@ const client = await pool.connect()
 let aprobado = false
 try {
   await client.query('BEGIN')
-  await client.query(await readFile(SQL_PATH, 'utf8'))   // compila el SP nuevo
+  await client.query(await readFile(SQL_PATH, 'utf8'))
   console.log('SP compila.')
 
-  const leadId = await findLeadMatriculable(client)
-  const beca = await findBeca100(client)
   const { rows: [u] } = await client.query('SELECT MIN(user_id) AS user_id FROM public.users')
-  console.log(`lead de prueba: ${leadId} · beca: ${beca.discount_id} "${beca.description}" · user: ${u.user_id}`)
+  // Un lead ya inscrito serviria igual (el SP lo pisa), pero uno libre deja la
+  // prueba mas cerca del caso real.
+  const { rows: [lead] } = await client.query(`
+    SELECT l.lead_id FROM public.leads l
+    JOIN public.program_versions pv ON pv.program_version_id = l.program_version_id
+    WHERE l.enrollment_id IS NULL AND l.program_version_id IS NOT NULL
+    ORDER BY l.lead_id DESC LIMIT 1`)
+  if (!lead) throw new Error('no hay lead libre con programa para la prueba')
 
-  const a = await scenario(client, {
-    titulo: 'A) beca 100% + CUENTA CLAUDE → beneficio solo etiqueta',
-    leadId, userId: u.user_id, base: 1000, becaId: beca.discount_id,
-    esperado: { beneficio: 0, total: 0 }
+  const ctx = {
+    userId: u.user_id,
+    leadId: lead.lead_id,
+    catTypeDoc: await catalogId(client, 'we_type_document_dni'),
+    catInscModality: await catalogId(client, 'we_insc_modality_normal'),
+    catCertificate: await catalogId(client, 'we_certificate_status_paid'),
+    channelGeneral: await catalogId(client, 'we_channel_general'),
+    paymentSingle: await catalogId(client, 'we_payment_way_single'),
+    paymentInstall: await catalogId(client, 'we_payment_way_installments'),
+    methodTransfer: await catalogId(client, 'we_payment_method_transfer'),
+    instPending: await catalogId(client, 'we_payment_status_pending'),
+    osDoctype: await catalogId(client, 'we_enrollment_b2b_doctype_service_order')
+  }
+  console.log(`user: ${ctx.userId} · lead: ${ctx.leadId}`)
+
+  const a = await scenario(client, ctx, {
+    titulo: 'A) venta normal al contado → placeholder de pago intacto',
+    extra: {},
+    esperado: { result: 1, doctype: 'null', payments: 1 }
   })
-  const b = await scenario(client, {
-    titulo: 'B) sin beca + CUENTA CLAUDE → el beneficio descuenta S/100',
-    leadId, userId: u.user_id, base: 1000, becaId: null,
-    esperado: { beneficio: 100, total: 900 }
+  const b = await scenario(client, ctx, {
+    titulo: 'B) venta con Orden de Servicio → cuota pendiente sin pago',
+    extra: { cat_b2b_doctype: ctx.osDoctype },
+    esperado: { result: 1, doctype: ctx.osDoctype, payments: 0 }
   })
-  aprobado = a && b
+  const c = await scenario(client, ctx, {
+    titulo: 'C) OS + cuotas → rechazada',
+    extra: { cat_b2b_doctype: ctx.osDoctype, cat_type_payment: ctx.paymentInstall, saved_money: 300 },
+    esperado: { result: 2, mensaje: 'OS/OP' }
+  })
+  aprobado = a && b && c
 } finally {
-  await client.query('ROLLBACK')            // nada de la prueba queda en la BD
+  await client.query('ROLLBACK')
   client.release()
 }
 

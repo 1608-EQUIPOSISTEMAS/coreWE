@@ -16,9 +16,21 @@ export async function confirmInstallmentHandler (req, reply) {
     transactionCode: req.body.transaction_code,
     voucherUrl: req.body.voucher_url,
     paymentDate: req.body.payment_date,
-    userId: req.user?.id ?? req.body.user_id
+    userId: req.user?.id ?? req.body.user_id,
+    detraction: toDetraction(req.body.detraction)
   })
   return reply.code(200).send({ ok: true, data: toResultDto(data) })
+}
+
+// snake_case del HTTP -> camelCase del dominio.
+function toDetraction (raw) {
+  if (!raw) return null
+  return {
+    amount: raw.amount,
+    bankAccountId: raw.bank_account_id,
+    transactionCode: raw.transaction_code,
+    voucherUrl: raw.voucher_url
+  }
 }
 
 export async function additionalPaymentHandler (req, reply) {

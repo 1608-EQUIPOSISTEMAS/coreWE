@@ -87,6 +87,8 @@ export async function paymentDetailGet ({ enrollment_id }) {
         result.membership_program_id = ed.membership_program_id || null
         result.membership_program_name = ed.membership_program_name || null
         result.cat_type_status_alias = ed.cat_type_status_alias || null
+        result.b2b_doctype_alias = ed.b2b_doctype_alias || null
+        result.b2b_doctype_label = ed.b2b_doctype_label || null
         // Correo en copia: el valor guardado, el flag que comercial levanto y la
         // observacion cruda del asesor (enrollments.notes) que la pidio. FICO ve
         // los tres en el preview del correo y decide; nunca se parsea la nota.

@@ -19,6 +19,8 @@ DECLARE
     c_cat_way_phone          int;
     c_channel_general        int;
     c_certificate_paid       int;
+    c_b2b_service_order      int;
+    c_b2b_purchase_order     int;
 
     v_person_id              int;
     v_customer_id            int;
@@ -45,6 +47,7 @@ DECLARE
     v_parent_enrollment_id   int;
     v_cat_b2b_doctype        int;
     v_is_zero_payment        boolean;
+    v_is_doc_pending         boolean;
 
     v_list_price             numeric(10,2);
     v_total_amount           numeric(10,2);
@@ -97,6 +100,8 @@ BEGIN
     SELECT catalog_id INTO c_channel_general        FROM public."catalog" WHERE alias = 'we_channel_general'             LIMIT 1;
     SELECT catalog_id INTO c_certificate_paid       FROM public."catalog" WHERE alias = 'we_certificate_status_paid'     LIMIT 1;
     SELECT catalog_id INTO c_settlement_pending     FROM public."catalog" WHERE alias = 'we_settlement_status_pending'   LIMIT 1;
+    SELECT catalog_id INTO c_b2b_service_order      FROM public."catalog" WHERE alias = 'we_enrollment_b2b_doctype_service_order'  LIMIT 1;
+    SELECT catalog_id INTO c_b2b_purchase_order     FROM public."catalog" WHERE alias = 'we_enrollment_b2b_doctype_purchase_order' LIMIT 1;
 
     -- Lectura de payload
     v_email                 := NULLIF(TRIM(j_insc->>'email'), '');
@@ -115,8 +120,18 @@ BEGIN
     v_membership_program_id := NULLIF(j_insc->>'membership_program_id', '')::int;
     v_parent_enrollment_id  := NULLIF(j_insc->>'parent_enrollment_id', '')::int;
     v_cat_b2b_doctype       := NULLIF(j_insc->>'cat_b2b_doctype', '')::int;
+    -- Orden de Servicio / de Compra: la empresa SI paga, solo que despues. La
+    -- venta nace con su monto real y una cuota pendiente; el asesor sube la
+    -- orden en vez del voucher y FICO la confirma sin plata en la mano. La carta
+    -- de compromiso, en cambio, sigue siendo pago cero (no genera cobranza).
+    -- COALESCE porque un alias ausente dejaria la constante en NULL y el IN
+    -- devolveria NULL, no false: sin esto la venta caeria en pago cero por accidente.
+    v_is_doc_pending        := COALESCE(v_cat_b2b_doctype IN (c_b2b_service_order, c_b2b_purchase_order), false);
     -- Hijo de paquete (tiene padre) = pago cero: la venta vive en el padre.
-    v_is_zero_payment       := v_is_scholarship OR (v_cat_b2b_doctype IS NOT NULL) OR v_is_membership_benefit OR (v_parent_enrollment_id IS NOT NULL);
+    v_is_zero_payment       := v_is_scholarship
+                               OR v_is_membership_benefit
+                               OR (v_parent_enrollment_id IS NOT NULL)
+                               OR (v_cat_b2b_doctype IS NOT NULL AND NOT v_is_doc_pending);
     v_cat_insc_modality     := NULLIF(j_insc->>'cat_insc_modality', '')::int;
     v_list_price            := COALESCE(NULLIF(j_insc->>'list_price', '')::numeric, 0);
     v_total_amount          := COALESCE(NULLIF(j_insc->>'total_amount', '')::numeric, v_list_price);
@@ -149,7 +164,13 @@ BEGIN
         RETURN;
     END IF;
     IF NOT v_is_zero_payment AND v_list_price <= 0 THEN
-        OPEN p_cur FOR SELECT 2 AS result, 'El precio base debe ser mayor a cero (excepto becas, B2B documental o beneficio de membresia).' AS message, NULL::int AS enrollment_id;
+        OPEN p_cur FOR SELECT 2 AS result, 'El precio base debe ser mayor a cero (excepto becas, carta de compromiso o beneficio de membresia).' AS message, NULL::int AS enrollment_id;
+        RETURN;
+    END IF;
+    -- Sin esto el plan de cuotas entraria y se perderia en silencio: la rama de
+    -- OS/OP crea una sola cuota por el total.
+    IF v_is_doc_pending AND v_cat_payment_way = c_payment_plan_install THEN
+        OPEN p_cur FOR SELECT 2 AS result, 'Una venta con OS/OP se registra al contado: la empresa paga el total cuando llega la orden.' AS message, NULL::int AS enrollment_id;
         RETURN;
     END IF;
 
@@ -344,7 +365,18 @@ BEGIN
     -- 4. Cuotas y pagos
     SELECT alias INTO v_cat_payment_way_alias FROM public."catalog" WHERE catalog_id = v_cat_payment_way LIMIT 1;
 
-    IF v_is_zero_payment THEN
+    IF v_is_doc_pending THEN
+        -- OS/OP: cuota por el total, PENDIENTE, y ninguna fila en payments. La
+        -- plata llega semanas despues y se cobra por el flujo normal de cuotas
+        -- (con detraccion si la hubo). Mientras tanto la venta figura en Cobranzas.
+        INSERT INTO public.payment_installments
+            (enrollment_id, installment_number, amount, due_date, cat_status, notes)
+        VALUES
+            (v_enrollment_id, 1, v_total_amount, NOW()::date, c_inst_status_pending,
+             'OS/OP - Inscrito con inicial pendiente, sin pago recibido')
+        RETURNING installment_id INTO v_installment_id;
+
+    ELSIF v_is_zero_payment THEN
         INSERT INTO public.payment_installments
             (enrollment_id, installment_number, amount, due_date, cat_status, notes)
         VALUES

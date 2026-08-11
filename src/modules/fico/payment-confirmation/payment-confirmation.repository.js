@@ -1,5 +1,6 @@
 import { pool } from '../../../shared/db/pool.js'
 import { MEMBERSHIP_ACTIVATION_WINDOW_MONTHS } from './payment-confirmation.entity.js'
+import { ALIAS } from '../../../utils/catalog-aliases.js'
 
 // Persistencia de la confirmacion de pago. Envuelve pool.query y el SP
 // sp_fico_confirm_payment. No contiene reglas de negocio (viven en la entity)
@@ -67,6 +68,23 @@ export class PaymentConfirmationRepository {
       [JSON.stringify(payload)]
     )
     return rows?.[0] || { result: 0, message: 'Sin respuesta' }
+  }
+
+  // Confirmacion de una venta OS/OP: la inscripcion se aprueba sin pago porque
+  // la empresa deposita semanas despues. No pasa por sp_fico_confirm_payment
+  // (ese SP existe para grabar un pago que aqui no hay) y la cuota queda
+  // PENDIENTE a proposito, para que siga apareciendo en Cobranzas.
+  //
+  // El WHERE es el guard de idempotencia: si ya estaba confirmada devuelve 0.
+  async markCheckedWithoutPayment (enrollmentId) {
+    const { rowCount } = await this.db.query(
+      `UPDATE enrollments
+          SET cat_fico_status = (SELECT catalog_id FROM catalog WHERE alias = $2)
+        WHERE enrollment_id = $1
+          AND cat_fico_status IS DISTINCT FROM (SELECT catalog_id FROM catalog WHERE alias = $2)`,
+      [enrollmentId, ALIAS.ENROLLMENT_STATUS_CHECKED]
+    )
+    return rowCount
   }
 
   // Desactiva el placeholder obsoleto: payment cat_payment_type=3113 sin

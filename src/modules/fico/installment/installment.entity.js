@@ -20,6 +20,7 @@ export const CAT_SETTLEMENT_STATUS_PAID = 2573
 // Etiquetas de motivo de reprogramacion para el detalle de auditoria.
 export const RESCHEDULE_REASON_LABELS = { financiero: 'Financiero', academico: 'Academico', personal: 'Personal', otro: 'Otro' }
 
+
 // Estado "Anulada" de cuota (mismo catalogo que usa el flujo de Retiro). La
 // fila NUNCA se borra: conserva monto y vencimiento originales; la causa vive
 // en notes y en el audit log.
@@ -81,6 +82,36 @@ export function assertAddAmount (amount) {
 // Siguiente installment_number a partir del maximo existente (excluye el 0).
 export function nextInstallmentNumber (maxExistingNumber) {
   return Number(maxExistingNumber || 0) + 1
+}
+
+// Desglosa el cobro de una cuota que la empresa pago con detraccion (SPOT): un
+// deposito va a nuestra cuenta y el otro a la cuenta de detracciones del Banco
+// de la Nacion. Son dos vouchers, dos numeros de operacion y dos cuentas, pero
+// UNA sola cuota.
+//
+// Solo entra el monto detraido; el pago se DERIVA como el resto. Es a proposito:
+// si ambos montos se capturaran por separado, un error de tipeo cerraria la
+// cuota con plata que nunca llego. Asi la suma cuadra por construccion.
+//
+// @param {number} installmentAmount  monto de la cuota, leido de BD
+// @param {object|null} detraction    { amount, ... } o null si no hubo detraccion
+// @returns {{ amount: number, detractionAmount: number }}
+export function splitInstallmentDetraction (installmentAmount, detraction) {
+  const total = Number(installmentAmount)
+  if (!detraction) return { amount: total, detractionAmount: 0 }
+
+  const detracted = Number(detraction.amount)
+  if (!Number.isFinite(detracted) || detracted <= 0) {
+    throw new DomainError('Monto de detraccion invalido')
+  }
+  if (detracted >= total) {
+    throw new DomainError(`La detraccion (${fmtMoney(detracted)}) no puede cubrir toda la cuota (${fmtMoney(total)})`)
+  }
+
+  return {
+    amount: Math.round((total - detracted) * 100) / 100,
+    detractionAmount: Math.round(detracted * 100) / 100
+  }
 }
 
 // Valida un conjunto de cambios de reprogramacion contra las filas actuales y la

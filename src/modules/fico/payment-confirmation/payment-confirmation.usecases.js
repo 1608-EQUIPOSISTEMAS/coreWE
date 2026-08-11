@@ -9,7 +9,8 @@ import {
   isIdempotencyEligible,
   isPaidStatusAlias,
   resolveMembershipActivationDecision,
-  CONFIRM_CONTADO
+  CONFIRM_CONTADO,
+  CONFIRM_DOCUMENTAL
 } from './payment-confirmation.entity.js'
 
 // Caso de uso de confirmacion del pago inicial / contado. Orquesta: guards de
@@ -86,6 +87,22 @@ async function idempotencyGuard (enrollmentId, action) {
   return null
 }
 
+// Aprueba una venta con Orden de Servicio / de Compra: pone la inscripcion en
+// 'checked' sin tocar payments ni cuotas. Devuelve la misma forma que el SP para
+// que el resto del caso de uso (hijos SEG, Odoo, correo) siga igual.
+//
+// El UPDATE no afecta filas cuando ya estaba confirmada: eso es el guard de
+// idempotencia de este camino (el de idempotencyGuard mira la cuota, que aqui
+// sigue pendiente a proposito y por lo tanto nunca dispararia).
+async function approveWithoutPayment (enrollmentId) {
+  const updated = await repo.markCheckedWithoutPayment(enrollmentId)
+  if (updated === 0) {
+    console.warn(`[confirmPayment] Idempotente: enrollment=${enrollmentId} ya estaba confirmado (OS/OP)`)
+    return { result: 1, message: 'La inscripcion ya fue confirmada previamente', already_confirmed: true }
+  }
+  return { result: 1, message: 'Inscripcion confirmada. El pago de la OS/OP queda pendiente de cobro.' }
+}
+
 // Resuelve si la confirmacion debe diferir la activacion de membresia. Lee
 // is_membership de BD y delega el calculo de ventana/runAt al SP (TZ Lima),
 // dejando la decision final a la entity pura.
@@ -148,16 +165,27 @@ export async function confirmPayment (payload, deps = {}) {
     }
   }
 
+  const isDocumental = payload.action === CONFIRM_DOCUMENTAL
+
   let resp
-  try {
-    resp = await repo.confirmPaymentSp(payload)
-  } catch (spErr) {
-    console.error('[confirmPayment] SP sp_fico_confirm_payment falló:', spErr.message, spErr.stack, 'payload:', JSON.stringify(payload))
-    throw new Error(`SP confirm_payment: ${spErr.message}`)
+  if (isDocumental) {
+    resp = await approveWithoutPayment(payload.enrollment_id)
+    // Mismo corte que idempotencyGuard: si ya estaba confirmada no se repiten
+    // matricula en Odoo ni correo de bienvenida.
+    if (resp.already_confirmed) return resp
+  } else {
+    try {
+      resp = await repo.confirmPaymentSp(payload)
+    } catch (spErr) {
+      console.error('[confirmPayment] SP sp_fico_confirm_payment falló:', spErr.message, spErr.stack, 'payload:', JSON.stringify(payload))
+      throw new Error(`SP confirm_payment: ${spErr.message}`)
+    }
   }
 
   if (resp.result === 1 && payload.enrollment_id) {
-    if (prevMaxPayId > 0) {
+    // El placeholder solo existe cuando hubo un pago previo declarado; una OS/OP
+    // nace sin fila en payments, asi que no hay nada que desactivar.
+    if (prevMaxPayId > 0 && !isDocumental) {
       try {
         await repo.deactivateObsoletePlaceholder(payload.enrollment_id, prevMaxPayId)
       } catch (e) {
@@ -178,7 +206,9 @@ export async function confirmPayment (payload, deps = {}) {
         enrollmentId: payload.enrollment_id,
         action: 'approved',
         userId: payload.user_id,
-        details: `Pago confirmado: ${payload.action || ''}`
+        details: isDocumental
+          ? 'Inscripcion confirmada por OS/OP - sin pago recibido, cuota pendiente de cobro'
+          : `Pago confirmado: ${payload.action || ''}`
       })
     } catch (auditErr) {
       console.error('[confirmPayment] logAudit approved falló:', auditErr.message)

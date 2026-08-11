@@ -84,7 +84,11 @@ function construirConsolidado() {
 
   var F = [
     { t: 'sec', b: 'RESULTADO DEL MES' },
-    { k: 'ing', t: 'mon', b: 'Ingresos', f: '=SUMIFS(' + FE + '$S:$S;' + MES + ')', o: 'SUMA' },
+    // El ingreso del mes NO se recalcula: se lee del pie de la hoja de ingresos, que a su vez
+    // espeja el ING. TOTALES de 'Ing. Operativos'. Ese archivo es la fuente oficial y no se
+    // toca, asi que el reporte tiene que dar SU numero; sumar 'Fuente Estatico' por nuestra
+    // cuenta da otro (ver reporte-diario-sync-fix.md) y tener dos verdades no sirve a nadie.
+    { k: 'ing', t: 'mon', b: 'Ingresos', f: "=INDEX('" + diario.getName() + "'!$C$52:$C$63;MONTH(C$4))", o: 'SUMA' },
     { k: 'gro', t: 'pct', b: 'Crecimiento vs mes anterior', f: '', o: '' },
     { k: 'trx', t: 'num', b: 'Transacciones', f: '=COUNTIFS(' + FE + '$K:$K;">0";' + MES + ')', o: 'SUMA' },
     { k: 'tkt', t: 'mon', b: 'Ticket promedio', f: '=IFERROR(C{ing}/C{trx};0)', o: '=IFERROR(O{ing}/O{trx};0)' },
@@ -148,7 +152,7 @@ function construirConsolidado() {
 
   // ---- cabecera ----
   sh.getRange('B2').setValue('CONSOLIDADO MENSUAL ' + ANIO);
-  sh.getRange('B3').setValue('Fuente: hoja Fuente Estatico  |  montos en soles, USD convertido a 3,415  |  se actualiza solo con el sync');
+  sh.getRange('B3').setValue('Fuente: hoja Fuente Estatico  |  montos en soles, USD al tipo de cambio del mes (hoja TC)  |  se actualiza solo con el sync');
   sh.getRange('C4').setFormula('=DATE(' + ANIO + ';1;1)');
   sh.getRange('D4').setFormula('=EDATE(C4;1)');
   sh.getRange('D4').copyTo(sh.getRange('E4:N4'));

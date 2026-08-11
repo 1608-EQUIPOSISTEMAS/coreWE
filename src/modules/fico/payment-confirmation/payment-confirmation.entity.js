@@ -7,6 +7,12 @@
 export const CONFIRM_CONTADO = 'confirm_contado'
 export const CONFIRM_PLAN = 'confirm_plan'
 
+// Venta con Orden de Servicio / de Compra: FICO aprueba la inscripcion aunque la
+// plata todavia no haya llegado (la empresa deposita semanas despues). No pasa
+// por el SP —no hay pago que grabar— y la cuota queda pendiente: se cobra mas
+// tarde por el flujo normal de cuotas, con detraccion si la hubo.
+export const CONFIRM_DOCUMENTAL = 'confirm_documental'
+
 // Tipo de pago del placeholder que sp_comercial_enrollment_register crea al
 // confirmar un token (sin transaction_code). Se desactiva tras grabar el real.
 export const CAT_PAYMENT_TYPE_PLACEHOLDER = 3113

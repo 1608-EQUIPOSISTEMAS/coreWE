@@ -30,8 +30,10 @@ export const ALIAS = Object.freeze({
 
   // Tipos de pago (payments.cat_payment_type)
   PAYMENT_TYPE_INITIAL:             'we_payment_type_initial',
-  PAYMENT_TYPE_PAYMENT:             'we_payment_type_payment',
   PAYMENT_TYPE_SINGLE:              'we_payment_type_single',
+  // Detraccion (SPOT): el 12% que la empresa deposita en el Banco de la Nacion.
+  // Es la segunda mitad del cobro de una cuota, no un pago aparte.
+  PAYMENT_TYPE_DETRACTION:          'we_payment_type_detraction',
 
   // Estado de liquidacion bancaria (payments.cat_settlement_status)
   SETTLEMENT_STATUS_PENDING:        'we_settlement_status_pending',

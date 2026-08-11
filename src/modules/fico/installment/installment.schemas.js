@@ -15,7 +15,19 @@ export const confirmInstallmentSchema = {
       bank_account_id: { type: ['integer', 'null'] },
       transaction_code: { type: ['string', 'null'] },
       voucher_url: { type: ['string', 'null'] },
-      payment_date: { type: ['string', 'null'] }
+      payment_date: { type: ['string', 'null'] },
+      // Detraccion (SPOT): segundo deposito de la MISMA cuota. Solo su monto —
+      // el del pago se deriva restando, ver splitInstallmentDetraction.
+      detraction: {
+        type: ['object', 'null'],
+        required: ['amount'],
+        properties: {
+          amount: { type: 'number', exclusiveMinimum: 0 },
+          bank_account_id: { type: ['integer', 'null'] },
+          transaction_code: { type: ['string', 'null'] },
+          voucher_url: { type: ['string', 'null'] }
+        }
+      }
     }
   }
 }

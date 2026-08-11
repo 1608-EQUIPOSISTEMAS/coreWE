@@ -128,12 +128,17 @@ export class EnrollmentRepository {
              cts.alias AS cat_type_status_alias,
              e.email_cc,
              e.requires_email_cc,
-             e.notes AS advisor_observation
+             e.notes AS advisor_observation,
+             -- OS/OP: el panel lo necesita para confirmar la inscripcion sin
+             -- pedir datos bancarios (la empresa deposita semanas despues).
+             cdt.alias AS b2b_doctype_alias,
+             cdt.description AS b2b_doctype_label
       FROM enrollments e
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
       LEFT JOIN programs mp ON mp.program_id = e.membership_program_id
       LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
+      LEFT JOIN public."catalog" cdt ON cdt.catalog_id = e.cat_b2b_doctype
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
     return rows?.[0] || null

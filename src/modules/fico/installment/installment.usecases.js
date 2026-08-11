@@ -7,6 +7,7 @@ import {
   assertAddAmount,
   normalizeDueDate,
   nextInstallmentNumber,
+  splitInstallmentDetraction,
   validateReschedule,
   validateCampaign,
   summarizeOdooError,
@@ -27,7 +28,7 @@ const repo = installmentRepository
 // Confirma una cuota individual: transaccion atomica (cuota + payment + moneda +
 // token) y, fuera de ella, auditoria, sync a Odoo y correo de confirmacion.
 // Errores de validacion preservan el codigo 500 del flujo legacy.
-export async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, catPaymentMedium, catBusinessEntity, bankAccountId, transactionCode, voucherUrl, paymentDate, userId }) {
+export async function confirmInstallment ({ installmentId, enrollmentId, catCurrency, catPaymentMedium, catBusinessEntity, bankAccountId, transactionCode, voucherUrl, paymentDate, userId, detraction = null }) {
   const inst = await repo.findInstallmentWithStatus(installmentId, enrollmentId)
   if (!inst) throw new DomainError('Cuota no encontrada', { statusCode: 500 })
   if (isPaidByAlias(inst.status_alias)) {
@@ -35,25 +36,29 @@ export async function confirmInstallment ({ installmentId, enrollmentId, catCurr
   }
 
   const paidAt = paymentDate ? new Date(paymentDate) : new Date()
+  const { amount, detractionAmount } = splitInstallmentDetraction(inst.amount, detraction)
 
   await repo.confirmInstallmentTx({
     installmentId,
     enrollmentId,
-    amount: inst.amount,
+    amount,
     paidAt,
     transactionCode,
     catPaymentMedium,
     bankAccountId,
     voucherUrl,
     catCurrency,
-    userId
+    userId,
+    detraction: detraction ? { ...detraction, amount: detractionAmount } : null
   })
 
   await repo.logAudit({
     enrollmentId,
     action: 'approved',
     userId,
-    details: `Cuota ${inst.installment_number} confirmada: S/. ${inst.amount}`
+    details: detraction
+      ? `Cuota ${inst.installment_number} confirmada: ${fmtMoney(inst.amount)} = pago ${fmtMoney(amount)} + detraccion ${fmtMoney(detractionAmount)}`
+      : `Cuota ${inst.installment_number} confirmada: S/. ${inst.amount}`
   })
 
   try {

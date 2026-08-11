@@ -29,6 +29,11 @@ DECLARE
     c_channel_token          int;
     c_channel_web            int;
 
+    c_b2b_service_order      int;
+    c_b2b_purchase_order     int;
+    v_cat_b2b_doctype        int;
+    v_is_doc_pending         boolean;
+
     c_status_observed        int;          -- [RESUBMIT]
     c_inst_paid_legacy       int;          -- [RESUBMIT]
     v_existing_fico_status   int;          -- [RESUBMIT]
@@ -121,6 +126,20 @@ BEGIN
     SELECT catalog_id INTO c_pay_status_pending    FROM public."catalog" WHERE alias = 'we_payment_status_pending'     LIMIT 1;
     SELECT catalog_id INTO c_status_observed       FROM public."catalog" WHERE alias = 'we_enrollment_status_observed' LIMIT 1;  -- [RESUBMIT]
     SELECT catalog_id INTO c_inst_paid_legacy      FROM public."catalog" WHERE alias = 'we_inst_paid'                  LIMIT 1;  -- [RESUBMIT]
+    SELECT catalog_id INTO c_b2b_service_order     FROM public."catalog" WHERE alias = 'we_enrollment_b2b_doctype_service_order'  LIMIT 1;
+    SELECT catalog_id INTO c_b2b_purchase_order    FROM public."catalog" WHERE alias = 'we_enrollment_b2b_doctype_purchase_order' LIMIT 1;
+
+    -- Venta con Orden de Servicio / de Compra: el asesor sube la orden en lugar
+    -- del voucher porque la empresa deposita semanas despues. La inscripcion
+    -- nace con su monto real y la cuota PENDIENTE; el cobro llega mas tarde.
+    -- COALESCE: si el alias no existiera, el IN daria NULL y no false.
+    v_cat_b2b_doctype := NULLIF(j_insc->>'cat_b2b_doctype', '')::int;
+    v_is_doc_pending  := COALESCE(v_cat_b2b_doctype IN (c_b2b_service_order, c_b2b_purchase_order), false);
+
+    IF v_is_doc_pending AND v_cat_channel_pay <> c_channel_general THEN
+        OPEN p_cur FOR SELECT 2 AS result, 'Una venta con OS/OP solo se registra por el canal General.' AS message, NULL::int AS enrollment_id;
+        RETURN;
+    END IF;
 
     -- 1. Datos del Lead. El CASE detecta ambos aliases que activan B2B:
     --    legacy 'we_prospect_situation_corporate' + nuevo 'we_prospect_situation_convenios'.
@@ -274,6 +293,13 @@ BEGIN
             LIMIT 1;
 
             IF v_cat_payment_way_alias = 'we_payment_way_installments' THEN
+                -- Antes de exigirle un plan: una OS/OP no se financia, la empresa
+                -- gira el total. Rechazar aca da el mensaje util; si no, el asesor
+                -- recibe un reclamo por el adelanto que ni deberia estar llenando.
+                IF v_is_doc_pending THEN
+                    OPEN p_cur FOR SELECT 2 AS result, 'Una venta con OS/OP se registra al contado: la empresa paga el total cuando llega la orden.' AS message, NULL::int AS enrollment_id;
+                    RETURN;
+                END IF;
                 IF COALESCE((j_insc->>'saved_money')::numeric, 0) <= 0 THEN
                     OPEN p_cur FOR SELECT 2 AS result, 'La modalidad en cuotas requiere un adelanto/reserva mayor a cero.' AS message, NULL::int AS enrollment_id;
                     RETURN;
@@ -415,6 +441,7 @@ BEGIN
             cat_certificate_status   = v_cat_certificate_status,
             cat_inscription_modality = v_cat_insc_modality,
             b2b_contract_id          = NULLIF(j_insc->>'b2b_contract_id', '')::int,
+            cat_b2b_doctype          = v_cat_b2b_doctype,
             student_attachment_url   = j_insc->>'student_attachment_url',
             cat_profile_id           = v_cat_profile,
             agent_origin             = v_agent_origin,
@@ -441,6 +468,7 @@ BEGIN
             registration_date,
             user_registration_id,
             b2b_contract_id,
+            cat_b2b_doctype,
             student_attachment_url,
             active,
             cat_profile_id,
@@ -468,6 +496,7 @@ BEGIN
             NOW(),
             p_user_id,
             NULLIF(j_insc->>'b2b_contract_id', '')::int,
+            v_cat_b2b_doctype,
             j_insc->>'student_attachment_url',
             'Y',
             v_cat_profile,
@@ -597,7 +626,20 @@ BEGIN
         END LOOP;
     END IF;
 
-    IF v_cat_channel_pay = c_channel_general THEN
+    IF v_is_doc_pending THEN
+        -- OS/OP: cuota por el total, PENDIENTE, y ninguna fila en payments. El
+        -- placeholder pendiente que crean las otras ramas le haria creer a FICO
+        -- que hay un pago declarado esperando conciliacion, y aqui no hay nada.
+        INSERT INTO public.payment_installments (
+            enrollment_id, installment_number, amount, due_date, cat_status, notes
+        )
+        VALUES (
+            v_enrollment_id, 1, v_current_total, NOW()::date,
+            c_inst_pending, 'OS/OP - Inscrito con inicial pendiente, sin pago recibido'
+        )
+        RETURNING installment_id INTO v_installment_id;
+
+    ELSIF v_cat_channel_pay = c_channel_general THEN
         IF v_cat_payment_way_alias = 'we_payment_way_installments' AND v_adelanto > 0 THEN
             INSERT INTO public.payment_installments
                 (enrollment_id, installment_number, amount, due_date, cat_status, notes)
