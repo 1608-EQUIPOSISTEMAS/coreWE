@@ -179,6 +179,11 @@ export async function eventResourcesSaveHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function classroomLinksSaveHandler (req, reply) {
+  const data = await usecases.classroomLinksSave(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function updateHandler (req, reply) {
   const response = await usecases.editionUpdate(req.body)
   return reply.code(201).send(response)

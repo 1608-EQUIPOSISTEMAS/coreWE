@@ -89,6 +89,32 @@ describe('wiring HTTP (sin BD)', () => {
     expect(res.json().data).toEqual({ updated: 0 })
   })
 
+  // Links del aula: la unica ruta de /edition con gate de rol propio. Si alguien
+  // le quita el preHandler, Academica sigue funcionando y nadie se entera, por
+  // eso el 403 se prueba explicitamente.
+  it('/api/edition/classroomlinkssave rechaza un rol ajeno con 403', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['COMERCIAL'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/classroomlinkssave',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { edition_num_id: 1, ficha_link: 'https://x' }
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('/api/edition/classroomlinkssave deja pasar a ACADEMICA y exige edition_num_id', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['ACADEMICA'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/classroomlinkssave',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ficha_link: 'https://x' }
+    })
+    // 400 del schema, no 403: el rol paso el gate y se corto antes de la BD.
+    expect(res.statusCode).toBe(400)
+  })
+
   it('/api/edition/eventcategoriessave exige la lista de categorias', async () => {
     const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['ADMIN'] })
     const res = await app.inject({

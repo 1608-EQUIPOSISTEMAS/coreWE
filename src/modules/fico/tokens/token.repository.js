@@ -358,18 +358,19 @@ export class TokenRepository {
     await this.db.query('UPDATE enrollments SET cat_payment_plan = $1 WHERE enrollment_id = $2', [catPaymentPlan, enrollmentId])
   }
 
-  async insertValidations ({ enrollmentId, validatedChildren, customEditions, notes, userId }) {
-    for (const childId of validatedChildren) {
-      const customEdId = customEditions?.[String(childId)] || null
+  // Las filas ya vienen clasificadas por buildValidationRows (entity): aqui solo
+  // se persisten.
+  async insertValidations ({ enrollmentId, rows, notes, userId }) {
+    for (const row of rows) {
       await this.db.query(`
         INSERT INTO enrollment_validations (enrollment_id, child_version_id, validation_type, custom_edition_id, notes, status, requested_by)
         VALUES ($1, $2, $3, $4, $5, 'pending', $6)
-      `, [enrollmentId, childId, customEdId ? 'cross_edition' : 'same_edition', customEdId, notes || null, userId])
+      `, [enrollmentId, row.childVersionId, row.validationType, row.customEditionId, notes || null, userId])
     }
     await this.db.query(`
       INSERT INTO enrollment_audit_log (enrollment_id, action, performed_by, details)
       VALUES ($1, 'validation_requested', $2, $3)
-    `, [enrollmentId, userId, `Convalidacion solicitada desde token: ${validatedChildren.length} modulo(s). ${notes || ''}`])
+    `, [enrollmentId, userId, `Convalidacion solicitada desde token: ${rows.length} modulo(s). ${notes || ''}`])
   }
 
   async linkTokenToEnrollment (tokenId, enrollmentId) {

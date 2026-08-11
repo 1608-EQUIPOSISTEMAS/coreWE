@@ -99,6 +99,30 @@ export const instructorUpdateSchema = {
           relevant_work: { type: ['string', 'null'] },
           cv_url: { type: ['string', 'null'] },
           cv_documents_url: { type: ['string', 'null'] },
+          // Accesos del docente. odoo_username es el usuario con el que entra a
+          // Odoo (dato de contacto); no confundir con odoo_user_id, que es la FK
+          // que escribe la sincronizacion y no se toca desde la ficha.
+          // Las contraseñas se guardan en claro: la ficha tiene que poder
+          // mostrarlas para dictarselas al docente, no verificarlas contra un
+          // login. Por eso no van hasheadas (ver scripts/add-instructor-passwords.mjs).
+          odoo_username: { type: ['string', 'null'] },
+          odoo_password: { type: ['string', 'null'] },
+          teams_username: { type: ['string', 'null'] },
+          teams_password: { type: ['string', 'null'] },
+          // Carpetas de clase: la ficha manda SIEMPRE la lista completa y el SP
+          // la reemplaza. Mandar [] borra todas; omitir la clave no toca nada.
+          class_folders: {
+            type: ['array', 'null'],
+            items: {
+              type: 'object',
+              required: ['folder_url'],
+              additionalProperties: false,
+              properties: {
+                label: { type: ['string', 'null'] },
+                folder_url: { type: 'string' }
+              }
+            }
+          },
           programs: {
             type: ['array', 'null'],
             items: {

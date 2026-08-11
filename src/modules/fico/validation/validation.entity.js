@@ -118,7 +118,12 @@ export function buildEditionPlan ({ childrenStruct, validatedSet, editionMap, cu
       continue
     }
 
-    const isOutsideTree = !treeEdition
+    // "Fuera del arbol" no es solo no estar programado: tambien lo esta el hijo
+    // que SI figura en el arbol pero se lleva en otra edicion. Comparar contra la
+    // edicion del arbol (y no solo su existencia) es lo que hace que "el modulo 1
+    // en octubre" desenganche al padre; sin esto el override se guardaba pero el
+    // alumno igual entraba al grupo del diplomado con la cohorte original.
+    const isOutsideTree = !treeEdition || Number(editionId) !== Number(treeEdition.editionId)
     if (isOutsideTree) anyOutsideTree = true
 
     editionPlan.push({
@@ -131,9 +136,43 @@ export function buildEditionPlan ({ childrenStruct, validatedSet, editionMap, cu
     })
   }
 
-  // E0 solo aplica si efectivamente se inscribira algun hijo fuera del arbol.
-  const isE0 = anyOutsideTree && editionPlan.length > 0
+  // E0 = el padre deja de ser la unidad de inscripcion y cada modulo va solo.
+  // Dispara con cualquier desvio del arbol del padre:
+  //   - algun hijo en edicion propia (anyOutsideTree), o
+  //   - algun modulo convalidado: el slide_group del padre da acceso al diplomado
+  //     COMPLETO, asi que inscribir al padre le regalaria el modulo convalidado.
+  const isE0 = (anyOutsideTree || validatedSet.size > 0) && editionPlan.length > 0
   return { editionPlan, skipped, isE0 }
+}
+
+// Convierte la seleccion del formulario comercial (hijos convalidados + ediciones
+// elegidas) en filas de enrollment_validations. Un hijo NO convalidado con edicion
+// elegida NO es una convalidacion: va como EDITION_OVERRIDE para que se inscriba en
+// esa edicion. Antes esas ediciones se perdian (el asesor las elegia y el backend
+// solo recorria los convalidados), por eso el escenario "hijo 1 en octubre" nunca
+// llegaba a FICO.
+export function buildValidationRows ({ validatedChildren = [], customEditions = {} }) {
+  const isValidated = new Set(validatedChildren.map(String))
+
+  const rows = validatedChildren.map(childId => {
+    const customEditionId = customEditions?.[String(childId)] || null
+    return {
+      childVersionId: childId,
+      validationType: customEditionId ? 'cross_edition' : 'same_edition',
+      customEditionId
+    }
+  })
+
+  for (const [childId, editionId] of Object.entries(customEditions || {})) {
+    if (!editionId || isValidated.has(childId)) continue
+    rows.push({
+      childVersionId: Number(childId),
+      validationType: EDITION_OVERRIDE,
+      customEditionId: editionId
+    })
+  }
+
+  return rows
 }
 
 // Mapea los hijos del arbol del padre a su edicion default (tree edition).

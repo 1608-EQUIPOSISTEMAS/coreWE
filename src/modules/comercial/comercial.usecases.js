@@ -5,6 +5,7 @@ import { DomainError } from '../../shared/errors.js'
 import { comercialRepository } from './comercial.repository.js'
 import slackClient from '../../config/slack.js'
 import { refreshEnrollmentMv } from '../../services/fico-mv-refresh.cron.js'
+import { buildValidationRows } from '../fico/validation/validation.entity.js'
 import {
   buildFilterPayload,
   buildStatsFilterPayload,
@@ -135,23 +136,27 @@ export async function enrollmentRegister (payload) {
     }
 
     const vals = payload.validations
-    if (vals?.enabled && vals.validated_children?.length > 0) {
+    if (vals?.enabled) {
       try {
-        for (const childId of vals.validated_children) {
-          const customEdId = vals.custom_editions?.[String(childId)] || null
+        const rows = buildValidationRows({
+          validatedChildren: vals.validated_children || [],
+          customEditions: vals.custom_editions || {}
+        })
+        for (const row of rows) {
           await repo.insertEnrollmentValidation(
             response.enrollment_id,
-            childId,
-            customEdId ? 'cross_edition' : 'same_edition',
-            customEdId,
+            row.childVersionId,
+            row.validationType,
+            row.customEditionId,
             vals.notes || null,
             user_id
           )
         }
+        const overrides = rows.length - (vals.validated_children?.length || 0)
         await repo.insertValidationRequestedAudit(
           response.enrollment_id,
           user_id,
-          `Convalidacion solicitada: ${vals.validated_children.length} modulo(s) convalidado(s). ${vals.notes || ''}`
+          `Convalidacion solicitada: ${vals.validated_children?.length || 0} modulo(s) convalidado(s), ${overrides} con edicion personalizada. ${vals.notes || ''}`
         )
       } catch (err) {
         console.error('[enrollmentRegister] Error guardando convalidaciones:', err.message)

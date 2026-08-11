@@ -530,6 +530,24 @@ export const eventResourcesGetSchema = {
   }
 }
 
+// Links del aula que Academica edita en linea desde Producto > Cronograma.
+// Solo estas claves: el usecase filtra igual, pero declararlas es lo que evita
+// que AJV (removeAdditional) las borre en silencio.
+export const classroomLinksSaveSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['edition_num_id'],
+    properties: {
+      edition_num_id: { type: 'integer' },
+      whatsapp_link: { type: ['string', 'null'] },
+      teams_link: { type: ['string', 'null'] },
+      ficha_link: { type: ['string', 'null'] },
+      grades_link: { type: ['string', 'null'] }
+    }
+  }
+}
+
 export const eventResourcesSaveSchema = {
   // El banner viaja en base64: 2 MB de imagen son ~2.7 MB de body. El default
   // de Fastify (1 MB) lo rechazaria con 413. Se deja holgura sobre el tope real
@@ -562,14 +580,19 @@ export const editionUpdateSchema = {
     additionalProperties: false,
     properties: {
       id: { type: 'integer' },
-      user_id: {
-        type: 'integer',
-        additionalProperties: true
-      },
+      user_id: { type: 'integer' },
       edition: {
         type: 'object',
         additionalProperties: false,
         properties: {
+          // Links del aula. Van declarados aunque parezcan opcionales: AJV corre
+          // con removeAdditional (ver tests/smoke/http-wiring.test.js), asi que
+          // un campo no declarado se BORRA en silencio y el guardado miente sin
+          // fallar. sp_edition_update solo escribe la clave que viaja en el JSON.
+          whatsapp_link: { type: ['string', 'null'] },
+          teams_link: { type: ['string', 'null'] },
+          ficha_link: { type: ['string', 'null'] },
+          grades_link: { type: ['string', 'null'] },
           program_version_id: { type: ['integer', 'null'] },
           instructor_id: { type: ['integer', 'null'] },
           start_date: { type: ['string', 'null'] },

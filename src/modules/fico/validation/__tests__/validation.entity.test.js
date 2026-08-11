@@ -6,6 +6,7 @@ import {
   annotateChildrenWithTree,
   findUnassignableChildren,
   buildEditionPlan,
+  buildValidationRows,
   EDITION_OVERRIDE
 } from '../validation.entity.js'
 
@@ -84,7 +85,25 @@ describe('buildEditionPlan', () => {
     { child_program_version_id: 3, child_name: 'Mod C', sort_order: 3 }
   ]
 
-  it('salta convalidados y planifica el resto desde el arbol (no E0)', () => {
+  it('sin convalidacion ni override el padre cubre a los hijos (no E0)', () => {
+    const { editionPlan, skipped, isE0 } = buildEditionPlan({
+      childrenStruct,
+      validatedSet: new Set(),
+      editionMap: {
+        1: { editionId: 100, globalCode: 'A-26', sortOrder: 1 },
+        2: { editionId: 200, globalCode: 'B-26', sortOrder: 2 },
+        3: { editionId: 300, globalCode: 'C-26', sortOrder: 3 }
+      },
+      customEditions: {}
+    })
+    expect(skipped).toEqual([])
+    expect(isE0).toBe(false)
+    expect(editionPlan.map(p => p.childPvId)).toEqual([1, 2, 3])
+  })
+
+  // Escenario 1: convalida el modulo 1 -> solo se inscriben 2 y 3, y como el
+  // slide_group del padre daria acceso tambien al convalidado, van individuales.
+  it('convalidar un modulo salta ese hijo y fuerza E0 sobre el resto', () => {
     const { editionPlan, skipped, isE0 } = buildEditionPlan({
       childrenStruct,
       validatedSet: new Set([1]),
@@ -95,19 +114,37 @@ describe('buildEditionPlan', () => {
       customEditions: {}
     })
     expect(skipped).toEqual([])
-    expect(isE0).toBe(false)
+    expect(isE0).toBe(true)
     expect(editionPlan.map(p => p.childPvId)).toEqual([2, 3])
-    expect(editionPlan[0]).toMatchObject({ editionId: 200, isOutsideTree: false, globalCode: 'B-26' })
+    expect(editionPlan[0]).toMatchObject({ editionId: 200, globalCode: 'B-26' })
   })
 
-  it('custom edition gana sobre la edicion del arbol', () => {
-    const { editionPlan } = buildEditionPlan({
+  // Escenario 2: los 3 se inscriben, pero el modulo 1 en su edicion elegida.
+  it('custom edition gana sobre la del arbol y desengancha al padre', () => {
+    const { editionPlan, isE0 } = buildEditionPlan({
+      childrenStruct,
+      validatedSet: new Set(),
+      editionMap: {
+        1: { editionId: 100, globalCode: 'A-tree', sortOrder: 1 },
+        2: { editionId: 200, globalCode: 'B-26', sortOrder: 2 },
+        3: { editionId: 300, globalCode: 'C-26', sortOrder: 3 }
+      },
+      customEditions: { 1: 999 }
+    })
+    expect(isE0).toBe(true)
+    expect(editionPlan.map(p => p.editionId)).toEqual([999, 200, 300])
+    expect(editionPlan[0].isOutsideTree).toBe(true)
+    expect(editionPlan[1].isOutsideTree).toBe(false)
+  })
+
+  it('custom edition igual a la del arbol no cuenta como fuera del arbol', () => {
+    const { isE0, editionPlan } = buildEditionPlan({
       childrenStruct: [childrenStruct[0]],
       validatedSet: new Set(),
       editionMap: { 1: { editionId: 100, globalCode: 'A-tree', sortOrder: 1 } },
-      customEditions: { 1: 999 }
+      customEditions: { 1: '100' }
     })
-    expect(editionPlan[0].editionId).toBe(999)
+    expect(isE0).toBe(false)
     expect(editionPlan[0].isOutsideTree).toBe(false)
   })
 
@@ -133,6 +170,29 @@ describe('buildEditionPlan', () => {
     expect(editionPlan).toEqual([])
     expect(skipped).toEqual([{ childPvId: 1, childName: 'Mod A' }])
     expect(isE0).toBe(false)
+  })
+})
+
+describe('buildValidationRows', () => {
+  it('clasifica convalidados y guarda la edicion elegida de los que SI se inscriben', () => {
+    const rows = buildValidationRows({
+      validatedChildren: [1],
+      customEditions: { 2: 999 }
+    })
+    expect(rows).toEqual([
+      { childVersionId: 1, validationType: 'same_edition', customEditionId: null },
+      { childVersionId: 2, validationType: EDITION_OVERRIDE, customEditionId: 999 }
+    ])
+  })
+
+  it('un convalidado con edicion propia es cross_edition, no override', () => {
+    const rows = buildValidationRows({ validatedChildren: [1], customEditions: { 1: 555 } })
+    expect(rows).toEqual([{ childVersionId: 1, validationType: 'cross_edition', customEditionId: 555 }])
+  })
+
+  it('sin convalidados devuelve solo los overrides', () => {
+    const rows = buildValidationRows({ validatedChildren: [], customEditions: { 7: 42 } })
+    expect(rows).toEqual([{ childVersionId: 7, validationType: EDITION_OVERRIDE, customEditionId: 42 }])
   })
 })
 

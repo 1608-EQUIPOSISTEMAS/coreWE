@@ -473,7 +473,10 @@ export class EditionRepository {
   // Solo escribe las claves presentes en `fields`: guardar un campo suelto no
   // debe pisar los otros cinco a NULL. Los nombres vienen ya filtrados contra
   // una whitelist en el usecase, nunca directo del request.
-  async saveEventResources (editionNumId, fields) {
+  // Setter generico de columnas de una edicion. El SET se arma con las claves
+  // que llegan, asi que el usecase que lo llame DEBE filtrarlas contra su propia
+  // whitelist: aca no hay defensa contra un nombre de columna arbitrario.
+  async updateEditionColumns (editionNumId, fields) {
     const names = Object.keys(fields)
     if (!names.length) return 0
     const sets = names.map((name, i) => `${name} = $${i + 2}`).join(', ')

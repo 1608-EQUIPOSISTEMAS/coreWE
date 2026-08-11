@@ -203,6 +203,33 @@ export async function editionGet ({ id } = {}) {
   return rows?.[0] || null
 }
 
+// ── LINKS DEL AULA POR EDICION ─────────────────────────────────────────────
+// Los edita Academica en linea desde Producto > Cronograma.
+//
+// Endpoint propio y no sp_edition_update por dos razones: ese SP reescribe la
+// edicion entera (fechas, docente, codigos) y exige rol ADMIN o PRODUCTO, asi
+// que darle acceso a Academica para que pegue un link le abriria todo lo demas.
+// Aca el SET no puede tocar nada fuera de esta lista.
+const CLASSROOM_LINK_FIELDS = ['whatsapp_link', 'teams_link', 'ficha_link', 'grades_link']
+
+export async function classroomLinksSave (payload = {}) {
+  const editionId = Number(payload.edition_num_id) || null
+  if (!editionId) throw new DomainError('Falta edition_num_id', { statusCode: 400 })
+
+  // Cadena vacia -> NULL: "sin link" es NULL en toda la app (el chip lo pinta
+  // apagado y el correo omite el bloque). Una clave ausente no se toca.
+  const fields = {}
+  for (const name of CLASSROOM_LINK_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(payload, name)) continue
+    const raw = payload[name]
+    fields[name] = raw == null || String(raw).trim() === '' ? null : String(raw).trim()
+  }
+  if (!Object.keys(fields).length) return { updated: 0 }
+
+  const updated = await withMissingColumnHint(() => repo.updateEditionColumns(editionId, fields))
+  return { updated }
+}
+
 // ── RECURSOS DE EVENTO POR EDICION ─────────────────────────────────────────
 // Whitelist explicita: es lo unico que puede llegar al SET del UPDATE.
 const EVENT_RESOURCE_FIELDS = [
@@ -232,9 +259,10 @@ async function withMissingColumnHint (fn) {
   } catch (err) {
     if (err?.code === '42703') {
       throw new DomainError(
-        'Faltan las columnas de recursos de evento en la base de datos. ' +
-        'Corre Backend/scripts/add-event-edition-resources.sql.',
-        { statusCode: 503, code: 'EVENT_RESOURCES_SCHEMA_MISSING' }
+        'Faltan columnas de program_editions en la base de datos. Corre ' +
+        'Backend/scripts/add-event-edition-resources.sql (recursos de evento) o ' +
+        'Backend/scripts/add-edition-classroom-links.mjs (links del aula).',
+        { statusCode: 503, code: 'EDITION_COLUMNS_SCHEMA_MISSING' }
       )
     }
     throw err
@@ -473,7 +501,7 @@ export async function eventResourcesSave (payload = {}) {
     }
   }
 
-  const updated = await withMissingColumnHint(() => repo.saveEventResources(editionId, fields))
+  const updated = await withMissingColumnHint(() => repo.updateEditionColumns(editionId, fields))
   return { updated }
 }
 

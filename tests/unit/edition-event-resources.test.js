@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // El banner viaja en base64 dentro del JSON y se guarda como bytea. Estas
 // guardas son lo unico que separa un correo sano de uno de 5 MB por asistente.
 const repo = {
-  saveEventResources: vi.fn(async () => 1),
+  updateEditionColumns: vi.fn(async () => 1),
   getEventResources: vi.fn(async () => null),
   getEventBannerImage: vi.fn(async () => null),
   listEventEditions: vi.fn(async () => []),
@@ -29,7 +29,7 @@ const { eventResourcesSave, eventEditionsList, eventCategoriesSave } =
   await import('../../src/modules/edition/edition.usecases.js')
 
 beforeEach(() => {
-  repo.saveEventResources.mockClear()
+  repo.updateEditionColumns.mockClear()
   repo.listEventEditions.mockClear()
   repo.saveEventCategories.mockClear()
   repo.listEventEditions.mockImplementation(async () => [])
@@ -44,7 +44,7 @@ describe('eventResourcesSave', () => {
       banner_image_base64: PNG_1PX,
       banner_mime: 'image/png'
     })
-    const [, fields] = repo.saveEventResources.mock.calls[0]
+    const [, fields] = repo.updateEditionColumns.mock.calls[0]
     expect(Buffer.isBuffer(fields.banner_image)).toBe(true)
     expect(fields.banner_mime).toBe('image/png')
   })
@@ -55,13 +55,13 @@ describe('eventResourcesSave', () => {
       banner_image_base64: `data:image/png;base64,${PNG_1PX}`,
       banner_mime: 'image/png'
     })
-    const [, fields] = repo.saveEventResources.mock.calls[0]
+    const [, fields] = repo.updateEditionColumns.mock.calls[0]
     expect(fields.banner_image.length).toBeGreaterThan(0)
   })
 
   it('cadena vacia borra el banner', async () => {
     await eventResourcesSave({ edition_num_id: 10, banner_image_base64: '' })
-    const [, fields] = repo.saveEventResources.mock.calls[0]
+    const [, fields] = repo.updateEditionColumns.mock.calls[0]
     expect(fields.banner_image).toBeNull()
     expect(fields.banner_mime).toBeNull()
   })
@@ -70,7 +70,7 @@ describe('eventResourcesSave', () => {
   // el banner que se cargo en otra sesion.
   it('sin la clave no toca el banner existente', async () => {
     await eventResourcesSave({ edition_num_id: 10, session_detail_onsite: 'Sede X' })
-    const [, fields] = repo.saveEventResources.mock.calls[0]
+    const [, fields] = repo.updateEditionColumns.mock.calls[0]
     expect(fields).not.toHaveProperty('banner_image')
     expect(fields.session_detail_onsite).toBe('Sede X')
   })
@@ -86,7 +86,7 @@ describe('eventResourcesSave', () => {
     await eventResourcesSave({
       edition_num_id: 10, banner_image_base64: ok, banner_mime: 'image/jpeg'
     })
-    expect(repo.saveEventResources).toHaveBeenCalled()
+    expect(repo.updateEditionColumns).toHaveBeenCalled()
   })
 
   it('rechaza un banner de mas de 2 MB', async () => {
@@ -98,14 +98,14 @@ describe('eventResourcesSave', () => {
 
   it('normaliza cadenas vacias a null en los links', async () => {
     await eventResourcesSave({ edition_num_id: 10, certificate_form_link: '   ' })
-    const [, fields] = repo.saveEventResources.mock.calls[0]
+    const [, fields] = repo.updateEditionColumns.mock.calls[0]
     expect(fields.certificate_form_link).toBeNull()
   })
 
   it('sin edition_num_id no escribe nada', async () => {
     const res = await eventResourcesSave({ banner_image_base64: PNG_1PX, banner_mime: 'image/png' })
     expect(res).toEqual({ updated: 0 })
-    expect(repo.saveEventResources).not.toHaveBeenCalled()
+    expect(repo.updateEditionColumns).not.toHaveBeenCalled()
   })
 })
 

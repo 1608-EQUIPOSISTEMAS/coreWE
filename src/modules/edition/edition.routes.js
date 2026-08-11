@@ -1,4 +1,4 @@
-import { authenticate, ALL_ADMIN, ALL_COMERCIAL } from '../../shared/http/auth.middleware.js'
+import { authenticate, hasRole, ALL_ADMIN, ALL_COMERCIAL } from '../../shared/http/auth.middleware.js'
 import {
   editionRegisterSchema,
   editionTreeRegisterSchema,
@@ -23,6 +23,7 @@ import {
   sessionControlSaveSchema,
   editionGetSchema,
   editionUpdateSchema,
+  classroomLinksSaveSchema,
   eventEditionsListSchema,
   eventGoalsSaveSchema,
   eventResourcesGetSchema,
@@ -180,6 +181,15 @@ export default async function editionRoutes (fastify) {
   fastify.post('/eventgoalssave', { schema: eventGoalsSaveSchema }, ctrl.eventGoalsSaveHandler)
   fastify.post('/eventcategoriesget', { schema: eventResourcesGetSchema }, ctrl.eventCategoriesGetHandler)
   fastify.post('/eventcategoriessave', { schema: eventCategoriesSaveSchema }, ctrl.eventCategoriesSaveHandler)
+  // Links del aula (WhatsApp / Teams / Ficha / Lista de notas). Endpoint propio
+  // en vez de /editionupdate: ese SP reescribe la edicion entera y solo admite
+  // ADMIN/PRODUCTO, y estos links los mantiene Academica. El gate de rol va
+  // explicito porque aca el SP ya no valida nada.
+  fastify.post('/classroomlinkssave', {
+    schema: classroomLinksSaveSchema,
+    preHandler: hasRole(['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO', 'ACADEMICA', 'LIDER_ACADEMICA'])
+  }, ctrl.classroomLinksSaveHandler)
+
   fastify.post('/editionupdate', {
     schema: editionUpdateSchema
     // preHandler: [authenticate, ALL_ADMIN]

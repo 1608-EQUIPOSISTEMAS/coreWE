@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { DomainError, NotFoundError } from '../../../shared/errors.js'
 import { slack } from '../../../shared/adapters/slack/slack.adapter.js'
 import { tokenRepository } from './token.repository.js'
+import { buildValidationRows } from '../validation/validation.entity.js'
 import {
   CAT_INSTALLMENT_DRAFT,
   CAT_PAYMENT_PLAN_INSTALLMENTS,
@@ -185,15 +186,13 @@ export async function confirmToken ({ tokenId, userId }) {
       }
 
       const vals = inscPayload.validations
-      if (vals?.enabled && vals.validated_children?.length > 0) {
+      if (vals?.enabled) {
         try {
-          await repo.insertValidations({
-            enrollmentId,
-            validatedChildren: vals.validated_children,
-            customEditions: vals.custom_editions,
-            notes: vals.notes,
-            userId
+          const rows = buildValidationRows({
+            validatedChildren: vals.validated_children || [],
+            customEditions: vals.custom_editions || {}
           })
+          if (rows.length > 0) await repo.insertValidations({ enrollmentId, rows, notes: vals.notes, userId })
         } catch (e) {
           console.error('[confirmToken] Error guardando convalidaciones:', e.message)
         }
