@@ -58,6 +58,8 @@ export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO
 // Fundacion entra por los campos "Empresa vinculada" y "Convenio corporativo"
 // del formulario de leads, que consultan /b2b/companylist y /b2b/agreementlist.
 export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA', 'FUNDACION', 'LIDER_FUNDACION'])
+// Mismos roles que declara _nav.js para el grupo Marketing del sidebar.
+export const ALL_MARKETING = hasModuleOrRole('MARKETING', ['ADMIN', 'GERENCIA'])
 
 // Gates combinados (OR) — usar uno solo en preHandler.
 // Apilar varios hasRole en preHandler los AND-ea (todos deben pasar), por eso

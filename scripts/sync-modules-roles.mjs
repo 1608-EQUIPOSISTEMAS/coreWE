@@ -66,6 +66,7 @@ const CATALOGO = [
   ]],
   ['MARKETING',     'Marketing',      '/marketing',              [
     ['PUBLICACIONES', 'Publicaciones RRSS'],
+    ['CRECIMIENTO',   'Crecimiento RRSS'],
   ]],
   ['CLIENTE',       'Cliente',        '/general/cliente',        []],
   ['NOTIFICACIONES','Notificaciones', '/general/notificaciones', []],
