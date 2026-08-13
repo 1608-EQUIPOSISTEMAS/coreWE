@@ -9,15 +9,17 @@ import {
 } from '../integration.entity.js'
 
 // Alumno de la lista de monto-cero y uno normal, con los mismos montos.
-const LISTED = 'joselujan.barton@gmail.com'
+const LISTED = 'wchambi@bancoripley.com.pe'
 const NORMAL = 'alguien.normal@gmail.com'
 const amounts = { dsct: 100, al_dia: 200, inicial: 300, saldo: 400, ingreso: 500, descuento: 50, monto: 600 }
 const row = (correo) => ({ correo, nombres: 'X', ...amounts })
 
 describe('isZeroAmountEmail', () => {
   it('matchea normalizando mayusculas y espacios', () => {
-    expect(isZeroAmountEmail('  KIARA_ACOSTA_30@HOTMAIL.COM ')).toBe(true)
+    expect(isZeroAmountEmail('  WCHAMBI@BANCORIPLEY.COM.PE ')).toBe(true)
     expect(isZeroAmountEmail(LISTED)).toBe(true)
+    // los 4 de Excel Intermedio ya pagaron: fuera de la lista desde 13/08/2026
+    expect(isZeroAmountEmail('joselujan.barton@gmail.com')).toBe(false)
     expect(isZeroAmountEmail(NORMAL)).toBe(false)
     expect(isZeroAmountEmail(null)).toBe(false)
     expect(isZeroAmountEmail('')).toBe(false)

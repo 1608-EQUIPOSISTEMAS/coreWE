@@ -7,11 +7,9 @@
 // Cuotas, Adicionales). Pedido de negocio: estos enrollments no deben sumar a
 // ingresos ni a los reportes. Match por correo normalizado (lower/trim); los
 // emails aqui van en minuscula. Mover a config/BD si la lista crece.
+// 2026-08-13: los 4 alumnos de Excel Intermedio (inicio 02/07/2026) salieron de
+// la lista porque ya pagaron; vuelven a sumar con su monto real.
 export const ZERO_AMOUNT_EMAILS = new Set([
-  'joselujan.barton@gmail.com',
-  'kiara_acosta_30@hotmail.com',
-  'paolaalejandro56@gmail.com',
-  'betovahe8892@gmail.com',
   'wchambi@bancoripley.com.pe'
 ])
 

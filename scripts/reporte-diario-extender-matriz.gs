@@ -54,9 +54,51 @@ var FILA_ENERO = 52;
  * toque; el orden completo esta en ampliarDesdeEnero().
  */
 function paso() {
-  construirConsolidado();
-  limpiar();
-  estado();
+  actualizarLeyenda();
+}
+
+/**
+ * La leyenda del tablero decia "USD convertido a 3,415", que dejo de ser cierto
+ * cuando el TC paso a ser mensual (ver tcMensual()). Vive en la fila 3, que por
+ * contrato la mantiene el equipo a mano y construirConsolidado() respeta via
+ * adoptarEncabezado() -- por eso se corrige una vez y sobrevive a los rebuilds.
+ * Se busca por contenido y no por celda fija: la fila 3 va con merges y la celda
+ * ancla se mueve cada vez que alguien reacomoda el encabezado.
+ */
+function actualizarLeyenda() {
+  var LEYENDA = 'Fuente: hoja Fuente Estatico  |  montos en soles, USD convertido al TC ' +
+    'del mes (hoja Control)  |  se actualiza solo con el sync';
+
+  var sh = SpreadsheetApp.getActive().getSheetByName('Reporte Consolidado');
+  var fila = sh.getRange(3, 1, 1, sh.getMaxColumns()).getDisplayValues()[0];
+
+  for (var c = 0; c < fila.length; c++) {
+    if (fila[c].indexOf('Fuente:') < 0) continue;
+    sh.getRange(3, c + 1).setValue(LEYENDA);
+    console.log('Leyenda actualizada en ' + colLetra_(c + 1) + '3.');
+    return;
+  }
+  console.log('No encontre la leyenda en la fila 3. Sin cambios.');
+}
+
+/**
+ * La columna F del pie (detalle) heredaba formato de porcentaje y mostraba
+ * "54664347%" donde va S/546.643,47. El valor siempre estuvo bien -- la
+ * diferencia de la col E cuadraba --, era solo el formato de la celda.
+ */
+function formatearPie() {
+  var ing = hojaIngresos_(SpreadsheetApp.getActive());
+  ing.getRange(FILA_ENERO, 6, 12, 1).setNumberFormat('[$S/.]#,##0.00');
+}
+
+/** Pie del mes de un vistazo: total oficial, detalle y diferencia. */
+function verPie() {
+  var ing = hojaIngresos_(SpreadsheetApp.getActive());
+  var v = ing.getRange(FILA_ENERO, 3, 12, 4).getDisplayValues();
+  console.log(v.map(function (r, i) {
+    return MES[i] + ' | oficial=' + r[0] + ' | trx=' + r[1] + ' | detalle=' + r[3] + ' | dif=' + r[2];
+  }).join('\n'));
+  console.log('checksum B1 = ' + ing.getRange('B1').getDisplayValue());
 }
 
 /** Borra el andamiaje que dejo este one-off. */
@@ -220,14 +262,25 @@ function diagnosticarOrigen() {
 function ampliarDesdeEnero() {
   console.log('===== ANTES =====');
   estado();
-  sembrarControl();
-  tcMensual();
-  extender();
-  arreglar();
-  pieDelMes();
+
+  arreglarFuentePrincipal();   // los 8 meses, con ENERO/FEBRERO rellenados a 18 columnas
+  esperarFuentePrincipal();    // IMPORTRANGE es asincrono: no pegar a medias
+
+  sembrarControl();            // TC oficial + total espejo del origen, por mes
+  tcMensual();                 // 'Fuente Estatico'!S1 convierte USD con el TC del mes
+  extender();                  // 36 semanas desde el 29/12/2025
+  arreglar();                  // checksum y etiquetas dd/mm
+  pieDelMes();                 // filas 52..63: oficial / detalle / diferencia
+  formatearPie();
+
+  asegurarFilasEstatico();     // de ~3.000 a ~10.000 filas
+  forzarPegado();              // repuebla el snapshot y arrastra S1:T1
+  construirConsolidado();      // regenera el tablero
+  actualizarLeyenda();
+
+  limpiar();
   console.log('===== DESPUES =====');
-  estado();
-  console.log('Listo. Ahora: forzarPegado() y despues construirConsolidado().');
+  verPie();
 }
 
 function colLetra_(n) {

@@ -352,3 +352,147 @@ ya existe pero sin clave, por eso `bloqueUnidades()` la marca `sinClave` y le es
 - Sacar la línea `FUNDACIÓN WE` de `PAGOS EXTRAS`.
 
 Después: `forzarPegado()` y luego `construirConsolidado()`.
+
+---
+
+# El reporte pasa a cubrir ENERO → hoy (13/08/2026)
+
+Antes cubría junio–agosto. Ahora los 12 meses, con datos hasta agosto.
+Todo el cambio está en `reporte-diario-extender-matriz.gs` (función `ampliarDesdeEnero()`,
+idempotente); en el proyecto vive como `ampliar-desde-enero.gs`.
+
+## El bug que bloqueaba todo: `#VALUE!` en `Fuente Principal!A1`
+
+Al ampliar `A1` a 8 `IMPORTRANGE` apilados con `{}`, la celda entera caía en
+**`ARRAY_LITERAL: faltaban valores`** y el pipeline quedaba muerto — el snapshot seguía
+congelado en junio y los dos reportes leen del snapshot, no del `IMPORTRANGE`.
+
+Causa: un literal de matriz exige el **mismo ancho** en todos los bloques, y las pestañas
+del origen no lo tienen. Medido, no supuesto:
+
+| Pestaña | `maxCols` |
+|---|---|
+| ENERO, FEBRERO | **17** (llegan a `Q`) |
+| MARZO | 37 (`lastCol` 18) |
+| ABRIL … AGOSTO | 19 |
+
+La columna 18 es `WE PLUS-DESC`, que el origen agregó en agosto: los meses viejos nunca la
+tuvieron. Y al pedir `A30:R3000` de una hoja que termina en `Q`, **Sheets recorta el rango
+en silencio** en vez de dar `#REF!` → 17 columnas → revienta el apilado.
+
+Arreglo (en la fórmula; el origen es archivo oficial y no se toca): las pestañas angostas se
+rellenan hasta 18 columnas con
+
+```
+{IMPORTRANGE(id;"ENERO!A30:Q5000") \ ARRAYFORMULA(IF(IMPORTRANGE(id;"ENERO!A30:A5000")<>"";"";""))}
+```
+
+**No** con `QUERY(...;"select Col1,…,Col17,''")`: el Query Language no admite literales de
+cadena en el `select` y devuelve `#N/A`. Se descubrió midiendo con `COLUMNS()` en una hoja
+temporal (`probarAncho()`), que es la única forma de ver el ancho *entregado* y no el declarado.
+
+**Segundo hallazgo, no buscado:** el rango cortaba en la fila **3000** y las pestañas ya llegan
+a la **3254** — truncaba ~250 filas por mes sin avisar. Subido a 5000.
+
+## Extender la matriz hacia atrás salió casi gratis
+
+`Reporte Ingresos` estaba anclado en 01/06/2026. En vez de insertar 22 bloques a la izquierda
+(rompería `B1`, la cadena de fechas y los `SUMIFS`), se **movió el ancla**: `C1` pasó a
+`DATE(2025;12;29)` y se extendió a la derecha hasta 36 semanas. Como la fila 1 es una cadena
+(`solo C1 es literal, el resto es "= la anterior + 1"`), toda la matriz se recorrió sola y las
+14 semanas que ya existían cayeron en las posiciones 23–36 con sus mismas fechas. Cero pérdida.
+
+`29/12/2025 + 154 días = 01/06/2026`, o sea 22 semanas exactas. El diseño ya admitía mover el
+origen del tiempo aunque se escribió pensando solo en crecer hacia adelante.
+
+## TC mensual (antes era una constante)
+
+`Fuente Estatico!S1` convertía todo USD a **3,415** fijo. Ahora sale de `Control` por mes:
+
+```
+=IF(J1="USD";P1*VLOOKUP(YEAR(B1)*100+MONTH(B1);Control!$A:$B;2;FALSE);P1)
+```
+
+TC oficial cargado (finanzas, 13/08/2026): ene 3,355 · feb 3,361 · mar 3,495 · abr 3,529 ·
+may 3,417 · jun 3,415 · jul **3,399** · ago 3,600.
+
+**Julio bajó de 3,600 a 3,399**: mueve el monto en soles de las ventas en USD de un mes ya
+publicado. Es dato de finanzas, no un efecto colateral.
+
+## Otros cambios
+
+- `Control`: 8 filas (`aaaamm`, TC, `=IMPORTRANGE(origen;"MES!D10")` = total oficial).
+- `Reporte Ingresos` filas 52–63: el pie del mes ahora cubre **los 12 meses**
+  (C = total oficial, F = detalle de `Fuente Estatico`, E = la diferencia a la vista).
+  La col F heredaba **formato de porcentaje** (`54664347%` donde va `S/546.643,47`); el valor
+  siempre estuvo bien, era el formato.
+- `Fuente Estatico` se amplió de ~3.000 a **10.112** filas: `pegar()` escribe por
+  `getRange(fila, col, n, …)` y revienta si la hoja no tiene esas filas creadas.
+
+## Resultado verificado
+
+```
+Fuente Principal: 10.012 filas — {01:1725, 02:1481, 03:1436, 04:1163,
+                                  05:1066, 06:1281, 07:1193, 08:667}
+FORZADO: pegadas 10012 filas (antes había 3141).
+```
+
+Pie del mes (oficial · trx · diferencia contra el detalle):
+
+| Mes | Oficial | Trx | Δ |
+|---|---|---|---|
+| ENERO | 546.643,47 | 1.600 | cuadrado |
+| FEBRERO | 389.859,30 | 1.355 | −235,00 |
+| MARZO | 390.349,39 | 1.307 | +212,00 |
+| ABRIL | 323.387,63 | 1.050 | +212,00 |
+| MAYO | 277.725,11 | 939 | −0,00 |
+| JUNIO | 324.806,52 | 1.078 | −0,00 |
+| JULIO | 379.928,97 | 1.069 | +0,00 |
+| AGOSTO | 109.842,20 | 380 | +13.493,83 |
+
+`Reporte Consolidado`: ENE 546.643 · FEB 389.624 · MAR 390.561 · ABR 323.600 · MAY 277.725 ·
+JUN 324.807 · JUL 379.929 · AGO 123.336 → **TOTAL S/2.756.225**, 8.778 transacciones.
+Checksum `B1` de la matriz: S/2.730.886.
+
+El Δ de agosto es el mes en curso: el `D10` del origen todavía no incorpora todo lo que sí
+está en el detalle. Los meses cerrados cuadran salvo ±235 (los 3 defectos del origen ya
+documentados más arriba).
+
+## La leyenda del tablero (corregida a mano el 13/08/2026)
+
+`Reporte Consolidado!A3` decía *"USD convertido a 3,415"*, que dejó de ser cierto al pasar el
+TC a mensual. Ahora dice:
+
+```
+Fuente: hoja Fuente Estatico  |  montos en soles, USD convertido al TC del mes (hoja Control)  |  se actualiza solo con el sync
+```
+
+Se escribió **directamente en la celda**, no por script: la fila 3 es del encabezado que
+mantiene el equipo y que `construirConsolidado()` preserva vía `adoptarEncabezado()`, así que
+sobrevive a los rebuilds. `actualizarLeyenda()` existe en el `.gs` del repo (busca por
+contenido, no por celda fija, porque la fila 3 va con merges) pero **no se llegó a subir al
+proyecto**: el portapapeles se pisó dos veces a mitad del pegado. Si hace falta correrla,
+subir el archivo del repo primero.
+
+## Pendiente
+
+- **El proyecto y el repo divergen** en `ampliar-desde-enero.gs`: al proyecto le faltan
+  `actualizarLeyenda()` y el `paso()` apunta a los últimos helpers en vez de a
+  `ampliarDesdeEnero()`. Es andamiaje inerte —nadie lo dispara solo— pero conviene subir el
+  archivo del repo entero la próxima vez que se toque.
+- **Techo conocido:** 36 bloques × 16 columnas × 43 filas de `SUMIFS` sobre 10.000 filas hace
+  que `Reporte Ingresos` tarde en recalcular; al abrirlo la pestaña se congela unos segundos.
+  Si molesta, lo que sobra es el detalle diario de los meses cerrados: bajar `SEMANAS` y dejar
+  sólo el pie del mes para lo viejo.
+
+## Nota de método
+
+Editar este proyecto por automatización de navegador tiene dos trampas caras:
+
+1. **El selector de "Ejecutar" no acepta que le cambien la opción por click.** Toma la primera
+   función del archivo activo, y sólo cambia al cambiar de archivo. Por eso el punto de entrada
+   se llama `paso()` y va primero — el mismo truco que ya usaba `diagnostico()` en `Codigo.gs`.
+2. **El portapapeles es compartido con el usuario.** Dos veces se pisó entre el `Set-Clipboard`
+   y el `Ctrl+V`, y una de ellas dejó una URL dentro del archivo. Verificar el largo del modelo
+   antes y después de cada pegado, y comprobar que el editor activo **no** es `Codigo.gs` antes
+   de seleccionar todo.
