@@ -84,12 +84,47 @@ seguido → reintentar y meter cada operación en una sola conexión.
 | `refresh-mv-enrollment-report.mjs <id> [--solo-ver]` | Refresca la matview del panel FICO y muestra la fila. Paso final de toda corrección. |
 | `import-hoja-fico.mjs` | Importa una pestaña de la hoja FICO por CLI (freeze / preview / validate / commit). |
 | `marca-pagos-hoja-fico.mjs <csv> [--aplicar]` | Fase 2 del import: marca cobrado lo que la hoja da por cobrado. |
+| `backfill-pagos-cuotas.mjs <caso.json> [--apply]` | Cobra una inscripción importada cuando cada cuota tiene medio, cuenta y N° de operación propios (la fila de detalle de la hoja). Ver formato abajo. |
+| `fix-descuento-global.mjs <id> <porcentaje> [--apply]` | Reconstruye el descuento % que el importador no guardó (`list_price = total_amount`, `discount_amount = 0`, sin fila en `enrollment_discounts`). No toca el total. |
 | `check-rp-seg-cuotas.mjs [id]` | El filtro de cuotas pendientes del RP contra el payload real. |
 | `check-tooltip-descuentos.mjs [id...]` | El tooltip de descuentos cuadra con la barra. |
 | `check-hijos-online-sin-edicion.mjs` | Rama "módulo ONLINE sin edición" de `buildEditionPlan`. Puro, sin BD. |
 | `check-sync-destino-cc.mjs` | El destino de un CC entra a las 3 hojas de venta y las hijas de paquete siguen fuera. (Lento.) |
 | `reporte-membresia-luego-cursos.mjs [desde] [hasta]` | Alumnos que compraron membresía y después cursos aparte. |
 | `probe-event-schema.mjs` / `probe-event-save.mjs` | Estado y guardado del módulo Fundación > Eventos. |
+
+### `caso.json` de `backfill-pagos-cuotas.mjs`
+
+`marca-pagos-hoja-fico.mjs` deduce los pagos del INGRESO y usa un solo medio para
+toda la fila. Cuando la fila de detalle de la hoja cobra cada cuota a una empresa
+distinta (pasa seguido: WE Educación, WE Latam y WE Foundation en la misma venta),
+esa aproximación pierde la cuenta y el N° de operación. Ahí va este script:
+
+```json
+{
+  "enrollment_id": 644,
+  "fecha_caso": "2026-08-13",
+  "total_hoja": 1310,
+  "reserva": { "numero": 0, "monto": 350, "fecha": "2026-03-27", "medio": 3203, "cuenta": 6, "operacion": "4103827" },
+  "cuotas": [
+    { "numero": 1, "monto": 192, "fecha": "2026-04-15", "medio": 3203, "cuenta": 16, "operacion": "447555" }
+  ],
+  "justificacion": "Texto que queda en enrollment_audit_log."
+}
+```
+
+`medio` = catálogo `we_payment_medium` (Transferencia 3203, Depósito 3204, YAPE
+3205, Culqui 3208, Mercado Pago 3256). Mercado Pago va con `"cuenta": null` y
+`"operacion": null`: no liquida contra una cuenta nuestra ni trae N° de operación.
+`cuenta` = `bank_accounts.account_id`, que sale de
+**banco + empresa + moneda** de la hoja (la ENTIDAD FINANCIERA manda; el medio no
+define la cuenta): WE Educación BCP PEN = 6, WE Educación Interbank PEN = 9,
+WE Latam BCP PEN = 12, WE Foundation BCP PEN = 16, WE Consulting BCP PEN = 1.
+`fecha` es la de **cobro**. El vencimiento del cronograma no se toca, salvo el de
+la cuota 0: varios imports la sellaron con la fecha de importación en vez de la
+fecha en que se cobró la reserva, y el script la alinea a `reserva.fecha`. Aborta
+si algún monto de la hoja no coincide con la cuota en BD, y al terminar refresca
+la matview.
 
 ## Artefactos de backfill / respaldo
 

@@ -1008,6 +1008,16 @@ export class EnrollmentRepository {
              per.first_name, per.last_name,
              ${STUDENT_EMAIL_SQL} AS origin_email,
              ${STUDENT_PHONE_SQL} AS origin_phone,
+             -- Subsanacion: el asesor reabre el modal en blanco, asi que necesita
+             -- recuperar el canal con el que nacio la venta. Sin esto una venta
+             -- por link/token se le resetea a General y le pide un voucher que no
+             -- existe (pago por pasarela).
+             c_chan.alias AS payment_channel_alias,
+             -- El proveedor del link lo elige FICO al pegarlo, no el asesor: su
+             -- modal no dibuja ese campo. Viaja oculto en el payload para que la
+             -- guarda de canal token no lo deje encerrado.
+             tok.cat_provider AS token_provider_id,
+             tok.payment_type AS token_payment_type,
              -- Curso SAP online: el reenvio rapido pide credenciales a mano.
              (prog.cat_category = cat_sap.catalog_id
               AND prog.cat_model_modality = mod_online.catalog_id) AS is_sap_online
@@ -1016,6 +1026,14 @@ export class EnrollmentRepository {
       JOIN persons per ON per.person_id = cust.person_id
       LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
       LEFT JOIN catalog c_fico ON c_fico.catalog_id = e.cat_fico_status
+      LEFT JOIN catalog c_chan ON c_chan.catalog_id = e.cat_payment_channel
+      LEFT JOIN LATERAL (
+        SELECT pt.cat_provider, pt.payment_type
+        FROM payment_tokens pt
+        WHERE pt.enrollment_id = e.enrollment_id
+        ORDER BY pt.token_id DESC
+        LIMIT 1
+      ) tok ON true
       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN catalog cat_sap ON cat_sap.alias = 'we_program_category_sap'

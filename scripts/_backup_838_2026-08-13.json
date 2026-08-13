@@ -1,0 +1,162 @@
+{
+  "cabecera": {
+    "enrollment_id": 838,
+    "total_amount": "1310.00",
+    "list_price": "3400.00",
+    "discount_amount": "2090.00",
+    "cat_type_status": 3100,
+    "cat_payment_plan": 2467,
+    "cat_fico_status": 3052,
+    "notes": "Importacion masiva FICO (hoja)"
+  },
+  "cuotas": [
+    {
+      "installment_id": 1099,
+      "installment_number": 0,
+      "amount": "350.00",
+      "due_date": "2026-04-08T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 1100,
+      "installment_number": 1,
+      "amount": "192.00",
+      "due_date": "2026-04-15T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 1101,
+      "installment_number": 2,
+      "amount": "192.00",
+      "due_date": "2026-05-01T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 1102,
+      "installment_number": 3,
+      "amount": "192.00",
+      "due_date": "2026-06-01T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 1103,
+      "installment_number": 4,
+      "amount": "192.00",
+      "due_date": "2026-07-01T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 1104,
+      "installment_number": 5,
+      "amount": "192.00",
+      "due_date": "2026-08-01T05:00:00.000Z",
+      "cat_status": 4454
+    }
+  ],
+  "pagos": [
+    {
+      "payment_id": 797,
+      "installment_id": 1099,
+      "amount": "350.00",
+      "payment_date": "2026-04-08T15:41:58.306Z",
+      "transaction_code": "1399582",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3113,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 6,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8757,
+      "installment_id": 1100,
+      "amount": "192.00",
+      "payment_date": "2026-04-15T05:00:00.000Z",
+      "transaction_code": "92087222",
+      "cat_method_payment": 3205,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 16,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8758,
+      "installment_id": 1101,
+      "amount": "192.00",
+      "payment_date": "2026-05-05T05:00:00.000Z",
+      "transaction_code": "1580716",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 9,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8759,
+      "installment_id": 1102,
+      "amount": "192.00",
+      "payment_date": "2026-06-03T05:00:00.000Z",
+      "transaction_code": "1208915",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 9,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8760,
+      "installment_id": 1103,
+      "amount": "192.00",
+      "payment_date": "2026-07-01T05:00:00.000Z",
+      "transaction_code": "1687261",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 9,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8761,
+      "installment_id": 1104,
+      "amount": "192.00",
+      "payment_date": "2026-08-10T05:00:00.000Z",
+      "transaction_code": "2802182",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 9,
+      "active": "Y"
+    }
+  ],
+  "hijos": [
+    {
+      "enrollment_id": 5156,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 5210,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 5257,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 5305,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 6360,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    }
+  ]
+}

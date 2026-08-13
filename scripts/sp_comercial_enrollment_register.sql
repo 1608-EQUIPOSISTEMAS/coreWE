@@ -232,7 +232,7 @@ BEGIN
             WHERE enrollment_id = v_enrollment_id
               AND cat_settlement_status IN (c_inst_status_paid, c_inst_paid_legacy)
         ) THEN
-            OPEN p_cur FOR SELECT 2 AS result, 'No se puede subsanar: la inscripción ya tiene pagos confirmados.' AS message, NULL::int AS enrollment_id;
+            OPEN p_cur FOR SELECT 2 AS result, 'No se puede subsanar: la inscripción ya tiene pagos confirmados. Pide a FICO que corrija los datos desde el detalle de la inscripción.' AS message, NULL::int AS enrollment_id;
             RETURN;
         END IF;
 

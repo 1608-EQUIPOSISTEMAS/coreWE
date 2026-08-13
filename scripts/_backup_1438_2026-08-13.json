@@ -1,0 +1,112 @@
+{
+  "cabecera": {
+    "enrollment_id": 1438,
+    "total_amount": "950.00",
+    "list_price": "1900.00",
+    "discount_amount": "950.00",
+    "cat_type_status": 3100,
+    "cat_payment_plan": 2467,
+    "cat_fico_status": 3052,
+    "notes": "Importacion masiva FICO (hoja)"
+  },
+  "cuotas": [
+    {
+      "installment_id": 2052,
+      "installment_number": 0,
+      "amount": "250.00",
+      "due_date": "2026-04-22T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 2053,
+      "installment_number": 1,
+      "amount": "233.00",
+      "due_date": "2026-04-30T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 2054,
+      "installment_number": 2,
+      "amount": "233.00",
+      "due_date": "2026-05-15T05:00:00.000Z",
+      "cat_status": 4454
+    },
+    {
+      "installment_id": 2055,
+      "installment_number": 3,
+      "amount": "234.00",
+      "due_date": "2026-06-15T05:00:00.000Z",
+      "cat_status": 4454
+    }
+  ],
+  "pagos": [
+    {
+      "payment_id": 1210,
+      "installment_id": 2052,
+      "amount": "250.00",
+      "payment_date": "2026-04-22T23:32:01.154Z",
+      "transaction_code": "1461382",
+      "cat_method_payment": 3203,
+      "cat_payment_type": 3113,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": 9,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8773,
+      "installment_id": 2053,
+      "amount": "233.00",
+      "payment_date": "2026-04-30T05:00:00.000Z",
+      "transaction_code": null,
+      "cat_method_payment": 3256,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8774,
+      "installment_id": 2054,
+      "amount": "233.00",
+      "payment_date": "2026-05-16T05:00:00.000Z",
+      "transaction_code": null,
+      "cat_method_payment": 3256,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y"
+    },
+    {
+      "payment_id": 8775,
+      "installment_id": 2055,
+      "amount": "234.00",
+      "payment_date": "2026-06-18T05:00:00.000Z",
+      "transaction_code": null,
+      "cat_method_payment": 3256,
+      "cat_payment_type": 3114,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y"
+    }
+  ],
+  "hijos": [
+    {
+      "enrollment_id": 5172,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 5213,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    },
+    {
+      "enrollment_id": 5434,
+      "cat_type_status": 3243,
+      "cat_payment_plan": 2466,
+      "total_amount": "0.00"
+    }
+  ]
+}
