@@ -66,24 +66,12 @@ export async function contractUpdateHandler (req, reply) {
   return reply.code(200).send(response)
 }
 
-// ── AGREEMENT ────────────────────────────────────────────────
-
-export async function agreementListHandler (req, reply) {
-  const data = await usecases.agreementList(req.body)
-  return reply.code(200).send({ ok: true, data })
-}
-
-export async function agreementGetHandler (req, reply) {
-  const data = await usecases.agreementGet(req.body)
-  return reply.code(200).send({ ok: true, data })
-}
-
-export async function agreementRegisterHandler (req, reply) {
-  const response = await usecases.agreementRegister(req.body)
-  return reply.code(200).send(response)
-}
-
-export async function agreementUpdateHandler (req, reply) {
-  const response = await usecases.agreementUpdate(req.body)
+export async function contractEnrollHandler (req, reply) {
+  // El autor del envio sale del token, no del body: es quien queda como
+  // user_registration_id de cada inscripcion creada.
+  const response = await usecases.contractEnrollBeneficiaries({
+    ...req.body,
+    user_id: req.user?.id ?? req.body?.user_id ?? null
+  })
   return reply.code(200).send(response)
 }

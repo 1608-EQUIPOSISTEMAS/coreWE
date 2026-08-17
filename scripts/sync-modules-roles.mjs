@@ -50,7 +50,6 @@ const CATALOGO = [
     ['LEADS_EMPRESAS',  'Leads Empresas'],
     ['EMPRESAS',        'Empresas'],
     ['CONTRATOS',       'Contratos'],
-    ['CONVENIOS',       'Convenios'],
   ]],
   ['ACADEMICA',     'Academica',      '/academica',              [
     ['AULAS',             'Aulas'],

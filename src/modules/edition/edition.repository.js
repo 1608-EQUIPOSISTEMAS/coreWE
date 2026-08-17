@@ -121,22 +121,78 @@ export class EditionRepository {
     )
   }
 
+  // --- Cancelacion A5 -----------------------------------------------------
+  //
+  // Alumnos que siguen vivos en una edicion que va a pasar a A5 y por lo tanto
+  // hay que reubicar antes de cancelarla. Mismos criterios de elegibilidad que
+  // el roster del cronograma (classroomChannelMetricsList): activo, FICO-checked
+  // y sin estado terminal. Devuelve TOP (la venta) e HIJO (modulo SEG de un
+  // paquete) por igual: el RP de FICO sabe migrar ambos conservando el padre.
   async a5PendingEnrollments (editionId) {
-    return this.sp(
-      this.db,
-      'public.sp_edition_a5_pending_enrollments',
-      [editionId],
-      { statementTimeoutMs: 20000 }
-    )
+    const { rows } = await this.db.query(`
+      SELECT e.enrollment_id,
+             (e.parent_enrollment_id IS NOT NULL)            AS is_child,
+             TRIM(CONCAT_WS(' ', per.first_name, per.last_name,
+                                 per.mother_last_name))      AS full_name,
+             per.document_number,
+             p.program_name,
+             pp.program_name                                 AS parent_program_name,
+             pep.global_code                                 AS parent_edition_code,
+             -- Lo efectivamente cobrado, no el precio de lista: es el numero que
+             -- mira Producto para decidir a que edicion mandar al alumno.
+             COALESCE((SELECT SUM(pay.amount) FROM public.payments pay
+                        WHERE pay.enrollment_id = e.enrollment_id
+                          AND pay.active = 'Y'), 0)          AS amount_paid
+        FROM public.enrollments e
+        JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
+                                  AND cf.alias = 'we_enrollment_status_checked'
+        LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
+        JOIN public.customers cust ON cust.customer_id = e.customer_id
+        JOIN public.persons per     ON per.person_id = cust.person_id
+        LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+        LEFT JOIN public.programs p          ON p.program_id = pv.program_id
+        LEFT JOIN public.enrollments par     ON par.enrollment_id = e.parent_enrollment_id
+        LEFT JOIN public.program_versions ppv ON ppv.program_version_id = par.program_version_id
+        LEFT JOIN public.programs pp          ON pp.program_id = ppv.program_id
+        LEFT JOIN public.program_editions pep ON pep.edition_num_id = par.program_edition_id
+       WHERE e.program_edition_id = $1
+         AND e.active = 'Y'
+         AND (cts.alias IS NULL OR cts.alias NOT IN (
+                'we_enrollment_status_retired',
+                'we_enrollment_status_course_changed',
+                'we_enrollment_status_reprogrammed'))
+       ORDER BY is_child, full_name
+    `, [editionId])
+    return rows
   }
 
-  async a5MigrationExecute (payload, user_id) {
-    return this.sp(
-      this.db,
-      'public.sp_edition_a5_migration_execute',
-      [JSON.stringify(payload || {}), user_id],
-      { statementTimeoutMs: 60000 }
+  // Cambia SOLO el segmento. No pasa por sp_edition_update a proposito: ese SP
+  // reescribe la edicion entera y revalida fechas/docente/vacantes, y aqui la
+  // migracion A5 ya se ejecuto — un rechazo tardio dejaria alumnos migrados con
+  // la edicion todavia sin cancelar.
+  async setSegment (editionId, segmentId) {
+    const { rowCount } = await this.db.query(
+      'UPDATE public.program_editions SET cat_segment = $2 WHERE edition_num_id = $1',
+      [editionId, segmentId]
     )
+    return rowCount
+  }
+
+  async getSegment (editionId) {
+    const { rows } = await this.db.query(
+      'SELECT cat_segment FROM public.program_editions WHERE edition_num_id = $1',
+      [editionId]
+    )
+    return rows[0]?.cat_segment ?? null
+  }
+
+  // catalog_id del segmento A5 por alias. Nunca hardcodear el id: A5 es 3060 y
+  // 5063 es A7, y ya hubo un guard viejo que confundio los dos.
+  async a5SegmentId () {
+    const { rows } = await this.db.query(
+      `SELECT catalog_id FROM public."catalog" WHERE alias = 'we_segment_a5' LIMIT 1`
+    )
+    return rows[0]?.catalog_id ?? null
   }
 
   // Actualiza el link de WhatsApp de una edicion por abreviatura del programa y

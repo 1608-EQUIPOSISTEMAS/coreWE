@@ -12,10 +12,7 @@ import {
   contractGetSchema,
   contractRegisterSchema,
   contractUpdateSchema,
-  agreementListSchema,
-  agreementGetSchema,
-  agreementRegisterSchema,
-  agreementUpdateSchema
+  contractEnrollSchema
 } from './b2b.schemas.js'
 import * as ctrl from './b2b.controller.js'
 
@@ -37,10 +34,5 @@ export default async function b2bRoutes (fastify) {
   fastify.post('/contractget', { schema: contractGetSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.contractGetHandler)
   fastify.post('/contractregister', { schema: contractRegisterSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.contractRegisterHandler)
   fastify.post('/contractupdate', { schema: contractUpdateSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.contractUpdateHandler)
-
-  // ── AGREEMENT ──────────────────────────────────────────────
-  fastify.post('/agreementlist', { schema: agreementListSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.agreementListHandler)
-  fastify.post('/agreementget', { schema: agreementGetSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.agreementGetHandler)
-  fastify.post('/agreementregister', { schema: agreementRegisterSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.agreementRegisterHandler)
-  fastify.post('/agreementupdate', { schema: agreementUpdateSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.agreementUpdateHandler)
+  fastify.post('/contractenroll', { schema: contractEnrollSchema, preHandler: [authenticate, ALL_B2B] }, ctrl.contractEnrollHandler)
 }

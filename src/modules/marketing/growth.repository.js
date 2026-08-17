@@ -34,6 +34,29 @@ export async function listSnapshots ({ from, to, brand = null }) {
   return rows
 }
 
+// Objetivos anuales de seguidores por marca. Devuelve solo las marcas que tienen
+// meta cargada: una marca sin fila no es un error, es una meta que nadie fijó.
+export async function listGoals (year) {
+  const { rows } = await pool.query(`
+    SELECT brand, year, followers_goal
+    FROM social_brand_goals
+    WHERE year = $1
+    ORDER BY brand
+  `, [year])
+  return rows
+}
+
+export async function upsertGoal ({ brand, year, followersGoal, updatedBy = null }) {
+  await pool.query(`
+    INSERT INTO social_brand_goals (brand, year, followers_goal, updated_by)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (brand, year) DO UPDATE
+      SET followers_goal = EXCLUDED.followers_goal,
+          updated_at = now(),
+          updated_by = EXCLUDED.updated_by
+  `, [brand, year, followersGoal, updatedBy])
+}
+
 // Idempotente por la PK (account_id, week_start): el cron corre a diario sobre la
 // semana en curso y cada corrida pisa la anterior, de modo que el valor converge
 // al del cierre de semana. Gana la última escritura, venga de la API o de una

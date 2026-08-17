@@ -1,0 +1,1641 @@
+[
+  {
+    "edition_num_id": 15820,
+    "global_code": "E79",
+    "program_version_id": 6,
+    "program_name": "SAP S/4 HANA FI: CONTABILIDAD FINANCIERA",
+    "inicio": "2026-11-19T05:00:00.000Z",
+    "fin": "2027-01-07T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 16198,
+        "is_child": true,
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ",
+        "document_number": "76538594",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E21"
+      },
+      {
+        "enrollment_id": 13603,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E21"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15117,
+        "global_code": "E72",
+        "inicio": "2026-08-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15124,
+        "global_code": "E74",
+        "inicio": "2026-09-17T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15828,
+        "global_code": "E80",
+        "inicio": "2027-01-02T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15210,
+        "global_code": "E75",
+        "inicio": "2027-01-10T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15928,
+        "global_code": "E82",
+        "inicio": "2027-01-14T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15863,
+        "global_code": "E81",
+        "inicio": "2027-02-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15952,
+        "global_code": "E83",
+        "inicio": "2027-05-01T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15135,
+    "global_code": "E9",
+    "program_version_id": 84,
+    "program_name": "REACT JS & REACT NATIVE",
+    "inicio": "2026-10-25T05:00:00.000Z",
+    "fin": "2026-12-06T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 3260,
+        "is_child": true,
+        "full_name": "ELENA FIORELLA JARAMILLO HENRIQUEZ",
+        "document_number": "73254024",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 3611,
+        "is_child": true,
+        "full_name": "GERARDO ARAUJO UGARTE",
+        "document_number": "74754357",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13031,
+        "is_child": true,
+        "full_name": "ISAAC VILCHEZ CACERES",
+        "document_number": "45589067",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13509,
+        "is_child": true,
+        "full_name": "KEVIN PHILCO GARAY",
+        "document_number": "74119262",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 14047,
+        "is_child": true,
+        "full_name": "OSCAR ESTEBAN CARRASCO MIO",
+        "document_number": "73039226",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15674,
+    "global_code": "E26",
+    "program_version_id": 70,
+    "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+    "inicio": "2026-10-07T05:00:00.000Z",
+    "fin": "2026-11-04T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13043,
+        "is_child": true,
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ",
+        "document_number": "75535046",
+        "pagado": "0",
+        "parent_program_name": "ANALISTA DE PROYECTOS",
+        "parent_edition_code": "E37"
+      },
+      {
+        "enrollment_id": 13270,
+        "is_child": true,
+        "full_name": "DEISY CRISTINA VILLAVERDE CASILDO",
+        "document_number": "41772247",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 3858,
+        "is_child": true,
+        "full_name": "GYANELLA MILAGRITOS JULCA DAVILA",
+        "document_number": "72938241",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13172,
+        "is_child": true,
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO AYRAMPO",
+        "document_number": "71706623",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13471,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13621,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "ANALISTA DE PROYECTOS",
+        "parent_edition_code": "E37"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15083,
+        "global_code": "E25",
+        "inicio": "2026-08-23T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15687,
+        "global_code": "E27",
+        "inicio": "2026-12-26T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15696,
+        "global_code": "E28",
+        "inicio": "2027-01-31T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15818,
+    "global_code": "E26",
+    "program_version_id": 4,
+    "program_name": "SAP S/4 HANA PP: PRODUCCIÓN",
+    "inicio": "2026-10-01T05:00:00.000Z",
+    "fin": "2026-11-12T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 16197,
+        "is_child": true,
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ",
+        "document_number": "76538594",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E21"
+      },
+      {
+        "enrollment_id": 13602,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E21"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15827,
+        "global_code": "E27",
+        "inicio": "2026-11-21T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15862,
+        "global_code": "E28",
+        "inicio": "2027-01-16T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15552,
+    "global_code": "E17",
+    "program_version_id": 6,
+    "program_name": "SAP S/4 HANA FI: CONTABILIDAD FINANCIERA",
+    "inicio": "2026-09-20T05:00:00.000Z",
+    "fin": "2026-10-25T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 2637,
+        "is_child": true,
+        "full_name": "DAVID ABRAHAM CABRERA AMADOR",
+        "document_number": "0801-1999-06753",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E6"
+      },
+      {
+        "enrollment_id": 3104,
+        "is_child": true,
+        "full_name": "MARIA DEL PILAR GONZALES CERRON",
+        "document_number": "76388210",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+        "parent_edition_code": "E6"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15117,
+        "global_code": "E72",
+        "inicio": "2026-08-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15124,
+        "global_code": "E74",
+        "inicio": "2026-09-17T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15828,
+        "global_code": "E80",
+        "inicio": "2027-01-02T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15210,
+        "global_code": "E75",
+        "inicio": "2027-01-10T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15928,
+        "global_code": "E82",
+        "inicio": "2027-01-14T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15863,
+        "global_code": "E81",
+        "inicio": "2027-02-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15952,
+        "global_code": "E83",
+        "inicio": "2027-05-01T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15639,
+    "global_code": "E8",
+    "program_version_id": 9,
+    "program_name": "SAP S/4 HANA IN: SAP INTEGRAL (MM+PP+SD+FI) PRESENCIAL",
+    "inicio": "2026-09-19T05:00:00.000Z",
+    "fin": "2026-10-17T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 16454,
+        "is_child": false,
+        "full_name": "DIEGO BARRIENTOS BUSTOS",
+        "document_number": "80653380",
+        "pagado": "80.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15839,
+    "global_code": "E104",
+    "program_version_id": 29,
+    "program_name": "POWER BI PRESENCIAL",
+    "inicio": "2026-09-19T05:00:00.000Z",
+    "fin": "2026-10-17T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 14712,
+        "is_child": false,
+        "full_name": "AUGUSTO JAVIER MURILLO CÉPEDA",
+        "document_number": "40658056",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 16360,
+        "is_child": false,
+        "full_name": "LUIS RICARDO TORRES BOCANEGRA",
+        "document_number": "45867247",
+        "pagado": "150.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 16353,
+        "is_child": false,
+        "full_name": "PATRICIA BERENICE SOLORZANO GALLARDO",
+        "document_number": "40638484",
+        "pagado": "150.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 14708,
+        "is_child": true,
+        "full_name": "CESAR ALDAIR ZAVALA RUESTA RUESTA",
+        "document_number": "70041764",
+        "pagado": "0",
+        "parent_program_name": "ANALISTA DE PROCESOS",
+        "parent_edition_code": "E49"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15081,
+    "global_code": "E9",
+    "program_version_id": 83,
+    "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+    "inicio": "2026-09-13T05:00:00.000Z",
+    "fin": "2026-10-18T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 3259,
+        "is_child": true,
+        "full_name": "ELENA FIORELLA JARAMILLO HENRIQUEZ",
+        "document_number": "73254024",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 3610,
+        "is_child": true,
+        "full_name": "GERARDO ARAUJO UGARTE",
+        "document_number": "74754357",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13030,
+        "is_child": true,
+        "full_name": "ISAAC VILCHEZ CACERES",
+        "document_number": "45589067",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13508,
+        "is_child": true,
+        "full_name": "KEVIN PHILCO GARAY",
+        "document_number": "74119262",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 14046,
+        "is_child": true,
+        "full_name": "OSCAR ESTEBAN CARRASCO MIO",
+        "document_number": "73039226",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15672,
+    "global_code": "E39",
+    "program_version_id": 73,
+    "program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+    "inicio": "2026-08-26T05:00:00.000Z",
+    "fin": "2027-03-27T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13222,
+        "is_child": false,
+        "full_name": "DEISY CRISTINA VILLAVERDE CASILDO",
+        "document_number": "41772247",
+        "pagado": "865.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 3856,
+        "is_child": false,
+        "full_name": "GYANELLA MILAGRITOS JULCA DAVILA",
+        "document_number": "72938241",
+        "pagado": "350.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13170,
+        "is_child": false,
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO AYRAMPO",
+        "document_number": "71706623",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13469,
+        "is_child": false,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [
+      {
+        "enrollment_id": 13470,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 3857,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "GYANELLA MILAGRITOS JULCA"
+      },
+      {
+        "enrollment_id": 13171,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO"
+      },
+      {
+        "enrollment_id": 13269,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "DEISY CRISTINA VILLAVERDE"
+      },
+      {
+        "enrollment_id": 3858,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "GYANELLA MILAGRITOS JULCA"
+      },
+      {
+        "enrollment_id": 13270,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "DEISY CRISTINA VILLAVERDE"
+      },
+      {
+        "enrollment_id": 13471,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 13172,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO"
+      },
+      {
+        "enrollment_id": 13472,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 3859,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "GYANELLA MILAGRITOS JULCA"
+      },
+      {
+        "enrollment_id": 13173,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO"
+      },
+      {
+        "enrollment_id": 13271,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "DEISY CRISTINA VILLAVERDE"
+      },
+      {
+        "enrollment_id": 13474,
+        "program_name": "GESTIÓN FINANCIERA DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2027-01-27T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 3861,
+        "program_name": "GESTIÓN FINANCIERA DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2027-01-27T05:00:00.000Z",
+        "full_name": "GYANELLA MILAGRITOS JULCA"
+      },
+      {
+        "enrollment_id": 13175,
+        "program_name": "GESTIÓN FINANCIERA DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2027-01-27T05:00:00.000Z",
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO"
+      },
+      {
+        "enrollment_id": 13273,
+        "program_name": "GESTIÓN FINANCIERA DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2027-01-27T05:00:00.000Z",
+        "full_name": "DEISY CRISTINA VILLAVERDE"
+      },
+      {
+        "enrollment_id": 13174,
+        "program_name": "PMO: GESTIÓN DE PORTAFOLIO Y OFICINA DE PROYECTOS",
+        "global_code": "E9",
+        "inicio": "2027-03-10T05:00:00.000Z",
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO"
+      },
+      {
+        "enrollment_id": 13272,
+        "program_name": "PMO: GESTIÓN DE PORTAFOLIO Y OFICINA DE PROYECTOS",
+        "global_code": "E9",
+        "inicio": "2027-03-10T05:00:00.000Z",
+        "full_name": "DEISY CRISTINA VILLAVERDE"
+      },
+      {
+        "enrollment_id": 3860,
+        "program_name": "PMO: GESTIÓN DE PORTAFOLIO Y OFICINA DE PROYECTOS",
+        "global_code": "E9",
+        "inicio": "2027-03-10T05:00:00.000Z",
+        "full_name": "GYANELLA MILAGRITOS JULCA"
+      },
+      {
+        "enrollment_id": 13473,
+        "program_name": "PMO: GESTIÓN DE PORTAFOLIO Y OFICINA DE PROYECTOS",
+        "global_code": "E9",
+        "inicio": "2027-03-10T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      }
+    ],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15673,
+    "global_code": "E40",
+    "program_version_id": 71,
+    "program_name": "GESTIÓN DE PROYECTOS I",
+    "inicio": "2026-08-26T05:00:00.000Z",
+    "fin": "2026-09-30T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 3136,
+        "is_child": false,
+        "full_name": "FAUSTO FERNANDO ARIAS FEBRES",
+        "document_number": "43801951",
+        "pagado": "247.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13042,
+        "is_child": true,
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ",
+        "document_number": "75535046",
+        "pagado": "0",
+        "parent_program_name": "ANALISTA DE PROYECTOS",
+        "parent_edition_code": "E37"
+      },
+      {
+        "enrollment_id": 13269,
+        "is_child": true,
+        "full_name": "DEISY CRISTINA VILLAVERDE CASILDO",
+        "document_number": "41772247",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 3857,
+        "is_child": true,
+        "full_name": "GYANELLA MILAGRITOS JULCA DAVILA",
+        "document_number": "72938241",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13171,
+        "is_child": true,
+        "full_name": "MIGUEL ALONSO LUQUE AYRAMPO AYRAMPO",
+        "document_number": "71706623",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13470,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "DIPLOMADO EN GESTIÓN DE PROYECTOS",
+        "parent_edition_code": "E39"
+      },
+      {
+        "enrollment_id": 13620,
+        "is_child": true,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": "ANALISTA DE PROYECTOS",
+        "parent_edition_code": "E37"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15678,
+    "global_code": "E37",
+    "program_version_id": 74,
+    "program_name": "ANALISTA DE PROYECTOS",
+    "inicio": "2026-08-26T05:00:00.000Z",
+    "fin": "2027-01-20T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13041,
+        "is_child": false,
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ",
+        "document_number": "75535046",
+        "pagado": "565.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13619,
+        "is_child": false,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [
+      {
+        "enrollment_id": 13042,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ"
+      },
+      {
+        "enrollment_id": 13620,
+        "program_name": "GESTIÓN DE PROYECTOS I",
+        "global_code": "E40",
+        "inicio": "2026-08-26T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 13043,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ"
+      },
+      {
+        "enrollment_id": 13621,
+        "program_name": "GESTIÓN ÁGIL DE PROYECTOS",
+        "global_code": "E26",
+        "inicio": "2026-10-07T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 13044,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "DANIELA RUBI CAHUANA CHUMPITAZ"
+      },
+      {
+        "enrollment_id": 13622,
+        "program_name": "MICROSOFT PROJECT: GESTIÓN DE PROYECTOS",
+        "global_code": "E64",
+        "inicio": "2026-12-02T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      }
+    ],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15819,
+    "global_code": "E21",
+    "program_version_id": 15,
+    "program_name": "ESPECIALIZACIÓN EN SAP S/4 HANA",
+    "inicio": "2026-08-20T05:00:00.000Z",
+    "fin": "2027-01-07T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 16195,
+        "is_child": false,
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ",
+        "document_number": "76538594",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13600,
+        "is_child": false,
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO",
+        "document_number": "77146310",
+        "pagado": "0",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [
+      {
+        "enrollment_id": 13601,
+        "program_name": "SAP S/4 HANA MM: LOGÍSTICA Y MATERIALES",
+        "global_code": "E14",
+        "inicio": "2026-08-20T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 16196,
+        "program_name": "SAP S/4 HANA MM: LOGÍSTICA Y MATERIALES",
+        "global_code": "E14",
+        "inicio": "2026-08-20T05:00:00.000Z",
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ"
+      },
+      {
+        "enrollment_id": 13602,
+        "program_name": "SAP S/4 HANA PP: PRODUCCIÓN",
+        "global_code": "E26",
+        "inicio": "2026-10-01T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 16197,
+        "program_name": "SAP S/4 HANA PP: PRODUCCIÓN",
+        "global_code": "E26",
+        "inicio": "2026-10-01T05:00:00.000Z",
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ"
+      },
+      {
+        "enrollment_id": 13603,
+        "program_name": "SAP S/4 HANA FI: CONTABILIDAD FINANCIERA",
+        "global_code": "E79",
+        "inicio": "2026-11-19T05:00:00.000Z",
+        "full_name": "MIGUEL ANDRE RUFASTO SAMANIEGO"
+      },
+      {
+        "enrollment_id": 16198,
+        "program_name": "SAP S/4 HANA FI: CONTABILIDAD FINANCIERA",
+        "global_code": "E79",
+        "inicio": "2026-11-19T05:00:00.000Z",
+        "full_name": "ANTONY LEONARDO ZAQUINAULA ALVAREZ"
+      }
+    ],
+    "candidatas": [
+      {
+        "edition_num_id": 15826,
+        "global_code": "E22",
+        "inicio": "2026-10-10T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15861,
+        "global_code": "E23",
+        "inicio": "2026-12-05T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15635,
+    "global_code": "E4",
+    "program_version_id": 50,
+    "program_name": "SUPPLY CHAIN ANALYTICS",
+    "inicio": "2026-08-15T05:00:00.000Z",
+    "fin": "2026-09-19T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13308,
+        "is_child": false,
+        "full_name": "CRISTIAN ANDREÉ CORREA CHIROQUE",
+        "document_number": "74609405",
+        "pagado": "274.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15046,
+    "global_code": "E8",
+    "program_version_id": 84,
+    "program_name": "REACT JS & REACT NATIVE",
+    "inicio": "2026-08-01T05:00:00.000Z",
+    "fin": "2026-09-05T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13803,
+        "is_child": true,
+        "full_name": "CHRISTIAN DENNER TINEO VILLÓN",
+        "document_number": "76218613",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      },
+      {
+        "enrollment_id": 13800,
+        "is_child": true,
+        "full_name": "THALIA ROXANA MELGAREJO BAYONA",
+        "document_number": "75870526",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15042,
+    "global_code": "E12",
+    "program_version_id": 82,
+    "program_name": "PROGRAMACIÓN WEB",
+    "inicio": "2026-07-26T05:00:00.000Z",
+    "fin": "2026-09-06T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 3258,
+        "is_child": true,
+        "full_name": "ELENA FIORELLA JARAMILLO HENRIQUEZ",
+        "document_number": "73254024",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 3609,
+        "is_child": true,
+        "full_name": "GERARDO ARAUJO UGARTE",
+        "document_number": "74754357",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13029,
+        "is_child": true,
+        "full_name": "ISAAC VILCHEZ CACERES",
+        "document_number": "45589067",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 13507,
+        "is_child": true,
+        "full_name": "KEVIN PHILCO GARAY",
+        "document_number": "74119262",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      },
+      {
+        "enrollment_id": 14045,
+        "is_child": true,
+        "full_name": "OSCAR ESTEBAN CARRASCO MIO",
+        "document_number": "73039226",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E10"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15419,
+    "global_code": "E10",
+    "program_version_id": 86,
+    "program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+    "inicio": "2026-07-26T05:00:00.000Z",
+    "fin": "2026-12-06T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 3243,
+        "is_child": false,
+        "full_name": "ELENA FIORELLA JARAMILLO HENRIQUEZ",
+        "document_number": "73254024",
+        "pagado": "720.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 12706,
+        "is_child": false,
+        "full_name": "ISAAC VILCHEZ CACERES",
+        "document_number": "45589067",
+        "pagado": "640.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 13425,
+        "is_child": false,
+        "full_name": "KEVIN PHILCO GARAY",
+        "document_number": "74119262",
+        "pagado": "200.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 14022,
+        "is_child": false,
+        "full_name": "OSCAR ESTEBAN CARRASCO MIO",
+        "document_number": "73039226",
+        "pagado": "590.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [
+      {
+        "enrollment_id": 3258,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E12",
+        "inicio": "2026-07-26T05:00:00.000Z",
+        "full_name": "ELENA FIORELLA JARAMILLO"
+      },
+      {
+        "enrollment_id": 13507,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E12",
+        "inicio": "2026-07-26T05:00:00.000Z",
+        "full_name": "KEVIN PHILCO"
+      },
+      {
+        "enrollment_id": 3609,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E12",
+        "inicio": "2026-07-26T05:00:00.000Z",
+        "full_name": "GERARDO ARAUJO"
+      },
+      {
+        "enrollment_id": 13029,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E12",
+        "inicio": "2026-07-26T05:00:00.000Z",
+        "full_name": "ISAAC VILCHEZ"
+      },
+      {
+        "enrollment_id": 14045,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E12",
+        "inicio": "2026-07-26T05:00:00.000Z",
+        "full_name": "OSCAR ESTEBAN CARRASCO"
+      },
+      {
+        "enrollment_id": 15905,
+        "program_name": "ESPECIALIZACIÓN EN PYTHON: DATA SCIENCE",
+        "global_code": "E21",
+        "inicio": "2026-08-29T05:00:00.000Z",
+        "full_name": "GERARDO ARAUJO"
+      },
+      {
+        "enrollment_id": 13508,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E9",
+        "inicio": "2026-09-13T05:00:00.000Z",
+        "full_name": "KEVIN PHILCO"
+      },
+      {
+        "enrollment_id": 3610,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E9",
+        "inicio": "2026-09-13T05:00:00.000Z",
+        "full_name": "GERARDO ARAUJO"
+      },
+      {
+        "enrollment_id": 14046,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E9",
+        "inicio": "2026-09-13T05:00:00.000Z",
+        "full_name": "OSCAR ESTEBAN CARRASCO"
+      },
+      {
+        "enrollment_id": 13030,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E9",
+        "inicio": "2026-09-13T05:00:00.000Z",
+        "full_name": "ISAAC VILCHEZ"
+      },
+      {
+        "enrollment_id": 3259,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E9",
+        "inicio": "2026-09-13T05:00:00.000Z",
+        "full_name": "ELENA FIORELLA JARAMILLO"
+      },
+      {
+        "enrollment_id": 14047,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E9",
+        "inicio": "2026-10-25T05:00:00.000Z",
+        "full_name": "OSCAR ESTEBAN CARRASCO"
+      },
+      {
+        "enrollment_id": 13509,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E9",
+        "inicio": "2026-10-25T05:00:00.000Z",
+        "full_name": "KEVIN PHILCO"
+      },
+      {
+        "enrollment_id": 3611,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E9",
+        "inicio": "2026-10-25T05:00:00.000Z",
+        "full_name": "GERARDO ARAUJO"
+      },
+      {
+        "enrollment_id": 3260,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E9",
+        "inicio": "2026-10-25T05:00:00.000Z",
+        "full_name": "ELENA FIORELLA JARAMILLO"
+      },
+      {
+        "enrollment_id": 13031,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E9",
+        "inicio": "2026-10-25T05:00:00.000Z",
+        "full_name": "ISAAC VILCHEZ"
+      }
+    ],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 14983,
+    "global_code": "E8",
+    "program_version_id": 83,
+    "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+    "inicio": "2026-06-20T05:00:00.000Z",
+    "fin": "2026-07-25T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13802,
+        "is_child": true,
+        "full_name": "CHRISTIAN DENNER TINEO VILLÓN",
+        "document_number": "76218613",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      },
+      {
+        "enrollment_id": 13799,
+        "is_child": true,
+        "full_name": "THALIA ROXANA MELGAREJO BAYONA",
+        "document_number": "75870526",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15011,
+    "global_code": "E49",
+    "program_version_id": 20,
+    "program_name": "PROGRAMACIÓN CON VBA MACROS EN EXCEL",
+    "inicio": "2026-06-13T05:00:00.000Z",
+    "fin": "2026-07-18T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 1809,
+        "is_child": true,
+        "full_name": "RUSBEL FELIX FUENTES VILLANUEVA VILLANUEVA",
+        "document_number": "72575635",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN VBA MACROS EN MICROSOFT EXCEL",
+        "parent_edition_code": "E49"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15112,
+        "global_code": "E54",
+        "inicio": "2026-08-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15109,
+        "global_code": "E53",
+        "inicio": "2026-09-05T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15579,
+        "global_code": "E19",
+        "inicio": "2026-10-07T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15919,
+        "global_code": "E61",
+        "inicio": "2026-11-12T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15199,
+        "global_code": "E59",
+        "inicio": "2026-12-17T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15610,
+        "global_code": "E60",
+        "inicio": "2027-01-03T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15945,
+        "global_code": "E62",
+        "inicio": "2027-02-04T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15211,
+        "global_code": "E58",
+        "inicio": "2027-02-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15947,
+        "global_code": "E63",
+        "inicio": "2027-05-02T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15547,
+    "global_code": "E1",
+    "program_version_id": 208,
+    "program_name": "AWS - DATA ENGINEERING & IA",
+    "inicio": "2026-06-11T05:00:00.000Z",
+    "fin": "2026-06-30T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 1897,
+        "is_child": false,
+        "full_name": "DIEGO ALONSO CHIANG MELENDEZ",
+        "document_number": "74070025",
+        "pagado": "247.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15836,
+        "global_code": "E2",
+        "inicio": "2026-12-23T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15501,
+    "global_code": "E3",
+    "program_version_id": 191,
+    "program_name": "DIRECCIÓN COMERCIAL CON IA",
+    "inicio": "2026-06-04T05:00:00.000Z",
+    "fin": "2026-07-09T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 1569,
+        "is_child": false,
+        "full_name": "MARTIN VEGA FIGUEROA",
+        "document_number": "40488657",
+        "pagado": "220.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 492,
+        "is_child": false,
+        "full_name": "MAURICIO CONDE TELLO",
+        "document_number": "75279468",
+        "pagado": "227.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15467,
+    "global_code": "E17",
+    "program_version_id": 28,
+    "program_name": "POWER BI AVANZADO - DAX",
+    "inicio": "2026-05-31T05:00:00.000Z",
+    "fin": "2026-07-12T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 1069,
+        "is_child": false,
+        "full_name": "SORAYMA KATHERINE MENDOZA SÁNCHEZ",
+        "document_number": "72862352",
+        "pagado": "332.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15615,
+        "global_code": "E73",
+        "inicio": "2026-08-21T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15167,
+        "global_code": "E69",
+        "inicio": "2026-11-19T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15874,
+        "global_code": "E21",
+        "inicio": "2027-01-09T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15794,
+        "global_code": "E20",
+        "inicio": "2027-02-11T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15222,
+        "global_code": "E72",
+        "inicio": "2027-02-18T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 14970,
+    "global_code": "E5",
+    "program_version_id": 36,
+    "program_name": "AZURE",
+    "inicio": "2026-05-21T05:00:00.000Z",
+    "fin": "2026-06-09T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 469,
+        "is_child": false,
+        "full_name": "DIEGO ALFONSO LLASHAG ANTONIO",
+        "document_number": "71869300",
+        "pagado": "0.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15791,
+        "global_code": "E10",
+        "inicio": "2026-11-25T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 14915,
+    "global_code": "E11",
+    "program_version_id": 82,
+    "program_name": "PROGRAMACIÓN WEB",
+    "inicio": "2026-05-09T05:00:00.000Z",
+    "fin": "2026-06-13T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 13801,
+        "is_child": true,
+        "full_name": "CHRISTIAN DENNER TINEO VILLÓN",
+        "document_number": "76218613",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      },
+      {
+        "enrollment_id": 13798,
+        "is_child": true,
+        "full_name": "THALIA ROXANA MELGAREJO BAYONA",
+        "document_number": "75870526",
+        "pagado": "0",
+        "parent_program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+        "parent_edition_code": "E9"
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 15368,
+    "global_code": "E9",
+    "program_version_id": 86,
+    "program_name": "ESPECIALIZACIÓN EN DESARROLLO FRONT END",
+    "inicio": "2026-05-09T05:00:00.000Z",
+    "fin": "2026-09-05T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 950,
+        "is_child": false,
+        "full_name": "CHRISTIAN DENNER TINEO VILLÓN",
+        "document_number": "76218613",
+        "pagado": "200.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 166,
+        "is_child": false,
+        "full_name": "THALIA ROXANA MELGAREJO BAYONA",
+        "document_number": "75870526",
+        "pagado": "200.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [
+      {
+        "enrollment_id": 13798,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E11",
+        "inicio": "2026-05-09T05:00:00.000Z",
+        "full_name": "THALIA ROXANA MELGAREJO"
+      },
+      {
+        "enrollment_id": 13801,
+        "program_name": "PROGRAMACIÓN WEB",
+        "global_code": "E11",
+        "inicio": "2026-05-09T05:00:00.000Z",
+        "full_name": "CHRISTIAN DENNER TINEO"
+      },
+      {
+        "enrollment_id": 13799,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E8",
+        "inicio": "2026-06-20T05:00:00.000Z",
+        "full_name": "THALIA ROXANA MELGAREJO"
+      },
+      {
+        "enrollment_id": 13802,
+        "program_name": "PROGRAMACIÓN JAVASCRIPT WEB",
+        "global_code": "E8",
+        "inicio": "2026-06-20T05:00:00.000Z",
+        "full_name": "CHRISTIAN DENNER TINEO"
+      },
+      {
+        "enrollment_id": 13800,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E8",
+        "inicio": "2026-08-01T05:00:00.000Z",
+        "full_name": "THALIA ROXANA MELGAREJO"
+      },
+      {
+        "enrollment_id": 13803,
+        "program_name": "REACT JS & REACT NATIVE",
+        "global_code": "E8",
+        "inicio": "2026-08-01T05:00:00.000Z",
+        "full_name": "CHRISTIAN DENNER TINEO"
+      }
+    ],
+    "candidatas": [],
+    "migrable": false
+  },
+  {
+    "edition_num_id": 14940,
+    "global_code": "E63",
+    "program_version_id": 28,
+    "program_name": "POWER BI AVANZADO - DAX",
+    "inicio": "2026-05-02T05:00:00.000Z",
+    "fin": "2026-06-06T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 222,
+        "is_child": false,
+        "full_name": "CESAR AUGUSTO ONCOY CARRASCO",
+        "document_number": "70971146",
+        "pagado": "250.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15615,
+        "global_code": "E73",
+        "inicio": "2026-08-21T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15167,
+        "global_code": "E69",
+        "inicio": "2026-11-19T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15874,
+        "global_code": "E21",
+        "inicio": "2027-01-09T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15794,
+        "global_code": "E20",
+        "inicio": "2027-02-11T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15222,
+        "global_code": "E72",
+        "inicio": "2027-02-18T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 15466,
+    "global_code": "E20",
+    "program_version_id": 27,
+    "program_name": "POWER BI",
+    "inicio": "2026-04-12T05:00:00.000Z",
+    "fin": "2026-05-24T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 331,
+        "is_child": false,
+        "full_name": "ANDREA BELEN GONZALES SEDANO",
+        "document_number": "73021572",
+        "pagado": "0.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [
+      {
+        "edition_num_id": 15057,
+        "global_code": "E138",
+        "inicio": "2026-09-03T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15119,
+        "global_code": "E140",
+        "inicio": "2026-09-17T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15095,
+        "global_code": "E139",
+        "inicio": "2026-09-27T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15931,
+        "global_code": "E149",
+        "inicio": "2026-10-29T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15152,
+        "global_code": "E141",
+        "inicio": "2026-11-28T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15208,
+        "global_code": "E142",
+        "inicio": "2026-12-03T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15203,
+        "global_code": "E143",
+        "inicio": "2027-02-13T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15216,
+        "global_code": "E144",
+        "inicio": "2027-02-17T05:00:00.000Z"
+      },
+      {
+        "edition_num_id": 15226,
+        "global_code": "E145",
+        "inicio": "2027-04-11T05:00:00.000Z"
+      }
+    ],
+    "migrable": true
+  },
+  {
+    "edition_num_id": 14901,
+    "global_code": "E82",
+    "program_version_id": 9,
+    "program_name": "SAP S/4 HANA IN: SAP INTEGRAL (MM+PP+SD+FI) PRESENCIAL",
+    "inicio": "2026-03-28T05:00:00.000Z",
+    "fin": "2026-05-02T05:00:00.000Z",
+    "alumnos": [
+      {
+        "enrollment_id": 145,
+        "is_child": false,
+        "full_name": "KIARA YAMILET LÓPEZ NAVARRO",
+        "document_number": "61269177",
+        "pagado": "370.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 420,
+        "is_child": false,
+        "full_name": "OLENKA MICHELL VÁSQUEZ CHUQUIZUTA",
+        "document_number": "70261356",
+        "pagado": "442.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      },
+      {
+        "enrollment_id": 232,
+        "is_child": false,
+        "full_name": "VICTOR JOSE CONDE ROJAS",
+        "document_number": "73272916",
+        "pagado": "422.00",
+        "parent_program_name": null,
+        "parent_edition_code": null
+      }
+    ],
+    "hijosFuera": [],
+    "candidatas": [],
+    "migrable": false
+  }
+]

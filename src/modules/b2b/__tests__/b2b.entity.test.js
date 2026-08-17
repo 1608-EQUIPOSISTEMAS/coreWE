@@ -5,7 +5,7 @@ import {
   rowsOrEmpty,
   normalizeCompanyLeadPayload,
   normalizeLeadId,
-  normalizeDiscounts
+  summarizeEnrollment
 } from '../b2b.entity.js'
 
 describe('assertSpResult', () => {
@@ -77,14 +77,30 @@ describe('normalizeLeadId', () => {
   })
 })
 
-describe('normalizeDiscounts', () => {
-  it('respeta arrays existentes', () => {
-    const d = [{ id: 1 }]
-    expect(normalizeDiscounts(d)).toBe(d)
+
+describe('summarizeEnrollment', () => {
+  const filas = [
+    { beneficiary_id: 1, estado: 'creado', enrollment_id: 900 },
+    { beneficiary_id: 2, estado: 'ya_matriculado', enrollment_id: 800 },
+    { beneficiary_id: 3, estado: 'sin_programa' },
+    { beneficiary_id: 4, estado: 'creado', enrollment_id: 901 },
+    { beneficiary_id: 5, estado: 'error', mensaje: 'boom' }
+  ]
+
+  it('cuenta creados, ya matriculados y rechazados por separado', () => {
+    const r = summarizeEnrollment(filas)
+    expect(r.enrolled).toBe(2)
+    expect(r.skipped).toBe(1)
+    expect(r.rejected).toBe(2)
   })
-  it('cae a array vacio cuando no es array', () => {
-    expect(normalizeDiscounts(undefined)).toEqual([])
-    expect(normalizeDiscounts(null)).toEqual([])
-    expect(normalizeDiscounts({})).toEqual([])
+
+  it('pone los rechazados al frente: son los que dejan al alumno fuera del aula', () => {
+    const r = summarizeEnrollment(filas)
+    expect(r.detail.slice(0, 2).map(f => f.beneficiary_id)).toEqual([3, 5])
+    expect(r.detail).toHaveLength(filas.length)
+  })
+
+  it('un envio sin cupos no revienta', () => {
+    expect(summarizeEnrollment()).toEqual({ enrolled: 0, skipped: 0, rejected: 0, detail: [] })
   })
 })

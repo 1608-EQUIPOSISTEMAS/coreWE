@@ -485,6 +485,39 @@ subir el archivo del repo primero.
   Si molesta, lo que sobra es el detalle diario de los meses cerrados: bajar `SEMANAS` y dejar
   sólo el pie del mes para lo viejo.
 
+---
+
+# El Consolidado ya espeja el total oficial (13/08/2026)
+
+La decisión del 11/08 —*el reporte espeja `Ing. Operativos` en vez de recalcularlo*— se había
+aplicado al **pie de `Reporte Ingresos`** pero no al Consolidado: su fila `Ingresos` seguía
+siendo un `SUMIFS` sobre `Fuente Estatico`. El `INDEX` al pie ya estaba escrito **en la copia
+del repo**, con su comentario; nunca se subió al proyecto. Por eso los dos reportes del mismo
+archivo mostraban cifras distintas y nadie tenía la culpa.
+
+```js
+{ k: 'ing', …, f: "=INDEX('" + diario.getName() + "'!$C$52:$C$63;MONTH(C$4))", o: 'SUMA' },
+```
+
+El descuadre visible era exactamente la tabla de diferencias ya documentada arriba
+(FEB −235 · MAR/ABR +212 · AGO +13.494).
+
+| | antes (`SUMIFS`) | ahora (`INDEX` al pie) |
+|---|---|---|
+| TOTAL | S/2.759.779 | **S/2.746.853** = el pie |
+| AGOSTO | 127.475 | **113.981** |
+| No clasificado (checksum) | 23.759 | **10.832**, y jul/ago en **0** |
+
+**El checksum lo confirma**: agosto pasó a `0` porque el total oficial coincide exacto con la
+suma de las 5 unidades — los S/13.494 de diferencia eran justamente las ventas sin categoría en
+`T`, las mismas que el `D10` del origen todavía no incorpora. No se perdió plata: cambió de
+"ingreso sin clasificar" a "todavía no está en el oficial".
+
+**Techo conocido:** el bloque de unidades, transacciones y alumnos siguen saliendo de
+`Fuente Estatico`. Es a propósito (el oficial es un total, no tiene detalle), y la fila
+*No clasificado* es la que hace visible la brecha. Si un día ese residuo se dispara, el problema
+está en la columna `T`, no en el tablero.
+
 ## Nota de método
 
 Editar este proyecto por automatización de navegador tiene dos trampas caras:

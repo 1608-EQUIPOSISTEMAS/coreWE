@@ -108,6 +108,36 @@ export function buildA5Payload (payload = {}) {
   return { valid, editionId }
 }
 
+// Plan de migracion A5: cruza los alumnos vivos de la edicion contra los destinos
+// que eligio Producto.
+//
+// Regla dura: si UNO solo queda sin destino no se migra nada y la edicion no se
+// cancela. Cancelar dejando alumnos atras es invisible —el cronograma oculta las
+// filas A5— pero sus modulos siguen ocupando el AULA de otros cursos. Se falla
+// cerrado a proposito: es preferible bloquear la cancelacion a perder alumnos.
+//
+// La fuente de verdad es `pending` (lo que hay vivo AHORA en la BD), no la lista
+// que mando el cliente: una migracion para alguien que ya no esta vigente se
+// ignora, pero un alumno vigente sin destino bloquea todo.
+export function buildA5MigrationPlan (pending = [], migrations = []) {
+  const destinoDe = new Map(
+    (migrations || []).map((m) => [Number(m.enrollment_id), Number(m.target_edition_id) || null])
+  )
+  const conDestino = (e) => destinoDe.get(Number(e.enrollment_id)) || null
+
+  const sinDestino = (pending || []).filter((e) => !conDestino(e))
+  if (sinDestino.length > 0) return { valid: false, sinDestino, plan: [] }
+
+  return {
+    valid: true,
+    sinDestino: [],
+    plan: (pending || []).map((e) => ({
+      enrollmentId: Number(e.enrollment_id),
+      targetEditionId: conDestino(e)
+    }))
+  }
+}
+
 // Valida los parametros de la rubrica de auditoria: edition_id finito y
 // session_number finito >= 1.
 export function validateRubricParams (edition_id, session_number) {

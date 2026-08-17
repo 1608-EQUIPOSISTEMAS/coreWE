@@ -5,6 +5,7 @@ import {
   buildEditionFilters,
   buildEditionByWeekFilters,
   buildA5Payload,
+  buildA5MigrationPlan,
   validateRubricParams,
   aiAuditorAllowedHosts,
   isValidAiAuditorHost,
@@ -97,6 +98,57 @@ describe('buildA5Payload', () => {
     expect(buildA5Payload({ edition_num_id: 0, migrations: [{}] }).valid).toBe(false)
     expect(buildA5Payload({ edition_num_id: 5, migrations: [] }).valid).toBe(false)
     expect(buildA5Payload({}).valid).toBe(false)
+  })
+})
+
+describe('buildA5MigrationPlan', () => {
+  const vivos = [{ enrollment_id: 10 }, { enrollment_id: 20 }]
+
+  it('arma el plan cuando todos los alumnos vivos tienen destino', () => {
+    const { valid, plan } = buildA5MigrationPlan(vivos, [
+      { enrollment_id: 10, target_edition_id: 900 },
+      { enrollment_id: 20, target_edition_id: 901 }
+    ])
+    expect(valid).toBe(true)
+    expect(plan).toEqual([
+      { enrollmentId: 10, targetEditionId: 900 },
+      { enrollmentId: 20, targetEditionId: 901 }
+    ])
+  })
+
+  // El bug que origino esta regla: se cancelaba la edicion dejando alumnos vivos
+  // adentro. Un solo alumno sin destino tiene que bloquear TODA la migracion.
+  it('falla cerrado si a un alumno vivo le falta destino', () => {
+    const { valid, sinDestino, plan } = buildA5MigrationPlan(vivos, [
+      { enrollment_id: 10, target_edition_id: 900 }
+    ])
+    expect(valid).toBe(false)
+    expect(sinDestino).toEqual([{ enrollment_id: 20 }])
+    expect(plan).toEqual([])
+  })
+
+  it('trata un destino nulo o cero como falta de destino', () => {
+    expect(buildA5MigrationPlan([{ enrollment_id: 10 }], [
+      { enrollment_id: 10, target_edition_id: null }
+    ]).valid).toBe(false)
+    expect(buildA5MigrationPlan([{ enrollment_id: 10 }], [
+      { enrollment_id: 10, target_edition_id: 0 }
+    ]).valid).toBe(false)
+  })
+
+  // La BD manda: si el cliente manda migraciones de gente que ya no esta vigente
+  // (se retiro entre que abrio el modal y confirmo), se ignoran sin romper.
+  it('ignora migraciones de inscripciones que ya no estan vigentes', () => {
+    const { valid, plan } = buildA5MigrationPlan([{ enrollment_id: 10 }], [
+      { enrollment_id: 10, target_edition_id: 900 },
+      { enrollment_id: 99, target_edition_id: 901 }
+    ])
+    expect(valid).toBe(true)
+    expect(plan).toEqual([{ enrollmentId: 10, targetEditionId: 900 }])
+  })
+
+  it('sin alumnos vivos el plan es valido y vacio', () => {
+    expect(buildA5MigrationPlan([], [])).toEqual({ valid: true, sinDestino: [], plan: [] })
   })
 })
 

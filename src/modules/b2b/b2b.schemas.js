@@ -54,33 +54,5 @@ export const contractListSchema = passthroughBody('B2B', 'Lista contratos B2B co
 export const contractGetSchema = passthroughBody('B2B', 'Obtiene un contrato B2B')
 export const contractRegisterSchema = passthroughBody('B2B', 'Registra un contrato B2B')
 export const contractUpdateSchema = passthroughBody('B2B', 'Actualiza un contrato B2B')
+export const contractEnrollSchema = passthroughBody('B2B', 'Manda a FICO los cupos pendientes de un contrato B2B')
 
-// ── AGREEMENT ────────────────────────────────────────────────
-export const agreementListSchema = passthroughBody('B2B', 'Lista convenios B2B con filtros')
-export const agreementGetSchema = passthroughBody('B2B', 'Obtiene un convenio B2B')
-
-export const agreementRegisterSchema = {
-  tags: ['B2B'],
-  description: 'Registra un convenio B2B con sus descuentos',
-  body: {
-    type: 'object',
-    additionalProperties: true,
-    properties: {
-      agreement: { type: ['object', 'null'] },
-      discounts: { type: ['array', 'null'] }
-    }
-  }
-}
-
-export const agreementUpdateSchema = {
-  tags: ['B2B'],
-  description: 'Actualiza un convenio B2B con sus descuentos',
-  body: {
-    type: 'object',
-    additionalProperties: true,
-    properties: {
-      agreement: { type: ['object', 'null'] },
-      discounts: { type: ['array', 'null'] }
-    }
-  }
-}

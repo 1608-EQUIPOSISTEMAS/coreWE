@@ -44,6 +44,36 @@ export const socialGrowthSaveSchema = {
   }
 }
 
+// El año viaja como entero y no como fecha: el objetivo es anual, y aceptar un
+// 'YYYY-MM-DD' invitaría a creer que la meta se puede fijar por mes.
+const year = { type: 'integer', minimum: 2020, maximum: 2100 }
+
+export const socialGoalListSchema = {
+  tags: ['Marketing'],
+  summary: 'Objetivo anual de seguidores por marca',
+  querystring: {
+    type: 'object',
+    required: ['year'],
+    additionalProperties: false,
+    properties: { year }
+  }
+}
+
+export const socialGoalSaveSchema = {
+  tags: ['Marketing'],
+  summary: 'Fija el objetivo anual de seguidores de una marca',
+  body: {
+    type: 'object',
+    required: ['brand', 'year', 'followers_goal'],
+    additionalProperties: false,
+    properties: {
+      brand: { type: 'string', minLength: 1 },
+      year,
+      followers_goal: { type: 'integer', minimum: 1 }
+    }
+  }
+}
+
 export const socialGrowthSyncSchema = {
   tags: ['Marketing'],
   summary: 'Dispara la captura de seguidores contra las APIs, sin esperar al cron'

@@ -87,6 +87,24 @@ export const EXCLUDE_IMPORTED = `
 // Token que el note de la importacion masiva debe contener para ser excluido.
 export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
 
+// Ordenes de pago del flujo antiguo: la inscripcion ya esta verificada en el
+// sistema pero todavia no se cobro, y el negocio no la cuenta hasta que pague.
+// Se retienen del sync a Sheets (ventas, aula, pagos y adicionales usan la misma
+// CTE `approved`); cuando el alumno paga se borra su id de aqui y entra sola en
+// la siguiente sincronizacion. Igual que ZERO_AMOUNT_EMAILS, editar la lista
+// exige redeploy.
+// ponytail: lista en codigo; mover a un flag en BD si crece o rota seguido.
+export const HELD_ENROLLMENT_IDS = [13790, 13791, 14344, 14345, 14346, 14347, 14348]
+
+// Retiene tambien a las hijas de paquete: sin esto la venta del padre no sube
+// pero sus hijos SEG si. La lista vacia devuelve '' porque `NOT IN ()` no es SQL
+// valido.
+export const EXCLUDE_HELD = HELD_ENROLLMENT_IDS.length === 0
+  ? ''
+  : `
+         AND e.enrollment_id NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})
+         AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})`
+
 // El destino de un Cambio de Curso lleva parent_enrollment_id = origen (lo setea
 // finalizeCourseChange), asi que el filtro "parent_enrollment_id IS NULL" que deja
 // fuera a las hijas de paquete tambien lo dejaba fuera de las hojas de ventas: la
@@ -242,6 +260,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
@@ -491,6 +510,7 @@ export class IntegrationRepository {
          -- hijos: asisten sus hijos SEG, no el).
          AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          ${EXCLUDE_IMPORTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
@@ -636,6 +656,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     )
     SELECT
@@ -862,6 +883,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     )
     SELECT

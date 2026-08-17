@@ -3,6 +3,7 @@ import {
   buildGrowthSeries,
   isoWeekStart,
   limaDate,
+  validateBrandGoal,
   validateManualSnapshot
 } from './growth.entity.js'
 
@@ -19,6 +20,16 @@ export async function getGrowth ({ from, to, brand = null }) {
     brand: brand || null
   })
   return buildGrowthSeries(rows)
+}
+
+export function listBrandGoals (year) {
+  return repo.listGoals(Number(year))
+}
+
+export async function saveBrandGoal (input, updatedBy = null) {
+  const { brand, year, followersGoal } = validateBrandGoal(input)
+  await repo.upsertGoal({ brand, year, followersGoal, updatedBy })
+  return { brand, year, followers_goal: followersGoal }
 }
 
 export async function saveManualSnapshot (input, capturedBy = null) {

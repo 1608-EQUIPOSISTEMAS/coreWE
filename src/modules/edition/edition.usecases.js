@@ -2,6 +2,11 @@ import { editionRepository } from './edition.repository.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import odooClient from '../../config/odooClient.js'
 import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js'
+// La cancelacion A5 reprograma con el MISMO motor que usa FICO: un solo RP en
+// todo el sistema. El bootstrap cablea logAudit (sin el, el RP corre sin dejar
+// bitacora y no avisa, ver enrollment.repository.js:26); es idempotente.
+import '../fico/fico.bootstrap.js'
+import { reprogramEdition } from '../fico/enrollment/enrollment.usecases.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
@@ -17,6 +22,7 @@ import {
   reproEventsOf,
   MAX_EDITION_REPROS,
   buildA5Payload,
+  buildA5MigrationPlan,
   validateRubricParams,
   resolveAiAuditorUrl,
   formatStartDate,
@@ -34,8 +40,7 @@ import {
   toSpRowOrFallback,
   toListDto,
   toByWeekDto,
-  toUpdateDto,
-  toA5MigrationDto
+  toUpdateDto
 } from './edition.dto.js'
 
 const repo = editionRepository
@@ -179,18 +184,44 @@ export async function editionSessionControlSave ({ edition_num_id, session_numbe
   })
 }
 
+// Una edicion NO se cancela (A5) con alumnos vivos adentro: primero hay que
+// reubicarlos con a5MigrationExecute. Va en el backend y no solo en el modal
+// porque el modal ya fallo una vez: cuando no pudo cargar la lista de alumnos
+// mostro "sin alumnos" y dejo cancelar igual. El resultado fueron ediciones
+// canceladas con sus hijos todavia inflando el AULA de otros cursos, y encima
+// invisibles (el cronograma oculta las filas A5).
+// Lo que se bloquea es CANCELAR, no editar: si la edicion ya estaba en A5 el
+// guardado sigue pasando (cambiar docente u horario de una edicion cancelada es
+// legitimo, y hay ediciones A5 viejas con alumnos vivos que igual hay que poder
+// tocar). Solo se frena la TRANSICION hacia A5.
+async function assertSinAlumnosVivos (editionId, segmentId) {
+  if (!editionId || !segmentId) return
+  const a5Id = await repo.a5SegmentId()
+  if (!a5Id || Number(segmentId) !== Number(a5Id)) return
+  if (Number(await repo.getSegment(Number(editionId))) === Number(a5Id)) return
+
+  const pendientes = await repo.a5PendingEnrollments(Number(editionId))
+  if (pendientes.length === 0) return
+  throw new DomainError(
+    `No se puede cancelar (A5): la edicion tiene ${pendientes.length} inscripcion(es) vigente(s). ` +
+    'Reubicalas primero desde el modal de cancelacion.'
+  )
+}
+
 // UPDATE (simple). Inyecta edition_num_id desde id o el propio edition.
 export async function editionUpdate ({ id, edition = {}, user_id = null } = {}) {
   const payloadEdition = {
     ...edition,
     edition_num_id: id || edition.edition_num_id
   }
+  await assertSinAlumnosVivos(payloadEdition.edition_num_id, edition.cat_segment_id)
   const rows = await repo.update(payloadEdition, user_id)
   return toUpdateDto(rows)
 }
 
 // UPDATE TREE (padre + hijos). Retorna la fila cruda del SP o el fallback.
 export async function editionTreeUpdate ({ edition = {}, user_id } = {}) {
+  await assertSinAlumnosVivos(edition.edition_id, edition.cat_segment_id)
   const rows = await repo.treeUpdate(edition, user_id)
   return toSpRowOrFallback(rows)
 }
@@ -540,10 +571,67 @@ export async function a5PendingEnrollments ({ edition_num_id } = {}) {
   return repo.a5PendingEnrollments(editionId)
 }
 
-// Ejecuta migracion masiva + cancelacion A5 en transaccion atomica.
+// Migracion A5 = reprogramar (RP) cada alumno vivo a la edicion que eligio
+// Producto y RECIEN ENTONCES cancelar la edicion.
+//
+// Reusa reprogramEdition de FICO en vez de tener un segundo motor de RP: el
+// origen queda RP conservando lo pagado, el destino nace ACT con sus hijos SEG,
+// y Odoo + correo salen por la cola. Un modulo SEG tambien se puede migrar: el
+// RP le conserva el parent_enrollment_id (enrollment.entity.js:307).
+//
+// Falla CERRADO: si queda una sola inscripcion sin destino, no se migra nada y
+// la edicion no se cancela. Cancelar dejando alumnos atras es exactamente el bug
+// que este flujo existe para evitar.
 export async function a5MigrationExecute ({ payload = {}, user_id } = {}) {
-  const rows = await repo.a5MigrationExecute(payload, user_id)
-  return toA5MigrationDto(rows)
+  const { valid, editionId } = buildA5Payload(payload)
+  if (!valid) throw new DomainError('Migracion A5 invalida: falta la edicion o la lista de migraciones')
+
+  const justificacion = String(payload.justificacion || '').trim()
+  if (!justificacion) throw new DomainError('La justificacion es obligatoria')
+
+  const pending = await repo.a5PendingEnrollments(editionId)
+  const { valid: planValido, sinDestino, plan } = buildA5MigrationPlan(pending, payload.migrations)
+  if (!planValido) {
+    throw new DomainError(
+      `Faltan ${sinDestino.length} inscripcion(es) por asignar a una edicion destino`
+    )
+  }
+
+  const migradas = []
+  const fallidas = []
+  for (const { enrollmentId, targetEditionId } of plan) {
+    try {
+      await reprogramEdition({
+        enrollmentId,
+        newEditionId: targetEditionId,
+        justificacion,
+        userId: user_id
+      })
+      migradas.push(enrollmentId)
+    } catch (err) {
+      fallidas.push(`#${enrollmentId}: ${err.message}`)
+    }
+  }
+
+  // Un RP ya ejecutado no se deshace (Odoo y correo ya salieron), asi que las
+  // migradas quedan migradas. Lo que NO se hace es cancelar la edicion: sigue
+  // visible en el cronograma con los que faltan, y se reintenta sobre esos.
+  if (fallidas.length > 0) {
+    throw new DomainError(
+      `Migracion incompleta: ${migradas.length} ok, ${fallidas.length} con error. ` +
+      `La edicion NO se cancelo. Detalle: ${fallidas.join(' | ')}`
+    )
+  }
+
+  const segmentId = payload.a5_segment_id || await repo.a5SegmentId()
+  if (!segmentId) throw new DomainError('No se encontro el segmento A5 en el catalogo')
+  await repo.setSegment(editionId, segmentId)
+
+  return {
+    result: 1,
+    message: `Edicion cancelada (A5). ${migradas.length} inscripcion(es) reprogramada(s).`,
+    migrated_count: migradas.length
+  }
 }
 
 // Actualiza masivamente el link de WhatsApp por abreviatura + fecha de inicio.

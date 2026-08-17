@@ -26,15 +26,26 @@ export function normalizeCompanyLeadPayload (payload = {}) {
   }
 }
 
+// Resume el envio masivo de cupos a FICO. El SP devuelve una fila por
+// beneficiario con su estado; la pantalla necesita el conteo y, sobre todo, la
+// lista de los que NO entraron: un envio "exitoso" que dejo a 4 alumnos fuera
+// del aula es el peor resultado posible, asi que los rechazos van al frente.
+export function summarizeEnrollment (rows = []) {
+  const detail = rowsOrEmpty(rows)
+  const creados = detail.filter(r => r.estado === 'creado')
+  const pendientes = detail.filter(r => r.estado !== 'creado' && r.estado !== 'ya_matriculado')
+  return {
+    enrolled: creados.length,
+    skipped: detail.filter(r => r.estado === 'ya_matriculado').length,
+    rejected: pendientes.length,
+    detail: [...pendientes, ...creados, ...detail.filter(r => r.estado === 'ya_matriculado')]
+  }
+}
+
 // Normaliza lead_id a entero para sp_company_lead_get (el SP espera INT, no JSON).
 // Devuelve null cuando el valor no es numerico para evitar pasar NaN/undefined a PG.
 export function normalizeLeadId (leadId) {
   if (leadId === null || leadId === undefined || leadId === '') return null
   const n = Number(leadId)
   return Number.isInteger(n) ? n : null
-}
-
-// Garantiza que los descuentos de un agreement sean siempre un array.
-export function normalizeDiscounts (discounts) {
-  return Array.isArray(discounts) ? discounts : []
 }

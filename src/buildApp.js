@@ -19,7 +19,6 @@ import editionRoutes from './modules/edition/edition.routes.js'
 import customerRoutes from './modules/customer/customer.routes.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js'
-import corporateAgreementRoutes from './modules/corporate_agreement/corporate_agreement.routes.js'
 import integrationRoutes from './modules/integration/integration.routes.js'
 import uploadRoutes from './routes/upload.js'
 import ficoRoutes from './modules/fico/fico.routes.js' // FSD: 9 subdominios + composition root (fico.bootstrap). Legacy fico.service.js retirado; verificar dinero en staging.
@@ -196,7 +195,6 @@ export async function buildApp (opts = {}) {
   await app.register(instructorRoutes, { prefix: '/api/instructor' })
   await app.register(editionRoutes, { prefix: '/api/edition' })
   await app.register(customerRoutes, { prefix: '/api/customer' })
-  await app.register(corporateAgreementRoutes, { prefix: '/api/corporate_agreement' })
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(integrationRoutes, { prefix: '/api/integration' })
   await app.register(ficoRoutes, { prefix: '/api/fico' })

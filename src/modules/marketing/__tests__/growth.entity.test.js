@@ -3,6 +3,7 @@ import {
   isoWeekStart,
   limaDate,
   buildGrowthSeries,
+  validateBrandGoal,
   validateManualSnapshot
 } from '../growth.entity.js'
 import { DomainError } from '../../../shared/errors.js'
@@ -123,6 +124,42 @@ describe('validateManualSnapshot', () => {
   it('rechaza account_id inválido', () => {
     for (const bad of [0, -3, 'x', null]) {
       expect(() => validateManualSnapshot({ account_id: bad, week_start: '2026-08-10', followers: 10 }))
+        .toThrow(DomainError)
+    }
+  })
+})
+
+describe('validateBrandGoal', () => {
+  it('normaliza la marca y devuelve numeros', () => {
+    expect(validateBrandGoal({ brand: '  WE ONLINE ', year: 2026, followers_goal: '5000' }))
+      .toEqual({ brand: 'WE ONLINE', year: 2026, followersGoal: 5000 })
+  })
+
+  it('rechaza el objetivo 0', () => {
+    // Un objetivo 0 no es "sin objetivo": daria 100% de avance para siempre.
+    // Para sacar la meta se borra la fila, no se guarda un 0.
+    expect(() => validateBrandGoal({ brand: 'IIM', year: 2026, followers_goal: 0 }))
+      .toThrow(DomainError)
+  })
+
+  it('rechaza objetivos no enteros o negativos', () => {
+    for (const bad of [-1, 1.5, '', null, undefined, 'x']) {
+      expect(() => validateBrandGoal({ brand: 'IIM', year: 2026, followers_goal: bad }))
+        .toThrow(DomainError)
+    }
+  })
+
+  it('rechaza marca vacia', () => {
+    for (const bad of ['', '   ', null, undefined]) {
+      expect(() => validateBrandGoal({ brand: bad, year: 2026, followers_goal: 100 }))
+        .toThrow(DomainError)
+    }
+  })
+
+  it('rechaza anios fuera de rango o mal tipeados', () => {
+    // Un '202' o un '20226' crearia una fila que ninguna vista vuelve a pedir.
+    for (const bad of [202, 20226, 1999, 2101, 'x', null]) {
+      expect(() => validateBrandGoal({ brand: 'IIM', year: bad, followers_goal: 100 }))
         .toThrow(DomainError)
     }
   })

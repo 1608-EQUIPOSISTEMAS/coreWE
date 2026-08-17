@@ -7,11 +7,13 @@ import {
 } from './social.controller.js'
 import {
   listSocialAccountsHandler, listSocialGrowthHandler,
-  saveSocialGrowthHandler, syncSocialGrowthHandler
+  saveSocialGrowthHandler, syncSocialGrowthHandler,
+  listSocialGoalsHandler, saveSocialGoalHandler
 } from './growth.controller.js'
 import {
   socialAccountListSchema, socialGrowthListSchema,
-  socialGrowthSaveSchema, socialGrowthSyncSchema
+  socialGrowthSaveSchema, socialGrowthSyncSchema,
+  socialGoalListSchema, socialGoalSaveSchema
 } from './growth.schemas.js'
 
 export default async function marketingRoutes (fastify) {
@@ -35,4 +37,8 @@ export default async function marketingRoutes (fastify) {
   fastify.get('/social-growth', { schema: socialGrowthListSchema }, listSocialGrowthHandler)
   fastify.put('/social-growth', { schema: socialGrowthSaveSchema }, saveSocialGrowthHandler)
   fastify.post('/social-growth/sync', { schema: socialGrowthSyncSchema }, syncSocialGrowthHandler)
+
+  // Objetivo anual de seguidores por marca
+  fastify.get('/social-goals', { schema: socialGoalListSchema }, listSocialGoalsHandler)
+  fastify.put('/social-goals', { schema: socialGoalSaveSchema }, saveSocialGoalHandler)
 }

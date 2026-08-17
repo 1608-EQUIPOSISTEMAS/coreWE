@@ -2,7 +2,7 @@ import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 
 // Persistencia del dominio b2b. Envuelve los stored procedures de company,
-// company lead, contract y agreement preservando los statement timeouts por SP.
+// company lead y contract preservando los statement timeouts por SP.
 export class B2bRepository {
   constructor (db = pool, sp = callProcedureReturningRows) {
     this.db = db
@@ -127,49 +127,14 @@ export class B2bRepository {
     )
   }
 
-  // ── AGREEMENT ────────────────────────────────────────────────
-
-  async agreementList (payload) {
+  // Un cupo por alumno: el timeout va holgado porque cada uno resuelve persona,
+  // cliente, contactos e inscripcion, y un contrato grande reparte decenas.
+  async contractEnrollBeneficiaries (contractId, userId) {
     return this.sp(
       this.db,
-      'public.sp_b2b_agreement_list',
-      [JSON.stringify(payload)],
-      { statementTimeoutMs: 25000 }
+      'public.sp_b2b_contract_enroll_beneficiaries',
+      [contractId, userId],
+      { statementTimeoutMs: 120000 }
     )
   }
 
-  async agreementGet (payload) {
-    return this.sp(
-      this.db,
-      'public.sp_b2b_agreement_get',
-      [JSON.stringify(payload)],
-      { statementTimeoutMs: 10000 }
-    )
-  }
-
-  async agreementRegister (agreement, discounts) {
-    return this.sp(
-      this.db,
-      'public.sp_b2b_agreement_register',
-      [
-        JSON.stringify(agreement),
-        JSON.stringify(discounts)
-      ],
-      { statementTimeoutMs: 25000 }
-    )
-  }
-
-  async agreementUpdate (agreement, discounts) {
-    return this.sp(
-      this.db,
-      'public.sp_b2b_agreement_update',
-      [
-        JSON.stringify(agreement),
-        JSON.stringify(discounts)
-      ],
-      { statementTimeoutMs: 25000 }
-    )
-  }
-}
-
-export const b2bRepository = new B2bRepository()

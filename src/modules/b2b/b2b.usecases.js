@@ -1,5 +1,5 @@
 import { b2bRepository } from './b2b.repository.js'
-import { normalizeCompanyLeadPayload, normalizeLeadId, normalizeDiscounts } from './b2b.entity.js'
+import { normalizeCompanyLeadPayload, normalizeLeadId, summarizeEnrollment } from './b2b.entity.js'
 import { toListData, toGetData, toMutationResult } from './b2b.dto.js'
 
 const repo = b2bRepository
@@ -60,20 +60,12 @@ export async function contractUpdate (payload = {}) {
   return toMutationResult(await repo.contractUpdate(payload))
 }
 
-// ── AGREEMENT ────────────────────────────────────────────────
-
-export async function agreementList (payload = {}) {
-  return toListData(await repo.agreementList(payload))
+// Manda a FICO los cupos del contrato que todavia no son inscripcion.
+export async function contractEnrollBeneficiaries (payload = {}) {
+  const contractId = normalizeLeadId(payload.contract_id)
+  if (!contractId) return { result: 0, message: 'Falta el contrato' }
+  const rows = await repo.contractEnrollBeneficiaries(contractId, normalizeLeadId(payload.user_id))
+  const resumen = summarizeEnrollment(rows)
+  return { result: 1, message: `${resumen.enrolled} inscripcion(es) creada(s)`, ...resumen }
 }
 
-export async function agreementGet (payload = {}) {
-  return toGetData(await repo.agreementGet(payload))
-}
-
-export async function agreementRegister ({ agreement = {}, discounts = [] } = {}) {
-  return toMutationResult(await repo.agreementRegister(agreement, normalizeDiscounts(discounts)))
-}
-
-export async function agreementUpdate ({ agreement = {}, discounts = [] } = {}) {
-  return toMutationResult(await repo.agreementUpdate(agreement, normalizeDiscounts(discounts)))
-}

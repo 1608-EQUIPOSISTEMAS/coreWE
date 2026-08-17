@@ -30,12 +30,3 @@ export const toUpdateDto = (rows) => {
   }
 }
 
-// a5MigrationExecute: normaliza result/message/migrated_count con defaults.
-export const toA5MigrationDto = (rows) => {
-  const row = rows?.[0] || {}
-  return {
-    result: row.result ?? 0,
-    message: row.message || 'Sin respuesta del SP',
-    migrated_count: row.migrated_count ?? 0
-  }
-}

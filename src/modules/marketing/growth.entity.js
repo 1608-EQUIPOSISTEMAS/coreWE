@@ -82,6 +82,31 @@ export function buildGrowthSeries (rows = []) {
   return series
 }
 
+// Ventana de años aceptada. No es una regla de negocio, es una red contra el
+// dedo: un "202" o un "20226" tipeado crearía una fila que nadie vuelve a ver
+// porque ninguna vista pide ese año.
+const FIRST_YEAR = 2020
+const LAST_YEAR = 2100
+
+export function validateBrandGoal ({ brand, year, followers_goal: followersGoal } = {}) {
+  const cleanBrand = String(brand ?? '').trim()
+  if (!cleanBrand) throw new DomainError('brand es obligatorio', { statusCode: 400 })
+
+  const cleanYear = Number(year)
+  if (!Number.isInteger(cleanYear) || cleanYear < FIRST_YEAR || cleanYear > LAST_YEAR) {
+    throw new DomainError(`year debe ser un año entre ${FIRST_YEAR} y ${LAST_YEAR}`, { statusCode: 400 })
+  }
+
+  // Un objetivo de 0 no es "sin objetivo", es una meta imposible de no cumplir y
+  // pintaría 100% de avance para siempre. Para sacar la meta se borra la fila.
+  const goal = Number(followersGoal)
+  if (!Number.isInteger(goal) || goal <= 0) {
+    throw new DomainError('followers_goal debe ser un entero mayor a 0', { statusCode: 400 })
+  }
+
+  return { brand: cleanBrand, year: cleanYear, followersGoal: goal }
+}
+
 function requireAccountId (raw) {
   const accountId = Number(raw)
   if (!Number.isInteger(accountId) || accountId <= 0) {

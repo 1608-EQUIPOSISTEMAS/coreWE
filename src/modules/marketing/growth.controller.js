@@ -12,6 +12,17 @@ export async function listSocialGrowthHandler (req, reply) {
   return reply.send({ ok: true, data: await usecases.getGrowth({ from, to, brand }) })
 }
 
+// GET /marketing/social-goals?year=YYYY
+export async function listSocialGoalsHandler (req, reply) {
+  return reply.send({ ok: true, data: await usecases.listBrandGoals(req.query.year) })
+}
+
+// PUT /marketing/social-goals — fija el objetivo anual de una marca
+export async function saveSocialGoalHandler (req, reply) {
+  const updatedBy = req.user?.username || req.user?.email || req.user?.sub || null
+  return reply.send({ ok: true, data: await usecases.saveBrandGoal(req.body, updatedBy) })
+}
+
 // PUT /marketing/social-growth — carga manual de una cuenta sin API
 export async function saveSocialGrowthHandler (req, reply) {
   const capturedBy = req.user?.username || req.user?.email || req.user?.sub || null
