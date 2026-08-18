@@ -62,3 +62,8 @@ docker-data/
 
 # Optional: ignore local test files
 tests/local/
+
+# Volcados de la BD: son datos reales de produccion, nunca al repo
+*.dump
+*.sql.gz
+scripts/.produccion.*

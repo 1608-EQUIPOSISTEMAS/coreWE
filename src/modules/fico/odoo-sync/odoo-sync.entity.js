@@ -43,22 +43,6 @@ export function buildPresentialCourseName ({ odooActivation, startDate }) {
   return `${odooActivation} (${dd}/${mm}) - ${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }
 
-// Determina el login (searchEmail) a usar en Odoo segun prioridad:
-//   1) login del odoo_user_id previo del mismo DNI (fuente mas confiable).
-//   2) origin_email real del alumno normalizado (cubre cuentas Odoo antiguas).
-//   3) email sintetico generado (fallback para alumno realmente nuevo).
-// Recibe los resultados ya consultados a Odoo; no hace red.
-export function resolveSearchEmail ({ createEmail, prevUserLogin, originEmail, existingUserByRealEmailLogin }) {
-  if (prevUserLogin) return prevUserLogin
-  if (existingUserByRealEmailLogin) return existingUserByRealEmailLogin
-  return createEmail
-}
-
-// Normaliza el origin_email a minusculas sin espacios. Devuelve '' si no hay.
-export function normalizeOriginEmail (originEmail) {
-  return originEmail ? String(originEmail).trim().toLowerCase() : ''
-}
-
 // Mapea las cuotas planificadas al shape que espera createSaleOrderWithFees,
 // formateando la fecha de vencimiento a YYYY-MM-DD (UTC). Devuelve null si no
 // hay cuotas para no enviar una lista vacia a Odoo.

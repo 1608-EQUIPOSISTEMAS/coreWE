@@ -11,7 +11,7 @@ import {
   resolveMembershipChannels
 } from './membership.entity.js'
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
-import { buildUniqueOdooEmail, buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
+import { buildUniqueOdooEmail, buildOdooNameParts, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
 import { toRescheduleDto } from './membership.dto.js'
 
 // Orquestacion del subdominio membership. No contiene SQL (delega en el
@@ -136,17 +136,17 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
   // user de otra persona.
   const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // Si la persona (mismo DNI) ya tiene odoo_user_id, reusamos su login. Sino,
-  // searchEmail = createEmail (garantizado disponible) y Odoo crea user nuevo.
-  let searchEmail = createEmail
+  // Mismo resolver que el sync de cursos: DNI previo -> correo real -> sintetico.
+  // Antes solo miraba el DNI previo, asi que a un alumno con cuenta Odoo creada
+  // por otro flujo le abria un usuario duplicado apellido.nombre@...
   const prevOdooUserId = await repo.findPreviousOdooUserByDocument(data.document_number)
-  if (prevOdooUserId) {
-    const existingUser = await odoo.callKw('res.users', 'read', [
-      [prevOdooUserId], ['login']
-    ]).catch(() => null)
-    if (existingUser?.[0]?.login) {
-      searchEmail = existingUser[0].login
-    }
+  const searchEmail = await resolveOdooLogin({
+    prevOdooUserId,
+    originEmail: data.origin_email,
+    createEmail
+  })
+  if (searchEmail !== createEmail) {
+    console.log(`[enrollMembershipInOdoo] enrollment ${enrollmentId}: reusando usuario Odoo existente (${searchEmail})`)
   }
 
   // Catalogo curado en Configuracion. Sin lista guardada, resolveMembershipChannels

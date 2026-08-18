@@ -5,8 +5,6 @@ import {
   resolveCurrencyCode,
   buildOdooFullName,
   buildPresentialCourseName,
-  resolveSearchEmail,
-  normalizeOriginEmail,
   mapInstallmentsForOdoo
 } from '../odoo-sync.entity.js'
 
@@ -75,51 +73,6 @@ describe('buildPresentialCourseName', () => {
       startDate: new Date('2026-12-01T00:00:00.000Z')
     })
     expect(name).toBe('DIPLOMADO (01/12) - Diciembre 2026')
-  })
-})
-
-describe('resolveSearchEmail', () => {
-  const createEmail = 'perez.maria@weeducacion.edu.pe'
-
-  it('prioriza el login del odoo_user_id previo', () => {
-    const r = resolveSearchEmail({
-      createEmail,
-      prevUserLogin: 'previo@odoo.com',
-      originEmail: 'real@gmail.com',
-      existingUserByRealEmailLogin: 'porreal@odoo.com'
-    })
-    expect(r).toBe('previo@odoo.com')
-  })
-
-  it('usa el login encontrado por origin_email cuando no hay previo', () => {
-    const r = resolveSearchEmail({
-      createEmail,
-      prevUserLogin: null,
-      originEmail: 'real@gmail.com',
-      existingUserByRealEmailLogin: 'porreal@odoo.com'
-    })
-    expect(r).toBe('porreal@odoo.com')
-  })
-
-  it('cae al email sintetico cuando no hay coincidencias', () => {
-    const r = resolveSearchEmail({
-      createEmail,
-      prevUserLogin: null,
-      originEmail: null,
-      existingUserByRealEmailLogin: null
-    })
-    expect(r).toBe(createEmail)
-  })
-})
-
-describe('normalizeOriginEmail', () => {
-  it('baja a minusculas y recorta', () => {
-    expect(normalizeOriginEmail('  Real@Gmail.COM ')).toBe('real@gmail.com')
-  })
-
-  it('devuelve cadena vacia si no hay correo', () => {
-    expect(normalizeOriginEmail(null)).toBe('')
-    expect(normalizeOriginEmail(undefined)).toBe('')
   })
 })
 

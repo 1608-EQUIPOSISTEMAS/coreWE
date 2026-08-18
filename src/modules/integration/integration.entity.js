@@ -83,6 +83,20 @@ export function buildAulaRow (r) {
   ]
 }
 
+// Cabecera de "5. Membresias". Solo se escribe si la hoja no existe todavia:
+// ensureAndWrite respeta los headers que ya puso el usuario.
+export const MEMBRESIAS_HEADER_ROW = [
+  'NOMBRES', 'APELLIDOS', 'CELULAR', 'CORREO', 'MEMBRESIA', 'VENCIMIENTO'
+]
+
+// Mapea un resultado de la query de membresias FICO a las 6 columnas A..F.
+export function buildMembresiasRow (r) {
+  return [
+    r.nombres || '', r.apellidos || '', r.celular || '',
+    r.correo || '', r.membresia || '', r.vencimiento || ''
+  ]
+}
+
 // Mapea un resultado de la query de consolidado FICO a las 31 columnas A..AE.
 export function buildConsolidadoRow (r) {
   const z = isZeroAmountEmail(r.correo)

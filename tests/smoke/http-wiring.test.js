@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { buildApp } from '../../src/buildApp.js'
 
 // Smoke tests del wiring HTTP. NO tocan la base de datos: validan que el
@@ -163,4 +164,27 @@ describe.skipIf(!dbReady)('endpoints criticos (requieren BD de test)', () => {
   // TODO Fase 0: completar con fico/enrollmentlist, fico/enrollmentregister,
   // fico/confirmpayment, fico/confirminstallment, token/create, comercial leads.
   // Capturan el comportamiento ACTUAL (snapshot) antes de partir los god objects.
+})
+
+// Un modulo cuyas rutas nunca se registran en buildApp no rompe ningun test de
+// unidad: los usecases y el repositorio siguen verdes, y el fallo aparece recien
+// en la pantalla como "Route not found". Le paso al modulo b2b: sus 13
+// endpoints devolvian 404 en produccion. La prueba es 401 (existe pero pide
+// token) contra 404 (no existe).
+describe('modulos montados en buildApp', () => {
+  const rutasDeclaradas = (modulo) => {
+    const url = new URL(`../../src/modules/${modulo}`, import.meta.url)
+    return readFileSync(new URL(`${modulo}.routes.js`, `${url}/`), 'utf8')
+      .matchAll(/fastify\.(get|post|put|delete)\('([^']+)'/g)
+  }
+
+  it.each([['b2b', '/api/b2b']])(
+    'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
+      const noMontadas = []
+      for (const [, verbo, ruta] of rutasDeclaradas(modulo)) {
+        const res = await app.inject({ method: verbo.toUpperCase(), url: `${prefijo}${ruta}`, payload: {} })
+        if (res.statusCode === 404) noMontadas.push(`${verbo.toUpperCase()} ${prefijo}${ruta}`)
+      }
+      expect(noMontadas).toEqual([])
+    })
 })

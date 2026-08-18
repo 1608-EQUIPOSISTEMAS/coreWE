@@ -13,6 +13,8 @@ import {
   buildCuotasHeaderRow,
   buildCronogramaRow,
   CRONOGRAMA_HEADER_ROW,
+  buildMembresiasRow,
+  MEMBRESIAS_HEADER_ROW,
   buildSlackEnrollmentBlocks
 } from './integration.entity.js'
 
@@ -338,22 +340,41 @@ export async function syncFicoAdicionalesToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 6 hojas FICO en paralelo: son independientes (misma
+// FICO -> hoja "5. Membresias". Una fila por membresia vendida con la fecha en
+// que se le retira el beneficio (un anio desde que arranco). 6 columnas A..F.
+// Crea la hoja con headers si no existe.
+export async function syncFicoMembresiasToSheet () {
+  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SHEET_NAME = '5. Membresias'
+
+  const rows = await repo.getFicoMembresias()
+  const values = rows.map(buildMembresiasRow)
+
+  const created = await repo.ensureAndWrite(
+    SPREADSHEET_ID, SHEET_NAME, MEMBRESIAS_HEADER_ROW,
+    `'${SHEET_NAME}'!A2:F`, `'${SHEET_NAME}'!A2`, values
+  )
+
+  return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
+// Sincroniza las 7 hojas FICO en paralelo: son independientes (misma
 // spreadsheet, hojas y rangos distintos), asi el tiempo total es el de la hoja
-// mas lenta y no la suma de las 6. Si alguna falla, la request completa falla
+// mas lenta y no la suma de las 7. Si alguna falla, la request completa falla
 // (Promise.all), pero las demas ya lanzadas terminan igual: cada hoja se
 // sobreescribe completa en cada sync, asi que no queda estado corrupto.
 // ponytail: si Sheets empieza a devolver 429 por la rafaga, volver a lotes de 2-3.
 export async function syncFicoToSheets () {
-  const [ventas, aula, consolidado, cuotas, cronograma, adicionales] = await Promise.all([
+  const [ventas, aula, consolidado, cuotas, cronograma, adicionales, membresias] = await Promise.all([
     syncFicoSalesToSheet(),
     syncFicoAulaToSheet(),
     syncFicoConsolidadoToSheet(),
     syncFicoCuotasToSheet(),
     syncFicoCronogramaToSheet(),
-    syncFicoAdicionalesToSheet()
+    syncFicoAdicionalesToSheet(),
+    syncFicoMembresiasToSheet()
   ])
-  return { ventas, aula, consolidado, cuotas, cronograma, adicionales }
+  return { ventas, aula, consolidado, cuotas, cronograma, adicionales, membresias }
 }
 
 // Version fire-and-forget de syncFicoToSheets: responde al instante y deja la

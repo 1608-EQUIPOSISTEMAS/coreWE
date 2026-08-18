@@ -94,3 +94,27 @@ export async function buildUniqueOdooEmail (firstName, lastName, documentNumber)
   const suffix = documentNumber ? documentNumber.slice(-3) : String(Date.now()).slice(-4)
   return `${base}.${suffix}${domain}`
 }
+
+// Login (searchEmail) con el que hay que buscar al alumno en Odoo, en orden de
+// confianza:
+//   1) login del odoo_user_id previo del mismo DNI (lo mapeamos nosotros).
+//   2) su correo real, si ya tiene cuenta Odoo de un flujo antiguo (GAS, alta
+//      manual, otro sistema) que nuestra BD nunca registro. Sin este paso se
+//      crea un usuario sintetico duplicado para alguien que ya existia.
+//   3) el email sintetico recien generado (alumno realmente nuevo).
+// El search es por `res.users.login`, no por `partner.email`: el email de
+// partner se repite entre personas y no es llave.
+export async function resolveOdooLogin ({ prevOdooUserId, originEmail, createEmail }, client = odooClient) {
+  if (prevOdooUserId) {
+    const users = await client.callKw('res.users', 'read', [[prevOdooUserId], ['login']]).catch(() => null)
+    if (users?.[0]?.login) return users[0].login
+  }
+
+  const realEmail = originEmail ? String(originEmail).trim().toLowerCase() : ''
+  if (realEmail) {
+    const existing = await client.searchUserByEmail(realEmail).catch(() => null)
+    if (existing?.login) return existing.login
+  }
+
+  return createEmail
+}

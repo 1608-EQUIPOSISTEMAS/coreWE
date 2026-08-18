@@ -1,12 +1,19 @@
 import { pool } from '../../shared/db/pool.js'
-import { callProcedureReturningRows } from '../../shared/db/sp.js'
+import { callProcedureReturningRows, callProcedureReturningResult } from '../../shared/db/sp.js'
 
 // Persistencia del dominio b2b. Envuelve los stored procedures de company,
 // company lead y contract preservando los statement timeouts por SP.
+//
+// Los SPs de este dominio vienen en dos formas y NO son intercambiables:
+//   · consulta  -> ultimo parametro `INOUT p_result refcursor`  -> this.sp
+//   · mutacion  -> `OUT result, OUT message[, OUT <x>_id]`       -> this.spResult
+// Mandar una mutacion por this.sp le agrega un cursor que el SP no declara y
+// Postgres responde "no existe el procedimiento (unknown, unknown)".
 export class B2bRepository {
-  constructor (db = pool, sp = callProcedureReturningRows) {
+  constructor (db = pool, sp = callProcedureReturningRows, spResult = callProcedureReturningResult) {
     this.db = db
     this.sp = sp
+    this.spResult = spResult
   }
 
   // ── COMPANY ──────────────────────────────────────────────────
@@ -29,30 +36,30 @@ export class B2bRepository {
     )
   }
 
-  async companyGet (payload) {
+  async companyGet (companyId) {
     return this.sp(
       this.db,
       'public.sp_b2b_company_get',
-      [JSON.stringify(payload)],
+      [companyId],
       { statementTimeoutMs: 10000 }
     )
   }
 
   async companyRegister (payload) {
-    return this.sp(
+    return this.spResult(
       this.db,
       'public.sp_b2b_company_register',
       [JSON.stringify(payload)],
-      { statementTimeoutMs: 25000 }
+      { statementTimeoutMs: 25000, outputs: 3 }
     )
   }
 
-  async companyUpdate (payload) {
-    return this.sp(
+  async companyUpdate (companyId, payload) {
+    return this.spResult(
       this.db,
       'public.sp_b2b_company_update',
-      [JSON.stringify(payload)],
-      { statementTimeoutMs: 25000 }
+      [companyId, JSON.stringify(payload)],
+      { statementTimeoutMs: 25000, outputs: 2 }
     )
   }
 
@@ -100,30 +107,30 @@ export class B2bRepository {
     )
   }
 
-  async contractGet (payload) {
+  async contractGet (contractId) {
     return this.sp(
       this.db,
       'public.sp_b2b_contract_get',
-      [JSON.stringify(payload)],
+      [contractId],
       { statementTimeoutMs: 10000 }
     )
   }
 
   async contractRegister (payload) {
-    return this.sp(
+    return this.spResult(
       this.db,
       'public.sp_b2b_contract_register',
       [JSON.stringify(payload)],
-      { statementTimeoutMs: 25000 }
+      { statementTimeoutMs: 25000, outputs: 3 }
     )
   }
 
-  async contractUpdate (payload) {
-    return this.sp(
+  async contractUpdate (contractId, payload) {
+    return this.spResult(
       this.db,
       'public.sp_b2b_contract_update',
-      [JSON.stringify(payload)],
-      { statementTimeoutMs: 25000 }
+      [contractId, JSON.stringify(payload)],
+      { statementTimeoutMs: 25000, outputs: 2 }
     )
   }
 
@@ -138,3 +145,6 @@ export class B2bRepository {
     )
   }
 
+}
+
+export const b2bRepository = new B2bRepository()

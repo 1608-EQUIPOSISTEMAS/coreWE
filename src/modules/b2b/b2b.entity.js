@@ -42,10 +42,18 @@ export function summarizeEnrollment (rows = []) {
   }
 }
 
-// Normaliza lead_id a entero para sp_company_lead_get (el SP espera INT, no JSON).
+// Normaliza un identificador a entero: los SPs de consulta reciben INT, no JSON.
 // Devuelve null cuando el valor no es numerico para evitar pasar NaN/undefined a PG.
-export function normalizeLeadId (leadId) {
-  if (leadId === null || leadId === undefined || leadId === '') return null
-  const n = Number(leadId)
+export function normalizeId (id) {
+  if (id === null || id === undefined || id === '') return null
+  const n = Number(id)
   return Number.isInteger(n) ? n : null
+}
+
+// Los SPs de actualizacion reciben el id APARTE del jsonb de datos
+// (`sp_b2b_*_update(p_id integer, p_data jsonb)`), pero el formulario manda todo
+// junto en un mismo objeto con la clave `id`. Aqui se separan.
+export function splitUpdatePayload (payload = {}) {
+  const { id, ...data } = payload
+  return { id: normalizeId(id), data }
 }

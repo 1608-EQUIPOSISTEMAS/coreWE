@@ -4,7 +4,7 @@ import {
   firstRowOrEmpty,
   rowsOrEmpty,
   normalizeCompanyLeadPayload,
-  normalizeLeadId,
+  normalizeId,
   summarizeEnrollment
 } from '../b2b.entity.js'
 
@@ -64,16 +64,16 @@ describe('normalizeCompanyLeadPayload', () => {
   })
 })
 
-describe('normalizeLeadId', () => {
+describe('normalizeId', () => {
   it('castea strings numericas y enteros', () => {
-    expect(normalizeLeadId('123')).toBe(123)
-    expect(normalizeLeadId(45)).toBe(45)
+    expect(normalizeId('123')).toBe(123)
+    expect(normalizeId(45)).toBe(45)
   })
   it('devuelve null para valores no enteros', () => {
-    expect(normalizeLeadId('abc')).toBeNull()
-    expect(normalizeLeadId(undefined)).toBeNull()
-    expect(normalizeLeadId(null)).toBeNull()
-    expect(normalizeLeadId(1.5)).toBeNull()
+    expect(normalizeId('abc')).toBeNull()
+    expect(normalizeId(undefined)).toBeNull()
+    expect(normalizeId(null)).toBeNull()
+    expect(normalizeId(1.5)).toBeNull()
   })
 })
 

@@ -2,7 +2,7 @@ import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
-import { buildUniqueOdooEmail, buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
+import { buildUniqueOdooEmail, buildOdooNameParts, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
 import { isEventEnrollment } from '../../../shared/event-category.js'
 import { odooSyncRepository } from './odoo-sync.repository.js'
@@ -12,8 +12,6 @@ import {
   resolveCurrencyCode,
   buildOdooFullName,
   buildPresentialCourseName,
-  resolveSearchEmail,
-  normalizeOriginEmail,
   mapInstallmentsForOdoo
 } from './odoo-sync.entity.js'
 
@@ -143,42 +141,16 @@ export async function enrollInOdoo ({ enrollmentId }) {
 
   const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // Resolucion del searchEmail (login a buscar en Odoo) en orden de prioridad:
-  //   1) Login del odoo_user_id que TENEMOS guardado para este DNI en otro
-  //      enrollment previo. Es la fuente mas confiable porque la mapeamos nosotros.
-  //   2) origin_email del alumno (su correo real). Cubre alumnos con cuenta Odoo
-  //      desde flujos antiguos (GAS, manual, otro sistema) que nuestra BD nunca
-  //      registro, evitando duplicados con login sintetico.
-  //   3) Synthetic createEmail (apellido.nombre@weeducacion.edu.pe) — fallback
-  //      cuando es un alumno realmente nuevo.
-  //
-  // El search en Odoo es por `res.users.login` (clave unica), no por
-  // `partner.email` — ese es el motivo del filtro estricto en searchUserByEmail.
-  let prevUserLogin = null
-  let existingByRealLogin = null
-
-  if (prevOdoo?.odoo_user_id) {
-    const existingUser = await odoo.callKw('res.users', 'read', [
-      [prevOdoo.odoo_user_id], ['login']
-    ]).catch(() => null)
-    prevUserLogin = existingUser?.[0]?.login || null
-  } else {
-    const realEmail = normalizeOriginEmail(data.origin_email)
-    if (realEmail) {
-      const existingByReal = await odoo.searchUserByEmail(realEmail).catch(() => null)
-      if (existingByReal?.login) {
-        console.log(`[enrollInOdoo] enrollment ${enrollmentId}: alumno antiguo encontrado en Odoo por origin_email (${realEmail}) -> user ${existingByReal.id}`)
-        existingByRealLogin = existingByReal.login
-      }
-    }
+  // Login a buscar en Odoo: DNI previo -> correo real del alumno -> sintetico.
+  const searchEmail = await resolveOdooLogin({
+    prevOdooUserId: prevOdoo?.odoo_user_id,
+    originEmail: data.origin_email,
+    createEmail
+  })
+  if (searchEmail !== createEmail) {
+    console.log(`[enrollInOdoo] enrollment ${enrollmentId}: reusando usuario Odoo existente (${searchEmail})`)
   }
 
-  const searchEmail = resolveSearchEmail({
-    createEmail,
-    prevUserLogin,
-    originEmail: data.origin_email,
-    existingUserByRealEmailLogin: existingByRealLogin
-  })
   const fullName = buildOdooFullName({
     firstName: data.first_name,
     lastName: data.last_name,

@@ -1,5 +1,7 @@
 import { b2bRepository } from './b2b.repository.js'
-import { normalizeCompanyLeadPayload, normalizeLeadId, summarizeEnrollment } from './b2b.entity.js'
+import {
+  normalizeCompanyLeadPayload, normalizeId, splitUpdatePayload, summarizeEnrollment
+} from './b2b.entity.js'
 import { toListData, toGetData, toMutationResult } from './b2b.dto.js'
 
 const repo = b2bRepository
@@ -15,7 +17,7 @@ export async function companyList (payload = {}) {
 }
 
 export async function companyGet (payload = {}) {
-  return toGetData(await repo.companyGet(payload))
+  return toGetData(await repo.companyGet(normalizeId(payload.id ?? payload.company_id)))
 }
 
 export async function companyRegister (payload = {}) {
@@ -23,7 +25,9 @@ export async function companyRegister (payload = {}) {
 }
 
 export async function companyUpdate (payload = {}) {
-  return toMutationResult(await repo.companyUpdate(payload))
+  const { id, data } = splitUpdatePayload(payload)
+  if (!id) return { result: 0, message: 'Falta la empresa a actualizar' }
+  return toMutationResult(await repo.companyUpdate(id, data))
 }
 
 // ── LEAD EMPRESA ─────────────────────────────────────────────
@@ -33,7 +37,7 @@ export async function companyLeadList (payload = {}) {
 }
 
 export async function companyLeadGet (payload = {}) {
-  const leadId = normalizeLeadId(payload.lead_id)
+  const leadId = normalizeId(payload.lead_id)
   return toGetData(await repo.companyLeadGet(leadId))
 }
 
@@ -49,7 +53,7 @@ export async function contractList (payload = {}) {
 }
 
 export async function contractGet (payload = {}) {
-  return toGetData(await repo.contractGet(payload))
+  return toGetData(await repo.contractGet(normalizeId(payload.id ?? payload.contract_id)))
 }
 
 export async function contractRegister (payload = {}) {
@@ -57,14 +61,16 @@ export async function contractRegister (payload = {}) {
 }
 
 export async function contractUpdate (payload = {}) {
-  return toMutationResult(await repo.contractUpdate(payload))
+  const { id, data } = splitUpdatePayload(payload)
+  if (!id) return { result: 0, message: 'Falta el contrato a actualizar' }
+  return toMutationResult(await repo.contractUpdate(id, data))
 }
 
 // Manda a FICO los cupos del contrato que todavia no son inscripcion.
 export async function contractEnrollBeneficiaries (payload = {}) {
-  const contractId = normalizeLeadId(payload.contract_id)
+  const contractId = normalizeId(payload.contract_id)
   if (!contractId) return { result: 0, message: 'Falta el contrato' }
-  const rows = await repo.contractEnrollBeneficiaries(contractId, normalizeLeadId(payload.user_id))
+  const rows = await repo.contractEnrollBeneficiaries(contractId, normalizeId(payload.user_id))
   const resumen = summarizeEnrollment(rows)
   return { result: 1, message: `${resumen.enrolled} inscripcion(es) creada(s)`, ...resumen }
 }

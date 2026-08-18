@@ -142,6 +142,25 @@ export const SYNC_FROM = `
             WHERE fam.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
          ) >= DATE '${SYNC_FROM_DATE}'`
 
+// Contacto efectivo del alumno, en el orden que manda negocio: lo que el lead
+// trajo al vender y, si el lead no lo tiene, el ultimo contacto vigente de la
+// persona. Las 6 queries FICO lo repetian verbatim. Asume en el scope los alias
+// `l` (leads) y `per` (persons).
+const STUDENT_EMAIL_SQL = `COALESCE(
+        l.origin_email,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )`
+const STUDENT_PHONE_SQL = `COALESCE(
+        l.origin_phone,
+        (SELECT pc.value FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+         ORDER BY pc.registration_date DESC LIMIT 1)
+      )`
+
 export class IntegrationRepository {
   constructor (db = pool) {
     this.db = db
@@ -285,13 +304,7 @@ export class IntegrationRepository {
       per.document_number                                  AS dni,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       phone_eff.phone                                      AS celular,
-      COALESCE(
-        l.origin_email,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS correo,
+      ${STUDENT_EMAIL_SQL}                                                    AS correo,
       CASE c_prof.alias
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
@@ -376,13 +389,7 @@ export class IntegrationRepository {
        LIMIT 1
     ) mtier ON TRUE
     LEFT JOIN LATERAL (
-      SELECT COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS phone
+      SELECT ${STUDENT_PHONE_SQL} AS phone
     ) phone_eff ON TRUE
     LEFT JOIN hist ON hist.phone = phone_eff.phone
     LEFT JOIN LATERAL (
@@ -447,20 +454,8 @@ export class IntegrationRepository {
       COALESCE(pv.abbreviation, '')                        AS programa,
       to_char(p.payment_date, 'DD/MM/YYYY')                AS f_pago,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
-      COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS celular,
-      COALESCE(
-        l.origin_email,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS correo,
+      ${STUDENT_PHONE_SQL}                                                    AS celular,
+      ${STUDENT_EMAIL_SQL}                                                    AS correo,
       replace(to_char(p.amount, 'FM999990.00'), '.', ',')  AS monto,
       COALESCE(NULLIF(c_curr.variable_3, ''), c_curr.description, '') AS tipo_moneda,
       COALESCE(cm.description, '')                         AS medio_pago,
@@ -530,13 +525,7 @@ export class IntegrationRepository {
       COALESCE(per.document_number, '')                    AS dni,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       phone_eff.phone                                      AS celular,
-      COALESCE(
-        l.origin_email,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      )                                                    AS correo,
+      ${STUDENT_EMAIL_SQL}                                                    AS correo,
       CASE c_prof.alias
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
@@ -596,13 +585,7 @@ export class IntegrationRepository {
        LIMIT 1
     ) mtier ON TRUE
     LEFT JOIN LATERAL (
-      SELECT COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS phone
+      SELECT ${STUDENT_PHONE_SQL} AS phone
     ) phone_eff ON TRUE
     LEFT JOIN hist ON hist.phone = phone_eff.phone
     LEFT JOIN LATERAL (
@@ -646,6 +629,52 @@ export class IntegrationRepository {
     return rows || []
   }
 
+  // Membresias vigentes vendidas (WE PLUS / GOLD / PLAT / BLACK) con el dia en
+  // que se les retira el beneficio: un anio exacto desde que arranco.
+  //
+  // Arranque = membership_activation_date cuando la activacion se difirio (la
+  // fija el flujo de confirmacion de pago, hoy solo un punado de casos) y, si no,
+  // la F. PAGO efectiva, la misma fecha que usan las demas hojas FICO.
+  //
+  // A diferencia de las otras hojas, esta NO aplica EXCLUDE_IMPORTED ni SYNC_FROM:
+  // la mitad de las membresias entro por la importacion masiva y un tercio es
+  // anterior al corte del sync, y todas siguen dando beneficio. Filtrarlas
+  // dejaria la hoja mintiendo sobre quien tiene membresia activa.
+  async getFicoMembresias () {
+    const { rows } = await this.db.query(`
+    SELECT
+      TRIM(BOTH FROM COALESCE(per.first_name, ''))                          AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.last_name, per.mother_last_name))   AS apellidos,
+      ${STUDENT_PHONE_SQL} AS celular,
+      ${STUDENT_EMAIL_SQL} AS correo,
+      COALESCE(pv.abbreviation, pv.version_code, '')                        AS membresia,
+      to_char(inicio.f + INTERVAL '1 year', 'DD/MM/YYYY')                   AS vencimiento
+    FROM public.enrollments e
+    JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+                            AND cf.alias = 'we_enrollment_status_checked'
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per    ON per.person_id    = cust.person_id
+    JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+    JOIN public.programs prog       ON prog.program_id = pv.program_id
+                                   AND prog.is_membership = true
+    LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        e.membership_activation_date,
+        l.pay_date,
+        (SELECT py.payment_date::date FROM public.payments py
+          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          ORDER BY py.payment_date ASC LIMIT 1),
+        e.registration_date::date
+      ) AS f
+    ) inicio ON TRUE
+    WHERE e.active = 'Y'
+      ${EXCLUDE_HELD}
+    ORDER BY inicio.f DESC, per.last_name
+  `)
+    return rows || []
+  }
+
   async getFicoConsolidado () {
     const { rows } = await this.db.query(`
     WITH approved AS (
@@ -675,20 +704,8 @@ export class IntegrationRepository {
       ) AS f_pago,
       per.document_number AS dni,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
-      COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS celular,
-      COALESCE(
-        l.origin_email,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS correo,
+      ${STUDENT_PHONE_SQL} AS celular,
+      ${STUDENT_EMAIL_SQL} AS correo,
       CASE c_prof.alias
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
@@ -894,20 +911,8 @@ export class IntegrationRepository {
       END AS ed,
       to_char(pe.start_date, 'DD/MM/YYYY') AS f_inicio,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
-      COALESCE(
-        l.origin_phone,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_phone'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS celular,
-      COALESCE(
-        l.origin_email,
-        (SELECT pc.value FROM public.person_contacts pc
-          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact AND c.alias = 'we_way_contact_email'
-         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
-         ORDER BY pc.registration_date DESC LIMIT 1)
-      ) AS correo,
+      ${STUDENT_PHONE_SQL} AS celular,
+      ${STUDENT_EMAIL_SQL} AS correo,
       CASE c_prof.alias
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
