@@ -2,18 +2,18 @@ import { b2bRepository } from './b2b.repository.js'
 import {
   normalizeCompanyLeadPayload, normalizeId, splitUpdatePayload, summarizeEnrollment
 } from './b2b.entity.js'
-import { toListData, toGetData, toMutationResult } from './b2b.dto.js'
+import { toCallerData, toListData, toGetData, toMutationResult } from './b2b.dto.js'
 
 const repo = b2bRepository
 
 // ── COMPANY ──────────────────────────────────────────────────
 
 export async function companyCaller (payload = {}) {
-  return toListData(await repo.companyCaller(payload))
+  return toCallerData(await repo.companyCaller(payload))
 }
 
 export async function companyList (payload = {}) {
-  return toListData(await repo.companyList(payload))
+  return toListData(await repo.companyList(payload), payload)
 }
 
 export async function companyGet (payload = {}) {
@@ -33,7 +33,7 @@ export async function companyUpdate (payload = {}) {
 // ── LEAD EMPRESA ─────────────────────────────────────────────
 
 export async function companyLeadList (payload = {}) {
-  return toListData(await repo.companyLeadList(payload))
+  return toListData(await repo.companyLeadList(payload), payload)
 }
 
 export async function companyLeadGet (payload = {}) {
@@ -49,7 +49,7 @@ export async function companyLeadRegister (payload = {}) {
 // ── CONTRACT ─────────────────────────────────────────────────
 
 export async function contractList (payload = {}) {
-  return toListData(await repo.contractList(payload))
+  return toListData(await repo.contractList(payload), payload)
 }
 
 export async function contractGet (payload = {}) {

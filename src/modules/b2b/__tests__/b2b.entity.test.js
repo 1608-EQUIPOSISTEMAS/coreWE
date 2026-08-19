@@ -5,7 +5,8 @@ import {
   rowsOrEmpty,
   normalizeCompanyLeadPayload,
   normalizeId,
-  summarizeEnrollment
+  summarizeEnrollment,
+  toPaginated
 } from '../b2b.entity.js'
 
 describe('assertSpResult', () => {
@@ -102,5 +103,17 @@ describe('summarizeEnrollment', () => {
 
   it('un envio sin cupos no revienta', () => {
     expect(summarizeEnrollment()).toEqual({ enrolled: 0, skipped: 0, rejected: 0, detail: [] })
+  })
+})
+
+describe('toPaginated', () => {
+  it('arma el envelope que leen las pantallas y saca el total de total_count', () => {
+    const rows = [{ company_id: 1, total_count: '399' }, { company_id: 2, total_count: '399' }]
+    expect(toPaginated(rows, { page: '2', size: '20' }))
+      .toEqual({ total: 399, page: 2, size: 20, items: rows })
+  })
+
+  it('sin filas devuelve items vacio, no undefined', () => {
+    expect(toPaginated(null, {})).toEqual({ total: 0, page: 1, size: 0, items: [] })
   })
 })

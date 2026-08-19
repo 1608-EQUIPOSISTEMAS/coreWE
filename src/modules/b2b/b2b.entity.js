@@ -16,6 +16,19 @@ export function rowsOrEmpty (rows) {
   return rows || []
 }
 
+// Envelope de los endpoints *list. El front lee { items, total, page, size } y
+// el SP manda el total repetido en cada fila como `total_count`: devolver el
+// arreglo pelado deja la pantalla en blanco sin ningun error visible.
+export function toPaginated (rows, { page, size } = {}) {
+  const items = rowsOrEmpty(rows)
+  return {
+    total: items[0]?.total_count ? Number(items[0].total_count) : 0,
+    page: Number(page) || 1,
+    size: Number(size) || items.length,
+    items
+  }
+}
+
 // Separa el payload de alta de lead empresa en los tres parametros que espera
 // sp_company_lead_register: (p_lead jsonb, p_contact_attempts jsonb, p_user_registration_id integer).
 export function normalizeCompanyLeadPayload (payload = {}) {

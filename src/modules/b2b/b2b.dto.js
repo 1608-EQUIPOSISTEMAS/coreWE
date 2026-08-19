@@ -1,9 +1,11 @@
-// Forma de salida hacia el cliente. Mantiene paridad de shape con el service legacy:
-// los endpoints *list/*caller devuelven el arreglo de filas, los *get la primera fila,
-// y los *register/*update la fila de resultado del SP.
+// Forma de salida hacia el cliente: los endpoints *list devuelven el envelope
+// paginado que consumen las pantallas, *caller el arreglo pelado (es un
+// autocomplete, no pagina), *get la primera fila, y *register/*update la fila
+// de resultado del SP.
 
-import { assertSpResult, firstRowOrEmpty, rowsOrEmpty } from './b2b.entity.js'
+import { assertSpResult, firstRowOrEmpty, rowsOrEmpty, toPaginated } from './b2b.entity.js'
 
-export const toListData = rowsOrEmpty
+export const toCallerData = rowsOrEmpty
+export const toListData = toPaginated
 export const toGetData = firstRowOrEmpty
 export const toMutationResult = assertSpResult
