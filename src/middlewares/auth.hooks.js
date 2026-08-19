@@ -47,7 +47,10 @@ export const ADMIN_ONLY       = hasRole(['ADMIN'])
 export const ADMIN_COMERCIAL  = hasRole(['ADMIN', 'LIDER_COMERCIAL'])
 // FUNDACION/LIDER_FUNDACION entran aqui porque /fundacion/leads registra y
 // lista sus consultas contra los mismos endpoints /comercial/lead*.
-export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION'])
+// B2B/GERENCIA por lo mismo: /b2b/leads/new monta el mismo useLeadForm y postea
+// a /comercial/leadregister. Sin esto el rol B2B recibia 403 y el formulario
+// solo mostraba "Error inesperado al guardar el lead".
+export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B', 'GERENCIA'])
 export const ADMIN_FICO  = hasRole(['ADMIN', 'LIDER_FICO'])
 export const ALL_FICO    = hasModuleOrRole('FICO', ['ADMIN', 'FICO', 'LIDER_FICO'])
 export const ADMIN_ACADEMICA  = hasRole(['ADMIN', 'LIDER_ACADEMICA'])

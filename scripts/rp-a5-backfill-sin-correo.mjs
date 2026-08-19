@@ -1,13 +1,13 @@
 // Backfill de las ediciones A5 que quedaron con alumnos vivos adentro.
 //
 // Aplica el MISMO RP que usa FICO (origen -> RP, hijos -> R, destino ACT con sus
-// hijos SEG, Odoo actualizado) pero SIN enviar correos: son correcciones internas
+// hijos SEG) pero SIN tocar Odoo y SIN enviar correos: son correcciones internas
 // de datos viejos, no altas nuevas. El flujo normal del modal A5 sigue mandando
 // correo; esto es solo para el arrastre historico.
 //
 // Como se suprime el correo: reprogramEdition encola un job register_followup
 // (hijos -> Odoo -> correo) y el worker DESPLEGADO lo procesaria mandando el mail.
-// Por eso se anula el encolado y se corren a mano los dos pasos que si queremos.
+// Por eso se anula el encolado y se corre a mano el unico paso interno (hijos SEG).
 // No se toca codigo de produccion: la supresion vive aca, en el one-off.
 //
 // Uso:
@@ -20,13 +20,13 @@ import { pool } from '../src/config/db.js'
 import { enrollmentRepository } from '../src/modules/fico/enrollment/enrollment.repository.js'
 import { reprogramEdition } from '../src/modules/fico/enrollment/enrollment.usecases.js'
 import { createChildEnrollments } from '../src/modules/fico/validation/validation.usecases.js'
-import { enrollInOdoo } from '../src/modules/fico/odoo-sync/odoo-sync.usecases.js'
+
 import { editionRepository } from '../src/modules/edition/edition.repository.js'
 
 // edicion A5 de origen -> edicion destino. SIN LLENAR: cada destino es una
 // decision de Producto, no un default. Ver probe-a5-destinos-posibles.mjs; ojo
-// que 16 de las 27 no tienen ninguna edicion futura del mismo programa y por lo
-// tanto NO se pueden reprogramar (el RP exige mismo program_version_id).
+// que buena parte de las 31 no tiene ninguna edicion futura del mismo programa y
+// por lo tanto NO se puede reprogramar (el RP exige mismo program_version_id).
 const DESTINOS = {
   // 15011: 15xxx,
 }
@@ -39,7 +39,7 @@ const JUSTIFICACION =
 const aplicar = process.argv.includes('--aplicar')
 
 // El worker desplegado manda el correo si el job llega a la cola: no dejamos que
-// llegue. Los pasos que si queremos (hijos SEG + Odoo) se corren abajo a mano.
+// llegue. El paso interno que si queremos (hijos SEG) se corre abajo a mano.
 let encoladosSuprimidos = 0
 enrollmentRepository.enqueueRegisterFollowup = async () => {
   encoladosSuprimidos++
@@ -73,10 +73,11 @@ for (const edicionA5 of origenes) {
       userId: USER_ID
     })
     const nuevo = res.new_enrollment_id
-    // Los dos pasos del job que si van (el tercero, el correo, se omite adrede).
+    // Solo el paso interno del job. Odoo y correo se omiten adrede: el usuario
+    // pidio (19/08/2026) que este arrastre se corrija SOLO en el ERP, sin tocar
+    // el campus ni escribirle al alumno; el aula vieja se coordina a mano.
     await createChildEnrollments({ enrollmentId: nuevo, userId: USER_ID })
-    await enrollInOdoo({ enrollmentId: nuevo })
-    console.log(`      -> destino #${nuevo} (hijos + Odoo aplicados, sin correo)`)
+    console.log(`      -> destino #${nuevo} (hijos aplicados; sin Odoo, sin correo)`)
   }
 }
 

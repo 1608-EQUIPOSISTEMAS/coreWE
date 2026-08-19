@@ -46,3 +46,13 @@ describe('gates de las rutas que consume el alta de inscripcion', () => {
     expect(await passes(ALL_COMERCIAL, ['FICO'])).toBe(false)
   })
 })
+
+// /b2b/leads/new postea a /comercial/leadregister (mismo useLeadForm). El rol
+// B2B no estaba en ALL_COMERCIAL ni tenia el modulo COMERCIAL en la matriz, asi
+// que recibia 403 y el formulario solo decia "Error inesperado al guardar".
+describe('gate del alta de consultas B2B', () => {
+  it('ALL_COMERCIAL deja registrar consultas al rol B2B', async () => {
+    expect(await passes(ALL_COMERCIAL, ['B2B'])).toBe(true)
+    expect(await passes(ALL_COMERCIAL, ['GERENCIA'])).toBe(true)
+  })
+})
