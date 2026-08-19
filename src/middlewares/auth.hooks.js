@@ -63,6 +63,11 @@ export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO
 export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA', 'FUNDACION', 'LIDER_FUNDACION'])
 // Mismos roles que declara _nav.js para el grupo Marketing del sidebar.
 export const ALL_MARKETING = hasModuleOrRole('MARKETING', ['ADMIN', 'GERENCIA'])
+// Reprogramaciones es un flujo a cuatro manos: Academica elige el destino y FICO
+// lo firma, asi que los dos entran a la bandeja. El veredicto usa ALL_FICO.
+export const ALL_REPROGRAMACION = hasModuleOrRole('REPROGRAMACION', [
+  'ADMIN', 'ACADEMICA', 'LIDER_ACADEMICA', 'FICO', 'LIDER_FICO'
+])
 
 // Gates combinados (OR) — usar uno solo en preHandler.
 // Apilar varios hasRole en preHandler los AND-ea (todos deben pasar), por eso

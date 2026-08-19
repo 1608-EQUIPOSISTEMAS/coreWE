@@ -58,6 +58,7 @@ const CATALOGO = [
     ['SEGUIMIENTO_B2B',   'Seguimiento B2B'],
     ['REPORTE',           'Reporte Academico'],
     ['BOT',               'Bot Academico'],
+    ['REPROGRAMACIONES',  'Reprogramaciones'],
   ]],
   ['GERENCIA',      'Gerencia',       '/gerencia',               [
     ['EMBUDO',           'Embudo Consultas-Ventas'],

@@ -688,6 +688,10 @@ export class EditionRepository {
         -- venta del padre (solo hijos): para resolver beca/canal del 1er curso.
         LEFT JOIN public.enrollments par ON par.enrollment_id = e.parent_enrollment_id
         LEFT JOIN public."catalog" parcts ON parcts.catalog_id = par.cat_type_status
+        -- segmento de la edicion del padre: si el diploma se cancelo (A5) sus
+        -- modulos no asisten a ningun aula (ver WHERE).
+        LEFT JOIN public.program_editions pe_par ON pe_par.edition_num_id = par.program_edition_id
+        LEFT JOIN public."catalog" parseg ON parseg.catalog_id = pe_par.cat_segment
         -- asesor de la venta (propia y del padre): el codigo B2B (NY12/JF39) vive
         -- en users.alias, NO en agent_origin (el importador los separa).
         LEFT JOIN public.users ua   ON ua.user_id = e.seller_agent_id
@@ -746,6 +750,11 @@ export class EditionRepository {
          -- este modulo tampoco asiste aqui (se fue con el padre). Lo excluye del
          -- AULA tambien, no solo del comercial => aula y comercial cuadran.
          AND (parcts.alias IS NULL OR parcts.alias <> 'we_enrollment_status_reprogrammed')
+         -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo,
+         -- el alumno quedo VARADO y su caso vive en el modulo Reprogramaciones
+         -- hasta que academica le asigne destino. No asiste a esta aula: ni AULA
+         -- ni comercial. (El padre A5 mismo no aparece: su fila es la edicion A5.)
+         AND (parseg.alias IS NULL OR parseg.alias <> 'we_segment_a5')
     )
     SELECT
       edition_num_id,
@@ -892,6 +901,10 @@ export class EditionRepository {
  LEFT JOIN public."catalog" ccert  ON ccert.catalog_id  = e.cat_certificate_status
  LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
  LEFT JOIN public."catalog" cts_sold ON cts_sold.catalog_id = e_sold.cat_type_status
+ -- segmento de la edicion de la venta: un padre A5 (diploma cancelado) deja a
+ -- sus modulos varados, fuera de esta aula (ver WHERE).
+ LEFT JOIN public.program_editions pe_sold ON pe_sold.edition_num_id = e_sold.program_edition_id
+ LEFT JOIN public."catalog" seg_sold ON seg_sold.catalog_id = pe_sold.cat_segment
  -- asesor de la venta: el codigo B2B (NY12/JF39) vive en users.alias.
  LEFT JOIN public.users usold ON usold.user_id = COALESCE(e_sold.seller_agent_id, e.seller_agent_id)
  -- agente que solicito el primer token de pago de la venta (padre si es hijo):
@@ -999,6 +1012,12 @@ export class EditionRepository {
               'we_enrollment_status_reprogrammed'
             ))
        AND (cts_sold.alias IS NULL OR cts_sold.alias <> 'we_enrollment_status_reprogrammed')
+       -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo y
+       -- el alumno quedo VARADO; su caso vive en el modulo Reprogramaciones hasta
+       -- que academica le asigne destino, no asiste a esta aula. Solo aplica al
+       -- hijo: si la edicion A5 es la propia, se esta viendo su lista y ahi si van.
+       AND (e.parent_enrollment_id IS NULL
+            OR seg_sold.alias IS NULL OR seg_sold.alias <> 'we_segment_a5')
        -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y hijos:
        -- asisten sus hijos, no el). Misma regla que classroomMetricsList.
        AND NOT EXISTS (

@@ -178,7 +178,10 @@ describe('modulos montados en buildApp', () => {
       .matchAll(/fastify\.(get|post|put|delete)\('([^']+)'/g)
   }
 
-  it.each([['b2b', '/api/b2b']])(
+  it.each([
+    ['b2b', '/api/b2b'],
+    ['reprogramacion', '/api/reprogramacion']
+  ])(
     'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
       const noMontadas = []
       for (const [, verbo, ruta] of rutasDeclaradas(modulo)) {
