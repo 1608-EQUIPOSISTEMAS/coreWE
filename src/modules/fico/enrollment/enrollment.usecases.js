@@ -9,6 +9,7 @@ import {
   flattenDailyKpis,
   resolveSellerAgentChange,
   assertChecked,
+  assertModalityChangeNeeded,
   editionShiftDays,
   buildDuplicateResponse,
   buildDirectInscription,
@@ -590,24 +591,30 @@ export async function resubmitEnrollment ({ enrollmentId, userId }) {
 export async function changeModality ({ enrollmentId, newModalityId, justificacion, userId }) {
   const old = await repo.getModalityOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
-  if (old.cat_inscription_modality === newModalityId) {
-    throw new DomainError('La modalidad seleccionada es la misma que la actual')
-  }
+  assertModalityChangeNeeded({
+    currentModalityId: old.cat_inscription_modality,
+    newModalityId,
+    childrenCount: old.children_count,
+    childrenInModality: old.children_in_modality
+  })
 
   const newDesc = await repo.getCatalogDescription(newModalityId)
-  await repo.setModality(enrollmentId, newModalityId)
+  const updated = await repo.setModalityWithChildren(enrollmentId, newModalityId)
+  const childrenUpdated = Math.max(updated - 1, 0)
 
   const changes = { 'Modalidad': { old: old.old_modality || '---', new: newDesc || '---' } }
+  const childrenNote = childrenUpdated ? ` (+${childrenUpdated} curso(s) del paquete)` : ''
   await repo.logAudit({
     enrollmentId,
     action: 'modality_changed',
     userId,
     justificacion,
     changes,
-    details: `Cambio de modalidad: ${changes['Modalidad'].old} → ${changes['Modalidad'].new}`
+    details: `Cambio de modalidad: ${changes['Modalidad'].old} → ${changes['Modalidad'].new}${childrenNote}`
   })
 
-  return { result: 1, message: 'Modalidad actualizada correctamente' }
+  repo.refreshMv('on-modality-change')
+  return { result: 1, message: `Modalidad actualizada correctamente${childrenNote}` }
 }
 
 export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgentOrigin, justificacion, userId }) {

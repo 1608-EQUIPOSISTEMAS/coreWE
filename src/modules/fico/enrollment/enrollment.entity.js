@@ -115,6 +115,18 @@ export function assertChecked (ficoStatusAlias) {
   }
 }
 
+// La modalidad pertenece al paquete completo: el cambio sigue haciendo falta
+// mientras algun hijo siga en otra modalidad, aunque el padre ya este en la
+// pedida (asi se reparan los paquetes que quedaron a medias cuando el cambio
+// no cascadeaba a los hijos y el aula no los mostraba como FLEX).
+export function assertModalityChangeNeeded ({ currentModalityId, newModalityId, childrenCount, childrenInModality }) {
+  const parentAlreadySet = currentModalityId === newModalityId
+  const childrenAligned = (childrenCount || 0) === (childrenInModality || 0)
+  if (parentAlreadySet && childrenAligned) {
+    throw new DomainError('La modalidad seleccionada es la misma que la actual')
+  }
+}
+
 // Dias de desplazamiento entre dos fechas de inicio de edicion. Usado para
 // correr las cuotas pendientes al reprogramar. Devuelve 0 si falta alguna fecha.
 export function editionShiftDays (oldStartDate, newStartDate) {

@@ -778,7 +778,13 @@ export class EnrollmentRepository {
 
   async getModalityOrigin (enrollmentId) {
     const { rows } = await this.db.query(`
-      SELECT e.cat_inscription_modality, c_old.description AS old_modality
+      SELECT e.cat_inscription_modality,
+             c_old.description AS old_modality,
+             (SELECT COUNT(*) FROM enrollments h WHERE h.parent_enrollment_id = e.enrollment_id)::int
+               AS children_count,
+             (SELECT COUNT(*) FROM enrollments h WHERE h.parent_enrollment_id = e.enrollment_id
+                AND h.cat_inscription_modality = e.cat_inscription_modality)::int
+               AS children_in_modality
       FROM enrollments e
       LEFT JOIN catalog c_old ON c_old.catalog_id = e.cat_inscription_modality
       WHERE e.enrollment_id = $1
@@ -791,11 +797,18 @@ export class EnrollmentRepository {
     return rows?.[0]?.description || null
   }
 
-  async setModality (enrollmentId, newModalityId) {
-    await this.db.query(
-      'UPDATE enrollments SET cat_inscription_modality = $1 WHERE enrollment_id = $2',
-      [newModalityId, enrollmentId]
-    )
+  // La modalidad es del paquete, no de cada curso: los hijos (SEG) viajan con
+  // el padre. Sin esto el aula seguia listando los cursos con la modalidad
+  // vieja y no salian como FLEX (edition.repository lee e.cat_inscription_modality
+  // fila por fila, no la del padre). Devuelve cuantas filas se movieron.
+  async setModalityWithChildren (enrollmentId, newModalityId) {
+    const { rowCount } = await this.db.query(`
+      UPDATE enrollments
+         SET cat_inscription_modality = $1
+       WHERE enrollment_id = $2
+          OR parent_enrollment_id = $2
+    `, [newModalityId, enrollmentId])
+    return rowCount
   }
 
   async getSellerAgentOrigin (enrollmentId) {

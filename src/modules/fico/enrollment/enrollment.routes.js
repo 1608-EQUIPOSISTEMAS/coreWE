@@ -8,12 +8,14 @@ import {
   approvePendingReviewSchema, rejectEnrollmentSchema, resubmitEnrollmentSchema
 } from './enrollment.schemas.js'
 
-// Roles que pueden reasignar el asesor de una inscripcion (editSellerAgent).
-const SELLER_AGENT_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
+// Acciones de FICO sobre una venta ya registrada: reprogramacion, cambio de
+// curso, retiro y reasignacion de asesor. Academica entra al detalle solo para
+// corregir la modalidad (/changemodality), que queda fuera de esta lista.
+const FICO_ACTION_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
 // Rutas del agregado raiz enrollment. Toda la superficie requiere autenticacion
 // (hook a nivel de plugin, espejo del addHook global del routes/fico.js legacy);
-// deleteenrollment y editselleragent suman gates de rol identicos al legacy.
+// deleteenrollment y las acciones de FICO suman gates de rol.
 export default async function enrollmentRoutes (fastify) {
   fastify.addHook('preHandler', authenticate)
 
@@ -28,14 +30,14 @@ export default async function enrollmentRoutes (fastify) {
   fastify.post('/enrollmentupdate', { schema: enrollmentUpdateSchema }, ctrl.enrollmentUpdateHandler)
   fastify.post('/availableeditions', { schema: availableEditionsSchema }, ctrl.availableEditionsHandler)
   fastify.post('/programprice', { schema: programPriceSchema }, ctrl.programPriceHandler)
-  fastify.post('/retireenrollment', { schema: retireEnrollmentSchema }, ctrl.retireEnrollmentHandler)
+  fastify.post('/retireenrollment', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: retireEnrollmentSchema }, ctrl.retireEnrollmentHandler)
   fastify.post('/deleteenrollment', { preHandler: [authenticate, ADMIN_ONLY], schema: deleteEnrollmentSchema }, ctrl.deleteEnrollmentHandler)
   fastify.post('/enrollmentflags', { schema: enrollmentFlagsSchema }, ctrl.enrollmentFlagsHandler)
   fastify.post('/editstudent', { schema: editStudentSchema }, ctrl.editStudentHandler)
   fastify.post('/changemodality', { schema: changeModalitySchema }, ctrl.changeModalityHandler)
-  fastify.post('/editselleragent', { preHandler: [authenticate, hasRole(SELLER_AGENT_ROLES)], schema: editSellerAgentSchema }, ctrl.editSellerAgentHandler)
-  fastify.post('/coursechange', { schema: courseChangeSchema }, ctrl.courseChangeHandler)
-  fastify.post('/reprogramedition', { schema: reprogramEditionSchema }, ctrl.reprogramEditionHandler)
+  fastify.post('/editselleragent', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: editSellerAgentSchema }, ctrl.editSellerAgentHandler)
+  fastify.post('/coursechange', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: courseChangeSchema }, ctrl.courseChangeHandler)
+  fastify.post('/reprogramedition', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: reprogramEditionSchema }, ctrl.reprogramEditionHandler)
   fastify.post('/approvependingreview', { schema: approvePendingReviewSchema }, ctrl.approvePendingReviewHandler)
   fastify.post('/rejectenrollment', { schema: rejectEnrollmentSchema }, ctrl.rejectEnrollmentHandler)
   fastify.post('/resubmitenrollment', { schema: resubmitEnrollmentSchema }, ctrl.resubmitEnrollmentHandler)

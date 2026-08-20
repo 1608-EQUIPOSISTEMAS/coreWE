@@ -8,6 +8,7 @@ import {
   flattenDailyKpis,
   resolveSellerAgentChange,
   assertChecked,
+  assertModalityChangeNeeded,
   editionShiftDays,
   buildDuplicateResponse,
   buildDirectInscription,
@@ -335,5 +336,28 @@ describe('advisorObservationOrNull', () => {
   it('vacio y nulo se tratan igual', () => {
     expect(advisorObservationOrNull('   ')).toBeNull()
     expect(advisorObservationOrNull(null)).toBeNull()
+  })
+})
+
+describe('assertModalityChangeNeeded', () => {
+  const flexible = 4001
+  const normal = 4002
+
+  it('rechaza cuando padre e hijos ya estan en la modalidad pedida', () => {
+    expect(() => assertModalityChangeNeeded({
+      currentModalityId: flexible, newModalityId: flexible, childrenCount: 3, childrenInModality: 3
+    })).toThrow(DomainError)
+  })
+
+  it('deja pasar cuando el padre ya esta pero hay hijos rezagados', () => {
+    expect(() => assertModalityChangeNeeded({
+      currentModalityId: flexible, newModalityId: flexible, childrenCount: 3, childrenInModality: 0
+    })).not.toThrow()
+  })
+
+  it('deja pasar un cambio real de modalidad', () => {
+    expect(() => assertModalityChangeNeeded({
+      currentModalityId: normal, newModalityId: flexible, childrenCount: 0, childrenInModality: 0
+    })).not.toThrow()
   })
 })
