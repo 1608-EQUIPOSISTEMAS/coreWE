@@ -121,6 +121,24 @@ export const PARENT_OR_CC_DESTINATION = `
               )
          )`
 
+// Un evento/congreso se reconoce por dos vias, las mismas que usa
+// shared/event-category.js: la inscripcion tiene categoria de entrada
+// (VIP/GENERAL/PREMIUM/VIRTUAL) o su programa es de tipo evento. Basta
+// cualquiera: las categorias se agregaron despues, asi que los congresos viejos
+// solo se distinguen por el tipo de programa.
+export const IS_EVENT = `
+         AND (
+           e.cat_event_category IS NOT NULL
+           OR EXISTS (
+                SELECT 1
+                  FROM public.program_versions pv_ev
+                  JOIN public.programs prog_ev ON prog_ev.program_id = pv_ev.program_id
+                  JOIN public."catalog" c_type_ev ON c_type_ev.catalog_id = prog_ev.cat_type_program
+                 WHERE pv_ev.program_version_id = e.program_version_id
+                   AND c_type_ev.alias = 'we_program_type_event'
+              )
+         )`
+
 // Corte temporal del sync FICO -> Sheets: solo ventas desde esta fecha.
 // El corte usa la MISMA fecha efectiva que la columna F. PAGO de las hojas
 // (lead.pay_date -> primer pago -> fecha de registro), no registration_date:
@@ -671,6 +689,109 @@ export class IntegrationRepository {
     WHERE e.active = 'Y'
       ${EXCLUDE_HELD}
     ORDER BY inicio.f DESC, per.last_name
+  `)
+    return rows || []
+  }
+
+  // Ventas de eventos/congresos confirmadas por FICO, para la hoja
+  // "4. Ventas Eventos". Mismos filtros que las otras hojas de venta (solo
+  // verificadas, sin la importacion masiva ni las retenidas, desde el corte),
+  // acotadas a inscripciones de evento. NOMBRES y APELLIDOS van separados: la
+  // hoja los usa como columnas distintas, a diferencia de Ventas/Consolidado.
+  async getFicoEventos () {
+    const { rows } = await this.db.query(`
+    WITH approved AS (
+      SELECT e.enrollment_id
+        FROM public.enrollments e
+        JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+       WHERE cf.alias = 'we_enrollment_status_checked'
+         AND e.active = 'Y'
+         ${PARENT_OR_CC_DESTINATION}
+         ${EXCLUDE_IMPORTED}
+         ${EXCLUDE_HELD}
+         ${SYNC_FROM}
+         ${IS_EVENT}
+    )
+    SELECT
+      to_char(
+        COALESCE(
+          l.pay_date,
+          first_pay.payment_date::date,
+          e.registration_date::date
+        ),
+        'DD/MM/YYYY'
+      ) AS f_pago,
+      per.document_number AS dni,
+      TRIM(BOTH FROM COALESCE(per.first_name, ''))                        AS nombres,
+      TRIM(BOTH FROM concat_ws(' ', per.last_name, per.mother_last_name)) AS apellidos,
+      ${STUDENT_PHONE_SQL} AS celular,
+      ${STUDENT_EMAIL_SQL} AS correo,
+      CASE c_prof.alias
+        WHEN 'we_profile_student' THEN 'E'
+        ELSE 'P'
+      END AS ocup,
+      CASE
+        WHEN (e.total_amount) = 0 THEN 'BECA'
+        WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
+        WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
+        ELSE ''
+      END AS estado,
+      CASE
+        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+      END AS dsct,
+      -- La entrada de un evento se paga de una: la INICIAL es la cuota 1 (o el
+      -- total si no se registro cuota). Un evento en cuotas caeria en la rama
+      -- de la reserva, igual que en la hoja Consolidado.
+      CASE
+        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN c_plan.alias = 'we_payment_way_installments'
+          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
+        ELSE replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
+      END AS inicial,
+      CASE
+        WHEN (e.total_amount) = 0 THEN '0'
+        ELSE replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
+      END AS saldo,
+      CASE
+        WHEN (e.total_amount) = 0 THEN '0'
+        ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
+      END AS ingreso,
+      COALESCE(c_ev.description, '') AS modalidad,
+      COALESCE(e.event_seat, '')     AS asiento
+    FROM public.enrollments e
+    JOIN approved a ON a.enrollment_id = e.enrollment_id
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.leads l          ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" c_ev   ON c_ev.catalog_id   = e.cat_event_category
+    LEFT JOIN LATERAL (
+      -- Ver nota en getFicoSales: el total pagado se suma de las cuotas
+      -- saldadas, no de payments, que puede traer filas duplicadas.
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
+    ) pay_agg ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+       LIMIT 1
+    ) pi_res ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT amount FROM public.payment_installments
+       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
+       LIMIT 1
+    ) pi_pt ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT p.payment_date FROM public.payments p
+       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+       ORDER BY p.payment_id ASC LIMIT 1
+    ) first_pay ON TRUE
+    ORDER BY COALESCE(l.pay_date, first_pay.payment_date::date, e.registration_date::date) NULLS LAST, e.enrollment_id
   `)
     return rows || []
   }

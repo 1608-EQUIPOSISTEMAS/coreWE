@@ -5,15 +5,25 @@ function capitalizeName (name) {
   return name.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase())
 }
 
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
 function formatDate (dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
   const dias = ['Domingo', 'Lunes', 'Martes', 'Mi\u00e9rcoles', 'Jueves', 'Viernes', 'S\u00e1bado']
-  const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-  return `${dias[d.getUTCDay()]} ${d.getUTCDate()} de ${meses[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+  return `${dias[d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }
 
-function formatCurrency (amount, symbol) {
+// Fecha de cuota con el mes completo ("26 Junio"). La usa el correo de evento,
+// que lista las cuotas en filas y tiene sitio para el mes entero; aca las
+// cuotas van en columnas y por eso siguen con la version abreviada (calcFecha).
+export function formatDayMonth (dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${d.getUTCDate()} ${MESES[d.getUTCMonth()]}`
+}
+
+export function formatCurrency (amount, symbol) {
   return `${symbol || 'S/.'} ${Math.trunc(Number(amount || 0))}`
 }
 

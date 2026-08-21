@@ -11,6 +11,8 @@ import {
   buildConsolidadoRow,
   buildCuotasRow,
   buildCuotasHeaderRow,
+  buildEventosRow,
+  EVENTOS_HEADER_ROW,
   buildCronogramaRow,
   CRONOGRAMA_HEADER_ROW,
   buildMembresiasRow,
@@ -242,6 +244,25 @@ export async function syncFicoCuotasToSheet () {
   }
 }
 
+// FICO -> hoja "4. Ventas Eventos". Solo las ventas de congresos/eventos
+// confirmadas por FICO: 14 columnas A..N. Crea la hoja con headers si no existe.
+// Estas ventas siguen apareciendo tambien en "0. Ventas Sistemas": esta hoja es
+// una vista aparte con la modalidad y el asiento, que las otras no llevan.
+export async function syncFicoEventosToSheet () {
+  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SHEET_NAME = '4. Ventas Eventos'
+
+  const rows = await repo.getFicoEventos()
+  const values = rows.map(buildEventosRow)
+
+  const created = await repo.ensureAndWrite(
+    SPREADSHEET_ID, SHEET_NAME, EVENTOS_HEADER_ROW,
+    `'${SHEET_NAME}'!A2:N`, `'${SHEET_NAME}'!A2`, values
+  )
+
+  return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
 // FICO -> hoja "CONT SISTEMAS". Cronograma: una fila por edicion (desde jun-2025)
 // con sus cursos hijos (CUR1..CUR5 por slot del curriculum) y los contadores por
 // canal del cronograma (classroomChannelMetricsList, reglas confirmadas con
@@ -358,23 +379,24 @@ export async function syncFicoMembresiasToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 7 hojas FICO en paralelo: son independientes (misma
+// Sincroniza las 8 hojas FICO en paralelo: son independientes (misma
 // spreadsheet, hojas y rangos distintos), asi el tiempo total es el de la hoja
-// mas lenta y no la suma de las 7. Si alguna falla, la request completa falla
+// mas lenta y no la suma de las 8. Si alguna falla, la request completa falla
 // (Promise.all), pero las demas ya lanzadas terminan igual: cada hoja se
 // sobreescribe completa en cada sync, asi que no queda estado corrupto.
 // ponytail: si Sheets empieza a devolver 429 por la rafaga, volver a lotes de 2-3.
 export async function syncFicoToSheets () {
-  const [ventas, aula, consolidado, cuotas, cronograma, adicionales, membresias] = await Promise.all([
+  const [ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias] = await Promise.all([
     syncFicoSalesToSheet(),
     syncFicoAulaToSheet(),
     syncFicoConsolidadoToSheet(),
     syncFicoCuotasToSheet(),
+    syncFicoEventosToSheet(),
     syncFicoCronogramaToSheet(),
     syncFicoAdicionalesToSheet(),
     syncFicoMembresiasToSheet()
   ])
-  return { ventas, aula, consolidado, cuotas, cronograma, adicionales, membresias }
+  return { ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias }
 }
 
 // Version fire-and-forget de syncFicoToSheets: responde al instante y deja la

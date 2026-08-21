@@ -92,7 +92,11 @@ export function renderConfirmationEmail ({
         // antes de que existiera el link por categoria siguen funcionando.
         whatsappLink: data.event_whatsapp_link || data.whatsapp_link || '',
         certificateFormLink: data.certificate_form_link || '',
-        businessCardLink: data.business_card_link || ''
+        businessCardLink: data.business_card_link || '',
+        // Mismo criterio que la plantilla de curso: al contado no hay nada que
+        // programar, con cuotas el asistente necesita ver cuando y cuanto paga.
+        installments: isSinglePayment(data.payment_plan_alias) ? [] : instRows,
+        currencySymbol: data.currency_symbol || 'S/.'
       })
     }
   }

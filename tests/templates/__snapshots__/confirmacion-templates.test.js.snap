@@ -287,6 +287,9 @@ exports[`templates/confirmacion-evento > entrada VIP con asiento asignado 1`] = 
         </td></tr>
       </table>
 
+      <!-- TABLA CRONOGRAMA (vacia al contado) -->
+      
+
       <table align="center" style="width:100%;max-width:500px">
         <tr align="center"><td>
           <br>
@@ -426,6 +429,9 @@ exports[`templates/confirmacion-evento > entrada VIRTUAL con los tres botones 1`
           
         </td></tr>
       </table>
+
+      <!-- TABLA CRONOGRAMA (vacia al contado) -->
+      
 
       <table align="center" style="width:100%;max-width:500px">
         <tr align="center"><td>
@@ -580,6 +586,9 @@ exports[`templates/confirmacion-evento > entrada presencial sin banner ni links 
           
         </td></tr>
       </table>
+
+      <!-- TABLA CRONOGRAMA (vacia al contado) -->
+      
 
       <table align="center" style="width:100%;max-width:500px">
         <tr align="center"><td>

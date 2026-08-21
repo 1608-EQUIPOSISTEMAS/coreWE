@@ -1,12 +1,14 @@
 import { buildWeFooterHTML } from './partials/we-footer.js'
-import { capitalizeName } from './confirmacion-inscripcion.js'
+import { capitalizeName, formatCurrency, formatDayMonth } from './confirmacion-inscripcion.js'
 
 // Correo de confirmacion de inscripcion a un EVENTO / CONGRESO.
 //
 // Se separa de confirmacion-inscripcion.js porque un asistente a congreso no
-// recibe lo mismo que un alumno de curso: no hay campus ni credenciales, no hay
-// cronograma de sesiones semanales ni tabla de cuotas, y si hay tres formularios
-// propios del evento.
+// recibe lo mismo que un alumno de curso: no hay campus ni credenciales ni
+// cronograma de sesiones semanales, y si hay tres formularios propios del
+// evento. La tabla de cuotas si es comun a las dos plantillas (un evento de
+// Fundacion se puede pagar en partes), con otro formato: ver
+// buildInstallmentsTable mas abajo.
 //
 // El detalle de sesiones NO se calcula: es texto libre cargado por edicion
 // (session_detail_virtual / session_detail_onsite). El render elige cual segun
@@ -44,6 +46,35 @@ function buildButton (href, label, background = 'rgb(5,36,103)') {
       </table>`
 }
 
+// Cronograma de cuotas del evento. Una fila por cuota (Fecha / Monto), a
+// diferencia de la plantilla de curso que las pone en columnas: un evento tiene
+// una o dos cuotas y el formato vertical se lee mejor en el celular.
+// Devuelve '' al contado: el render no pasa cuotas en ese caso.
+function buildInstallmentsTable (installments, currencySymbol) {
+  if (!installments || installments.length === 0) return ''
+
+  const rows = installments.map(i => `
+          <tr>
+            <td><font face="Tahoma" size="3">${formatDayMonth(i.due_date)}</font></td>
+            <td><font face="Tahoma" size="3">${formatCurrency(i.amount, currencySymbol)}</font></td>
+          </tr>`).join('')
+
+  return `
+      <table width="450px" border="2" align="center" style="border-collapse:collapse;text-align:center;margin-top:16px">
+        <thead>
+          <tr>
+            <td colspan="2" style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3"><strong>CRONOGRAMA</strong></font></td>
+          </tr>
+          <tr>
+            <td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3">Fecha de Pago</font></td>
+            <td style="background-color:rgb(5,36,103);color:white;"><font face="Tahoma" size="3">Monto a Pagar</font></td>
+          </tr>
+        </thead>
+        <tbody>${rows}
+        </tbody>
+      </table>`
+}
+
 export function buildConfirmacionEventoHTML (data) {
   const {
     studentName,
@@ -56,7 +87,9 @@ export function buildConfirmacionEventoHTML (data) {
     businessCardLink,
     // Solo llega con contenido en las entradas VIP: el render lo filtra por
     // categoria antes de pasarlo (ver email-confirmation.render.js).
-    seat = null
+    seat = null,
+    installments = [],
+    currencySymbol = 'S/.'
   } = data
 
   const nombre = capitalizeName(studentName)
@@ -133,6 +166,9 @@ export function buildConfirmacionEventoHTML (data) {
           ${seatBlock}
         </td></tr>
       </table>
+
+      <!-- TABLA CRONOGRAMA (vacia al contado) -->
+      ${buildInstallmentsTable(installments, currencySymbol)}
 
       <table align="center" style="width:100%;max-width:500px">
         <tr align="center"><td>
