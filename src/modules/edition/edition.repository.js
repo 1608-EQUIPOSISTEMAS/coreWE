@@ -578,7 +578,9 @@ export class EditionRepository {
   //         con codigo B2B es VENTAS y sus hijos SEGUI) > BECA (total 0) > VENTAS.
   //       - 1er CURSO de un paquete (hijo sin hermano que empiece antes, = orden
   //         de la rama en la modal Jerarquia): NO cuenta comercial; su venta esta
-  //         arriba, en el padre.
+  //         arriba, en el padre. EXCEPCION: si el paquete tiene algun modulo
+  //         CONVALIDADO, ese fue el 1er curso (se curso antes y no genera hijo),
+  //         asi que TODOS los hijos que si existen cuentan como seguimiento.
   //       - 2do+ CURSO de un paquete (o modulo E0, o destino de CAMBIO DE CURSO):
   //         HEREDA el CANAL de la venta del padre. Si el padre es socio/B2B/beca,
   //         el seguimiento cuenta en MEMB/B2B/BECA, NO en SEGUI. SEGUI queda solo
@@ -631,6 +633,18 @@ export class EditionRepository {
                         AND sib.enrollment_id <> e.enrollment_id
                         AND (pesib.start_date, pesib.edition_num_id)
                           < (pe_e.start_date, pe_e.edition_num_id)
+                   )
+                   -- ...salvo que el paquete traiga un modulo CONVALIDADO: ese no
+                   -- genera hijo (el alumno ya lo curso antes, es su 1er curso
+                   -- real), asi que el hijo mas temprano que SI existe es
+                   -- seguimiento, no la venta. Sin esto se le perdia el canal y
+                   -- la fila no cuadraba con su AULA. 'edition_override' no
+                   -- convalida (se inscribe en otra edicion): mismo criterio que
+                   -- isValidated() en la pantalla de FICO.
+                   AND NOT EXISTS (
+                     SELECT 1 FROM public.enrollment_validations ev
+                      WHERE ev.enrollment_id = e.parent_enrollment_id
+                        AND ev.validation_type <> 'edition_override'
                    ) THEN NULL
               -- 2do+ curso (o modulo E0): HEREDA el CANAL de la venta del padre.
               -- Si el padre es socio/B2B/beca, el seguimiento cuenta en MEM/B2B/BECA,

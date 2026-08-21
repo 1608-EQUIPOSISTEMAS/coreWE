@@ -45,6 +45,33 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
   END;
 $$;
 
+-- El formulario de FICO tiene UN solo campo "Apellidos" y al autocompletar por
+-- DNI lo llena con paterno + materno (EnrollmentForm.vue). Guardar ese texto
+-- entero en last_name deja el materno repetido, porque mother_last_name sigue
+-- ahi y TODA vista renderiza concat_ws(first_name, last_name, mother_last_name)
+-- => "MIGUEL ANDRE RUFASTO SAMANIEGO SAMANIEGO" (146 personas al 20/08/26).
+-- Aqui se le quita la cola: last_name se queda solo con el paterno.
+-- La guarda de particula evita destrozar un paterno compuesto cuyo ultimo
+-- termino coincide con el materno ("DE LA CRUZ" + materno "CRUZ" => "DE LA").
+CREATE OR REPLACE FUNCTION public.fn_last_name_sin_materno (p_last_name text, p_mother_last_name text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  WITH t AS (
+    SELECT TRIM(COALESCE(p_last_name, '')) AS apellidos,
+           TRIM(COALESCE(p_mother_last_name, '')) AS materno
+  ), corte AS (
+    SELECT apellidos, materno,
+           TRIM(LEFT(apellidos, length(apellidos) - length(materno))) AS paterno
+      FROM t
+     WHERE materno <> ''
+       AND RIGHT(public.fn_txt_key(apellidos), length(materno) + 1) = ' ' || public.fn_txt_key(materno)
+  )
+  SELECT COALESCE(
+    (SELECT paterno FROM corte
+      WHERE paterno <> ''
+        AND public.fn_txt_key(paterno) !~ '(^| )(DE|DEL|LA|LAS|LOS|Y|DA|DI|SAN|SANTA|VAN|VON)$'),
+    p_last_name);
+$$;
+
 CREATE OR REPLACE FUNCTION public.fn_person_resolve (
   p_document          text,
   p_cat_type_document int,
@@ -111,7 +138,7 @@ BEGIN
   ELSE
     UPDATE public.persons
        SET first_name           = COALESCE(p_first_name, first_name),
-           last_name            = COALESCE(p_last_name, last_name),
+           last_name            = COALESCE(public.fn_last_name_sin_materno(p_last_name, mother_last_name), last_name),
            document_number      = COALESCE(document_number, p_document),
            cat_type_document    = COALESCE(cat_type_document, p_cat_type_document),
            modification_date    = NOW(),

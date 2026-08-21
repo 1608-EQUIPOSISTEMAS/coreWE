@@ -12,7 +12,10 @@ const repo = new EditionRepository(pool)
 
 // enrollment vendido con membership_program_id -> edicion de una de sus hojas
 const CASOS = [
-  { edition: 15073, email: 'angelsgabrielr97@gmail.com', tier: 'WE BLACK' }
+  { edition: 15073, email: 'angelsgabrielr97@gmail.com', tier: 'WE BLACK' },
+  // 16708: se registro como beca teniendo membresia (corregido el 2026-08-20 con
+  // scripts/corregir-beca-a-membresia.mjs)
+  { edition: 15498, email: 'vglongobardi@gmail.com', tier: 'WE BLACK' }
 ]
 
 try {
