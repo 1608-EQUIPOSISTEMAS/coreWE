@@ -5,11 +5,12 @@ import {
 } from './token.schemas.js'
 import * as ctrl from './token.controller.js'
 
-// FUNDACION/LIDER_FUNDACION entran aqui porque /fundacion/leads usa el mismo
-// formulario que comercial (useLeadForm) y su boton INSCRIPCION TOKEN pega a
-// estos endpoints. Sin ellos el asesor veia "Error inesperado" (403).
-const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION']
-const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION']
+// FUNDACION/LIDER_FUNDACION y B2B entran aqui porque /fundacion/leads y
+// /b2b/leads montan el mismo formulario que comercial (useLeadForm) y su boton
+// INSCRIPCION TOKEN pega a estos endpoints. Sin ellos el asesor veia
+// "Acceso denegado" (403) al Crear Token.
+const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B']
+const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B']
 const LINK_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
 const CONFIRM_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 
