@@ -326,7 +326,11 @@ const REPORT_AREAS = [
   { code: '1.4', name: 'B2B' },
   { code: '1.5', name: 'Fundación WE' },
   { code: '1.6', name: 'Otros' },
-  { code: '1.7', name: 'Members' }
+  { code: '1.7', name: 'Members' },
+  // Los ponentes no son un canal de venta: no pagan entrada y no vienen de un
+  // lead. Van en fila aparte para que el avance de las areas no los cuente
+  // como ventas, pero suman en la columna VIP (ver AREA_CASE del repository).
+  { code: '1.8', name: 'Ponentes' }
 ]
 
 const MODALIDAD_KEYS = ['vip', 'premium', 'general', 'virtual']

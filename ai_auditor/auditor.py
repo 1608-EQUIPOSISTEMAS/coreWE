@@ -35,6 +35,7 @@ from config import (
 from prompts import (
     RESPONSE_SCHEMA, build_user_text, get_auditor_system_instruction,
 )
+from rubrica import CRITERIOS
 from transcription import TranscriptSegment, segments_to_text, total_duration_min
 from classifier import (
     ClassifiedBlock, EmptyResponseError, render_classification_table, compute_ratio,
@@ -238,8 +239,28 @@ def _parse_report_json(raw: str) -> dict:
         return json.loads(raw[start:end + 1])
 
 
+def _drop_extra_criterios(report: dict) -> None:
+    """Descarta criterios que la rúbrica no define y recalcula la nota global.
+
+    Gemini inventó alguna vez un criterio #10 ("Criterio extra", score 1) que
+    hundía el promedio. El response_schema no puede impedirlo, así que el
+    recorte se hace acá: la rúbrica manda, el modelo no agrega filas.
+    """
+    validos_ids = {c["id"] for c in CRITERIOS}
+    criterios = [c for c in report.get("criterios", [])
+                 if c.get("id") in validos_ids]
+    report["criterios"] = criterios
+
+    scores = [c["score"] for c in criterios if isinstance(c.get("score"), (int, float))]
+    if scores:
+        report.setdefault("metricas_rapidas", {})["puntuacion_global"] = round(
+            sum(scores) / len(scores), 1
+        )
+
+
 def _enrich_report(report: dict, audit_input: AuditInput, ratio: dict) -> dict:
     """Agrega metadatos calculados deterministamente."""
+    _drop_extra_criterios(report)
     duracion = round(total_duration_min(audit_input.transcript), 1)
 
     sesion = report.setdefault("sesion_evaluada", {})

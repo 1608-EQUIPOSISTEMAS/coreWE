@@ -88,6 +88,10 @@ export function buildConfirmacionEventoHTML (data) {
     // Solo llega con contenido en las entradas VIP: el render lo filtra por
     // categoria antes de pasarlo (ver email-confirmation.render.js).
     seat = null,
+    // El ponente no compra entrada: no tiene cuotas que pagar, ni formularios
+    // que llenar (Fundacion los coordina aparte). Su correo es el mismo, sin
+    // esos bloques y con el badge PONENTE en vez de ENTRADA X.
+    isSpeaker = false,
     installments = [],
     currencySymbol = 'S/.'
   } = data
@@ -100,9 +104,10 @@ export function buildConfirmacionEventoHTML (data) {
     : ''
 
   // Badge con la categoria de entrada (VIP / GENERAL / PREMIUM / VIRTUAL).
-  const categoryBadge = categoryLabel
+  const badgeText = isSpeaker ? 'PONENTE' : `ENTRADA ${String(categoryLabel).toUpperCase()}`
+  const categoryBadge = (isSpeaker || categoryLabel)
     ? `<table align="center" style="margin-top:6px"><tr><td style="padding:3px 14px;border-radius:12px;background-color:#fef3c7;border:1px solid #fde68a">
-         <font face="Tahoma" size="2" color="#92400e"><strong>ENTRADA ${String(categoryLabel).toUpperCase()}</strong></font>
+         <font face="Tahoma" size="2" color="#92400e"><strong>${badgeText}</strong></font>
        </td></tr></table>`
     : ''
 
@@ -125,11 +130,25 @@ export function buildConfirmacionEventoHTML (data) {
        </div>`
     : ''
 
-  const buttons = [
+  const buttons = isSpeaker ? '' : [
     buildButton(certificateFormLink, 'REGISTRA TUS DATOS PARA EL CERTIFICADO'),
     buildButton(whatsappLink, 'ÚNETE A GRUPO DE WHATSAPP AQUÍ', 'rgb(240,173,20)'),
     buildButton(businessCardLink, 'SUBE AQUÍ TU TARJETA DE PRESENTACIÓN')
   ].join('')
+
+  // El bloque RECUERDA habla de certificado, ficha de registro y tarjeta de
+  // presentacion: los tres botones que el ponente no recibe.
+  const remindersBlock = isSpeaker ? '' : `<table align="center" style="width:100%;max-width:500px">
+        <tr><td>
+          <font face="Tahoma" size="4"><strong>RECUERDA:</strong></font>
+          <ol>
+            <li><font face="Tahoma" size="3">Es importante completar la FICHA DE REGISTRO (Datos como figura en el DNI) para la certificación.</font></li>
+            <li><font face="Tahoma" size="3">Cualquier error en los datos personales del formulario será responsabilidad del participante.</font></li>
+            <li><font face="Tahoma" size="3">La emisión de un nuevo certificado tendrá un costo adicional.</font></li>
+            <li><font face="Tahoma" size="3">Sube aquí tu tarjeta de presentación y conecta con profesionales, empresas y personas que apuestan por el crecimiento y la colaboración.</font></li>
+          </ol>
+        </td></tr>
+      </table>`
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -179,17 +198,7 @@ export function buildConfirmacionEventoHTML (data) {
         </td></tr>
       </table>
 
-      <table align="center" style="width:100%;max-width:500px">
-        <tr><td>
-          <font face="Tahoma" size="4"><strong>RECUERDA:</strong></font>
-          <ol>
-            <li><font face="Tahoma" size="3">Es importante completar la FICHA DE REGISTRO (Datos como figura en el DNI) para la certificación.</font></li>
-            <li><font face="Tahoma" size="3">Cualquier error en los datos personales del formulario será responsabilidad del participante.</font></li>
-            <li><font face="Tahoma" size="3">La emisión de un nuevo certificado tendrá un costo adicional.</font></li>
-            <li><font face="Tahoma" size="3">Sube aquí tu tarjeta de presentación y conecta con profesionales, empresas y personas que apuestan por el crecimiento y la colaboración.</font></li>
-          </ol>
-        </td></tr>
-      </table>
+      ${remindersBlock}
 ${buttons}
     </div>
   </main>

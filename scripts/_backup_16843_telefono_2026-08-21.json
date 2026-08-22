@@ -1,0 +1,38 @@
+{
+  "ctx": {
+    "enrollment_id": 16843,
+    "customer_id": 19125,
+    "parent_enrollment_id": null,
+    "odoo_user_id": null,
+    "person_id": 20368,
+    "first_name": "LUIS ANGEL",
+    "last_name": "LECCA",
+    "mother_last_name": "CORTEZ",
+    "document_number": "75857054"
+  },
+  "leads": [
+    {
+      "lead_id": 429808,
+      "enrollment_id": 16843,
+      "origin_phone": "923106478",
+      "origin_email": "lleccac@unitru.edu.pe",
+      "active": "Y"
+    }
+  ],
+  "contactos": [
+    {
+      "person_contact_id": 26592,
+      "value": "lleccac@unitru.edu.pe",
+      "active": "Y",
+      "alias": "we_way_contact_email"
+    },
+    {
+      "person_contact_id": 26593,
+      "value": "923106478",
+      "active": "Y",
+      "alias": "we_way_contact_phone"
+    }
+  ],
+  "telefonoAnterior": "923106478",
+  "NUEVO_TELEFONO": "923106748"
+}

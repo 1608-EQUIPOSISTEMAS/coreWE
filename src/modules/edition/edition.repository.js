@@ -304,8 +304,12 @@ export class EditionRepository {
   // ponytail: el orden ES la regla de negocio, por eso va en un solo CASE y no
   // repartido en siete queries. Members primero segun lo pedido; si algun dia
   // una venta de socio debe acreditarse a su canal, se baja esa rama y listo.
+  // OJO: la rama del ponente mira `c.alias`, que viene del LEFT JOIN al catalogo
+  // que hace el SELECT de eventReportAreas. Va primero porque un ponente puede
+  // ser socio o haber llegado por un canal, y aun asi se reporta como ponente.
   static AREA_CASE = `
     CASE
+      WHEN c.alias = 'we_event_category_ponente'                     THEN '1.8'
       WHEN i.tier IS NOT NULL                                        THEN '1.7'
       WHEN i.agent_origin = 'B2B' OR i.b2b_contract_id IS NOT NULL
            OR i.lead_b2b = 'Y'                                       THEN '1.4'
@@ -367,7 +371,11 @@ export class EditionRepository {
              i.tier,
              i.tier_name,
              count(*)                                                       AS avance,
-             count(*) FILTER (WHERE c.alias = 'we_event_category_vip')       AS vip,
+             -- El ponente no compra entrada pero ocupa butaca VIP: suma en esa
+             -- columna, en su propia fila (1.8). Por eso PONENTE no es una
+             -- modalidad mas del cuadro.
+             count(*) FILTER (WHERE c.alias IN ('we_event_category_vip',
+                                                'we_event_category_ponente'))  AS vip,
              count(*) FILTER (WHERE c.alias = 'we_event_category_premium')   AS premium,
              count(*) FILTER (WHERE c.alias = 'we_event_category_general')   AS general,
              count(*) FILTER (WHERE c.alias = 'we_event_category_virtual')   AS virtual,

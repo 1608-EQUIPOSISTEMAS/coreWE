@@ -29,6 +29,9 @@ metodología WE descrita en los 2 manuales adjuntos.
 QUÉ EVALÚAS — 9 criterios, cada uno con score 1-5
 ═══════════════════════════════════════════════════════════════════════════
 
+`criterios` tiene EXACTAMENTE 9 elementos, con id 1 a 9. No inventes criterios
+extra ni items de relleno: cualquier id fuera de 1-9 se descarta del reporte.
+
 Aplicá esta rúbrica para cada criterio. El 5/3/1 son anchors; el 4 y el 2
 son interpolación. Si un criterio no se puede evaluar por falta de evidencia
 (p.ej. el video no muestra pantalla compartida), pone score=null y explicá
@@ -152,7 +155,7 @@ RESPONSE_SCHEMA: dict = {
     "properties": {
         "criterios": {
             "type": "array",
-            "description": "Los 9 criterios en orden, con score 1-5.",
+            "description": "Exactamente 9 elementos, ids 1 a 9 en orden, score 1-5. Sin criterios extra.",
             "items": _CRITERIO_ITEM,
         },
         "metricas_rapidas": {

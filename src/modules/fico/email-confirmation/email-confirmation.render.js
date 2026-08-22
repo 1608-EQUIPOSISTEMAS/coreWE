@@ -16,6 +16,11 @@ import { isSinglePayment } from './email-confirmation.entity.js'
 const EVENT_PROGRAM_TYPE_ALIAS = 'we_program_type_event'
 const VIRTUAL_TICKET_ALIAS = 'we_event_category_virtual'
 const VIP_TICKET_ALIAS = 'we_event_category_vip'
+// Los ponentes se registran como cualquier asistente pero no pagan entrada
+// (tarifa 0 cargada en Producto). Solo cambia el correo: badge PONENTE y sin
+// los bloques que hablan de plata y de formularios.
+const SPEAKER_TICKET_ALIAS = 'we_event_category_ponente'
+const SEATED_TICKET_ALIASES = [VIP_TICKET_ALIAS, SPEAKER_TICKET_ALIAS]
 
 // Un enrollment es de evento si tiene categoria de entrada asignada O si el
 // tipo de programa es evento.
@@ -39,7 +44,9 @@ export function buildConfirmationSubject (data = {}) {
   const base = `Confirmacion de Inscripcion - ${data.program_name || 'WE Educacion'}`
   const { isEvent } = resolveConfirmationTemplate(data)
   const category = String(data.event_category_label || '').trim().toUpperCase()
-  return (isEvent && category) ? `${base} - ENTRADA ${category}` : base
+  if (!isEvent || !category) return base
+  const isSpeaker = data.event_category_alias === SPEAKER_TICKET_ALIAS
+  return isSpeaker ? `${base} - PONENTE` : `${base} - ENTRADA ${category}`
 }
 
 // Detalle de sesiones segun la entrada, con fallback cruzado: si la edicion
@@ -83,10 +90,11 @@ export function renderConfirmationEmail ({
         categoryLabel: data.event_category_label || '',
         sessionDetail: resolveSessionDetail(data, isVirtualTicket),
         bannerUrl: bannerUrl || data.banner_link || '',
-        // El asiento asignado es propio de la entrada VIP. Se filtra aca y no
-        // en la plantilla para que un cambio de categoria (VIP -> GENERAL) deje
-        // de mostrarlo sin tener que borrar el dato.
-        seat: data.event_category_alias === VIP_TICKET_ALIAS ? data.event_seat : null,
+        // El asiento asignado es propio de la zona VIP (entrada VIP y ponente).
+        // Se filtra aca y no en la plantilla para que un cambio de categoria
+        // (VIP -> GENERAL) deje de mostrarlo sin tener que borrar el dato.
+        seat: SEATED_TICKET_ALIASES.includes(data.event_category_alias) ? data.event_seat : null,
+        isSpeaker: data.event_category_alias === SPEAKER_TICKET_ALIAS,
         // Cada categoria tiene su propio grupo (los VIP no van al de los
         // VIRTUAL). El de la edicion queda como red: eventos configurados
         // antes de que existiera el link por categoria siguen funcionando.
