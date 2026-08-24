@@ -623,10 +623,15 @@ export class EditionRepository {
           -- destino de cambio de curso o de reprogramacion (RP) => seguimiento en
           -- su aula nueva. El destino RP nace con total 0 (la venta vive en el
           -- origen) y se identifica por la nota que escribe reprogramEdition.
+          -- La BECA manda sobre el seguimiento: mover de aula a un becado no le
+          -- quita la beca (caso 16361, hijo reprogramado de una venta BECA: caia
+          -- en SEG y el aula lo veia beca => la fila descuadraba en 1).
           WHEN EXISTS (SELECT 1 FROM public.course_changes cc
                         WHERE cc.enrollment_destination_id = e.enrollment_id)
             OR e.notes ILIKE '%Reprogramacion desde inscripcion #%'
-            THEN CASE WHEN mem.is_member THEN 'MEMB' ELSE 'SEGUI' END
+            THEN CASE WHEN mem.is_member THEN 'MEMB'
+                      WHEN bec.is_beca THEN 'BECA'
+                      ELSE 'SEGUI' END
           -- HIJO de paquete:
           WHEN e.parent_enrollment_id IS NOT NULL THEN
             CASE
@@ -663,13 +668,7 @@ export class EditionRepository {
               WHEN par.cat_b2b_doctype IS NOT NULL
                 OR (par.agent_origin ILIKE '%b2b%'
                     AND (upar.alias IS NULL OR upar.alias IN ('NY12','JF39'))) THEN 'B2B'
-              -- socio PLUS (has_membership sin is_member) en 0 NO es beca: cae a SEGUI.
-              -- Padre destino RP/CC (venta ficticia en 0: la venta real vive en el
-              -- origen) tampoco es beca: sus hijos son SEGUI.
-              WHEN COALESCE(par.total_amount, 0) = 0 AND NOT mem.has_membership
-                AND COALESCE(par.notes, '') NOT ILIKE '%desde inscripcion #%'
-                AND NOT EXISTS (SELECT 1 FROM public.course_changes ccp
-                                 WHERE ccp.enrollment_destination_id = par.enrollment_id) THEN 'BECA'
+              WHEN bec.is_beca THEN 'BECA'
               ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
@@ -677,8 +676,7 @@ export class EditionRepository {
           WHEN e.cat_b2b_doctype IS NOT NULL
             OR (e.agent_origin ILIKE '%b2b%'
                 AND (ua.alias IS NULL OR ua.alias IN ('NY12','JF39'))) THEN 'B2B'
-          -- socio PLUS (has_membership sin is_member) en 0 NO es beca: cae a VENTAS.
-          WHEN COALESCE(e.total_amount, 0) = 0 AND NOT mem.has_membership THEN 'BECA'
+          WHEN bec.is_beca THEN 'BECA'
           ELSE 'VENTAS'
         END AS comm_bucket,
         -- B) HOJA = asiste a un aula = NO tiene hijos. El PADRE (tiene hijos) NO
@@ -687,21 +685,11 @@ export class EditionRepository {
         --    los que asisten). Misma regla que classroomMetricsList.
         (NOT EXISTS (SELECT 1 FROM public.enrollments ch
                       WHERE ch.parent_enrollment_id = e.enrollment_id)) AS is_leaf,
-        -- beca de la hoja: la venta (propia o del padre) en total 0, sin B2B ni
-        -- socio (mismo criterio is_beca que classroomStudentsList). Un destino
-        -- RP/CC (o sus hijos) NO es beca: su total 0 es convencion del flujo.
-        (COALESCE(e.cat_b2b_doctype, par.cat_b2b_doctype) IS NULL
-          AND NOT (COALESCE(par.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
-                   AND (COALESCE(upar.alias, ua.alias) IS NULL
-                        OR COALESCE(upar.alias, ua.alias) IN ('NY12','JF39')))
-          AND COALESCE(par.total_amount, e.total_amount, 0) = 0
-          AND NOT mem.has_membership
-          AND COALESCE(CASE WHEN e.parent_enrollment_id IS NOT NULL
-                            THEN par.notes ELSE e.notes END, '')
-              NOT ILIKE '%desde inscripcion #%'
-          AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
-                           WHERE ccx.enrollment_destination_id
-                                 = COALESCE(e.parent_enrollment_id, e.enrollment_id))) AS is_beca_leaf
+        -- beca de la hoja: el MISMO flag que usa la cascada comercial (LATERAL
+        -- bec). Que AULA y el canal compartan criterio es lo que garantiza
+        -- AULA = VENTAS+SEGUI+MEMB+B2B; cuando eran dos predicados gemelos
+        -- divergieron y la fila descuadraba.
+        bec.is_beca AS is_beca_leaf
         FROM public.enrollments e
         JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
         LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
@@ -757,6 +745,26 @@ export class EditionRepository {
                WHERE cm.person_id = cust.person_id AND em.active = 'Y'
             ) OR COALESCE(par.membership_program_id, e.membership_program_id) IS NOT NULL) AS has_membership
         ) mem ON TRUE
+        LEFT JOIN LATERAL (
+          -- BECA = la venta (propia o la del padre, que es donde vive) en total 0,
+          -- sin B2B y sin socio de ningun tier. Un destino RP/CC (o sus hijos) NO
+          -- es beca: su total 0 es convencion del flujo, la venta real vive en el
+          -- origen. Mismo criterio is_beca que classroomStudentsList.
+          -- Fuente UNICA de la beca: la cascada comercial y la columna AULA leen
+          -- de aqui, si no vuelven a divergir.
+          SELECT (COALESCE(e.cat_b2b_doctype, par.cat_b2b_doctype) IS NULL
+            AND NOT (COALESCE(par.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
+                     AND (COALESCE(upar.alias, ua.alias) IS NULL
+                          OR COALESCE(upar.alias, ua.alias) IN ('NY12','JF39')))
+            AND COALESCE(par.total_amount, e.total_amount, 0) = 0
+            AND NOT mem.has_membership
+            AND COALESCE(CASE WHEN e.parent_enrollment_id IS NOT NULL
+                              THEN par.notes ELSE e.notes END, '')
+                NOT ILIKE '%desde inscripcion #%'
+            AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
+                             WHERE ccx.enrollment_destination_id
+                                   = COALESCE(e.parent_enrollment_id, e.enrollment_id))) AS is_beca
+        ) bec ON TRUE
        WHERE e.program_edition_id = ANY($1::int[])
          AND e.active = 'Y'
          AND cf.alias = 'we_enrollment_status_checked'
@@ -768,15 +776,28 @@ export class EditionRepository {
                 'we_enrollment_status_course_changed',
                 'we_enrollment_status_reprogrammed'
               ))
-         -- HIJO de un padre RP: el diploma se reprogramo a otra edicion, asi que
-         -- este modulo tampoco asiste aqui (se fue con el padre). Lo excluye del
-         -- AULA tambien, no solo del comercial => aula y comercial cuadran.
-         AND (parcts.alias IS NULL OR parcts.alias <> 'we_enrollment_status_reprogrammed')
-         -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo,
-         -- el alumno quedo VARADO y su caso vive en el modulo Reprogramaciones
-         -- hasta que academica le asigne destino. No asiste a esta aula: ni AULA
-         -- ni comercial. (El padre A5 mismo no aparece: su fila es la edicion A5.)
-         AND (parseg.alias IS NULL OR parseg.alias <> 'we_segment_a5')
+         -- Los dos filtros de abajo miran al PADRE para decidir si el alumno se
+         -- fue con el. Solo valen cuando el padre es un PAQUETE. Si el vinculo
+         -- es un CAMBIO DE CURSO (padre = la inscripcion que dejo), el alumno se
+         -- movio JUSTAMENTE porque su curso viejo se cayo: su venta cuenta en la
+         -- edicion nueva. Sin esta guarda, un CC que sale de una edicion
+         -- cancelada (A5) desaparecia del comercial mientras sus hijos SEG si
+         -- contaban en el aula => la fila descuadraba en 1 (caso 15905:
+         -- ESP. FRONT END E8-26 A5 -> ESP. PYTHON DATA SCIENCE E11-26).
+         AND (
+           EXISTS (SELECT 1 FROM public.course_changes ccp
+                    WHERE ccp.enrollment_destination_id = e.enrollment_id
+                      AND ccp.enrollment_origin_id = e.parent_enrollment_id)
+           -- HIJO de un padre RP: el diploma se reprogramo a otra edicion, asi que
+           -- este modulo tampoco asiste aqui (se fue con el padre). Lo excluye del
+           -- AULA tambien, no solo del comercial => aula y comercial cuadran.
+           OR ((parcts.alias IS NULL OR parcts.alias <> 'we_enrollment_status_reprogrammed')
+           -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo,
+           -- el alumno quedo VARADO y su caso vive en el modulo Reprogramaciones
+           -- hasta que academica le asigne destino. No asiste a esta aula: ni AULA
+           -- ni comercial. (El padre A5 mismo no aparece: su fila es la edicion A5.)
+               AND (parseg.alias IS NULL OR parseg.alias <> 'we_segment_a5'))
+         )
     )
     SELECT
       edition_num_id,
