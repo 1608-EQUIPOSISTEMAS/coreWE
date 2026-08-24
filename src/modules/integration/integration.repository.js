@@ -160,6 +160,25 @@ export const SYNC_FROM = `
             WHERE fam.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
          ) >= DATE '${SYNC_FROM_DATE}'`
 
+// Corte propio de la hoja "7. Convenios": el negocio arranco el reporte de
+// convenios el 2026-08-14, asi que solo suben las ventas B2B pagadas desde ese
+// dia (inclusive). Es independiente de SYNC_FROM_DATE, que corta las otras
+// hojas mucho antes.
+export const CONVENIOS_FROM_DATE = '2026-08-14'
+
+// Marcador de venta B2B. Misma union que usa edition.repository.js para la
+// columna B2B del cronograma: la venta puede venir marcada por el origen del
+// asesor (el "cambio de asesor" a B2B deja agent_origin = 'B2B'), por el
+// contrato, por el tipo de documento (OS/OP) o por el lead. Basta cualquiera.
+// Asume en el scope los alias `e` (enrollments) y `l` (leads).
+const IS_B2B = `
+         AND (
+           e.agent_origin = 'B2B'
+           OR e.b2b_contract_id IS NOT NULL
+           OR e.cat_b2b_doctype IS NOT NULL
+           OR l.b2b = 'Y'
+         )`
+
 // Contacto efectivo del alumno, en el orden que manda negocio: lo que el lead
 // trajo al vender y, si el lead no lo tiene, el ultimo contacto vigente de la
 // persona. Las 6 queries FICO lo repetian verbatim. Asume en el scope los alias
@@ -507,6 +526,103 @@ export class IntegrationRepository {
       AND p.installment_id IS NULL
       AND ct.alias IN ('we_payment_type_certificate', 'we_payment_type_reassignment', 'we_payment_type_course_change_diff')
     ORDER BY p.payment_date ASC, p.payment_id ASC
+  `)
+    return rows || []
+  }
+
+  // Ventas B2B (convenios) pagadas desde CONVENIOS_FROM_DATE. Alimenta la hoja
+  // "7. Convenios". A diferencia de las otras hojas NO aplica SYNC_FROM (tiene
+  // su propio corte) ni EXCLUDE_IMPORTED: los convenios no entraron por la
+  // importacion masiva.
+  async getFicoConvenios () {
+    const { rows } = await this.db.query(`
+    SELECT
+      to_char(l.registration_date, 'DD/MM/YYYY')           AS fecha,
+      COALESCE(comp_lead.razon_social, comp_ctr.razon_social, l.company_name, '') AS empresa,
+      'P'                                                  AS tipo_cliente,
+      COALESCE(prog.program_name, '')                      AS programa,
+      TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
+      ${STUDENT_PHONE_SQL}                                                    AS numero,
+      COALESCE(pv.abbreviation, '')                        AS nombre_p,
+      to_char(pe.start_date, 'DD/MM/YYYY')                 AS f_programa,
+      CASE c_prof.alias WHEN 'we_profile_student' THEN 'E' ELSE 'P' END AS ocup,
+      to_char(pay_eff.f_pago_date, 'DD/MM/YYYY')           AS f_pago,
+      CASE c_curr.alias WHEN 'we_currency_dollars' THEN 'USD' ELSE 'PEN' END AS moneda,
+      replace(to_char(
+        CASE WHEN inst_agg.cuotas > 0 THEN inst_agg.total ELSE e.total_amount END,
+        'FM999990.00'), '.', ',')                          AS monto,
+      CASE c_plan.alias
+        WHEN 'we_payment_way_single'       THEN 'PT'
+        WHEN 'we_payment_way_installments' THEN 'PP'
+        ELSE ''
+      END                                                  AS tipo_pago,
+      CASE EXTRACT(MONTH FROM pay_eff.f_pago_date)
+        WHEN 1 THEN 'ENE' WHEN 2 THEN 'FEB' WHEN 3 THEN 'MAR'
+        WHEN 4 THEN 'ABR' WHEN 5 THEN 'MAY' WHEN 6 THEN 'JUN'
+        WHEN 7 THEN 'JUL' WHEN 8 THEN 'AGO' WHEN 9 THEN 'SEP'
+        WHEN 10 THEN 'OCT' WHEN 11 THEN 'NOV' WHEN 12 THEN 'DIC'
+      END                                                  AS mes,
+      EXTRACT(YEAR FROM pay_eff.f_pago_date)::text         AS anio,
+      ${STUDENT_EMAIL_SQL}                                                    AS correo,
+      replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',') AS pago_efectuado,
+      upper(COALESCE(c_type.description, ''))              AS tipo_program,
+      COALESCE(c_mod.description, '')                      AS unidad,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND u.alias IS NOT NULL
+          THEN e.agent_origin || ' - ' || u.alias
+        ELSE COALESCE(u.alias, e.agent_origin, 'S/A')
+      END                                                  AS asesor
+    FROM public.enrollments e
+    JOIN public.customers cust ON cust.customer_id = e.customer_id
+    JOIN public.persons per    ON per.person_id = cust.person_id
+    JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
+    LEFT JOIN public.leads l              ON l.enrollment_id = e.enrollment_id
+    LEFT JOIN public.companies comp_lead  ON comp_lead.company_id = l.company_id
+    LEFT JOIN public.b2b_contracts ctr    ON ctr.b2b_contract_id = e.b2b_contract_id
+    LEFT JOIN public.companies comp_ctr   ON comp_ctr.company_id = ctr.company_id
+    LEFT JOIN public.program_versions pv  ON pv.program_version_id = e.program_version_id
+    LEFT JOIN public.programs prog        ON prog.program_id = pv.program_id
+    LEFT JOIN public.program_editions pe  ON pe.edition_num_id = e.program_edition_id
+    LEFT JOIN public.users u              ON u.user_id = e.seller_agent_id
+    LEFT JOIN public."catalog" c_prof     ON c_prof.catalog_id = e.cat_profile_id
+    LEFT JOIN public."catalog" c_plan     ON c_plan.catalog_id = e.cat_payment_plan
+    LEFT JOIN public."catalog" c_curr     ON c_curr.catalog_id = e.cat_currency
+    LEFT JOIN public."catalog" c_type     ON c_type.catalog_id = prog.cat_type_program
+    LEFT JOIN public."catalog" c_mod      ON c_mod.catalog_id = prog.cat_model_modality
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(
+        l.pay_date::date,
+        (SELECT py.payment_date::date FROM public.payments py
+          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          ORDER BY py.payment_date ASC LIMIT 1),
+        e.registration_date::date
+      ) AS f_pago_date
+    ) pay_eff ON TRUE
+    LEFT JOIN LATERAL (
+      -- Total segun las cuotas: es el precio vigente de la venta. Cuando FICO
+      -- edita el precio, la edicion vive en las cuotas y enrollments.total_amount
+      -- se queda con el valor viejo (16394: total 410, cuotas 80+248 = 328). La
+      -- ficha del alumno muestra el 328 y la hoja tiene que decir lo mismo.
+      SELECT COUNT(*)::int AS cuotas, COALESCE(SUM(pi.amount), 0) AS total
+        FROM public.payment_installments pi
+       WHERE pi.enrollment_id = e.enrollment_id
+    ) inst_agg ON TRUE
+    LEFT JOIN LATERAL (
+      -- Mismo criterio que la hoja de ventas: lo cobrado son las cuotas
+      -- marcadas como pagadas, no las filas de payments (que se duplican).
+      SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id
+         AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
+    ) pay_agg ON TRUE
+    WHERE e.active = 'Y'
+      AND cf.alias = 'we_enrollment_status_checked'
+      ${IS_B2B}
+      ${PARENT_OR_CC_DESTINATION}
+      ${EXCLUDE_HELD}
+      AND pay_eff.f_pago_date >= DATE '${CONVENIOS_FROM_DATE}'
+    ORDER BY pay_eff.f_pago_date, e.enrollment_id
   `)
     return rows || []
   }

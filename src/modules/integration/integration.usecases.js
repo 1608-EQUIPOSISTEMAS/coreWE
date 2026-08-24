@@ -6,6 +6,8 @@ import {
   serializeSheetRow,
   buildSalesRow,
   buildAdicionalesRow,
+  buildConveniosRow,
+  CONVENIOS_HEADER_ROW,
   ADICIONALES_HEADER_ROW,
   buildAulaRow,
   buildConsolidadoRow,
@@ -343,12 +345,12 @@ async function alignToPlaneamiento26 (entries) {
   return ordered
 }
 
-// FICO -> hoja "Adicionales". Pagos de certificado de becados: 19 columnas A..S,
+// FICO -> hoja "6. Adicionales". Pagos de certificado de becados: 19 columnas A..S,
 // sobreescritura total desde A2 (igual que las demas hojas). Crea la hoja con
 // headers si no existe.
 export async function syncFicoAdicionalesToSheet () {
   const SPREADSHEET_ID = repo.SPREADSHEET.fico
-  const SHEET_NAME = 'Adicionales'
+  const SHEET_NAME = '6. Adicionales'
 
   const rows = await repo.getFicoAdicionales()
   const values = rows.map(buildAdicionalesRow)
@@ -379,14 +381,31 @@ export async function syncFicoMembresiasToSheet () {
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 8 hojas FICO en paralelo: son independientes (misma
+// FICO -> hoja "7. Convenios". Ventas B2B pagadas desde CONVENIOS_FROM_DATE:
+// 20 columnas A..T. Crea la hoja con headers si no existe.
+export async function syncFicoConveniosToSheet () {
+  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SHEET_NAME = '7. Convenios'
+
+  const rows = await repo.getFicoConvenios()
+  const values = rows.map(buildConveniosRow)
+
+  const created = await repo.ensureAndWrite(
+    SPREADSHEET_ID, SHEET_NAME, CONVENIOS_HEADER_ROW,
+    `'${SHEET_NAME}'!A2:T`, `'${SHEET_NAME}'!A2`, values
+  )
+
+  return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
+}
+
+// Sincroniza las 9 hojas FICO en paralelo: son independientes (misma
 // spreadsheet, hojas y rangos distintos), asi el tiempo total es el de la hoja
-// mas lenta y no la suma de las 8. Si alguna falla, la request completa falla
+// mas lenta y no la suma de las 9. Si alguna falla, la request completa falla
 // (Promise.all), pero las demas ya lanzadas terminan igual: cada hoja se
 // sobreescribe completa en cada sync, asi que no queda estado corrupto.
 // ponytail: si Sheets empieza a devolver 429 por la rafaga, volver a lotes de 2-3.
 export async function syncFicoToSheets () {
-  const [ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias] = await Promise.all([
+  const [ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias, convenios] = await Promise.all([
     syncFicoSalesToSheet(),
     syncFicoAulaToSheet(),
     syncFicoConsolidadoToSheet(),
@@ -394,9 +413,10 @@ export async function syncFicoToSheets () {
     syncFicoEventosToSheet(),
     syncFicoCronogramaToSheet(),
     syncFicoAdicionalesToSheet(),
-    syncFicoMembresiasToSheet()
+    syncFicoMembresiasToSheet(),
+    syncFicoConveniosToSheet()
   ])
-  return { ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias }
+  return { ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias, convenios }
 }
 
 // Version fire-and-forget de syncFicoToSheets: responde al instante y deja la

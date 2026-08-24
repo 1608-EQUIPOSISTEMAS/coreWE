@@ -1,0 +1,33 @@
+{
+  "cuota": {
+    "installment_id": 3927,
+    "enrollment_id": 3290,
+    "installment_number": 3,
+    "amount": "395.00",
+    "penalty_amount": "0.00",
+    "due_date": "2026-09-23T05:00:00.000Z",
+    "cat_status": 4454,
+    "notes": "Cuota 3 – Pendiente aprobación Finanzas",
+    "status_alias": "we_inst_paid",
+    "status_label": "Pagada"
+  },
+  "pagos": [
+    {
+      "payment_id": 9424,
+      "enrollment_id": 3290,
+      "installment_id": 3927,
+      "amount": "395.00",
+      "payment_date": "2026-08-22T05:00:00.000Z",
+      "transaction_code": "",
+      "evidence_url": "https://we-educacion-ejecutiva.site/uploads/1787502675415_207265f2-1ae8-479a-881e-5b8ea82d961e_image_3_.png",
+      "cat_method_payment": 3208,
+      "cat_payment_type": 3115,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y",
+      "user_registration_id": 22,
+      "registration_date": "2026-08-23T16:32:16.523Z",
+      "cat_token_provider": null
+    }
+  ]
+}

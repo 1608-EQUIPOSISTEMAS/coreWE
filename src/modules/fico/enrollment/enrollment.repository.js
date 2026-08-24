@@ -1179,6 +1179,36 @@ export class EnrollmentRepository {
     `, [amount, dueDate, installmentId, enrollmentId])
   }
 
+  // Realinea la cabecera del enrollment con lo que dicen sus cuotas. Editar el
+  // monto de una cuota cambia el precio real de la venta, pero total_amount
+  // seguia con el valor que trajo FICO al registrarla: la ficha mostraba el
+  // total nuevo (suma de cuotas) y el saldo viejo (total_amount - pagado), y el
+  // listado mostraba el total viejo. Le paso a la inscripcion 16394: cuotas
+  // 80 + 248 = 328 contra un total_amount de 410.
+  //
+  // El precio de lista NO se toca: es del programa, no de la venta. Lo que
+  // absorbe la diferencia es el descuento, igual que en applyCampaignTx.
+  // Devuelve null si no hubo cambio, para no ensuciar la bitacora.
+  async recalcTotalsFromInstallments (enrollmentId) {
+    const { rows } = await this.db.query(`
+      WITH cuotas AS (
+        SELECT COALESCE(SUM(amount), 0)::numeric AS total
+          FROM payment_installments WHERE enrollment_id = $1
+      ), antes AS (
+        SELECT total_amount FROM enrollments WHERE enrollment_id = $1
+      )
+      UPDATE enrollments e
+         SET total_amount    = cuotas.total,
+             discount_amount = GREATEST(0, COALESCE(e.list_price, 0) - cuotas.total)
+        FROM cuotas, antes
+       WHERE e.enrollment_id = $1
+         AND antes.total_amount IS DISTINCT FROM cuotas.total
+      RETURNING antes.total_amount AS anterior, e.total_amount AS nuevo
+    `, [enrollmentId])
+    if (!rows[0]) return null
+    return { old: Number(rows[0].anterior), new: Number(rows[0].nuevo) }
+  }
+
   // Edicion atomica de cuotas pagadas + recalculo de total. Devuelve los deltas
   // de monto aplicados para que el usecase arme las lineas de audit.
   async applyPaidInstallmentEdits ({ enrollmentId, paidInstallments }) {

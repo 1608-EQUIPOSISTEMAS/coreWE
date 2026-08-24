@@ -35,7 +35,10 @@ export const leadRegisterSchema = {
           planned_payment_date: { type: ['string', 'null'] },
           bot: { type: ['string', 'null'] },
           web: { type: ['string', 'null'] },
-          b2b: { type: ['string', 'null'] }
+          b2b: { type: ['string', 'null'] },
+          // Empresa del convenio. Sin declararla aqui, AJV la borra en silencio
+          // (additionalProperties: false) y el lead se guarda sin empresa.
+          company_id: { type: ['integer', 'null'] }
         }
       },
       user_id: {
@@ -111,7 +114,10 @@ export const leadUpdateSchema = {
           active: { type: ['string', 'null'] },
           bot: { type: ['string', 'null'] },
           web: { type: ['string', 'null'] },
-          b2b: { type: ['string', 'null'] }
+          b2b: { type: ['string', 'null'] },
+          // Empresa del convenio. Sin declararla aqui, AJV la borra en silencio
+          // (additionalProperties: false) y el lead se guarda sin empresa.
+          company_id: { type: ['integer', 'null'] }
         }
       },
       contact_attempts: {

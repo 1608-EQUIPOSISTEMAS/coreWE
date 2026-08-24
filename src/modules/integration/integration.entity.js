@@ -83,6 +83,31 @@ export function buildAulaRow (r) {
   ]
 }
 
+// Cabecera de "7. Convenios" (ventas B2B). Solo se escribe si la hoja no
+// existe todavia: ensureAndWrite respeta los headers que ya puso el usuario.
+export const CONVENIOS_HEADER_ROW = [
+  'FECHA', 'EMPRESA', 'TIPO DE CLIENTE', 'PROGRAMA', 'NOMBRE', 'NÚMERO',
+  'NOMBRE P.', 'F.PROGRAMA', 'OCUP.', 'F. PAGO', 'MONEDA', 'MONTO',
+  'TIPO PAGO', 'MES', 'AÑO', 'CORREO', 'PAGO EFECTUADO', 'TIPO PROGRAM',
+  'UNIDAD', 'AS'
+]
+
+// Mapea un resultado de la query de convenios FICO a las 20 columnas A..T.
+// EMPRESA, TIPO DE CLIENTE y PROGRAMA salen del contrato B2B: hoy llegan
+// vacias porque las ventas todavia no guardan la empresa, y se llenan solas
+// cuando el formulario la pida.
+export function buildConveniosRow (r) {
+  const z = isZeroAmountEmail(r.correo)
+  const money = (v) => (z ? 0 : (v || ''))
+  return [
+    r.fecha || '', r.empresa || '', r.tipo_cliente || '', r.programa || '',
+    r.nombres || '', r.numero || '', r.nombre_p || '', r.f_programa || '',
+    r.ocup || '', r.f_pago || '', r.moneda || '', money(r.monto),
+    r.tipo_pago || '', r.mes || '', r.anio || '', r.correo || '',
+    money(r.pago_efectuado), r.tipo_program || '', r.unidad || '', r.asesor || ''
+  ]
+}
+
 // Cabecera de "5. Membresias". Solo se escribe si la hoja no existe todavia:
 // ensureAndWrite respeta los headers que ya puso el usuario.
 export const MEMBRESIAS_HEADER_ROW = [

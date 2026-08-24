@@ -905,6 +905,12 @@ export async function enrollmentUpdate ({ enrollmentId, fields, justificacion, u
       }
     }
     changes['Cuotas'] = { updated: fields.installments.length }
+    // Editar una cuota cambia el precio real de la venta: la cabecera tiene que
+    // seguirla o el saldo y el listado quedan con el total viejo de FICO.
+    const totalRecalc = await repo.recalcTotalsFromInstallments(enrollmentId)
+    if (totalRecalc) {
+      changes['Total Recalculado'] = { old: `S/. ${totalRecalc.old}`, new: `S/. ${totalRecalc.new}` }
+    }
   }
 
   if (fields.paid_installments && Array.isArray(fields.paid_installments) && fields.paid_installments.length > 0) {
