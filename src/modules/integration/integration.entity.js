@@ -92,19 +92,31 @@ export const CONVENIOS_HEADER_ROW = [
   'UNIDAD', 'AS'
 ]
 
+// En esta hoja el negocio clasifica TODA venta B2B igual: el cliente es la
+// empresa nacional y el "programa" es la linea comercial Convenios, no el
+// curso vendido (ese va en NOMBRE P.). Por eso son constantes y no columnas.
+const CONVENIOS_TIPO_CLIENTE = 'B2B NACIONAL'
+const CONVENIOS_PROGRAMA = 'CONVENIOS'
+
+// UNIDAD es una lista desplegable de la hoja: si el texto no coincide letra por
+// letra con una de sus opciones, la celda queda marcada como invalida. El
+// catalogo de la BD escribe 'En Vivo' con V mayuscula, la hoja espera 'En vivo'.
+const CONVENIOS_UNIDADES = { 'En Vivo': 'En vivo' }
+const conveniosUnidad = (modalidad) =>
+  CONVENIOS_UNIDADES[modalidad] || modalidad || ''
+
 // Mapea un resultado de la query de convenios FICO a las 20 columnas A..T.
-// EMPRESA, TIPO DE CLIENTE y PROGRAMA salen del contrato B2B: hoy llegan
-// vacias porque las ventas todavia no guardan la empresa, y se llenan solas
-// cuando el formulario la pida.
+// EMPRESA sale del contrato B2B: llega vacia en las ventas anteriores al
+// 2026-08-24, que todavia no guardaban la empresa.
 export function buildConveniosRow (r) {
   const z = isZeroAmountEmail(r.correo)
   const money = (v) => (z ? 0 : (v || ''))
   return [
-    r.fecha || '', r.empresa || '', r.tipo_cliente || '', r.programa || '',
+    r.fecha || '', r.empresa || '', CONVENIOS_TIPO_CLIENTE, CONVENIOS_PROGRAMA,
     r.nombres || '', r.numero || '', r.nombre_p || '', r.f_programa || '',
     r.ocup || '', r.f_pago || '', r.moneda || '', money(r.monto),
     r.tipo_pago || '', r.mes || '', r.anio || '', r.correo || '',
-    money(r.pago_efectuado), r.tipo_program || '', r.unidad || '', r.asesor || ''
+    money(r.pago_efectuado), r.tipo_program || '', conveniosUnidad(r.unidad), r.asesor || ''
   ]
 }
 

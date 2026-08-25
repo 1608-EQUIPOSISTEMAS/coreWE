@@ -6,8 +6,6 @@ import { CONVENIOS_HEADER_ROW, buildConveniosRow } from '../integration.entity.j
 const fila = {
   fecha: '12/08/2026',
   empresa: 'CLINICA INTERNACIONAL S A',
-  tipo_cliente: 'P',
-  programa: 'GESTIÓN DE COMPRAS Y PROVEEDORES',
   nombres: 'JANETH NATALY CASTILLO GUTIERREZ',
   numero: '937378654',
   nombre_p: 'GEST. COMP. Y PROV.',
@@ -31,10 +29,10 @@ describe('buildConveniosRow', () => {
     const celdas = buildConveniosRow(fila)
     expect(celdas).toHaveLength(CONVENIOS_HEADER_ROW.length)
     expect(celdas).toEqual([
-      '12/08/2026', 'CLINICA INTERNACIONAL S A', 'P', 'GESTIÓN DE COMPRAS Y PROVEEDORES',
+      '12/08/2026', 'CLINICA INTERNACIONAL S A', 'B2B NACIONAL', 'CONVENIOS',
       'JANETH NATALY CASTILLO GUTIERREZ', '937378654', 'GEST. COMP. Y PROV.',
       '26/08/2026', 'P', '14/08/2026', 'PEN', '328,00', 'PP', 'AGO', '2026',
-      'janicastillog@gmail.com', '80,00', 'CURSO', 'En Vivo', 'B2B - AE30'
+      'janicastillog@gmail.com', '80,00', 'CURSO', 'En vivo', 'B2B - AE30'
     ])
   })
 
@@ -44,6 +42,21 @@ describe('buildConveniosRow', () => {
     const celdas = buildConveniosRow({ ...fila, empresa: '' })
     expect(celdas[1]).toBe('')
     expect(celdas[11]).toBe('328,00')
+  })
+
+  // El negocio pidio (2026-08-25) que estas dos columnas sean fijas: toda
+  // venta de la hoja es B2B NACIONAL y su linea comercial es CONVENIOS.
+  it('fija TIPO DE CLIENTE y PROGRAMA aunque la query traiga otra cosa', () => {
+    const celdas = buildConveniosRow({ ...fila, tipo_cliente: 'P', programa: 'GESTION DE COMPRAS' })
+    expect(celdas[2]).toBe('B2B NACIONAL')
+    expect(celdas[3]).toBe('CONVENIOS')
+  })
+
+  // La lista desplegable de UNIDAD solo acepta Online / En vivo / Evento /
+  // Membresia; el catalogo de la BD guarda 'En Vivo'.
+  it('escribe UNIDAD como la espera la lista de la hoja', () => {
+    expect(buildConveniosRow(fila)[18]).toBe('En vivo')
+    expect(buildConveniosRow({ ...fila, unidad: 'Online' })[18]).toBe('Online')
   })
 
   it('fuerza monto y pago efectuado a 0 para los correos de monto-cero', () => {

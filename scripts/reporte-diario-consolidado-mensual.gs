@@ -1,4 +1,4 @@
-﻿// ===== Reporte Consolidado: tablero de una hoja, metricas en filas y meses en columnas =====
+// ===== Reporte Consolidado: tablero de una hoja, metricas en filas y meses en columnas =====
 // Idempotente: borra y rehace la pestana. Toda la data sale de 'Fuente Estatico'.
 // Fila 4 (oculta) = primer dia de cada mes; todas las formulas cuelgan de ahi.
 // OJO: el locale del archivo usa ';' como separador de argumentos y setFormula NO traduce.
@@ -84,8 +84,6 @@ function construirConsolidado() {
   // t: sec | mon | num | pct ;  f: formula de la columna C ;  o: formula del total
   var UNI = bloqueUnidades(diario, FE, MES);
   var UNIDADES = UNI.filas;
-  var RESTO_C = '=ROUND(C{ing}-(' + UNI.subs.map(function (k) { return 'C{' + k + '}'; }).join('+') + ');0)';
-  var RESTO_O = '=ROUND(O{ing}-(' + UNI.subs.map(function (k) { return 'O{' + k + '}'; }).join('+') + ');0)';
 
   var F = [
     { t: 'sec', b: 'RESULTADO DEL MES' },
@@ -102,7 +100,6 @@ function construirConsolidado() {
 
     { t: 'sec', b: 'INGRESOS POR UNIDAD' },
     UNIDADES,
-    { k: 'nocl', t: 'mon', b: 'No clasificado (fuera de las 5 unidades)', f: RESTO_C, o: RESTO_O },
     { t: 'sec', b: 'AREA DE CONOCIMIENTO' },
     { k: 'asa', t: 'mon', b: 'SAP', f: monto('G', 'SAP'), o: montoAnio('G', 'SAP') },
     { k: 'abi', t: 'mon', b: 'Business Intelligence', f: monto('G', 'BI'), o: montoAnio('G', 'BI') },
@@ -206,7 +203,7 @@ function construirConsolidado() {
   SpreadsheetApp.flush();
 
   console.log('Consolidado listo. Metricas en filas ' + r0 + '-' + (r0 + F.length - 1) + ', top en ' + rTop + '.');
-  ['ing', 'nocl', 'alt', 'ali', 'alc'].forEach(function (k) {
+  ['ing', 'alt', 'ali', 'alc'].forEach(function (k) {
     console.log(k + ': ' + sh.getRange(fila[k], 3, 1, 13).getDisplayValues()[0].join(' | '));
   });
 }

@@ -529,3 +529,201 @@ Editar este proyecto por automatización de navegador tiene dos trampas caras:
    y el `Ctrl+V`, y una de ellas dejó una URL dentro del archivo. Verificar el largo del modelo
    antes y después de cada pegado, y comprobar que el editor activo **no** es `Codigo.gs` antes
    de seleccionar todo.
+
+---
+
+# Agosto: la Fundación cae en "No clasificado" (24/08/2026)
+
+## Síntoma
+
+`Reporte Consolidado`, bloque **FUNDACIÓN WE**: *1. Tickets Eventos* muestra **S/.0 en agosto**
+(ene 22.875 · feb 2.160 · mar 12.078 · may 12.968 · jun 24.596) mientras la fila
+*No clasificado (fuera de las 5 unidades)* salta a **S/.5.408** — el único mes con residuo
+desde junio.
+
+## Causa raíz: el origen cambió de vocabulario en agosto
+
+Las 31 ventas de fundación de agosto (V CONGRESO DE DIRECCIÓN DE PROYECTOS) llegan a
+`Fuente Estatico` etiquetadas distinto que todos los meses anteriores:
+
+| | col `E` (unidad) | col `F` (subtipo) | col `T` (categoría) |
+|---|---|---|---|
+| ene → jun | `FUNDACIÓN WE` | `EVENTOS` | `FUND-EVENTOS` |
+| **ago** | `FUNDACION` | `EVENTO` | **`REVISAR`** |
+
+`Fuente Estatico!T1` compara contra los literales **exactos**, así que agosto cae en el
+`REVISAR` del final de la cadena. `REVISAR` no lo engancha **ningún** `SUMIFS` de
+`Reporte Ingresos` (la clave de la fila es `FUND-EVENTOS`, col A oculta, fila 45), y por eso
+el dinero desaparece del bloque de unidades y reaparece como residuo.
+
+Medido sobre el snapshot (10.274 filas):
+
+```
+filas con FUND* en E/F, por mes: {01:141, 02:27, 03:93, 05:48, 06:150, 08:31}
+categorías vistas en esas filas:  FUND-EVENTOS · FUND-EXTRAS · REVISAR
+REVISAR por mes (monto col S):    {2026-08: 5.645}   <- no hay REVISAR en ningún otro mes
+```
+
+Los S/5.645 de `REVISAR` y los S/5.408 de *No clasificado* no son el mismo número a
+propósito: la fila de residuo se calcula contra el **total oficial** (`INDEX` al pie de
+`Reporte Ingresos`, decisión del 13/08), no contra la suma del detalle.
+
+## Arreglo aplicado (misma receta que el typo `INHOUSE`)
+
+El origen es archivo oficial y no se toca, así que la normalización va **solo en `T1`**: un
+buscar/reemplazar sobre toda la columna metería `E1`/`F1` literal en las 10.000 filas.
+
+La rama que fallaba era
+
+```
+IF(E1="FUNDACIÓN WE";IF(F1="EVENTOS";"FUND-EVENTOS";"FUND-EXTRAS"); …
+```
+
+y quedó
+
+```
+IF(LEFT(E1;4)="FUND";IF(LEFT(F1;6)="EVENTO";"FUND-EVENTOS";"FUND-EXTRAS"); …
+```
+
+Cubre `FUNDACION`/`FUNDACIÓN WE` y `EVENTO`/`EVENTOS` de una vez y deja de depender de la
+tilde, que es justo lo que se rompió. Los **nombres de función van en inglés** (`LEFT`, no
+`IZQUIERDA`): `getFormula()`/`setFormula()` hablan inglés aunque el locale del archivo use
+`;` como separador.
+
+El reemplazo se hizo **por script, no a mano**, y sobre el texto que devuelve `getFormula()`,
+con guarda de que el `replace` haya cambiado algo antes de escribir:
+
+```js
+var t1 = fe.getRange('T1').getFormula();
+var nuevo = t1.replace(/E1="FUNDACI.N WE"/, 'LEFT(E1;4)="FUND"')
+              .replace('F1="EVENTOS"', 'LEFT(F1;6)="EVENTO"');
+if (nuevo === t1) { console.log('T1 no cambio: abortado'); return; }
+fe.getRange('T1').setFormula(nuevo);
+```
+
+El `.` del regex evita tener que tipear la `Ó` por automatización de teclado.
+
+Para bajar la fórmula nueva a las 10.288 filas **no hace falta `forzarPegado()`**: alcanza con
+copiar `T1` sobre el resto de la columna, que es lo único que cambió.
+
+```js
+fe.getRange('T1').copyTo(fe.getRange(2, 20, fe.getLastRow() - 1, 1));
+```
+
+Re-pegar las 10.000 × 18 celdas del snapshot para arreglar una columna es superficie de
+riesgo gratis — y `construirConsolidado()` ya se cayó una vez por `Service Spreadsheets
+timed out` esa misma tarde. Tampoco hizo falta regenerar el tablero: sus filas son `SUMIFS`
+vivos y se movieron solas.
+
+### Resultado verificado
+
+```
+Categoria rehecha en 10288 filas. Quedan 0 con REVISAR.
+```
+
+`Reporte Consolidado`, bloque FUNDACIÓN WE:
+
+| | ene | feb | mar | abr | may | jun | jul | **ago** | TOTAL |
+|---|---|---|---|---|---|---|---|---|---|
+| 1. Tickets Eventos | 22.875 | 2.160 | 12.078 | – | 12.968 | 24.596 | – | **5.970** | 80.647 |
+| SUBTOTAL - FUNDACIÓN | 22.875 | 2.160 | 13.228 | – | 12.968 | 24.816 | – | **5.970** | 82.017 |
+
+**Ojo con el residuo:** *No clasificado* pasó en agosto de **+5.408** a **−3.552**. No es un
+defecto nuevo: la fila es `oficial − Σ subtotales` y agosto es el mes en curso, así que el
+`D10` del origen todavía va atrás del detalle (es la misma brecha que el pie del mes ya
+mostraba como `+13.494` el 13/08). Cuando el mes cierre debería volver a cero o cerca.
+
+**Techo conocido:** esto tapa el síntoma, no la causa. Cada mes nuevo del origen puede
+estrenar otra grafía y el único aviso es que el residuo de *No clasificado* se mueva. Un
+`REVISAR` con monto > 0 debería alertar por Slack como ya lo hace `snapshotIncompleto`.
+
+## Nota de método (24/08): la UI del Sheet no se puede automatizar hoy
+
+`Reporte Ingresos` recalcula 36 bloques × 43 filas de `SUMIFS` sobre 10.000 filas: la pestaña
+queda congelada y **los clicks sintéticos sobre menús no abren submenús** (ni `Ver > Hojas
+ocultas` en el Sheet, ni `+ Archivo` en Apps Script). Sólo responden botones simples y el
+editor Monaco.
+
+Dos consecuencias que costaron caro:
+
+1. El selector de **Ejecutar** no aceptó el click sobre `verT1` y volvió a su valor previo:
+   se corrió **`construirConsolidado()`** sin querer. Se cayó con
+   `Service Spreadsheets timed out` en `bloqueUnidades` — *después* del `insertSheet`, así que
+   **dejó la pestaña `Reporte Consolidado (nuevo)` colgada**. El tablero bueno quedó intacto y
+   la pestaña se borró desde el mismo script.
+2. El desplegable **abre** pero no acepta el click sobre el ítem, así que no hay forma de
+   elegir qué función corre. Lo que sí funciona: **redefinir la función que el selector ya
+   tiene elegida**, al final del archivo. En JS gana la última declaración, así que un
+   `function paso() { … }` al pie del archivo se ejecuta en lugar del original sin tocarlo.
+   Al terminar, se borra y el original vuelve solo.
+3. Los clicks dentro de Monaco caen **unas líneas más arriba** de lo que muestra la captura
+   (dos veces metieron la función adentro del bloque `/** … */`). Posicionar con **teclado**
+   —`ctrl+Home`, `Down` × n, `shift+Home` × 4 para tomar la línea lógica entera— es lo único
+   fiable. `shift+Home` hay que repetirlo: con word-wrap, la primera vez va al principio de la
+   línea *visual*.
+
+---
+
+# Fuera la fila "No clasificado" y aparece Consultoría (25/08/2026)
+
+## 1. Se eliminó *No clasificado (fuera de las 5 unidades)*
+
+La fila era `total oficial − Σ subtotales`: un checksum útil mientras se cazaba la brecha
+entre `Ing. Operativos` y el detalle, pero **en el tablero del día a día es ruido** — mezcla
+dos cosas distintas (ventas sin categoría en `T` y el desfase del mes en curso) y, con agosto
+abierto, llegó a mostrar un residuo **negativo**, que no significa nada para quien lee el
+reporte.
+
+Tres borrados en `construirConsolidado()` (`Código.gs`), ninguno opcional:
+
+| Qué | Por qué |
+|---|---|
+| `var RESTO_C` / `var RESTO_O` | eran las fórmulas de esa fila y nadie más las usa |
+| `{ k: 'nocl', … }` en `F` | la fila |
+| `'nocl'` en el `forEach` del log final | `fila['nocl']` sería `undefined` y `getRange(undefined, …)` revienta **al final** de la corrida, con el tablero ya escrito |
+
+`UNI.subs` sigue devolviéndose: es de donde salen las claves `sub0..subN` de las filas
+SUBTOTAL, no era sólo para el residuo.
+
+El checksum no se pierde: `Reporte Ingresos` filas 52-63 sigue teniendo la columna `E` con la
+diferencia contra el total oficial, que es donde corresponde mirarla.
+
+## 2. "3. Consultoria" ya no sale en S/.0
+
+`Fuente Estatico!T1` **ya** clasificaba bien (las 5 ventas tienen `B2B-CONSULT` desde
+siempre), pero **`Reporte Ingresos!A32` estaba vacía**. Sin clave en la columna A,
+`bloqueUnidades()` marca la fila `sinClave` y le escribe `=0` — falla silenciosa perfecta: la
+fila existe, tiene etiqueta y muestra un cero creíble.
+
+Era el pendiente del 11/08 que se aplicó a medias: la mitad de `T1` sí, la clave de la hoja
+no.
+
+```js
+hojaIngresos(ss).getRange('A32').setValue('B2B-CONSULT');
+```
+
+Después hay que correr **`construirConsolidado()`**: a diferencia de un cambio en `T1`, la
+taxonomía se lee en el rebuild (`bloqueUnidades` deja el `=0` escrito en la celda), así que el
+tablero no se arregla solo.
+
+### Resultado
+
+| 3. Consultoria | ene | feb | mar | abr | may | jun | jul | ago | TOTAL |
+|---|---|---|---|---|---|---|---|---|---|
+| antes | – | – | – | – | – | – | – | – | **S/.0** |
+| ahora | – | – | – | 2.643 | **853** | – | – | 13.778 | **S/.17.273** |
+
+Cuadra al céntimo con las 5 ventas de `CONSULTORIA` del snapshot (2.642,52 + 852,88 +
+3.289,87 + 1.259 + 9.228,84). `SUBTOTAL - B2B` sube de S/.340.342 a **S/.357.615**.
+
+**Pendiente del mismo lote:** `Reporte Ingresos!A33` ("4. Ingresos Extras" de Categorías
+Propias) también está sin clave; hoy `B2B-EXTRAS` cuelga de `A38` ("11. Ingresos Extras").
+Si alguien quiere separarlos hay que decidir primero qué va en cada una.
+
+## Nota de método: el buscador de Monaco resuelve el posicionamiento
+
+Los clicks en el editor caen unas líneas arriba y contar `Down` falla en cuanto una línea
+envuelve. Lo que sí es exacto: **`ctrl+f` → texto → `Enter` → `Escape`** deja el cursor sobre
+la coincidencia. Desde ahí, `End` + `shift+Home` × 4 toma la línea lógica entera. Incluir en
+la búsqueda lo que sobra (`'nocl', ` con la coma y el espacio) deja el borrado en un solo
+`Delete`. `ctrl+h` no llegó a abrirse nunca; `ctrl+f` sí.

@@ -1,0 +1,11 @@
+{
+  "padre": {
+    "enrollment_id": 15506,
+    "program_version_id": 66,
+    "program_edition_id": null,
+    "total_amount": "275.00",
+    "notes": "Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion)"
+  },
+  "hijos": [],
+  "validaciones": []
+}

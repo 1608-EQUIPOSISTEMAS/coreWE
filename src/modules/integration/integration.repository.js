@@ -539,8 +539,6 @@ export class IntegrationRepository {
     SELECT
       to_char(l.registration_date, 'DD/MM/YYYY')           AS fecha,
       COALESCE(comp_lead.razon_social, comp_ctr.razon_social, l.company_name, '') AS empresa,
-      'P'                                                  AS tipo_cliente,
-      COALESCE(prog.program_name, '')                      AS programa,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       ${STUDENT_PHONE_SQL}                                                    AS numero,
       COALESCE(pv.abbreviation, '')                        AS nombre_p,

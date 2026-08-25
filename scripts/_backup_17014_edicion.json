@@ -1,0 +1,21 @@
+{
+  "antes": {
+    "enrollment_id": 17014,
+    "program_edition_id": 15437,
+    "program_version_id": 39,
+    "parent_enrollment_id": null,
+    "global_code": "E37",
+    "specific_code": "E8-26",
+    "start_date": "2026-09-05T05:00:00.000Z",
+    "program_id": 39,
+    "programa": "DIPLOMADO EN INTELIGENCIA Y ANÁLISIS DE DATOS"
+  },
+  "destino": {
+    "edition_num_id": 15443,
+    "program_version_id": 39,
+    "global_code": "E38",
+    "specific_code": "E9-26",
+    "start_date": "2026-10-08T05:00:00.000Z"
+  },
+  "ts": "2026-08-24T23:56:10.294Z"
+}
