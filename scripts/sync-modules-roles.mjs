@@ -28,6 +28,7 @@ const CATALOGO = [
     ['PROGRAMAS',     'Programas'],
     ['DOCENTES',      'Docentes'],
     ['CRONOGRAMA',    'Cronograma'],
+    ['PLANIFICACION', 'Planificacion'],
     ['PRECIOS',       'Lista de Precios'],
     ['LINKS',         'Carga de Links'],
   ]],

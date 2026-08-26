@@ -17,6 +17,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
+  selectChildrenToRetireOnCourseChange,
   MEMBERSHIP_ACTIVATION_WINDOW_MONTHS
 } from './enrollment.entity.js'
 import { toEnrollmentListDto, toPaymentDetailDto } from './enrollment.dto.js'
@@ -343,6 +344,34 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
 
 // --- Cambio de curso -----------------------------------------------------
 
+// Retira los modulos del paquete origen que todavia no empiezan y devuelve sus
+// etiquetas para la bitacora. Espeja lo que ya hacian reprogramEdition y
+// retireEnrollment; la regla de CUALES retirar vive en la entity.
+async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId, userId, justificacion, destinationLabel }) {
+  const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
+  if (!retId) {
+    console.warn('[courseChange] No se encontro catalogo Retirado: modulos del origen sin retirar')
+    return []
+  }
+  const children = await repo.getActiveChildren(enrollmentId, retId)
+  const porRetirar = selectChildrenToRetireOnCourseChange({
+    children, destinationEnrollmentId, today: new Date()
+  })
+  const retirados = []
+  for (const child of porRetirar) {
+    await repo.retireChild(child.enrollment_id, retId)
+    await repo.logAudit({
+      enrollmentId: child.enrollment_id,
+      action: 'retired',
+      userId,
+      justificacion,
+      details: `Retirado por cambio de curso del programa padre #${enrollmentId} hacia ${destinationLabel} (nueva inscripcion #${destinationEnrollmentId})`
+    })
+    retirados.push(`${child.child_program_name || ''} ${child.edition_code || ''}`.trim())
+  }
+  return retirados
+}
+
 export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
@@ -403,11 +432,22 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
       repo.createChildEnrollments({ enrollmentId: newEid, userId }))
   }
 
+  // Modulos del paquete ORIGEN que aun no empiezan: el alumno se fue a otro
+  // programa, ya no los va a llevar. Sin esto quedaban vivos ocupando asiento en
+  // sus aulas (11 casos al 25/08/2026, ver selectChildrenToRetireOnCourseChange).
+  const retiredChildren = await retireUnstartedChildren({
+    enrollmentId, destinationEnrollmentId: newEid, userId, justificacion,
+    destinationLabel: `${newEd.new_program_name || ''} ${newEd.global_code || ''}`.trim()
+  })
+
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'
   const changes = {
     'Programa anterior': { old: `${old.old_program_name || '---'} - ${old.old_edition_code || '---'} (${fmtDate(old.old_start_date)})`, new: '---' },
     'Programa nuevo': { old: '---', new: `${newEd.new_program_name || '---'} - ${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})` },
     'Nuevo enrollment': { old: '---', new: `#${newEid || '---'}` }
+  }
+  if (retiredChildren.length > 0) {
+    changes['Modulos retirados'] = { old: '---', new: retiredChildren.join(', ') }
   }
 
   await repo.logAudit({

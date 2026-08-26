@@ -873,6 +873,7 @@ export class EnrollmentRepository {
       SELECT e.enrollment_id, e.program_version_id,
              pv2.abbreviation AS child_program_name,
              pe2.global_code AS edition_code,
+             pe2.start_date,
              to_char(pe2.start_date, 'DD/MM/YYYY') AS start_date_fmt
       FROM enrollments e
       LEFT JOIN program_versions pv2 ON pv2.program_version_id = e.program_version_id

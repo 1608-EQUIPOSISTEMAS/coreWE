@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EXCLUDE_IMPORTED, IMPORT_OBSERVATION_TOKEN } from '../integration.repository.js'
+import { EXCLUDE_IMPORTED, IMPORT_OBSERVATION_TOKEN, IntegrationRepository } from '../integration.repository.js'
 
 // Emula la semantica de `COALESCE(observations,'') NOT LIKE '%masiva FICO%'`:
 // la fila se EXCLUYE del sync cuando observations contiene el token.
@@ -32,5 +32,14 @@ describe('EXCLUDE_IMPORTED', () => {
 
   it('no excluye ventas normales ni filas sin observations', () => {
     for (const obs of NORMAL) expect(isExcluded(obs)).toBe(false)
+  })
+
+  // La hoja de convenios nacio sin este filtro y se lleno de importaciones: el
+  // origen B2B tambien lo traen las ventas que entraron por la hoja FICO.
+  it('la query de la hoja "7. Convenios" lo aplica', async () => {
+    let sql = ''
+    const db = { query: (texto) => { sql = texto; return { rows: [] } } }
+    await new IntegrationRepository(db).getFicoConvenios()
+    expect(sql).toContain(IMPORT_OBSERVATION_TOKEN)
   })
 })

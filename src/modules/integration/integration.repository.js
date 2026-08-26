@@ -531,9 +531,10 @@ export class IntegrationRepository {
   }
 
   // Ventas B2B (convenios) pagadas desde CONVENIOS_FROM_DATE. Alimenta la hoja
-  // "7. Convenios". A diferencia de las otras hojas NO aplica SYNC_FROM (tiene
-  // su propio corte) ni EXCLUDE_IMPORTED: los convenios no entraron por la
-  // importacion masiva.
+  // "7. Convenios". No aplica SYNC_FROM porque tiene su propio corte, pero si
+  // EXCLUDE_IMPORTED: la importacion masiva tambien trae ventas con origen B2B
+  // (39 de las 50 filas del 2026-08-25 eran importadas) y esas ya estan en la
+  // hoja de origen.
   async getFicoConvenios () {
     const { rows } = await this.db.query(`
     SELECT
@@ -618,6 +619,7 @@ export class IntegrationRepository {
       AND cf.alias = 'we_enrollment_status_checked'
       ${IS_B2B}
       ${PARENT_OR_CC_DESTINATION}
+      ${EXCLUDE_IMPORTED}
       ${EXCLUDE_HELD}
       AND pay_eff.f_pago_date >= DATE '${CONVENIOS_FROM_DATE}'
     ORDER BY pay_eff.f_pago_date, e.enrollment_id

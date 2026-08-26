@@ -16,6 +16,7 @@ import programRoutes from './modules/program/program.routes.js'
 import programDiscounts from './modules/discount/discount.routes.js'
 import instructorRoutes from './modules/instructor/instructor.routes.js'
 import editionRoutes from './modules/edition/edition.routes.js'
+import schedulePlanRoutes from './modules/scheduleplan/scheduleplan.routes.js'
 import customerRoutes from './modules/customer/customer.routes.js'
 import authRoutes from './modules/auth/auth.routes.js'
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js'
@@ -196,6 +197,7 @@ export async function buildApp (opts = {}) {
   await app.register(programDiscounts, { prefix: '/api/discount' })
   await app.register(instructorRoutes, { prefix: '/api/instructor' })
   await app.register(editionRoutes, { prefix: '/api/edition' })
+  await app.register(schedulePlanRoutes, { prefix: '/api/scheduleplan' })
   await app.register(customerRoutes, { prefix: '/api/customer' })
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(integrationRoutes, { prefix: '/api/integration' })

@@ -99,7 +99,21 @@ const { rows: rosterPadres } = await q(`${cte})
   SELECT enrollment_id, comm_bucket FROM roster`, [edicionesPadre.map(e => e.id)])
 const ventasContadas = new Set(rosterPadres.filter(r => CANALES.has(r.comm_bucket)).map(r => r.enrollment_id))
 
-const huerfanos = primerosCurso.filter(r => !ventasContadas.has(r.parent_enrollment_id))
+const sinVenta = primerosCurso.filter(r => !ventasContadas.has(r.parent_enrollment_id))
+// Un padre en estado CC es causa legitima: el alumno curso ese modulo y DESPUES
+// se cambio de programa, asi que sigue ocupando el asiento (decision de negocio
+// del 25/08/2026) mientras su venta se fue con el destino del cambio.
+const { rows: padres } = await q(
+  `SELECT e.enrollment_id, cts.alias AS estado FROM enrollments e
+     LEFT JOIN catalog cts ON cts.catalog_id = e.cat_type_status
+    WHERE e.enrollment_id = ANY($1::int[])`, [sinVenta.map(r => r.parent_enrollment_id)])
+const estadoPadre = new Map(padres.map(p => [p.enrollment_id, p.estado]))
+const esCambioDeCurso = h => estadoPadre.get(h.parent_enrollment_id) === 'we_enrollment_status_course_changed'
+
+const huerfanos = sinVenta.filter(h => !esCambioDeCurso(h))
+for (const h of sinVenta.filter(esCambioDeCurso)) {
+  console.log(`   (ok) aula ${h.edition_num_id}: #${h.enrollment_id} lo curso y despues se cambio de programa (venta #${h.parent_enrollment_id} en CC)`)
+}
 if (huerfanos.length) {
   console.log('\nASISTEN AL AULA PERO SU VENTA NO SE CUENTA EN NINGUNA FILA:')
   for (const h of huerfanos) console.log(`   aula ${h.edition_num_id}: #${h.enrollment_id} (su venta es #${h.parent_enrollment_id})`)

@@ -180,7 +180,8 @@ describe('modulos montados en buildApp', () => {
 
   it.each([
     ['b2b', '/api/b2b'],
-    ['reprogramacion', '/api/reprogramacion']
+    ['reprogramacion', '/api/reprogramacion'],
+    ['scheduleplan', '/api/scheduleplan']
   ])(
     'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
       const noMontadas = []

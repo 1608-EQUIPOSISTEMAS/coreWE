@@ -16,6 +16,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
+  selectChildrenToRetireOnCourseChange,
   PAID_INSTALLMENT_CAT_IDS
 } from '../enrollment.entity.js'
 
@@ -359,5 +360,44 @@ describe('assertModalityChangeNeeded', () => {
     expect(() => assertModalityChangeNeeded({
       currentModalityId: normal, newModalityId: flexible, childrenCount: 0, childrenInModality: 0
     })).not.toThrow()
+  })
+})
+
+
+describe('selectChildrenToRetireOnCourseChange', () => {
+  const hijos = [
+    { enrollment_id: 1, start_date: '2026-05-09' },   // ya dictado
+    { enrollment_id: 2, start_date: '2026-07-30' },   // arranca hoy
+    { enrollment_id: 3, start_date: '2026-09-06' },   // futuro
+    { enrollment_id: 9, start_date: '2026-09-19' }    // el DESTINO del cambio
+  ]
+
+  it('retira solo los modulos que aun no empiezan', () => {
+    const r = selectChildrenToRetireOnCourseChange({
+      children: hijos, destinationEnrollmentId: 9, today: '2026-07-30'
+    })
+    expect(r.map(c => c.enrollment_id)).toEqual([3])
+  })
+
+  it('nunca retira la inscripcion destino, aunque empiece despues', () => {
+    const r = selectChildrenToRetireOnCourseChange({
+      children: hijos, destinationEnrollmentId: 9, today: '2026-01-01'
+    })
+    expect(r.map(c => c.enrollment_id)).not.toContain(9)
+  })
+
+  it('ignora hijos sin edicion (E0): no hay fecha que comparar', () => {
+    const r = selectChildrenToRetireOnCourseChange({
+      children: [{ enrollment_id: 7, start_date: null }], destinationEnrollmentId: 9, today: '2026-07-30'
+    })
+    expect(r).toEqual([])
+  })
+
+  it('acepta Date igual que string ISO', () => {
+    const r = selectChildrenToRetireOnCourseChange({
+      children: [{ enrollment_id: 3, start_date: new Date('2026-09-06T00:00:00Z') }],
+      destinationEnrollmentId: 9, today: new Date('2026-07-30T00:00:00Z')
+    })
+    expect(r.map(c => c.enrollment_id)).toEqual([3])
   })
 })

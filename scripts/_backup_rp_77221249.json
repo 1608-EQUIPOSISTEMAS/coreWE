@@ -1,0 +1,104 @@
+{
+  "caso": "Importacion manual de la cadena RP de la hoja FICO (filas 209 y 246): BI-DZ-02 E32 -> E33, alumna DNI 77221249. Beca 100%, sin cuotas ni pagos. Correo y Odoo ya resueltos a mano (ENVIO = OK en la hoja): no se encola register_followup.",
+  "aplicado_en": "2026-08-26T17:09:49.097Z",
+  "origen": {
+    "enrollment_id": 17872,
+    "hijos": [
+      {
+        "enrollment_id": 17873,
+        "version_code": "BI-CZ-06",
+        "edicion": "E33",
+        "inicio": "2026-03-25T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "R",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17874,
+        "version_code": "BI-CZ-01",
+        "edicion": "E96",
+        "inicio": "2026-04-22T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "R",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17875,
+        "version_code": "BI-CZ-03",
+        "edicion": "E136",
+        "inicio": "2026-05-20T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "R",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17876,
+        "version_code": "BI-CZ-12",
+        "edicion": "E53",
+        "inicio": "2026-06-17T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "R",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17877,
+        "version_code": "BI-CZ-13",
+        "edicion": "E34",
+        "inicio": "2026-07-15T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "R",
+        "plan": "Al contado"
+      }
+    ]
+  },
+  "destino": {
+    "enrollment_id": 17878,
+    "hijos": [
+      {
+        "enrollment_id": 17879,
+        "version_code": "BI-CZ-06",
+        "edicion": "E34",
+        "inicio": "2026-04-25T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "SEG",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17880,
+        "version_code": "BI-CZ-01",
+        "edicion": "E97",
+        "inicio": "2026-06-06T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "SEG",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17881,
+        "version_code": "BI-CZ-03",
+        "edicion": "E137",
+        "inicio": "2026-07-18T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "SEG",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17882,
+        "version_code": "BI-CZ-12",
+        "edicion": "E56",
+        "inicio": "2026-08-29T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "SEG",
+        "plan": "Al contado"
+      },
+      {
+        "enrollment_id": 17883,
+        "version_code": "BI-CZ-13",
+        "edicion": "E35",
+        "inicio": "2026-10-10T05:00:00.000Z",
+        "total_amount": "0.00",
+        "estado": "SEG",
+        "plan": "Al contado"
+      }
+    ]
+  }
+}

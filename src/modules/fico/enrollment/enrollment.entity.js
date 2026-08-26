@@ -271,6 +271,24 @@ export function courseChangeAmountDifference (oldTotal, oldDiscount, newTotal) {
   return { oldAmount, amountDifference: Number(newTotal || 0) - oldAmount }
 }
 
+// Modulos del paquete ORIGEN que hay que retirar tras un cambio de curso: los
+// que TODAVIA NO EMPIEZAN. El alumno ya no los va a llevar (se fue a otro
+// programa), pero los que ya arrancaron se quedan: se sento en esa aula y tanto
+// su historial como el contador del cronograma tienen que seguir mostrandolo.
+// Por eso el CC no puede retirar a ciegas como la RP, donde el paquete entero se
+// muda de fecha. Confirmado con negocio el 25/08/2026.
+// El DESTINO cuelga del origen igual que un modulo (parent = origen) y casi
+// siempre empieza en el futuro: si no se excluye, el cambio de curso retiraria
+// la inscripcion que acaba de crear.
+export function selectChildrenToRetireOnCourseChange ({ children = [], destinationEnrollmentId, today }) {
+  const day = value => value instanceof Date ? value.toISOString().slice(0, 10) : String(value || '').slice(0, 10)
+  const from = day(today)
+  return children.filter(child =>
+    child.enrollment_id !== destinationEnrollmentId &&
+    child.start_date && day(child.start_date) > from
+  )
+}
+
 // --- Reprogramacion (RP) ---------------------------------------------------
 
 const round2 = n => Math.round(Number(n) * 100) / 100
