@@ -93,10 +93,12 @@ export const CONVENIOS_HEADER_ROW = [
 ]
 
 // En esta hoja el negocio clasifica TODA venta B2B igual: el cliente es la
-// empresa nacional y el "programa" es la linea comercial Convenios, no el
+// empresa nacional y el "programa" es la linea comercial Convenio, no el
 // curso vendido (ese va en NOMBRE P.). Por eso son constantes y no columnas.
+// PROGRAMA va en singular: es la opcion que trae la lista de la hoja, el plural
+// dejaba la celda fuera del catalogo.
 const CONVENIOS_TIPO_CLIENTE = 'B2B NACIONAL'
-const CONVENIOS_PROGRAMA = 'CONVENIOS'
+const CONVENIOS_PROGRAMA = 'CONVENIO'
 
 // UNIDAD es una lista desplegable de la hoja: si el texto no coincide letra por
 // letra con una de sus opciones, la celda queda marcada como invalida. El

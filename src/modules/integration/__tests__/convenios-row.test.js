@@ -29,7 +29,7 @@ describe('buildConveniosRow', () => {
     const celdas = buildConveniosRow(fila)
     expect(celdas).toHaveLength(CONVENIOS_HEADER_ROW.length)
     expect(celdas).toEqual([
-      '12/08/2026', 'CLINICA INTERNACIONAL S A', 'B2B NACIONAL', 'CONVENIOS',
+      '12/08/2026', 'CLINICA INTERNACIONAL S A', 'B2B NACIONAL', 'CONVENIO',
       'JANETH NATALY CASTILLO GUTIERREZ', '937378654', 'GEST. COMP. Y PROV.',
       '26/08/2026', 'P', '14/08/2026', 'PEN', '328,00', 'PP', 'AGO', '2026',
       'janicastillog@gmail.com', '80,00', 'CURSO', 'En vivo', 'B2B - AE30'
@@ -45,11 +45,11 @@ describe('buildConveniosRow', () => {
   })
 
   // El negocio pidio (2026-08-25) que estas dos columnas sean fijas: toda
-  // venta de la hoja es B2B NACIONAL y su linea comercial es CONVENIOS.
+  // venta de la hoja es B2B NACIONAL y su linea comercial es CONVENIO.
   it('fija TIPO DE CLIENTE y PROGRAMA aunque la query traiga otra cosa', () => {
     const celdas = buildConveniosRow({ ...fila, tipo_cliente: 'P', programa: 'GESTION DE COMPRAS' })
     expect(celdas[2]).toBe('B2B NACIONAL')
-    expect(celdas[3]).toBe('CONVENIOS')
+    expect(celdas[3]).toBe('CONVENIO')
   })
 
   // La lista desplegable de UNIDAD solo acepta Online / En vivo / Evento /
