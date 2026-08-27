@@ -4,7 +4,7 @@ import { DomainError } from '../../../shared/errors.js'
 // red ni reloj oculto: todo entra por parametros y se valida sobre datos en
 // memoria. Esto las hace testeables sin levantar nada.
 
-export const MAX_TOKENS_PER_GROUP = 5
+export const MAX_TOKENS_PER_GROUP = 10
 export const MAX_GROUP_AMOUNT = 3000
 
 // Constantes del flujo de inscripcion en cuotas creada al confirmar un token.
@@ -74,7 +74,9 @@ export function assertGroupable (tokens, userId) {
     throw new DomainError('Selecciona al menos 2 tokens para agrupar')
   }
   if (tokens.length > MAX_TOKENS_PER_GROUP) {
-    throw new DomainError(`Maximo ${MAX_TOKENS_PER_GROUP} tokens por grupo`)
+    throw new DomainError(
+      `El limite de agrupacion es de ${MAX_TOKENS_PER_GROUP} tokens por grupo (seleccionaste ${tokens.length})`
+    )
   }
   if (tokens.some(t => t.requested_by !== userId)) {
     throw new DomainError('Solo puedes agrupar tus propios tokens')

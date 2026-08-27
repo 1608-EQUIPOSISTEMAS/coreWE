@@ -69,9 +69,24 @@ describe('assertGroupable (contribucion)', () => {
     expect(() => assertGroupable([tokenRow()], 7)).toThrow(DomainError)
   })
 
-  it(`rechaza mas de ${MAX_TOKENS_PER_GROUP} tokens`, () => {
-    const many = Array.from({ length: MAX_TOKENS_PER_GROUP + 1 }, (_, i) => tokenRow({ token_id: i + 1 }))
+  it('el limite de agrupacion acordado con FICO es 10', () => {
+    expect(MAX_TOKENS_PER_GROUP).toBe(10)
+  })
+
+  it(`acepta exactamente ${MAX_TOKENS_PER_GROUP} tokens`, () => {
+    // 10 x 300 = 3000, justo en MAX_GROUP_AMOUNT: aisla la regla de cantidad
+    // sin que la de monto la tape.
+    const max = Array.from({ length: MAX_TOKENS_PER_GROUP }, (_, i) => tokenRow({ token_id: i + 1, amount: 300 }))
+    expect(assertGroupable(max, 7).count).toBe(MAX_TOKENS_PER_GROUP)
+  })
+
+  it(`rechaza mas de ${MAX_TOKENS_PER_GROUP} tokens con un mensaje que nombra el limite`, () => {
+    const many = Array.from({ length: MAX_TOKENS_PER_GROUP + 1 }, (_, i) => tokenRow({ token_id: i + 1, amount: 1 }))
     expect(() => assertGroupable(many, 7)).toThrow(DomainError)
+    // El asesor tiene que leer cuantos puede agrupar y cuantos selecciono, no
+    // un "Datos invalidos" generico.
+    expect(() => assertGroupable(many, 7))
+      .toThrow(`El limite de agrupacion es de ${MAX_TOKENS_PER_GROUP} tokens por grupo (seleccionaste ${MAX_TOKENS_PER_GROUP + 1})`)
   })
 
   it('rechaza tokens de otro asesor', () => {

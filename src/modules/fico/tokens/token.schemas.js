@@ -61,12 +61,20 @@ export const confirmTokenSchema = {
   }
 }
 
+// El tope de negocio (MAX_TOKENS_PER_GROUP) NO se valida aqui a proposito: AJV
+// corta antes del handler y el error handler global colapsa cualquier fallo de
+// schema en un "Datos invalidos" generico, asi que el asesor que seleccionaba de
+// mas no sabia por que. La cantidad la valida assertGroupable(), que lanza un
+// DomainError nombrando el limite. maxItems queda solo como guardia de payload
+// -- muy por encima del tope real -- para no consultar BD con listas absurdas.
+export const MAX_GROUP_PAYLOAD_ITEMS = 100
+
 export const groupTokensSchema = {
   body: {
     type: 'object',
     required: ['token_ids'],
     properties: {
-      token_ids: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: 5 }
+      token_ids: { type: 'array', items: { type: 'integer' }, minItems: 2, maxItems: MAX_GROUP_PAYLOAD_ITEMS }
     }
   }
 }
