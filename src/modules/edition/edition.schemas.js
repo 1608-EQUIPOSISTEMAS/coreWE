@@ -422,6 +422,19 @@ export const weeklySessionsSchema = {
 // Control de ediciones: aulas que inician en la semana ISO (1..53).
 export const weeklyControlSchema = weeklySessionsSchema
 
+// Seguimiento Docentes: rango libre de fechas calendario (YYYY-MM-DD).
+export const teacherFollowupSchema = {
+  body: {
+    type: 'object',
+    required: ['date_start', 'date_end'],
+    additionalProperties: false,
+    properties: {
+      date_start: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      date_end: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+    }
+  }
+}
+
 // Estado de una sesion: A dictada, R reprogramada (new_date), T tardanza.
 // status null limpia la gestion de esa sesion.
 export const sessionControlSaveSchema = {

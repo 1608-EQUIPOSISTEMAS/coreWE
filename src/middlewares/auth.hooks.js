@@ -61,8 +61,9 @@ export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO
 // Fundacion entra por los campos "Empresa vinculada" y "Convenio corporativo"
 // del formulario de leads, que consultan /b2b/companylist y /b2b/agreementlist.
 export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA', 'FUNDACION', 'LIDER_FUNDACION'])
-// Mismos roles que declara _nav.js para el grupo Marketing del sidebar.
-export const ALL_MARKETING = hasModuleOrRole('MARKETING', ['ADMIN', 'GERENCIA'])
+// El grupo Marketing del sidebar se elimino (2026-08-26). Lo unico que sobrevive
+// bajo /api/marketing es ingresos-b2c, que sirve al Reporte Completo de Gerencia.
+export const ALL_GERENCIA = hasModuleOrRole('GERENCIA', ['ADMIN', 'GERENCIA'])
 // Reprogramaciones es un flujo a cuatro manos: Academica elige el destino y FICO
 // lo firma, asi que los dos entran a la bandeja. El veredicto usa ALL_FICO.
 export const ALL_REPROGRAMACION = hasModuleOrRole('REPROGRAMACION', [

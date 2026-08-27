@@ -20,6 +20,7 @@ import {
   editionByWeekListSchema,
   weeklySessionsSchema,
   weeklyControlSchema,
+  teacherFollowupSchema,
   sessionControlSaveSchema,
   editionGetSchema,
   editionUpdateSchema,
@@ -76,6 +77,11 @@ export default async function editionRoutes (fastify) {
   fastify.post('/weeklycontrol', {
     schema: weeklyControlSchema
   }, ctrl.weeklyControlHandler)
+
+  // Seguimiento Docentes: cronograma S1..Sn + auditoria por sesion en un rango.
+  fastify.post('/teacherfollowup', {
+    schema: teacherFollowupSchema
+  }, ctrl.teacherFollowupHandler)
 
   fastify.post('/sessioncontrolsave', {
     schema: sessionControlSaveSchema

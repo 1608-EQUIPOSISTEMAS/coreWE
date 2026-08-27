@@ -37,6 +37,11 @@ export async function weeklyControlHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function teacherFollowupHandler (req, reply) {
+  const data = await usecases.editionTeacherFollowup(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function sessionControlSaveHandler (req, reply) {
   const data = await usecases.editionSessionControlSave({
     ...req.body,

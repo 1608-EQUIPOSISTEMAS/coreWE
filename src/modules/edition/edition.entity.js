@@ -687,6 +687,33 @@ export function buildControlRow (r, { dayCombos = [], holidaySet = new Set(), co
   }
 }
 
+// Seguimiento Docentes: pega la nota de auditoria sobre el cronograma
+// derivado. Una sesion sin fila en la rubrica queda en null — "todavia no
+// auditada" no es lo mismo que "auditada en cero", y la vista las pinta
+// distinto. La nota manual ya viene sobre 20 (cantidad de criterios marcados
+// de RUBRIC_TOTAL_ITEMS); la de IA la escalo el repositorio.
+export function attachSessionAudits (row, auditRows = []) {
+  const byNumber = new Map(
+    auditRows
+      .filter((a) => Number(a.program_edition_id) === Number(row.edition_num_id))
+      .map((a) => [Number(a.session_number), a])
+  )
+  return {
+    ...row,
+    sessions: row.sessions.map((s) => {
+      const audit = byNumber.get(Number(s.session_number))
+      const manual = Number(audit?.manual_marked)
+      const ai = Number(audit?.ai_score20)
+      return {
+        ...s,
+        manual_20: Number.isFinite(manual) && manual > 0 ? manual : null,
+        ai_20: Number.isFinite(ai) ? ai : null,
+        audited_at: audit?.audited_at || null
+      }
+    })
+  }
+}
+
 // Convierte una fecha DD/MM/YYYY a YYYY-MM-DD. Si no tiene 3 partes, devuelve
 // el valor original. Usada en el bulk de WhatsApp para normalizar la fecha.
 export function formatStartDate (startDate) {

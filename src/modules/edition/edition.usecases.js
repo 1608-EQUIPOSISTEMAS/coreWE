@@ -15,6 +15,7 @@ import {
   isoWeekRange,
   buildWeeklySessionDays,
   buildControlRow,
+  attachSessionAudits,
   buildSessionSchedule,
   getAllowedDays,
   b2bAttendanceSummary,
@@ -152,6 +153,30 @@ export async function editionWeeklyControl ({ year, week } = {}) {
       return first && first.date <= date_end && last.date >= date_start
     })
   return { year: y, week: w, date_start, date_end, editions }
+}
+
+// Seguimiento Docentes (Reporte Academico): mismo cronograma derivado del
+// Control de Ediciones — S1..Sn con reprogramaciones — pero para un rango
+// libre de fechas y con la nota de auditoria de cada sesion pegada encima.
+// Responde "que sesion de que aula llego con auditoria", que es lo que el
+// agregado por aula del reporte no puede decir.
+export async function editionTeacherFollowup ({ date_start, date_end } = {}) {
+  const [rows, catalog] = await Promise.all([
+    repo.weeklyControlEditions(date_start, date_end),
+    getCatalog()
+  ])
+  const ids = rows.map((r) => Number(r.edition_num_id))
+  const [controls, audits] = await Promise.all([
+    repo.sessionControlsList(ids),
+    repo.classroomAuditSessionsList(ids)
+  ])
+  const ctx = {
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+    controls
+  }
+  const editions = rows.map((r) => attachSessionAudits(buildControlRow(r, ctx), audits))
+  return { date_start, date_end, editions }
 }
 
 // Guarda el estado de una sesion (A/R/T, con nueva fecha si es R) y devuelve

@@ -65,10 +65,6 @@ const CATALOGO = [
     ['EMBUDO',           'Embudo Consultas-Ventas'],
     ['REPORTE_COMPLETO', 'Reporte Completo'],
   ]],
-  ['MARKETING',     'Marketing',      '/marketing',              [
-    ['PUBLICACIONES', 'Publicaciones RRSS'],
-    ['CRECIMIENTO',   'Crecimiento RRSS'],
-  ]],
   ['CLIENTE',       'Cliente',        '/general/cliente',        []],
   ['NOTIFICACIONES','Notificaciones', '/general/notificaciones', []],
   ['CONFIGURACION', 'Configuracion',  '/configuracion',          [

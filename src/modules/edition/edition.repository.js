@@ -1440,6 +1440,31 @@ export class EditionRepository {
     return rows
   }
 
+  // Version SIN agregar de classroomAuditSummaryList: una fila por sesion
+  // evaluada de varias aulas. La usa el Seguimiento Docentes, que necesita
+  // saber QUE sesion trae auditoria, no cuantas.
+  async classroomAuditSessionsList (ids) {
+    await this.ensureRubricTable()
+    if (!ids.length) return []
+    const { rows } = await this.db.query(`
+    SELECT car.program_edition_id,
+           car.session_number,
+           (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
+             AS manual_marked,
+           CASE
+             WHEN car.ai_report IS NOT NULL
+              AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
+             THEN ROUND((car.ai_report #>> '{metricas_rapidas,puntuacion_global}')::numeric * 4, 2)
+             ELSE NULL
+           END AS ai_score20,
+           GREATEST(car.updated_at, COALESCE(car.ai_generated_at, '-infinity'::timestamptz))
+             AS audited_at
+      FROM public.classroom_audit_rubric car
+     WHERE car.program_edition_id = ANY($1::int[])
+  `, [ids])
+    return rows
+  }
+
   // Carga toda la rubrica de evaluacion de una edicion (una fila por sesion
   // ya evaluada), ordenada por numero de sesion.
   async classroomAuditGet (id) {

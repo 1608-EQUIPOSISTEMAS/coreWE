@@ -17,7 +17,8 @@ import {
   sessionNumbersForRange,
   buildWeeklySessionDays,
   buildSessionSchedule,
-  buildControlRow
+  buildControlRow,
+  attachSessionAudits
 } from '../edition.entity.js'
 
 describe('normalizeActive (listado)', () => {
@@ -312,6 +313,30 @@ describe('buildSessionSchedule (Control de ediciones)', () => {
   it('un feriado corre la sesion planificada', () => {
     const s = buildSessionSchedule({ ...base, holidaySet: new Set(['2026-05-13']) })
     expect(s[1].date).toBe('2026-05-18')
+  })
+})
+
+describe('attachSessionAudits (Seguimiento Docentes)', () => {
+  const row = {
+    edition_num_id: 7,
+    sessions: [
+      { session_number: 1, date: '2026-05-11' },
+      { session_number: 2, date: '2026-05-13' }
+    ]
+  }
+  it('pega la nota de la sesion auditada y deja la otra en null', () => {
+    const out = attachSessionAudits(row, [
+      { program_edition_id: 7, session_number: 1, manual_marked: 18, ai_score20: '16.40' },
+      { program_edition_id: 9, session_number: 2, manual_marked: 5, ai_score20: '5' }
+    ])
+    expect(out.sessions[0]).toMatchObject({ manual_20: 18, ai_20: 16.4 })
+    expect(out.sessions[1]).toMatchObject({ manual_20: null, ai_20: null })
+  })
+  it('rubrica abierta sin criterios marcados no cuenta como nota manual cero', () => {
+    const out = attachSessionAudits(row, [
+      { program_edition_id: 7, session_number: 1, manual_marked: 0, ai_score20: null }
+    ])
+    expect(out.sessions[0].manual_20).toBeNull()
   })
 })
 
