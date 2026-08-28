@@ -1,0 +1,12 @@
+[
+  {
+    "enrollment_id": 2498,
+    "total_amount": "245.00",
+    "list_price": "700.00",
+    "discount_amount": "455.00",
+    "installment_id": 3203,
+    "cuota": "245.00",
+    "payment_id": 2221,
+    "pago": "245.00"
+  }
+]

@@ -8,7 +8,7 @@
 import { pool } from './db.mjs'
 
 const ROLES_EXTRA  = ['LIDER_COMERCIAL', 'ADMIN', 'GERENCIA']
-const ROLES_AJENOS = ['FUNDACION', 'LIDER_FUNDACION', 'B2B']
+const ROLES_AJENOS = ['FUNDACION', 'LIDER_FUNDACION', 'B2B', 'LIDER_B2B']
 
 function assert (condicion, mensaje) {
   if (!condicion) throw new Error(`FALLO: ${mensaje}`)

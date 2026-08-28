@@ -8,7 +8,7 @@
 //
 // Uso:  node scripts/habilitar-sync-fico.mjs 2495 [2496 ...] [--aplicar]
 import { q, pool } from './db.mjs'
-import { EXCLUDE_IMPORTED, EXCLUDE_HELD, SYNC_FROM, PARENT_OR_CC_DESTINATION }
+import { EXCLUDE_IMPORTED, EXCLUDE_UNCOLLECTED, SYNC_FROM, PARENT_OR_CC_DESTINATION }
   from '../src/modules/integration/integration.repository.js'
 
 const MARCADOR = 'Importacion masiva FICO (hoja)'
@@ -33,7 +33,7 @@ const entranAlSync = async () => {
        AND e.enrollment_id = ANY($1::int[])
        ${PARENT_OR_CC_DESTINATION}
        ${EXCLUDE_IMPORTED}
-       ${EXCLUDE_HELD}
+       ${EXCLUDE_UNCOLLECTED}
        ${SYNC_FROM}`, [ids])
   return rows.map(r => r.enrollment_id)
 }

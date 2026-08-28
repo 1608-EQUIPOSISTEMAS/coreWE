@@ -2,6 +2,7 @@ import { pool } from '../../shared/db/pool.js'
 import { google } from 'googleapis'
 import path from 'path'
 import { WebClient } from '@slack/web-api'
+import { ALIAS } from '../../utils/catalog-aliases.js'
 
 // Capa de infraestructura del modulo integration. Centraliza el acceso a la
 // base de datos, a Google Sheets y a Slack para que los usecases no instancien
@@ -87,14 +88,16 @@ export const EXCLUDE_IMPORTED = `
 // Token que el note de la importacion masiva debe contener para ser excluido.
 export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
 
-// Ordenes de pago del flujo antiguo: la inscripcion ya esta verificada en el
-// sistema pero todavia no se cobro, y el negocio no la cuenta hasta que pague.
-// Se retienen del sync a Sheets (ventas, aula, pagos y adicionales usan la misma
-// CTE `approved`); cuando el alumno paga se borra su id de aqui y entra sola en
-// la siguiente sincronizacion. Igual que ZERO_AMOUNT_EMAILS, editar la lista
-// exige redeploy.
-// ponytail: lista en codigo; mover a un flag en BD si crece o rota seguido.
-export const HELD_ENROLLMENT_IDS = [13790, 13791, 14344, 14345, 14346, 14347, 14348]
+// Ventas del flujo VIEJO de ordenes de servicio, retenidas a mano: la
+// inscripcion ya esta verificada pero todavia no se cobro, y el negocio no la
+// cuenta hasta que pague. Ahi la orden se declaraba escribiendola en `notes`,
+// asi que no hay forma de reconocerla por dato y hay que enumerarlas.
+// Cuando el alumno paga se borra su id de aqui. Igual que ZERO_AMOUNT_EMAILS,
+// editar la lista exige redeploy.
+// ponytail: lista en codigo; las OS nuevas ya no la necesitan (ver abajo).
+//
+// 13790 y 13791 (Grupo Tawa, S/328 c/u) cobradas el 2026-08-28: liberadas.
+export const HELD_ENROLLMENT_IDS = [14344, 14345, 14346, 14347, 14348]
 
 // Retiene tambien a las hijas de paquete: sin esto la venta del padre no sube
 // pero sus hijos SEG si. La lista vacia devuelve '' porque `NOT IN ()` no es SQL
@@ -104,6 +107,45 @@ export const EXCLUDE_HELD = HELD_ENROLLMENT_IDS.length === 0
   : `
          AND e.enrollment_id NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})
          AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})`
+
+// Flujo NUEVO: el asesor marca la venta como Orden de Servicio / de Compra y
+// FICO la aprueba sin cobrar, porque la empresa deposita semanas despues
+// (`markCheckedWithoutPayment` en fico/payment-confirmation). Hasta ese momento
+// no hay plata y la venta no debe sumar en el Sheet; entraba igual, y solo se
+// frenaba metiendola a mano en HELD_ENROLLMENT_IDS.
+//
+// La senal es la ausencia de `payments`: la OS sin cobrar se aprueba sin ninguna
+// fila de pago, y `sp_fico_confirm_payment` crea la primera recien cuando FICO
+// registra el cobro. Entonces la venta entra sola en la siguiente sincronizacion,
+// sin lista ni redeploy.
+//
+// NO sirve mirar `cat_settlement_status`: los 6167 pagos activos de produccion
+// dicen "Pendiente de liquidacion", nadie liquida nunca. Tampoco el estado de la
+// cuota: queda `we_inst_paid` en las dos.
+//
+// Solo aplica con monto > 0. Las ventas documentales B2B de total 0 (cartas de
+// compromiso y las OC de convenio) no tienen nada que cobrar: excluirlas
+// borraria al alumno de las hojas sin que hubiera un ingreso pendiente detras.
+export const EXCLUDE_UNCOLLECTED_SERVICE_ORDER = `
+         AND NOT EXISTS (
+           SELECT 1
+             FROM public.enrollments os
+             JOIN public."catalog" c_doc ON c_doc.catalog_id = os.cat_b2b_doctype
+            WHERE os.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+              AND c_doc.alias IN ('${ALIAS.B2B_DOCTYPE_SERVICE_ORDER}',
+                                  '${ALIAS.B2B_DOCTYPE_PURCHASE_ORDER}')
+              AND os.total_amount > 0
+              AND NOT EXISTS (
+                    SELECT 1 FROM public.payments py
+                     WHERE py.enrollment_id = os.enrollment_id AND py.active = 'Y'
+                  )
+         )`
+
+// Todo lo aprobado pero aun no cobrado, que es lo que ninguna hoja debe sumar:
+// la lista manual del flujo viejo mas la regla automatica de las OS nuevas.
+// Se aplica a las 7 CTEs `approved` para que ventas, aula, pagos, adicionales y
+// convenios cuenten lo mismo.
+export const EXCLUDE_UNCOLLECTED = EXCLUDE_HELD + EXCLUDE_UNCOLLECTED_SERVICE_ORDER
 
 // El destino de un Cambio de Curso lleva parent_enrollment_id = origen (lo setea
 // finalizeCourseChange), asi que el filtro "parent_enrollment_id IS NULL" que deja
@@ -316,7 +358,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_HELD}
+         ${EXCLUDE_UNCOLLECTED}
          ${SYNC_FROM}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
@@ -620,7 +662,7 @@ export class IntegrationRepository {
       ${IS_B2B}
       ${PARENT_OR_CC_DESTINATION}
       ${EXCLUDE_IMPORTED}
-      ${EXCLUDE_HELD}
+      ${EXCLUDE_UNCOLLECTED}
       AND pay_eff.f_pago_date >= DATE '${CONVENIOS_FROM_DATE}'
     ORDER BY pay_eff.f_pago_date, e.enrollment_id
   `)
@@ -639,7 +681,7 @@ export class IntegrationRepository {
          -- hijos: asisten sus hijos SEG, no el).
          AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_HELD}
+         ${EXCLUDE_UNCOLLECTED}
          ${SYNC_FROM}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
@@ -803,7 +845,7 @@ export class IntegrationRepository {
       ) AS f
     ) inicio ON TRUE
     WHERE e.active = 'Y'
-      ${EXCLUDE_HELD}
+      ${EXCLUDE_UNCOLLECTED}
     ORDER BY inicio.f DESC, per.last_name
   `)
     return rows || []
@@ -824,7 +866,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_HELD}
+         ${EXCLUDE_UNCOLLECTED}
          ${SYNC_FROM}
          ${IS_EVENT}
     )
@@ -922,7 +964,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_HELD}
+         ${EXCLUDE_UNCOLLECTED}
          ${SYNC_FROM}
     )
     SELECT
@@ -1137,7 +1179,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_HELD}
+         ${EXCLUDE_UNCOLLECTED}
          ${SYNC_FROM}
     )
     SELECT
