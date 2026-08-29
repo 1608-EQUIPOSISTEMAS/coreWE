@@ -97,7 +97,7 @@ async function attachChannelMetrics (items = []) {
     it.cnt_b2b = m?.cnt_b2b ?? 0
     it.cnt_aula = m?.cnt_aula ?? 0
     it.cnt_total = m?.cnt_total ?? 0
-    // consultas (leads, excluye Desestimado/Cerrado)
+    // consultas (leads en los 5 estados de LEAD_STATUSES_CONSULTA)
     it.cnt_consultas = leadsById.get(Number(it?.edition_num_id))?.cnt_consultas ?? 0
   }
 }

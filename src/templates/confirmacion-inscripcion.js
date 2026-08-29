@@ -5,6 +5,15 @@ function capitalizeName (name) {
   return name.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase())
 }
 
+// Numeritos que encabezan cada paso del correo. Nombrados porque el orden de
+// los pasos cambia (se elimino el del formulario de certificado) y renumerar a
+// mano dejo dos "2" seguidos en la variante sin WhatsApp.
+const PASO = [
+  null,
+  'https://lh3.googleusercontent.com/d/1pBX3L1-9k-9q8TON5W1OhatayiYBUxWr',
+  'https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a'
+]
+
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 function formatDate (dateStr) {
@@ -176,7 +185,7 @@ export function buildConfirmacionHTML (data) {
         <tr style="text-align:center"><td>
           <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/100yF06wcwLvB-VoLDlR0PBHQM6t80O9B" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong> <br/>
 
-          <font face="Tahoma" size="4">Completa estos 3 pasos para iniciar tu experiencia W|E</font>
+          <font face="Tahoma" size="4">Completa estos 2 pasos para iniciar tu experiencia W|E</font>
           <br/><br/>
 
           <font face="Tahoma" size="4">Para asegurar una correcta comunicaci\u00f3n, acceso a contenidos y emisi\u00f3n </font><br/>
@@ -188,7 +197,7 @@ export function buildConfirmacionHTML (data) {
         ${hideWhatsapp ? `
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma acad\u00e9mico</strong>
+              <font face="Tahoma" size="4"><img src="${PASO[1]}" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma acad\u00e9mico</strong>
               <br/><br/>
               <font face="Tahoma" size="4">Adjuntamos en este correo el <strong>cronograma completo del programa</strong> en formato PDF con las fechas, docentes, horarios y sesiones de cada m\u00f3dulo.</font>
               <br/><br/>
@@ -197,7 +206,7 @@ export function buildConfirmacionHTML (data) {
         ` : `
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1pBX3L1-9k-9q8TON5W1OhatayiYBUxWr" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>${whatsappLink ? '\u00danete al grupo oficial de WhatsApp' : 'Solicita el link de tu grupo de WhatsApp'}</strong>
+              <font face="Tahoma" size="4"><img src="${PASO[1]}" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>${whatsappLink ? '\u00danete al grupo oficial de WhatsApp' : 'Solicita el link de tu grupo de WhatsApp'}</strong>
               <br/><br/>
               <font face="Tahoma" size="4">${whatsappLink ? '\u00danete aqu\u00ed al grupo de WhatsApp de tu programa aqu\u00ed:' : 'Escr\u00edbenos para que te compartamos el enlace de tu grupo:'}</font>
               <br/>
@@ -216,29 +225,7 @@ export function buildConfirmacionHTML (data) {
         `}
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>
-              <br/>
-              <font face="Tahoma" size="4"> La informaci\u00f3n que registres ser\u00e1 utilizada tal cual para la emisi\u00f3n </font>
-              <br/>
-
-              <font face="Tahoma" size="4">de tu certificado digital</font><br/>
-
-              <i style="color: #666666;"> <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1slHkjdJETgxA1ARW8vxy8CMSdXpI9fWM" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">Revisa cuidadosamente tus datos antes de enviar el formulario.</font></i><br/>
-
-            </td>
-        </tr>
-        <tr>
-              <td align="center" style="padding: 5px 0 10px 0;">
-                  <a href="https://we-educacion-certificacion.com/" target="_blank">
-                      <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
-                            alt="Completar datos certificado"
-                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
-                  </a>
-              </td>
-        </tr>
-        <tr style="text-align:center">
-            <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1LLBfsoK3XzSZNuC1oQTLEvqy-Ky1tgQb" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
+              <font face="Tahoma" size="4"><img src="${PASO[2]}" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
               <br/>  <br/>
               <font face="Tahoma" size="4">Dentro de <strong>max. 24 horas</strong> en el campus encontrar\u00e1s: </font>
               <br/>

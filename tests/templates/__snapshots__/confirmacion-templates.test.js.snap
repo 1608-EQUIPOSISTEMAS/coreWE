@@ -735,7 +735,7 @@ exports[`templates/confirmacion-inscripcion > alumno nuevo, con cuotas y WhatsAp
         <tr style="text-align:center"><td>
           <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/100yF06wcwLvB-VoLDlR0PBHQM6t80O9B" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong> <br/>
 
-          <font face="Tahoma" size="4">Completa estos 3 pasos para iniciar tu experiencia W|E</font>
+          <font face="Tahoma" size="4">Completa estos 2 pasos para iniciar tu experiencia W|E</font>
           <br/><br/>
 
           <font face="Tahoma" size="4">Para asegurar una correcta comunicación, acceso a contenidos y emisión </font><br/>
@@ -766,29 +766,7 @@ exports[`templates/confirmacion-inscripcion > alumno nuevo, con cuotas y WhatsAp
         
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>
-              <br/>
-              <font face="Tahoma" size="4"> La información que registres será utilizada tal cual para la emisión </font>
-              <br/>
-
-              <font face="Tahoma" size="4">de tu certificado digital</font><br/>
-
-              <i style="color: #666666;"> <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1slHkjdJETgxA1ARW8vxy8CMSdXpI9fWM" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">Revisa cuidadosamente tus datos antes de enviar el formulario.</font></i><br/>
-
-            </td>
-        </tr>
-        <tr>
-              <td align="center" style="padding: 5px 0 10px 0;">
-                  <a href="https://we-educacion-certificacion.com/" target="_blank">
-                      <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
-                            alt="Completar datos certificado"
-                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
-                  </a>
-              </td>
-        </tr>
-        <tr style="text-align:center">
-            <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1LLBfsoK3XzSZNuC1oQTLEvqy-Ky1tgQb" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
               <br/>  <br/>
               <font face="Tahoma" size="4">Dentro de <strong>max. 24 horas</strong> en el campus encontrarás: </font>
               <br/>
@@ -1028,7 +1006,7 @@ exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y co
         <tr style="text-align:center"><td>
           <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/100yF06wcwLvB-VoLDlR0PBHQM6t80O9B" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>IMPORTANTE</strong> <br/>
 
-          <font face="Tahoma" size="4">Completa estos 3 pasos para iniciar tu experiencia W|E</font>
+          <font face="Tahoma" size="4">Completa estos 2 pasos para iniciar tu experiencia W|E</font>
           <br/><br/>
 
           <font face="Tahoma" size="4">Para asegurar una correcta comunicación, acceso a contenidos y emisión </font><br/>
@@ -1040,7 +1018,7 @@ exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y co
         
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma académico</strong>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1pBX3L1-9k-9q8TON5W1OhatayiYBUxWr" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma académico</strong>
               <br/><br/>
               <font face="Tahoma" size="4">Adjuntamos en este correo el <strong>cronograma completo del programa</strong> en formato PDF con las fechas, docentes, horarios y sesiones de cada módulo.</font>
               <br/><br/>
@@ -1049,29 +1027,7 @@ exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y co
         
         <tr style="text-align:center">
             <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Completa tus datos para el certificado</strong>
-              <br/>
-              <font face="Tahoma" size="4"> La información que registres será utilizada tal cual para la emisión </font>
-              <br/>
-
-              <font face="Tahoma" size="4">de tu certificado digital</font><br/>
-
-              <i style="color: #666666;"> <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1slHkjdJETgxA1ARW8vxy8CMSdXpI9fWM" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">Revisa cuidadosamente tus datos antes de enviar el formulario.</font></i><br/>
-
-            </td>
-        </tr>
-        <tr>
-              <td align="center" style="padding: 5px 0 10px 0;">
-                  <a href="https://we-educacion-certificacion.com/" target="_blank">
-                      <img src="https://lh3.googleusercontent.com/d/1wRh6pGY2FplPmam_LkAJXI3CsWeyMQtq"
-                            alt="Completar datos certificado"
-                            width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
-                  </a>
-              </td>
-        </tr>
-        <tr style="text-align:center">
-            <td>
-              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/1LLBfsoK3XzSZNuC1oQTLEvqy-Ky1tgQb" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
+              <font face="Tahoma" size="4"><img src="https://lh3.googleusercontent.com/d/13MP8w4XnvbuEgnoa0xoUW3pB3QLpvJ6a" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Accede a tu campus virtual W|E</strong>
               <br/>  <br/>
               <font face="Tahoma" size="4">Dentro de <strong>max. 24 horas</strong> en el campus encontrarás: </font>
               <br/>
@@ -1649,5 +1605,129 @@ exports[`templates/confirmacion-online > sin credenciales SAP 1`] = `
   </footer>
 
 </body>
+</html>"
+`;
+
+exports[`templates/confirmacion-pago > cuota pagada, con siguiente cuota pendiente 1`] = `
+"<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    <div style="display:grid; place-items:center">
+        <div style="display:grid; place-items:center">
+          <table align="center" style="width:450px">
+            <tr><td>
+              <img src="https://lh3.googleusercontent.com/d/1TGBywF62iDCZc_GWBG8Nu5jIMvW1dJ_y" style="max-width: 480px;">
+            </td></tr>
+          </table>
+        </div>
+        <div style="display:grid; place-items:center">
+          <table align="center" style="width:450px">
+            <tr><td>
+            <h2 style="text-align:center">Hola Elizabeth Yalle</h2>
+            <p style="text-align:center; width:450px"><font face="tahoma" size="3">Te saludamos reiterando nuestro compromiso en acompañarte con la mejor calidad en educación</font></p>
+            <p style="text-align:center; width:450px"><font face="tahoma" size="3">Asimismo nos alegra informarte que has cancelado la cuota de tu curso </font></p>
+            </td></tr>
+          </table>
+        </div>
+        <div style="display:grid; place-items:center; justify-content: center; padding-bottom: 25px;">
+          <table style="border-collapse:collapse;width: 350px; text-align:center;" align="center">
+            <thead>
+              <tr style="background-color:rgb(17,1,101);color:white;">
+                <td colspan="2" style="padding:5px; border:1px solid black"><font face="Tahoma" size="3">Tu siguiente cuota</font></td>
+              </tr>
+              <tr style="background-color:rgb(17,1,101);color:white;">
+                <td style="padding:5px;border:1px solid black"><font face="Tahoma" size="3">Fecha de Pago</font></td>
+                  <td style="padding:5px;border:1px solid black"><font face="Tahoma" size="3">Monto a Pagar</font></td>
+                </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:5px;border:1px solid black"><font face="Tahoma" size="3">18/09/2026</font></td>
+                <td style="padding:5px;border:1px solid black"><font face="Tahoma" size="3">S/. 500</font></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+    </div>
+
+    <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
+    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
+        <tr><td>Encargado de Finanzas</td></tr>
+        <tr><td><b>+51 943 882 766</b></td></tr>
+        <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Políticas de privacidad y tratamiento de datos</a></td></tr>
+        <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr></table>
+</td></tr></table>
+<table><tr><td><img width="450" src="https://ci3.googleusercontent.com/mail-sig/AIorK4w-9ncNp5__1uLTZl_JQGHDDN7VKBtIZMx5wsKgHZri8lvyhzNGSFc5oHSLGGGQZAijQlaMtCs"></td></tr></table>
+
+  </body>
+</html>"
+`;
+
+exports[`templates/confirmacion-pago > pago completado, sin deuda 1`] = `
+"<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+    <div style="display:grid; place-items:center">
+        <div style="display: grid; place-items: center;">
+          <table align="center" style="width:450px">
+            <tr><td>
+              <img src="https://lh3.googleusercontent.com/d/1mAEZ2CDNi7BEG_-iTK8OIyMWP2d6uoks" style="max-width: 480px">
+            </td></tr>
+          </table>
+        </div>
+        <div style="display: grid; place-items: center; justify-content: center;">
+          <table align="center" style="width:450px">
+            <tr><td>
+              <h2 style="font-family: Tahoma; font-style: normal; font-variant: normal;text-align:center">Hola Elizabeth Yalle,</h2>
+              <p style="width:450px; font-family: Tahoma,Verdana,Segoe,sans-serif;font-style: normal; font-variant: normal;text-align: center">
+                <font size="3">Te saludamos reiterando nuestro compromiso en acompañarte con la mejor calidad en educación.
+                  Asimismo nos alegra informarte que has terminado de cancelar el total de tu curso.</font>
+              </p>
+            </td></tr>
+          </table>
+        </div>
+        <table align="center" style="border-collapse: collapse; width:440px; text-align:center;padding-bottom:25px">
+          <thead style="border: 2px solid black;">
+            <tr style="background-color:rgb(17,1,101);color:white;"><td colspan="2" style="padding:4px">
+              <font size="3">ÚLTIMO PAGO REALIZADO</font>
+            </td></tr>
+            <tr style="background-color:rgb(17,1,101);color:white;">
+              <td style="padding:5px;border: 2px solid black">
+                <font face="Tahoma" size="3">FECHA</font>
+              </td>
+              <td style="padding:5px;border: 2px solid black">
+                <font face="Tahoma" size="3">SITUACIÓN</font>
+              </td>
+            </tr>
+          </thead>
+          <tbody style="border: 2px solid black;">
+            <tr>
+              <td style="padding:5px;border: 2px solid black">
+                <font face="Tahoma" size="3">18/08/2026</font>
+              </td>
+              <td style="padding:5px;border: 2px solid black;color:red">
+                <font face="Tahoma" size="3">Sin deuda</font>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+    </div>
+
+    <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
+    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
+        <tr><td>Encargado de Finanzas</td></tr>
+        <tr><td><b>+51 943 882 766</b></td></tr>
+        <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Políticas de privacidad y tratamiento de datos</a></td></tr>
+        <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr></table>
+</td></tr></table>
+<table><tr><td><img width="450" src="https://ci3.googleusercontent.com/mail-sig/AIorK4w-9ncNp5__1uLTZl_JQGHDDN7VKBtIZMx5wsKgHZri8lvyhzNGSFc5oHSLGGGQZAijQlaMtCs"></td></tr></table>
+
+  </body>
 </html>"
 `;

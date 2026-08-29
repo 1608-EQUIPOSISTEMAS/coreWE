@@ -1,0 +1,49 @@
+{
+  "padre": {
+    "enrollment_id": 9940,
+    "customer_id": 17111,
+    "program_version_id": 209,
+    "program_edition_id": null,
+    "total_amount": "1360.00",
+    "notes": "Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion)"
+  },
+  "hijos": [],
+  "validaciones": [],
+  "modulos": [
+    {
+      "pv": 55,
+      "modulo": "GEST PROCESOS",
+      "edicion": 14844,
+      "global_code": "E49",
+      "inicio": "2026-02-26T05:00:00.000Z"
+    },
+    {
+      "pv": 62,
+      "modulo": "MODEL BIZ.",
+      "edicion": 14930,
+      "global_code": "E60",
+      "inicio": "2026-04-16T05:00:00.000Z"
+    },
+    {
+      "pv": 63,
+      "modulo": "LEAN SIX SIGMA YELLOW",
+      "edicion": 14990,
+      "global_code": "E54",
+      "inicio": "2026-05-28T05:00:00.000Z"
+    },
+    {
+      "pv": 58,
+      "modulo": "KPIS Y OKRS",
+      "edicion": 15050,
+      "global_code": "E65",
+      "inicio": "2026-07-09T05:00:00.000Z"
+    },
+    {
+      "pv": 60,
+      "modulo": "POWER APPS Y AUT.",
+      "edicion": 15101,
+      "global_code": "E28",
+      "inicio": "2026-09-12T05:00:00.000Z"
+    }
+  ]
+}

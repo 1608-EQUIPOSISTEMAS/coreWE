@@ -2,6 +2,17 @@ import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
 
+// Los unicos estados de lead que negocio considera una CONSULTA. Cualquier otro
+// (Eliminado, Cerrado, Desestimado, Indiferente, Prox. Inicio, Inscrito,
+// Anulado) queda fuera del contador del cronograma.
+export const LEAD_STATUSES_CONSULTA = [
+  'we_lead_status_atendido',
+  'we_lead_status_interesado',
+  'we_lead_status_unique',
+  'we_lead_status_will_pay',
+  'we_lead_status_bought'
+]
+
 // Persistencia del dominio edition. Envuelve los stored procedures sp_edition_*
 // y el SQL directo de metricas de aula y auditoria (classroom_audit_rubric).
 export class EditionRepository {
@@ -816,24 +827,24 @@ export class EditionRepository {
     return rows
   }
 
-  // Conteo de CONSULTAS (leads) por edicion para el cronograma. Cuenta los leads
-  // activos de la edicion EXCLUYENDO los estados Desestimado, Cerrado e
-  // Indiferente (los demas si cuentan: atendido, interesado, pago, etc.).
-  // Confirmado con negocio.
+  // Conteo de CONSULTAS (leads) por edicion para el cronograma.
+  //
+  // Lista BLANCA a proposito: antes era una lista negra de tres estados
+  // (Desestimado/Cerrado/Indiferente) y por eso el cronograma contaba de mas
+  // frente a Comercial — se colaban Eliminado, Prox. Inicio e Inscrito. La
+  // ESP. EN PYTHON E11-26 marcaba 203 aqui y 191 en Comercial: los 12 de la
+  // diferencia eran leads Eliminados. Un estado nuevo en el catalogo NO debe
+  // empezar a contar solo por existir; se agrega aca a mano.
   async classroomLeadsCountList (ids) {
     const { rows } = await this.db.query(`
     SELECT l.program_edition_id AS edition_num_id, COUNT(*)::int AS cnt_consultas
       FROM public.leads l
- LEFT JOIN public."catalog" cs ON cs.catalog_id = l.cat_status_lead
+      JOIN public."catalog" cs ON cs.catalog_id = l.cat_status_lead
      WHERE l.program_edition_id = ANY($1::int[])
        AND l.active = 'Y'
-       AND (cs.alias IS NULL OR cs.alias NOT IN (
-              'we_lead_status_desestimado',
-              'we_lead_status_closed',
-              'we_lead_status_indiferente'
-            ))
+       AND cs.alias = ANY($2::text[])
      GROUP BY l.program_edition_id
-  `, [ids])
+  `, [ids, LEAD_STATUSES_CONSULTA])
     return rows
   }
 

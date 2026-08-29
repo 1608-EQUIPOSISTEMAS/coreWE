@@ -1,6 +1,7 @@
 import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../../shared/db/sp.js'
 import { attachEventCategory } from '../../../shared/event-category.js'
+import { attachChildCourses } from '../../../shared/enrollment-children.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
@@ -52,9 +53,11 @@ export class EnrollmentRepository {
       [JSON.stringify(payload)],
       { statementTimeoutMs: 25000 }
     )
-    // El SP no expone cat_event_category (ni la matview que lee): se enriquece
-    // aqui para que el detalle pueda mostrar VIP/GENERAL/PREMIUM/VIRTUAL.
-    return attachEventCategory(rows, pool)
+    // Ni el SP ni la matview que lee exponen cat_event_category ni el arbol de
+    // hijos: se enriquecen aqui para que el listado pueda mostrar la categoria
+    // de evento (VIP/GENERAL/...) y los cursos del paquete (CURSO n / FI n).
+    await Promise.all([attachEventCategory(rows, pool), attachChildCourses(rows, pool)])
+    return rows
   }
 
   async kpisDaily ({ today, yesterday }) {

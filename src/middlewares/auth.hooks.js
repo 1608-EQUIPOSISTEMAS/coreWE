@@ -50,7 +50,10 @@ export const ADMIN_COMERCIAL  = hasRole(['ADMIN', 'LIDER_COMERCIAL'])
 // B2B/GERENCIA por lo mismo: /b2b/leads/new monta el mismo useLeadForm y postea
 // a /comercial/leadregister. Sin esto el rol B2B recibia 403 y el formulario
 // solo mostraba "Error inesperado al guardar el lead".
-export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B', 'GERENCIA'])
+// LIDER_B2B tambien: /b2b/leads lista con comercialService.leadList, que pega a
+// /comercial/leadlist. Un usuario que solo tenga LIDER_B2B (sin B2B) recibia 403
+// y la pantalla lo mostraba como "0 de 0", no como error.
+export const ALL_COMERCIAL    = hasModuleOrRole('COMERCIAL', ['ADMIN', 'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B', 'LIDER_B2B', 'GERENCIA'])
 export const ADMIN_FICO  = hasRole(['ADMIN', 'LIDER_FICO'])
 export const ALL_FICO    = hasModuleOrRole('FICO', ['ADMIN', 'FICO', 'LIDER_FICO'])
 export const ADMIN_ACADEMICA  = hasRole(['ADMIN', 'LIDER_ACADEMICA'])
@@ -58,9 +61,14 @@ export const ALL_ACADEMICA    = hasModuleOrRole('ACADEMICA', ['ADMIN', 'ACADEMIC
 export const ADMIN_PRODUCTO  = hasRole(['ADMIN', 'LIDER_PRODUCTO'])
 export const ALL_PRODUCTO    = hasModuleOrRole('PRODUCTO', ['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO'])
 export const ALL_ADMIN    = hasRole(['ADMIN', 'LIDER_COMERCIAL', 'LIDER_PRODUCTO'])
-// Fundacion entra por los campos "Empresa vinculada" y "Convenio corporativo"
-// del formulario de leads, que consultan /b2b/companylist y /b2b/agreementlist.
-export const ALL_B2B      = hasModuleOrRole('B2B', ['ADMIN', 'B2B', 'GERENCIA', 'FUNDACION', 'LIDER_FUNDACION'])
+// Fundacion y Comercial entran por los campos "Empresa vinculada" y "Convenio
+// corporativo" del formulario de leads y de la ficha de cliente, que consultan
+// /b2b/companylist y /b2b/companycaller. Comercial ademas registra empresas
+// desde ahi, asi que entra al modulo entero, no solo a los buscadores.
+export const ALL_B2B      = hasModuleOrRole('B2B', [
+  'ADMIN', 'B2B', 'LIDER_B2B', 'GERENCIA',
+  'COMERCIAL', 'LIDER_COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION'
+])
 // El grupo Marketing del sidebar se elimino (2026-08-26). Lo unico que sobrevive
 // bajo /api/marketing es ingresos-b2c, que sirve al Reporte Completo de Gerencia.
 export const ALL_GERENCIA = hasModuleOrRole('GERENCIA', ['ADMIN', 'GERENCIA'])
@@ -91,5 +99,5 @@ export const ALL_INTERNAL = hasModuleOrRole(['*'], [
   'ACADEMICA', 'LIDER_ACADEMICA',
   'PRODUCTO', 'LIDER_PRODUCTO',
   'FUNDACION', 'LIDER_FUNDACION',
-  'B2B', 'GERENCIA'
+  'B2B', 'LIDER_B2B', 'GERENCIA'
 ])

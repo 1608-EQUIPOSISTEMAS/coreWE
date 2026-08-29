@@ -3,6 +3,7 @@ import { buildConfirmacionHTML } from '../../src/templates/confirmacion-inscripc
 import { buildConfirmacionOnlineHTML } from '../../src/templates/confirmacion-online.js'
 import { buildMembresiaHTML } from '../../src/templates/bienvenida-membresia.js'
 import { buildConfirmacionEventoHTML } from '../../src/templates/confirmacion-evento.js'
+import { buildConfirmacionPagoHTML } from '../../src/templates/confirmacion-pago.js'
 
 // Snapshots dorados de los correos que YA existen.
 //
@@ -193,5 +194,37 @@ describe('templates/confirmacion-evento', () => {
     })
     expect(html).not.toContain('<script>alert(1)</script>')
     expect(html).toContain('&lt;script&gt;')
+  })
+})
+
+// El correo de FICO_CONFIRMA_CUOTA tiene dos ramas que duplicaban la firma y
+// se desincronizaron (pago completado quedo con la encargada anterior). Ambas
+// entran al snapshot para que una firma solo pueda cambiar a proposito.
+describe('templates/confirmacion-pago', () => {
+  const PAGO = {
+    studentName: 'elizabeth yalle',
+    programType: 'curso',
+    lastPaymentDate: '2026-08-18',
+    nextPaymentDate: '2026-09-18',
+    nextPaymentAmount: 500,
+    currencySymbol: 'S/.'
+  }
+
+  it('cuota pagada, con siguiente cuota pendiente', () => {
+    expect(buildConfirmacionPagoHTML({ ...PAGO, isLastPayment: false })).toMatchSnapshot()
+  })
+
+  it('pago completado, sin deuda', () => {
+    expect(buildConfirmacionPagoHTML({ ...PAGO, isLastPayment: true })).toMatchSnapshot()
+  })
+
+  it('las dos ramas firman igual, como Finanzas', () => {
+    const firma = 'Encargado de Finanzas'
+    for (const isLastPayment of [true, false]) {
+      const html = buildConfirmacionPagoHTML({ ...PAGO, isLastPayment })
+      expect(html).toContain('Raul Rivera')
+      expect(html).toContain(firma)
+      expect(html).toContain('+51 943 882 766')
+    }
   })
 })
