@@ -58,6 +58,18 @@ export class ReprogramacionRepository {
            ed.start_date                          AS edicion_inicio,
            v.total_amount,
            v.discount_amount,
+           -- Cuotas que el alumno todavia debe, con la MISMA regla que usa la RP
+           -- para trasladarlas (enrollment.repository.getReprogramPendingInstallments):
+           -- si las dos cuentas no coinciden, FICO firma a ciegas.
+           (SELECT jsonb_build_object('cantidad', COUNT(*)::int,
+                                      'monto', COALESCE(SUM(pi.amount), 0))
+              FROM public.payment_installments pi
+             WHERE pi.enrollment_id = v.enrollment_id
+               AND pi.installment_number > 0
+               AND pi.cat_status NOT IN (4454, 2471, 4456)
+               AND NOT EXISTS (SELECT 1 FROM public.payments p
+                                WHERE p.installment_id = pi.installment_id AND p.active = 'Y')
+           ) AS cuotas_pendientes,
            (SELECT jsonb_agg(DISTINCT jsonb_build_object(
                      'edition_id', c.ed_a5,
                      'codigo',     c.ed_a5_codigo,

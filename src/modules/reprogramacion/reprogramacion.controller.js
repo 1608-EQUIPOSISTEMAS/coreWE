@@ -20,6 +20,7 @@ export async function proposeHandler (req, reply) {
     enrollmentId: num(req.body.enrollment_id),
     destProgramVersionId: num(req.body.dest_program_version_id),
     destEditionId: num(req.body.dest_edition_id),
+    refund: req.body.refund === true,
     userId: req.user?.id
   })
   return reply.code(200).send({ ok: true, data })

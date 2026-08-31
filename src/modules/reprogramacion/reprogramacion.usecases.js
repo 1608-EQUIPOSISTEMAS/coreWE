@@ -1,6 +1,7 @@
 import { reprogramacionRepository } from './reprogramacion.repository.js'
 import {
   ESTADO,
+  KIND,
   ReprogramacionError,
   assertPuedeAceptar,
   assertPuedeProponer,
@@ -24,7 +25,7 @@ export async function listDestinationEditions ({ programVersionId }) {
 }
 
 // Academica elige el destino. No ejecuta nada: solo deja la propuesta.
-export async function proposeDestination ({ enrollmentId, destProgramVersionId, destEditionId, userId }) {
+export async function proposeDestination ({ enrollmentId, destProgramVersionId, destEditionId, refund, userId }) {
   const venta = await repo.getVenta(enrollmentId)
   if (!venta) throw new ReprogramacionError('La inscripcion no existe o no esta activa')
 
@@ -33,9 +34,19 @@ export async function proposeDestination ({ enrollmentId, destProgramVersionId, 
   const destKind = resolveDestKind({
     originProgramVersionId: venta.program_version_id,
     destProgramVersionId,
-    destEditionId
+    destEditionId,
+    refund
   })
-  return repo.upsertProposal({ enrollmentId, destProgramVersionId, destEditionId, destKind, userId })
+  // Un reembolso no guarda destino aunque el front haya dejado uno a medio
+  // elegir: la fila tiene que quedar sin a-donde para que nadie lo ejecute.
+  const esReembolso = destKind === KIND.REEMBOLSO
+  return repo.upsertProposal({
+    enrollmentId,
+    destProgramVersionId: esReembolso ? null : destProgramVersionId,
+    destEditionId: esReembolso ? null : destEditionId,
+    destKind,
+    userId
+  })
 }
 
 export async function markContacted ({ enrollmentId, notes, userId }) {
@@ -60,6 +71,19 @@ export async function acceptCase ({ enrollmentId, notes, userId }) {
 
   const venta = await repo.getVenta(enrollmentId)
   if (!venta) throw new ReprogramacionError('La inscripcion no existe o no esta activa')
+
+  // El reembolso no toca nada: la inscripcion se queda como esta y el caso solo
+  // deja constancia en el historial de que al alumno se le devolvio su dinero.
+  // Por eso no hay pasos pendientes: no quedo nada a medio hacer.
+  if (caso.dest_kind === KIND.REEMBOLSO) {
+    return repo.saveVerdict({
+      enrollmentId,
+      status: ESTADO.ACEPTADO,
+      notes,
+      userId,
+      pendingSteps: []
+    })
+  }
 
   const justificacion = buildJustificacion({
     edicionesCaidas: [],

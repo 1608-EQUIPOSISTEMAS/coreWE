@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ESTADO,
+  KIND,
   ReprogramacionError,
   assertPuedeAceptar,
   assertPuedeProponer,
@@ -38,6 +39,17 @@ describe('resolveDestKind', () => {
   it('sin destino falla', () => {
     expect(() => resolveDestKind({ originProgramVersionId: 10 })).toThrow(ReprogramacionError)
   })
+
+  // El alumno que pide su plata de vuelta no va a ningun lado: exigirle un
+  // programa destino obligaba a Academica a inventar uno para poder guardar.
+  it('reembolso => RF, sin programa ni edicion', () => {
+    expect(resolveDestKind({ originProgramVersionId: 10, refund: true })).toBe(KIND.REEMBOLSO)
+  })
+
+  it('el reembolso gana sobre cualquier destino a medio elegir', () => {
+    expect(resolveDestKind({ originProgramVersionId: 10, destProgramVersionId: 11, refund: true }))
+      .toBe(KIND.REEMBOLSO)
+  })
 })
 
 describe('assertPuedeAceptar', () => {
@@ -61,6 +73,17 @@ describe('assertPuedeAceptar', () => {
 
   it('un caso sin fila (recien detectado) no se puede aceptar', () => {
     expect(() => assertPuedeAceptar(null)).toThrow(ReprogramacionError)
+  })
+
+  // El reembolso es el unico veredicto legitimo sin destino.
+  it('acepta un reembolso contactado aunque no tenga destino', () => {
+    expect(() => assertPuedeAceptar({ status: ESTADO.CONTACTADO, dest_kind: KIND.REEMBOLSO }))
+      .not.toThrow()
+  })
+
+  it('un reembolso sin contactar tampoco pasa', () => {
+    expect(() => assertPuedeAceptar({ status: ESTADO.PROPUESTO, dest_kind: KIND.REEMBOLSO }))
+      .toThrow(/contactado/i)
   })
 })
 

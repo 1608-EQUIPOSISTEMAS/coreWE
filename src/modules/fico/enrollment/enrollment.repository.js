@@ -39,6 +39,26 @@ export function setEnrollmentPorts (ports = {}) {
 // las llamadas a SP estan movidos VERBATIM desde fico.service.js (mismas
 // queries, parametros, orden y statementTimeoutMs). No contiene reglas de
 // dominio: esas viven en enrollment.entity.js.
+
+// Una inscripcion en estado terminal ya NO ocupa la edicion: el alumno se fue
+// por cambio de curso (CC), reprogramacion (RP), retiro (R) o anulacion. Si
+// siguiera contando como duplicado, ese asiento quedaria bloqueado para
+// siempre. Paso con el socio que financio su upgrade a WE GOLD con la venta de
+// un curso (esa venta quedo en CC) y despues no podia entrar al mismo curso
+// usando el beneficio de la membresia.
+const STILL_OCCUPIES_EDITION = `
+        AND NOT EXISTS (
+          SELECT 1
+            FROM public."catalog" cst
+           WHERE cst.catalog_id = e.cat_type_status
+             AND cst.alias IN (
+               '${ALIAS.ENROLLMENT_STATUS_COURSE_CHANGED}',
+               '${ALIAS.ENROLLMENT_STATUS_REPROGRAMMED}',
+               '${ALIAS.ENROLLMENT_STATUS_RETIRED}',
+               '${ALIAS.ENROLLMENT_STATUS_ANNULMENT}'
+             )
+        )`
+
 export class EnrollmentRepository {
   constructor (db = pool) {
     this.db = db
@@ -227,6 +247,7 @@ export class EnrollmentRepository {
       LEFT JOIN public.users           u_s ON u_s.user_id            = e.seller_agent_id
       WHERE e.active = 'Y'
         AND e.program_edition_id = $1
+        ${STILL_OCCUPIES_EDITION}
         AND (
           ($2::text IS NOT NULL AND per.document_number = $2)
           OR ($3::text IS NOT NULL AND (
@@ -272,6 +293,7 @@ export class EnrollmentRepository {
       WHERE e.active = 'Y'
         AND e.program_version_id = $1
         AND e.program_edition_id IS NULL
+        ${STILL_OCCUPIES_EDITION}
         AND (
           ($2::text IS NOT NULL AND per.document_number = $2)
           OR ($3::text IS NOT NULL AND (

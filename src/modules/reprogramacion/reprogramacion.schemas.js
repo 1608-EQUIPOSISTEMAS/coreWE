@@ -26,15 +26,18 @@ export const destinationsSchema = {
 
 export const proposeSchema = {
   tags: [TAG],
-  description: 'Academica elige el destino del alumno (no ejecuta el movimiento)',
+  description: 'Academica elige el destino del alumno, o marca que pide reembolso (no ejecuta nada)',
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['enrollment_id', 'dest_program_version_id'],
+    // dest_program_version_id no es required: con refund = true no hay destino.
+    // Que falte cuando SI hace falta lo decide resolveDestKind, no AJV.
+    required: ['enrollment_id'],
     properties: {
       enrollment_id: { type: ['integer', 'string'] },
-      dest_program_version_id: { type: ['integer', 'string'] },
-      dest_edition_id: { type: ['integer', 'string', 'null'] }
+      dest_program_version_id: { type: ['integer', 'string', 'null'] },
+      dest_edition_id: { type: ['integer', 'string', 'null'] },
+      refund: { type: 'boolean' }
     }
   }
 }

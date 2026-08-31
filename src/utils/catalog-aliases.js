@@ -18,6 +18,7 @@ export const ALIAS = Object.freeze({
   ENROLLMENT_STATUS_RETIRED:        'we_enrollment_status_retired',
   ENROLLMENT_STATUS_REPROGRAMMED:   'we_enrollment_status_reprogrammed',
   ENROLLMENT_STATUS_COURSE_CHANGED: 'we_enrollment_status_course_changed',
+  ENROLLMENT_STATUS_ANNULMENT:      'we_enrollment_status_annulment',
   ENROLLMENT_STATUS_PENDING_REVIEW: 'we_enrollment_status_pending_review',
 
   // Inscripcion (enrollments.cat_type_status)
