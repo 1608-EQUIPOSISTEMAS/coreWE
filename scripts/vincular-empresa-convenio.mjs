@@ -5,16 +5,23 @@
 // 2026-08-24: las ventas anteriores quedaron con el lead sin empresa y la
 // columna sale vacia. Este script las repara una por una.
 //
-//   node scripts/vincular-empresa-convenio.mjs 16394 "CLINICA INTERNACIONAL"
+//   node scripts/vincular-empresa-convenio.mjs 16394 "CLINICA INTERNACIONAL" [--prod]
 //
 // Es idempotente: si el lead ya apunta a esa empresa no escribe nada.
 //
 // El trigger block_update_when_enrolled congela la consulta apenas se convierte
 // en venta, asi que hay que apagarlo para esta transaccion. Se apaga SOLO ese:
 // trg_audit_leads sigue vivo y el cambio queda en la bitacora.
-import { q, pool } from './db.mjs'
+import fs from 'fs'
 
-const [enrollmentId, razonSocial] = process.argv.slice(2)
+// Sin --prod escribe en la BD local de pruebas. Se toca DATABASE_URL, nunca
+// PGPASSWORD: PGPASSWORD gana sobre el .env y parte los pools en dos BD.
+if (process.argv.includes('--prod')) {
+  process.env.DATABASE_URL = fs.readFileSync('.env.bak-produccion', 'utf8').match(/postgresql:\/\/\S+/)[0]
+}
+const { q, pool } = await import('./db.mjs')
+
+const [enrollmentId, razonSocial] = process.argv.slice(2).filter((a) => a !== '--prod')
 
 if (!enrollmentId || !razonSocial) {
   console.error('uso: node scripts/vincular-empresa-convenio.mjs <enrollment_id> "<razon social>"')

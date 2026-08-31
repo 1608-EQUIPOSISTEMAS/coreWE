@@ -208,6 +208,25 @@ export const SYNC_FROM = `
 // hojas mucho antes.
 export const CONVENIOS_FROM_DATE = '2026-08-14'
 
+// Un operador FICO (ELFI, RAFI, MECA, MAFI) registra la venta o genera el link
+// de pago, pero NO la vende: su codigo no puede figurar como ASESOR de la hoja
+// (8 ventas B2B salieron como 'B2B - ELFI' / 'B2B - RAFI'). Sin asesor comercial
+// detras la fila sale con el canal a secas — 'B2B' —, que es correcto: el
+// negocio a veces gestiona el convenio asi, sin asesor asignado.
+//
+// Se resuelve por ROL y no por una lista de alias para que un operador FICO
+// nuevo quede cubierto sin tocar codigo. Fail-open a proposito: un usuario sin
+// ningun rol conserva su alias (hoy solo el usuario sintetico 'WEB').
+export const NOT_FICO_OPERATOR = (u) => `(
+        NOT EXISTS (SELECT 1 FROM public.user_roles ur WHERE ur.user_id = ${u}.user_id)
+        OR EXISTS (
+             SELECT 1
+               FROM public.user_roles ur
+               JOIN public.rol r ON r.rol_id = ur.rol_id
+              WHERE ur.user_id = ${u}.user_id
+                AND r.alias NOT IN ('FICO', 'LIDER_FICO'))
+      )`
+
 // Marcador de venta B2B. Misma union que usa edition.repository.js para la
 // columna B2B del cronograma: la venta puede venir marcada por el origen del
 // asesor (el "cambio de asesor" a B2B deja agent_origin = 'B2B'), por el
@@ -609,9 +628,9 @@ export class IntegrationRepository {
       upper(COALESCE(c_type.description, ''))              AS tipo_program,
       COALESCE(c_mod.description, '')                      AS unidad,
       CASE
-        WHEN e.agent_origin IS NOT NULL AND u.alias IS NOT NULL
-          THEN e.agent_origin || ' - ' || u.alias
-        ELSE COALESCE(u.alias, e.agent_origin, 'S/A')
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
       END                                                  AS asesor
     FROM public.enrollments e
     JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -625,11 +644,25 @@ export class IntegrationRepository {
     LEFT JOIN public.programs prog        ON prog.program_id = pv.program_id
     LEFT JOIN public.program_editions pe  ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN public.users u              ON u.user_id = e.seller_agent_id
+                                         AND ${NOT_FICO_OPERATOR('u')}
     LEFT JOIN public."catalog" c_prof     ON c_prof.catalog_id = e.cat_profile_id
     LEFT JOIN public."catalog" c_plan     ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_curr     ON c_curr.catalog_id = e.cat_currency
     LEFT JOIN public."catalog" c_type     ON c_type.catalog_id = prog.cat_type_program
     LEFT JOIN public."catalog" c_mod      ON c_mod.catalog_id = prog.cat_model_modality
+    -- Asesor que solicito el PRIMER token de pago: el panel FICO lo prioriza
+    -- sobre seller_agent_id y esta hoja tiene que decir lo mismo. En una venta
+    -- por token el seller es quien genero el link (FICO/admin), no el comercial
+    -- del convenio (18141 salia 'B2B - ELFI' donde el ERP muestra 'B2B - JF39').
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias
+        FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+                                   AND ${NOT_FICO_OPERATOR('u_pt')}
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC
+       LIMIT 1
+    ) ag_token ON TRUE
     LEFT JOIN LATERAL (
       SELECT COALESCE(
         l.pay_date::date,
@@ -916,11 +949,13 @@ export class IntegrationRepository {
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
       COALESCE(c_ev.description, '') AS modalidad,
-      COALESCE(e.event_seat, '')     AS asiento
+      COALESCE(e.event_seat, '')     AS asiento,
+      COALESCE(pv.version_code, '')  AS cod
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
+    LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN public.leads l          ON l.enrollment_id = e.enrollment_id
     LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
     LEFT JOIN public."catalog" c_plan ON c_plan.catalog_id = e.cat_payment_plan
