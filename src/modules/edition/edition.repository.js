@@ -1923,6 +1923,11 @@ export class EditionRepository {
     );
     CREATE INDEX IF NOT EXISTS idx_b2ba_edition
       ON public.b2b_attendance (program_edition_id);
+    -- Motivo escrito por academica para las sesiones marcadas 'J', misma
+    -- forma que sessions: {"2":"Viaje de trabajo"}. Columna aparte para que
+    -- el valor de la asistencia siga siendo una sola letra.
+    ALTER TABLE public.b2b_attendance
+      ADD COLUMN IF NOT EXISTS notes JSONB NOT NULL DEFAULT '{}'::jsonb;
   `)
     this._b2bAttendanceReady = true
   }
@@ -1961,6 +1966,7 @@ export class EditionRepository {
            -- Solo lectura desde la Lista de Notas. Este modulo NUNCA la escribe.
            g.final_grade,
            COALESCE(att.sessions, '{}'::jsonb)          AS attendance,
+           COALESCE(att.notes, '{}'::jsonb)             AS attendance_notes,
            att.updated_at                               AS attendance_updated_at
       FROM public.enrollments e
       JOIN public.customers cu        ON cu.customer_id = e.customer_id
@@ -2015,23 +2021,30 @@ export class EditionRepository {
 
   // Marca/desmarca UNA celda de asistencia. status null borra la clave para
   // que la sesion vuelva a "sin marcar" (y no quede como falta implicita).
-  async b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status }, uid) {
+  // `note` solo llega con estado 'J' (el usecase lo anula en los demas), asi
+  // que null tambien significa "borra el motivo viejo de esta sesion".
+  async b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status, note }, uid) {
     await this.ensureB2bAttendanceTable()
     const { rows } = await this.db.query(`
-    INSERT INTO public.b2b_attendance (enrollment_id, program_edition_id, sessions, updated_by, updated_at)
+    INSERT INTO public.b2b_attendance (enrollment_id, program_edition_id, sessions, notes, updated_by, updated_at)
     VALUES ($1, $2,
             CASE WHEN $4::text IS NULL THEN '{}'::jsonb
                  ELSE jsonb_build_object($3::text, $4::text) END,
+            CASE WHEN $6::text IS NULL THEN '{}'::jsonb
+                 ELSE jsonb_build_object($3::text, $6::text) END,
             $5, NOW())
     ON CONFLICT (enrollment_id) DO UPDATE
        SET sessions = CASE WHEN $4::text IS NULL
                            THEN public.b2b_attendance.sessions - $3::text
                            ELSE public.b2b_attendance.sessions || jsonb_build_object($3::text, $4::text) END,
+           notes    = CASE WHEN $6::text IS NULL
+                           THEN public.b2b_attendance.notes - $3::text
+                           ELSE public.b2b_attendance.notes || jsonb_build_object($3::text, $6::text) END,
            program_edition_id = EXCLUDED.program_edition_id,
            updated_by = EXCLUDED.updated_by,
            updated_at = NOW()
-    RETURNING enrollment_id, sessions, updated_at
-  `, [enrollment_id, program_edition_id, String(session_number), status, uid])
+    RETURNING enrollment_id, sessions, notes, updated_at
+  `, [enrollment_id, program_edition_id, String(session_number), status, uid, note ?? null])
     return rows[0]
   }
 }

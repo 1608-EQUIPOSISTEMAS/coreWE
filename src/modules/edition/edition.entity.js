@@ -730,12 +730,18 @@ export function formatStartDate (startDate) {
 
 // Estados de asistencia. Sin marcar (clave ausente) NO es falta: es
 // "pendiente de tomar", que es distinto de "el alumno no vino".
-export const B2B_ATTENDANCE_STATES = ['P', 'T', 'F']
+export const B2B_ATTENDANCE_STATES = ['P', 'T', 'F', 'J']
+
+// Una justificacion sin texto no es una justificacion: el modulo existe para
+// que academica DIGA por que el alumno falto. El limite es el de la columna.
+export const B2B_JUSTIFICATION_MAX = 500
 
 // REGLA DE NEGOCIO — % de asistencia. Se calcula sobre las sesiones YA
 // MARCADAS (no sobre el total del curso), asi un curso a mitad de camino no
 // muestra 30% solo por tener sesiones futuras. La tardanza CUENTA como
 // asistida (el alumno estuvo en clase) pero se reporta aparte en `tardy`.
+// La falta JUSTIFICADA tampoco penaliza: cuenta como asistida en el % y se
+// reporta aparte en `justified`. Solo la falta seca (F) baja el porcentaje.
 // Si academica decide que la tardanza vale medio punto o que las sesiones ya
 // dictadas sin marcar son falta, este es el unico lugar que cambia.
 export function b2bAttendanceSummary (sessionsMap = {}, totalSessions = 0) {
@@ -743,13 +749,15 @@ export function b2bAttendanceSummary (sessionsMap = {}, totalSessions = 0) {
   const present = marks.filter((s) => s === 'P').length
   const tardy = marks.filter((s) => s === 'T').length
   const absent = marks.filter((s) => s === 'F').length
-  const taken = present + tardy + absent
+  const justified = marks.filter((s) => s === 'J').length
+  const taken = present + tardy + absent + justified
   return {
     present,
     tardy,
     absent,
+    justified,
     taken,
     pending: Math.max(0, (Number(totalSessions) || 0) - taken),
-    pct: taken ? Math.round(((present + tardy) / taken) * 100) : null
+    pct: taken ? Math.round(((present + tardy + justified) / taken) * 100) : null
   }
 }

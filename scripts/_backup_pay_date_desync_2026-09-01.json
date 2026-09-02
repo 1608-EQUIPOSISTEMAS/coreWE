@@ -1,0 +1,230 @@
+[
+  {
+    "enrollment_id": 14187,
+    "lead_id": 426116,
+    "pay_date_lead": "2026-07-16T05:00:00.000Z",
+    "pay_date_real": "2026-07-21T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 14195,
+    "lead_id": 426159,
+    "pay_date_lead": "2026-07-21T05:00:00.000Z",
+    "pay_date_real": "2026-07-22T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 14624,
+    "lead_id": 426766,
+    "pay_date_lead": "2026-07-27T05:00:00.000Z",
+    "pay_date_real": "2026-07-28T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 15900,
+    "lead_id": 427823,
+    "pay_date_lead": "2026-08-05T05:00:00.000Z",
+    "pay_date_real": "2026-08-07T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 15933,
+    "lead_id": 427849,
+    "pay_date_lead": "2026-08-05T05:00:00.000Z",
+    "pay_date_real": "2026-08-07T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16173,
+    "lead_id": 428367,
+    "pay_date_lead": "2026-08-10T05:00:00.000Z",
+    "pay_date_real": "2026-08-11T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16267,
+    "lead_id": 428515,
+    "pay_date_lead": "2026-08-11T05:00:00.000Z",
+    "pay_date_real": "2026-08-12T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16447,
+    "lead_id": 428957,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16448,
+    "lead_id": 428959,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16456,
+    "lead_id": 428961,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16461,
+    "lead_id": 428962,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16462,
+    "lead_id": 428963,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16492,
+    "lead_id": 428982,
+    "pay_date_lead": "2026-08-14T05:00:00.000Z",
+    "pay_date_real": "2026-08-15T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16645,
+    "lead_id": 429350,
+    "pay_date_lead": "2026-08-18T05:00:00.000Z",
+    "pay_date_real": "2026-08-19T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16646,
+    "lead_id": 429352,
+    "pay_date_lead": "2026-08-18T05:00:00.000Z",
+    "pay_date_real": "2026-08-19T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16692,
+    "lead_id": 429465,
+    "pay_date_lead": "2026-08-18T05:00:00.000Z",
+    "pay_date_real": "2026-08-19T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16699,
+    "lead_id": 429481,
+    "pay_date_lead": "2026-08-19T05:00:00.000Z",
+    "pay_date_real": "2026-08-21T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16700,
+    "lead_id": 429484,
+    "pay_date_lead": "2026-08-19T05:00:00.000Z",
+    "pay_date_real": "2026-08-21T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16730,
+    "lead_id": 429558,
+    "pay_date_lead": "2026-08-19T05:00:00.000Z",
+    "pay_date_real": "2026-08-20T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 16731,
+    "lead_id": 429559,
+    "pay_date_lead": "2026-08-19T05:00:00.000Z",
+    "pay_date_real": "2026-08-20T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17674,
+    "lead_id": 430404,
+    "pay_date_lead": "2026-08-25T05:00:00.000Z",
+    "pay_date_real": "2026-08-26T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17681,
+    "lead_id": 430405,
+    "pay_date_lead": "2026-08-25T05:00:00.000Z",
+    "pay_date_real": "2026-08-26T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17682,
+    "lead_id": 430406,
+    "pay_date_lead": "2026-08-25T05:00:00.000Z",
+    "pay_date_real": "2026-08-26T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17922,
+    "lead_id": 430593,
+    "pay_date_lead": "2026-08-26T05:00:00.000Z",
+    "pay_date_real": "2026-08-27T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17923,
+    "lead_id": 430594,
+    "pay_date_lead": "2026-08-26T05:00:00.000Z",
+    "pay_date_real": "2026-08-27T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17924,
+    "lead_id": 430595,
+    "pay_date_lead": "2026-08-26T05:00:00.000Z",
+    "pay_date_real": "2026-08-27T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17943,
+    "lead_id": 430643,
+    "pay_date_lead": "2026-08-27T05:00:00.000Z",
+    "pay_date_real": "2026-08-26T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17951,
+    "lead_id": 430717,
+    "pay_date_lead": "2026-08-27T05:00:00.000Z",
+    "pay_date_real": "2026-08-28T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17952,
+    "lead_id": 430718,
+    "pay_date_lead": "2026-08-27T05:00:00.000Z",
+    "pay_date_real": "2026-08-28T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 17968,
+    "lead_id": 430748,
+    "pay_date_lead": "2026-08-27T05:00:00.000Z",
+    "pay_date_real": "2026-08-28T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18034,
+    "lead_id": 430879,
+    "pay_date_lead": "2026-08-28T05:00:00.000Z",
+    "pay_date_real": "2026-08-29T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18035,
+    "lead_id": 430880,
+    "pay_date_lead": "2026-08-28T05:00:00.000Z",
+    "pay_date_real": "2026-08-29T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18061,
+    "lead_id": 430884,
+    "pay_date_lead": "2026-08-28T05:00:00.000Z",
+    "pay_date_real": "2026-08-29T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18224,
+    "lead_id": 431146,
+    "pay_date_lead": "2026-08-31T05:00:00.000Z",
+    "pay_date_real": "2026-09-01T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18225,
+    "lead_id": 431147,
+    "pay_date_lead": "2026-08-31T05:00:00.000Z",
+    "pay_date_real": "2026-09-01T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18226,
+    "lead_id": 431148,
+    "pay_date_lead": "2026-08-31T05:00:00.000Z",
+    "pay_date_real": "2026-09-01T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18230,
+    "lead_id": 431149,
+    "pay_date_lead": "2026-08-31T05:00:00.000Z",
+    "pay_date_real": "2026-09-01T05:00:00.000Z"
+  },
+  {
+    "enrollment_id": 18280,
+    "lead_id": 430194,
+    "pay_date_lead": "2026-09-01T05:00:00.000Z",
+    "pay_date_real": "2026-08-31T05:00:00.000Z"
+  }
+]

@@ -136,12 +136,14 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
   // user de otra persona.
   const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // Mismo resolver que el sync de cursos: DNI previo -> correo real -> sintetico.
-  // Antes solo miraba el DNI previo, asi que a un alumno con cuenta Odoo creada
-  // por otro flujo le abria un usuario duplicado apellido.nombre@...
+  // Mismo resolver que el sync de cursos: user previo -> DNI en Odoo -> correo
+  // real -> sintetico. Antes solo miraba el DNI previo, asi que a un alumno con
+  // cuenta Odoo creada por otro flujo le abria un usuario duplicado
+  // apellido.nombre@...
   const prevOdooUserId = await repo.findPreviousOdooUserByDocument(data.document_number)
   const searchEmail = await resolveOdooLogin({
     prevOdooUserId,
+    documentNumber: data.document_number,
     originEmail: data.origin_email,
     createEmail
   })

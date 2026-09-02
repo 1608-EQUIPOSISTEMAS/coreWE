@@ -36,14 +36,14 @@ CREATE TABLE IF NOT EXISTS public.reprogram_cases (
   CONSTRAINT reprogram_cases_status_chk
     CHECK (status IN ('propuesto', 'contactado', 'aceptado', 'rechazado', 'cerrado')),
   CONSTRAINT reprogram_cases_kind_chk
-    CHECK (dest_kind IS NULL OR dest_kind IN ('RP', 'CC', 'RF'))
+    CHECK (dest_kind IS NULL OR dest_kind IN ('RP', 'CC', 'RF', 'RV'))
 );
 
--- Las tablas que ya existian se quedaron con el CHECK viejo (sin 'RF'):
+-- Las tablas que ya existian se quedaron con el CHECK viejo (solo RP/CC):
 -- CREATE TABLE IF NOT EXISTS no lo actualiza. Recrearlo es la unica forma.
 ALTER TABLE public.reprogram_cases DROP CONSTRAINT IF EXISTS reprogram_cases_kind_chk;
 ALTER TABLE public.reprogram_cases ADD CONSTRAINT reprogram_cases_kind_chk
-  CHECK (dest_kind IS NULL OR dest_kind IN ('RP', 'CC', 'RF'));
+  CHECK (dest_kind IS NULL OR dest_kind IN ('RP', 'CC', 'RF', 'RV'));
 
 -- Un solo caso abierto por venta. Los cerrados historicos no estorban.
 CREATE UNIQUE INDEX IF NOT EXISTS reprogram_cases_enrollment_uq
@@ -57,6 +57,6 @@ COMMENT ON TABLE public.reprogram_cases IS
 COMMENT ON COLUMN public.reprogram_cases.enrollment_id IS
   'La venta afectada (top-level). Los modulos hijos no generan caso propio.';
 COMMENT ON COLUMN public.reprogram_cases.dest_kind IS
-  'RP = mismo program_version (reprogramEdition). CC = otro programa (courseChange). RF = el alumno pide reembolso: no hay destino y el ERP no mueve nada. Lo deriva la entity.';
+  'RP = mismo program_version (reprogramEdition). CC = otro programa (courseChange). RF = el alumno pide reembolso: no hay destino y el ERP no mueve nada. RV = reserva de vacante: se retira de la edicion pero su pago queda a favor hasta que se reinscriba. Lo deriva la entity.';
 COMMENT ON COLUMN public.reprogram_cases.pending_steps IS
   'Pasos que fallaron al ejecutar y quedan manuales (ej. desinscribir del aula vieja en Odoo).';

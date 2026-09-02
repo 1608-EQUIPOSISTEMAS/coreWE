@@ -20,16 +20,34 @@ export const ESTADO = {
 export const KIND = {
   REPROGRAMACION: 'RP',
   CAMBIO_DE_CURSO: 'CC',
-  REEMBOLSO: 'RF'
+  REEMBOLSO: 'RF',
+  RESERVA_VACANTE: 'RV'
 }
+
+// Que decide hacer Academica con el alumno varado. Una sola opcion en vez de
+// varias banderas: son excluyentes y solo la primera necesita destino.
+export const SALIDA = {
+  REUBICAR: 'reubicar',
+  RESERVA: 'reserva',
+  REEMBOLSO: 'reembolso'
+}
+
+// Las salidas que cierran el caso sin mandarlo a ningun programa nuevo.
+const KIND_SIN_DESTINO = {
+  [SALIDA.RESERVA]: KIND.RESERVA_VACANTE,
+  [SALIDA.REEMBOLSO]: KIND.REEMBOLSO
+}
+
+export const cierraSinDestino = destKind =>
+  Object.values(KIND_SIN_DESTINO).includes(destKind)
 
 // El motor lo decide el destino, no el usuario: quedarse en el mismo programa es
 // una Reprogramacion; irse a otro es un Cambio de Curso. Son dos casos de uso
 // distintos de FICO y el de la izquierda exige mismo program_version.
-export function resolveDestKind ({ originProgramVersionId, destProgramVersionId, destEditionId, refund = false }) {
-  // El que pide su plata de vuelta no tiene destino academico: el caso queda
-  // registrado y el reembolso lo procesa Contabilidad fuera del ERP.
-  if (refund) return KIND.REEMBOLSO
+export function resolveDestKind ({ originProgramVersionId, destProgramVersionId, destEditionId, salida = SALIDA.REUBICAR }) {
+  // Ni el que pide su plata de vuelta ni el que reserva vacante van a un
+  // programa nuevo: no tiene sentido exigirles destino.
+  if (KIND_SIN_DESTINO[salida]) return KIND_SIN_DESTINO[salida]
   if (!destProgramVersionId) throw new ReprogramacionError('Falta el programa destino')
   const kind = Number(originProgramVersionId) === Number(destProgramVersionId)
     ? KIND.REPROGRAMACION
@@ -61,8 +79,8 @@ export function assertPuedeProponer (caso) {
 export function assertPuedeAceptar (caso) {
   const estado = estadoDelCaso(caso)
   if (estado === ESTADO.ACEPTADO) throw new ReprogramacionError('El caso ya se ejecuto')
-  // El reembolso es el unico veredicto sin destino: no hay a donde mandarlo.
-  if (caso?.dest_kind !== KIND.REEMBOLSO && !caso?.dest_edition_id && !caso?.dest_program_version_id) {
+  // Reembolso y reserva de vacante son los veredictos legitimos sin destino.
+  if (!cierraSinDestino(caso?.dest_kind) && !caso?.dest_edition_id && !caso?.dest_program_version_id) {
     throw new ReprogramacionError('Academica todavia no eligio el destino')
   }
   if (estado !== ESTADO.CONTACTADO) {

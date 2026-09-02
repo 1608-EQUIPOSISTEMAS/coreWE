@@ -141,9 +141,10 @@ export async function enrollInOdoo ({ enrollmentId }) {
 
   const createEmail = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
 
-  // Login a buscar en Odoo: DNI previo -> correo real del alumno -> sintetico.
+  // Login a buscar en Odoo: user previo -> DNI en Odoo -> correo real -> sintetico.
   const searchEmail = await resolveOdooLogin({
     prevOdooUserId: prevOdoo?.odoo_user_id,
+    documentNumber: data.document_number,
     originEmail: data.origin_email,
     createEmail
   })

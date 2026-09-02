@@ -42,7 +42,15 @@ export class ReprogramacionRepository {
                                   AND cseg.alias = 'we_segment_a5'
         JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
         JOIN public.programs p ON p.program_id = pv.program_id
-       WHERE ${ReprogramacionRepository.VIVO}
+       WHERE (${ReprogramacionRepository.VIVO})
+          -- Una vez que alguien tomo el caso, la fila se queda aunque el alumno
+          -- deje de estar "vivo": ejecutar el veredicto lo marca reprogramado,
+          -- cambiado o retirado, y sin esto el resultado desaparecia de la
+          -- bandeja apenas se aprobaba (el KPI de reubicados vivia en cero).
+          OR EXISTS (
+               SELECT 1 FROM public.reprogram_cases rc2
+                WHERE rc2.active = 'Y'
+                  AND rc2.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id))
     )
     SELECT v.enrollment_id,
            per.person_id,

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   ESTADO,
   KIND,
+  SALIDA,
+  cierraSinDestino,
   ReprogramacionError,
   assertPuedeAceptar,
   assertPuedeProponer,
@@ -40,15 +42,39 @@ describe('resolveDestKind', () => {
     expect(() => resolveDestKind({ originProgramVersionId: 10 })).toThrow(ReprogramacionError)
   })
 
-  // El alumno que pide su plata de vuelta no va a ningun lado: exigirle un
-  // programa destino obligaba a Academica a inventar uno para poder guardar.
+  // Ni el que pide su plata ni el que reserva vacante van a ningun lado:
+  // exigirles un programa destino obligaba a Academica a inventar uno.
   it('reembolso => RF, sin programa ni edicion', () => {
-    expect(resolveDestKind({ originProgramVersionId: 10, refund: true })).toBe(KIND.REEMBOLSO)
+    expect(resolveDestKind({ originProgramVersionId: 10, salida: SALIDA.REEMBOLSO }))
+      .toBe(KIND.REEMBOLSO)
   })
 
-  it('el reembolso gana sobre cualquier destino a medio elegir', () => {
-    expect(resolveDestKind({ originProgramVersionId: 10, destProgramVersionId: 11, refund: true }))
-      .toBe(KIND.REEMBOLSO)
+  it('reserva de vacante => RV, sin programa ni edicion', () => {
+    expect(resolveDestKind({ originProgramVersionId: 10, salida: SALIDA.RESERVA }))
+      .toBe(KIND.RESERVA_VACANTE)
+  })
+
+  it('la salida gana sobre cualquier destino a medio elegir', () => {
+    expect(resolveDestKind({ originProgramVersionId: 10, destProgramVersionId: 11, salida: SALIDA.RESERVA }))
+      .toBe(KIND.RESERVA_VACANTE)
+  })
+
+  it('sin salida explicita reubica, que es lo de siempre', () => {
+    expect(resolveDestKind({ originProgramVersionId: 10, destProgramVersionId: 11 }))
+      .toBe(KIND.CAMBIO_DE_CURSO)
+  })
+})
+
+describe('cierraSinDestino', () => {
+  it('reembolso y reserva cierran el caso sin destino', () => {
+    expect(cierraSinDestino(KIND.REEMBOLSO)).toBe(true)
+    expect(cierraSinDestino(KIND.RESERVA_VACANTE)).toBe(true)
+  })
+
+  it('la reubicacion no: sin destino no se puede ejecutar', () => {
+    expect(cierraSinDestino(KIND.REPROGRAMACION)).toBe(false)
+    expect(cierraSinDestino(KIND.CAMBIO_DE_CURSO)).toBe(false)
+    expect(cierraSinDestino(null)).toBe(false)
   })
 })
 
@@ -75,9 +101,14 @@ describe('assertPuedeAceptar', () => {
     expect(() => assertPuedeAceptar(null)).toThrow(ReprogramacionError)
   })
 
-  // El reembolso es el unico veredicto legitimo sin destino.
+  // Reembolso y reserva son los dos veredictos legitimos sin destino.
   it('acepta un reembolso contactado aunque no tenga destino', () => {
     expect(() => assertPuedeAceptar({ status: ESTADO.CONTACTADO, dest_kind: KIND.REEMBOLSO }))
+      .not.toThrow()
+  })
+
+  it('acepta una reserva de vacante contactada aunque no tenga destino', () => {
+    expect(() => assertPuedeAceptar({ status: ESTADO.CONTACTADO, dest_kind: KIND.RESERVA_VACANTE }))
       .not.toThrow()
   })
 

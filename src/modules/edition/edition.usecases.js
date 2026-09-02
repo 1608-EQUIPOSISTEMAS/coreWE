@@ -20,6 +20,7 @@ import {
   getAllowedDays,
   b2bAttendanceSummary,
   B2B_ATTENDANCE_STATES,
+  B2B_JUSTIFICATION_MAX,
   reproEventsOf,
   MAX_EDITION_REPROS,
   buildA5Payload,
@@ -1206,6 +1207,7 @@ export async function b2bTrackingList ({ scope = 'curso' } = {}) {
       agent_origin: r.agent_origin,
       final_grade: r.final_grade === null ? null : Number(r.final_grade),
       attendance,
+      attendance_notes: r.attendance_notes || {},
       attendance_updated_at: r.attendance_updated_at,
       summary: b2bAttendanceSummary(attendance, ed.total_sessions)
     })
@@ -1223,7 +1225,10 @@ export async function b2bTrackingList ({ scope = 'curso' } = {}) {
 }
 
 // Marca una celda de asistencia. status null = volver a "sin marcar".
-export async function b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status, user_id } = {}) {
+// El motivo (`note`) es obligatorio para 'J' y se descarta en los demas
+// estados: una Presente con motivo de falta pegado seria basura heredada de
+// un cambio de estado anterior.
+export async function b2bAttendanceSave ({ enrollment_id, program_edition_id, session_number, status, note, user_id } = {}) {
   const eid = Number(enrollment_id)
   const peid = Number(program_edition_id)
   const sn = Number(session_number)
@@ -1234,8 +1239,12 @@ export async function b2bAttendanceSave ({ enrollment_id, program_edition_id, se
   if (st && !B2B_ATTENDANCE_STATES.includes(st)) {
     return { ok: false, message: `Estado invalido: ${st}` }
   }
+  const justification = st === 'J' ? String(note || '').trim().slice(0, B2B_JUSTIFICATION_MAX) : null
+  if (st === 'J' && !justification) {
+    return { ok: false, message: 'La justificacion necesita un motivo' }
+  }
   const row = await repo.b2bAttendanceSave(
-    { enrollment_id: eid, program_edition_id: peid, session_number: sn, status: st },
+    { enrollment_id: eid, program_edition_id: peid, session_number: sn, status: st, note: justification },
     user_id || null
   )
   return { ok: true, data: row }

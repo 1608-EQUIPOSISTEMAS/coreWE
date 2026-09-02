@@ -194,6 +194,36 @@ async function searchUserByEmail (email) {
   return rows?.[0] || null
 }
 
+// Busca al alumno en Odoo por su documento (`res.partner.vat`). El login puede
+// ser sintetico y el correo del lead puede venir mal escrito, pero el DNI es el
+// mismo siempre: sin este paso, un alumno que YA existe en Odoo con otro login
+// recibe un usuario nuevo con sufijo numerico (carbajal.fernando2@...).
+//
+// `vat` NO es unico en Odoo: hay partners con el DNI de otra persona pegado por
+// error. Ante mas de un partner con el mismo documento se devuelve vacio en vez
+// de adivinar: matricular al alumno A en la cuenta de B es peor que crearle un
+// login duplicado.
+// Devuelve TODOS los usuarios del alumno (un partner puede arrastrar varios
+// logins de altas repetidas). Cual de ellos gana lo decide `resolveOdooLogin`:
+// aqui solo se transporta, la politica vive en el helper.
+async function searchUsersByDocument (documentNumber) {
+  const vat = String(documentNumber || '').trim()
+  if (!vat) return []
+
+  const partners = await callKw('res.partner', 'search_read', [], {
+    domain: [['vat', '=', vat]],
+    fields: ['id', 'email', 'user_ids'],
+    limit:  2
+  })
+  if (partners?.length !== 1) return []
+
+  const userIds = partners[0].user_ids || []
+  if (!userIds.length) return []
+
+  const users = await callKw('res.users', 'read', [userIds, ['name', 'login', 'partner_id', 'surnames', 'names']])
+  return users || []
+}
+
 async function createPortalUser ({ login, name, password }) {
   const userId = await callKw('res.users', 'create', [{
     login,
@@ -995,4 +1025,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names
   }
 }
 
-export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchUsersByDocument, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

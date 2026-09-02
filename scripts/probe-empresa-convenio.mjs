@@ -1,10 +1,16 @@
 // Estado de la columna EMPRESA de "7. Convenios" para una venta puntual.
-//   node scripts/probe-18114-empresa.mjs [--prod]
+//   node scripts/probe-empresa-convenio.mjs 18227 [--prod]
 import fs from 'fs'
 if (process.argv.includes('--prod')) {
   process.env.DATABASE_URL = fs.readFileSync('.env.bak-produccion', 'utf8').match(/postgresql:\/\/\S+/)[0]
 }
 const { pool } = await import('./db.mjs')
+
+const [enrollmentId] = process.argv.slice(2).filter((a) => a !== '--prod')
+if (!enrollmentId) {
+  console.error('uso: node scripts/probe-empresa-convenio.mjs <enrollment_id> [--prod]')
+  process.exit(1)
+}
 
 const { rows } = await pool.query(`
   SELECT e.enrollment_id,
@@ -23,13 +29,7 @@ const { rows } = await pool.query(`
     LEFT JOIN companies comp_lead   ON comp_lead.company_id = l.company_id
     LEFT JOIN b2b_contracts ctr     ON ctr.b2b_contract_id = e.b2b_contract_id
     LEFT JOIN companies comp_ctr    ON comp_ctr.company_id = ctr.company_id
-   WHERE e.enrollment_id = $1`, [18114])
-console.log('-- venta 18114 --')
+   WHERE e.enrollment_id = $1`, [enrollmentId])
+console.log(`-- venta ${enrollmentId} --`)
 console.table(rows)
-
-const { rows: qroma } = await pool.query(`
-  SELECT * 
-    FROM companies WHERE razon_social ILIKE '%QROMA%' ORDER BY razon_social`)
-console.log('-- empresas que matchean QROMA --')
-console.table(qroma)
 await pool.end()

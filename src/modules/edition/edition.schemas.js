@@ -828,7 +828,9 @@ export const b2bAttendanceSaveSchema = {
       enrollment_id: { type: 'integer' },
       program_edition_id: { type: 'integer' },
       session_number: { type: 'integer', minimum: 1 },
-      status: { type: ['string', 'null'], enum: ['P', 'T', 'F', null] },
+      status: { type: ['string', 'null'], enum: ['P', 'T', 'F', 'J', null] },
+      // Motivo de la justificacion. Obligatorio con 'J', ignorado en el resto.
+      note: { type: ['string', 'null'], maxLength: 500 },
       user_id: { type: ['integer', 'null'] }
     }
   }

@@ -95,19 +95,37 @@ export async function buildUniqueOdooEmail (firstName, lastName, documentNumber)
   return `${base}.${suffix}${domain}`
 }
 
+// De los logins que cuelgan del mismo partner, gana el correo real del alumno
+// sobre el sintetico @weeducacion.edu.pe; entre iguales, el mas antiguo. Un
+// alumno reinscrito debe volver al login con el que de verdad entra al campus.
+function elegirLoginDelAlumno (usuarios) {
+  const porAntiguedad = [...(usuarios || [])].filter(u => u?.login).sort((a, b) => a.id - b.id)
+  const real = porAntiguedad.find(u => !String(u.login).toLowerCase().endsWith(ODOO_EMAIL_DOMAIN))
+  return (real || porAntiguedad[0])?.login || null
+}
+
 // Login (searchEmail) con el que hay que buscar al alumno en Odoo, en orden de
 // confianza:
 //   1) login del odoo_user_id previo del mismo DNI (lo mapeamos nosotros).
-//   2) su correo real, si ya tiene cuenta Odoo de un flujo antiguo (GAS, alta
-//      manual, otro sistema) que nuestra BD nunca registro. Sin este paso se
-//      crea un usuario sintetico duplicado para alguien que ya existia.
-//   3) el email sintetico recien generado (alumno realmente nuevo).
+//   2) su documento en `res.partner.vat`: es la llave que no cambia. El correo
+//      del lead se tipea mal y el login base se lo puede haber quedado un
+//      homonimo, y entonces se creaba una cuenta nueva para alguien que YA
+//      existia en Odoo (asi nacio `carbajal.fernando2@`).
+//   3) su correo real, si ya tiene cuenta Odoo de un flujo antiguo (GAS, alta
+//      manual, otro sistema) que nuestra BD nunca registro.
+//   4) el email sintetico recien generado (alumno realmente nuevo).
 // El search es por `res.users.login`, no por `partner.email`: el email de
 // partner se repite entre personas y no es llave.
-export async function resolveOdooLogin ({ prevOdooUserId, originEmail, createEmail }, client = odooClient) {
+export async function resolveOdooLogin ({ prevOdooUserId, documentNumber, originEmail, createEmail }, client = odooClient) {
   if (prevOdooUserId) {
     const users = await client.callKw('res.users', 'read', [[prevOdooUserId], ['login']]).catch(() => null)
     if (users?.[0]?.login) return users[0].login
+  }
+
+  if (documentNumber) {
+    const porDocumento = await client.searchUsersByDocument(documentNumber).catch(() => null)
+    const login = elegirLoginDelAlumno(porDocumento)
+    if (login) return login
   }
 
   const realEmail = originEmail ? String(originEmail).trim().toLowerCase() : ''

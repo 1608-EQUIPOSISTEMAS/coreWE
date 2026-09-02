@@ -429,4 +429,10 @@ describe('b2bAttendanceSummary (Seguimiento B2B)', () => {
   it('mas marcas que sesiones del curso no da pendientes negativos', () => {
     expect(b2bAttendanceSummary({ 1: 'P', 2: 'P', 3: 'P' }, 2).pending).toBe(0)
   })
+
+  it('la falta justificada no penaliza el porcentaje y se reporta aparte', () => {
+    const s = b2bAttendanceSummary({ 1: 'P', 2: 'J', 3: 'F' }, 6)
+    expect(s).toMatchObject({ present: 1, justified: 1, absent: 1, taken: 3 })
+    expect(s.pct).toBe(67) // (1 presente + 1 justificada) / 3 tomadas
+  })
 })
