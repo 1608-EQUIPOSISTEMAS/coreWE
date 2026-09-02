@@ -28,6 +28,7 @@ import notificationRoutes from './modules/notification/notification.routes.js'
 import tokenRoutes from './modules/fico/tokens/token.routes.js'
 import botRoutes from './modules/bot/bot.routes.js'
 import configRoutes from './modules/config/config.routes.js'
+import auditRoutes from './modules/audit/audit.routes.js'
 import importerRoutes from './modules/importer/importer.routes.js'
 import marketingRoutes from './modules/marketing/marketing.routes.js'
 import b2bRoutes from './modules/b2b/b2b.routes.js'
@@ -209,6 +210,7 @@ export async function buildApp (opts = {}) {
   await app.register(tokenRoutes, { prefix: '/api/token' })
   await app.register(botRoutes, { prefix: '/api/bot' })
   await app.register(configRoutes, { prefix: '/api/config' })
+  await app.register(auditRoutes, { prefix: '/api/audit' })
   await app.register(importerRoutes, { prefix: '/api/import' })
   await app.register(marketingRoutes, { prefix: '/api/marketing' })
   await app.register(b2bRoutes, { prefix: '/api/b2b' })

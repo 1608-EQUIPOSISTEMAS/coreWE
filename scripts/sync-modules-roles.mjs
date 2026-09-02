@@ -72,6 +72,7 @@ const CATALOGO = [
     ['ROLES',             'Roles y Permisos'],
     ['IMPORTACION',       'Importacion'],
     ['MEMBRESIA_CURSOS',  'Cursos de Membresia'],
+    ['AUDITORIA',         'Auditoria'],
   ]],
 ]
 
