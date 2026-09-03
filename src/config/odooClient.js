@@ -826,7 +826,9 @@ async function certifyClassroom ({ groupName, grades }) {
     gradesApplied.push({ ...g, student_id: allSids[0], all_sids: allSids, eval_ids: evalIds })
   }
 
-  // Verificación: si final_score es computado en Odoo puede diferir de lo escrito.
+  // La nota OFICIAL del certificado es la de Odoo (decision del area academica,
+  // 2026-09-03): final_score es computado alla y pisa lo que mandamos. Releerlo no
+  // es una alarma, es dejar constancia de con que nota quedo certificado el alumno.
   const scoreMismatches = []
   if (gradesApplied.length) {
     const ids = gradesApplied.flatMap(g => g.eval_ids)
@@ -835,7 +837,7 @@ async function certifyClassroom ({ groupName, grades }) {
     for (const row of (back || [])) {
       const g = expected.get(row.student_id?.[0])
       if (g && Math.abs((row.final_score ?? 0) - g.final_score) > 0.01) {
-        scoreMismatches.push(`${g.student_name}: enviado ${g.final_score}, Odoo tiene ${row.final_score}`)
+        scoreMismatches.push(`${g.student_name}: ERP ${g.final_score} → oficial ${row.final_score}`)
       }
     }
   }

@@ -153,8 +153,11 @@ export function validateRubricParams (edition_id, session_number) {
 
 // Reglas de la Lista de Notas (formato oficial del area academica, ISO 21001).
 // Pesos sobre /20: tests 6, participacion 2 (aditiva), parcial 6, final 8.
-// PASS_THRESHOLD y CAP_FINAL_AT_20 son provisionales hasta confirmacion del
-// area academica; se cambian aqui sin tocar nada mas.
+// Confirmado por el area academica el 2026-09-03: la sesion sin test cuenta 0 y
+// se promedia sobre el TOTAL de sesiones del aula (no solo sobre las cargadas).
+// Consecuencia: mientras el aula no tenga todos los quizzes cargados, la nota
+// del ERP sale mas baja que la real. La nota OFICIAL del certificado es la que
+// calcula Odoo, no esta (ver certifyClassroom en config/odooClient.js).
 export const GRADE_RULES = Object.freeze({
   TEST_MAX_PER_SESSION: 20, // nota del TEST FINAL del quiz de la sesion (0-20)
   CRITERIA_MAX: 20, // cada criterio se califica de 0 a 20

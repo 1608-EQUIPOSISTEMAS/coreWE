@@ -1,17 +1,11 @@
-// Conexión de solo-lectura/one-off a PRODUCCIÓN por el túnel SSH (127.0.0.1:55432).
-//
-// La contraseña no se pasa por línea de comandos ni se exporta al entorno del shell:
-// se lee del respaldo Backend/.env.bak-produccion, que es donde ya vive.
-import fs from 'node:fs'
-import path from 'node:path'
+// Apunta los scripts one-off a producción (túnel SSH 127.0.0.1:55432) leyendo la
+// contraseña de .env.bak-produccion. Importar ANTES que ./db.mjs:
+//   import './_prod.mjs'; import { q } from './db.mjs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import pg from 'pg'
 
-const raiz = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const respaldo = fs.readFileSync(path.join(raiz, '.env.bak-produccion'), 'utf8')
-const connectionString = respaldo.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim()
-if (!connectionString) throw new Error('No encontré DATABASE_URL en .env.bak-produccion')
-
-export const pool = new pg.Pool({ connectionString, max: 2, connectionTimeoutMillis: 10000, keepAlive: true })
-pool.on('error', (err) => console.error('[scripts/_prod] socket idle perdido:', err.message))
-export const q = (text, params) => pool.query(text, params)
+const bak = readFileSync(fileURLToPath(new URL('../.env.bak-produccion', import.meta.url)), 'utf8')
+const url = bak.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim()
+if (!url) throw new Error('No hay DATABASE_URL en .env.bak-produccion')
+process.env.DATABASE_URL = url
+delete process.env.PGPASSWORD // PGPASSWORD gana sobre DATABASE_URL en db.mjs y partiría los pools

@@ -17,9 +17,17 @@ export class AuditRepository {
   // multiplicarían por veinte el payload de la página.
   // ponytail: solo se devuelve el diff (changed_fields). Si algún día hace falta
   // la foto completa del registro, va en un endpoint de detalle por id.
+  //
+  // created_at sale ya formateado con to_char porque la columna es `timestamp
+  // WITHOUT time zone` y guarda hora de Lima (el pool hace SET TIME ZONE
+  // 'America/Lima' al conectar). Devolverlo como Date lo hacía viajar por dos
+  // zonas horarias adivinadas —la del proceso Node y la del navegador— y en
+  // producción la vista mostraba la hora corrida.
   async listLogs ({ auditableRoles, tableName, action, userId, recordId, dateFrom, dateTo, limit, offset }) {
     const { rows } = await this.db.query(`
-      SELECT a.id, a.created_at, a.table_name, a.record_id, a.action,
+      SELECT a.id,
+             to_char(a.created_at, 'DD/MM/YYYY HH24:MI') AS created_at,
+             a.table_name, a.record_id, a.action,
              a.user_id, u.alias AS user_alias, a.changed_fields
         FROM public.audit_logs a
         LEFT JOIN public.users u ON u.user_id = a.user_id

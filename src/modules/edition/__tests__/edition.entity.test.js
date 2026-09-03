@@ -18,7 +18,8 @@ import {
   buildWeeklySessionDays,
   buildSessionSchedule,
   buildControlRow,
-  attachSessionAudits
+  attachSessionAudits,
+  computeGradeTotals
 } from '../edition.entity.js'
 
 describe('normalizeActive (listado)', () => {
@@ -434,5 +435,28 @@ describe('b2bAttendanceSummary (Seguimiento B2B)', () => {
     const s = b2bAttendanceSummary({ 1: 'P', 2: 'J', 3: 'F' }, 6)
     expect(s).toMatchObject({ present: 1, justified: 1, absent: 1, taken: 3 })
     expect(s.pct).toBe(67) // (1 presente + 1 justificada) / 3 tomadas
+  })
+})
+
+// Regla confirmada por el area academica el 2026-09-03: la sesion sin test cuenta
+// 0 y entra al promedio sobre el TOTAL de sesiones del aula. Caso real que
+// disparo la consulta: N8N:AGENTES IA E1-26 (6 sesiones), enrollment 3751.
+describe('computeGradeTotals: la sesion sin test cuenta 0', () => {
+  const alumno = {
+    tests: { 2: 16, 3: 16, 4: 20 }, // S1, S5 y S6 sin cargar
+    participation: { 1: true, 2: true, 3: true, 4: true, 5: true, 6: true },
+    partial_criteria: { 1: 20, 2: 20, 3: 20 },
+    final_criteria: { 1: 20, 2: 20, 3: 20, 4: 20 }
+  }
+
+  it('promedia los tests entre las 6 sesiones, no entre las 3 cargadas', () => {
+    const t = computeGradeTotals(alumno, 6)
+    expect(t.test_score).toBe(8.67) // 52/6, no 52/3 = 17.33
+    expect(t.final_grade).toBe(18.6) // 8.67*.30 + 20*.30 + 20*.40 + 2
+  })
+
+  it('sube a 20 cuando se completan los tests que faltaban', () => {
+    const completo = { ...alumno, tests: { 1: 20, 2: 16, 3: 16, 4: 20, 5: 20, 6: 20 } }
+    expect(computeGradeTotals(completo, 6).final_grade).toBe(20) // topado por CAP_FINAL_AT_20
   })
 })
