@@ -17,7 +17,7 @@ const fila = {
   f_pago: '03/08/2026', dni: '45678912', nombres: 'ANA', apellidos: 'PEREZ LOPEZ',
   celular: '999888777', correo: 'ana@we.pe', ocup: 'P', estado: 'PT',
   dsct: '20,00%', inicial: '240,00', saldo: '0,00', ingreso: '240,00',
-  modalidad: 'VIP', asiento: '24', cod: 'CO-CE-01'
+  modalidad: 'VIP', asiento: '24', cod: 'CO-CE-01', status_deuda: 'NO DEBE'
 }
 
 describe('hoja "4. Ventas Eventos"', () => {
@@ -26,19 +26,35 @@ describe('hoja "4. Ventas Eventos"', () => {
     expect(row).toHaveLength(EVENTOS_HEADER_ROW.length)
     expect(row).toEqual([
       '03/08/2026', '45678912', 'ANA', 'PEREZ LOPEZ', '999888777', 'ana@we.pe',
-      'P', 'PT', '20,00%', '240,00', '0,00', '240,00', 'VIP', '24', 'CO-CE-01'
+      'P', 'PT', '20,00%', '240,00', '0,00', '240,00', 'VIP', '24', 'CO-CE-01',
+      'NO DEBE'
     ])
   })
 
   it('una fila incompleta no desplaza columnas: los huecos van vacios', () => {
     expect(buildEventosRow({ nombres: 'ANA' }))
-      .toEqual(['', '', 'ANA', '', '', '', '', '', '', '', '', '', '', '', ''])
+      .toEqual(['', '', 'ANA', '', '', '', '', '', '', '', '', '', '', '', '', ''])
   })
 
   // Misma regla que las otras hojas con importe por alumno.
   it('los alumnos de monto-cero suben con importe 0', () => {
     const row = buildEventosRow({ ...fila, correo: 'wchambi@bancoripley.com.pe' })
     expect(row.slice(8, 12)).toEqual([0, 0, 0, 0])
+  })
+
+  // STATUS es de cobranza: con saldo pendiente DEBE, y con beca o pago
+  // completo NO DEBE. El de monto-cero nunca debe, aunque el SQL diga otra cosa.
+  it('STATUS sale de la deuda que calculo el SQL', () => {
+    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE' }).at(-1)).toBe('DEBE')
+    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE', correo: 'wchambi@bancoripley.com.pe' }).at(-1))
+      .toBe('NO DEBE')
+  })
+
+  it('una beca y una entrada saldada no deben; una con saldo si', () => {
+    const sql = captureEventosSql()
+    expect(sql).toContain("WHEN (e.total_amount) = 0 THEN 'NO DEBE'")
+    expect(sql).toContain("COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'")
+    expect(sql).toContain('AS status_deuda')
   })
 
   it('solo trae inscripciones de evento, por categoria de entrada o por tipo de programa', () => {

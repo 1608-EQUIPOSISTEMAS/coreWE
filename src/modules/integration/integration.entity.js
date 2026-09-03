@@ -142,21 +142,23 @@ export function buildMembresiasRow (r) {
 export const EVENTOS_HEADER_ROW = [
   'F. PAGO', 'DNI', 'NOMBRES', 'APELLIDOS', 'CELULAR', 'CORREO', 'OCUP',
   'ESTADO', 'DSCTAL', 'INICIAL', 'SALDO', 'INGRESO', 'MODALIDAD', 'N° DE ASIENTO',
-  'CODIGO'
+  'CODIGO', 'STATUS'
 ]
 
-// Mapea un resultado de la query de eventos FICO a las 15 columnas A..O.
+// Mapea un resultado de la query de eventos FICO a las 16 columnas A..P.
 // MODALIDAD es la categoria de entrada (VIP/GENERAL/PREMIUM/VIRTUAL) y el
 // asiento solo lo traen las VIP; ambos van vacios en los congresos viejos, que
 // se vendieron antes de que existiera la categoria.
 export function buildEventosRow (r) {
   const z = isZeroAmountEmail(r.correo)
   const money = (v) => (z ? 0 : (v || ''))
+  // Los alumnos de monto-cero suben con importe 0, asi que tampoco deben.
+  const status = z ? 'NO DEBE' : (r.status_deuda || '')
   return [
     r.f_pago || '', r.dni || '', r.nombres || '', r.apellidos || '',
     r.celular || '', r.correo || '', r.ocup || '', r.estado || '',
     money(r.dsct), money(r.inicial), money(r.saldo), money(r.ingreso),
-    r.modalidad || '', r.asiento || '', r.cod || ''
+    r.modalidad || '', r.asiento || '', r.cod || '', status
   ]
 }
 

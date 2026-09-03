@@ -11,7 +11,8 @@ import {
   liderSchema,
   availableWeeksSchema,
   ventasCanalSchema,
-  detailSalesSchema
+  detailSalesSchema,
+  teamSummarySchema
 } from './dashboard.schemas.js'
 import * as ctrl from './dashboard.controller.js'
 
@@ -19,6 +20,9 @@ export default async function dashboardRoutes (fastify) {
   fastify.addHook('preHandler', authenticate)
 
   fastify.post('/admin-summary', { preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.adminSummaryHandler)
+  // Sin gate de rol a proposito: todo usuario autenticado tiene panel. Que ve
+  // (su area o solo lo suyo) lo decide teamScopeFor con los roles del token.
+  fastify.post('/team-summary', { schema: teamSummarySchema }, ctrl.teamSummaryHandler)
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
   fastify.post('/program-goals/save', { schema: programGoalsSaveSchema }, ctrl.programGoalsSaveHandler)

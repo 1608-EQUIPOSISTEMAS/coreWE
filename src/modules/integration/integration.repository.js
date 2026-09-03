@@ -948,6 +948,13 @@ export class IntegrationRepository {
         WHEN (e.total_amount) = 0 THEN '0'
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
+      -- STATUS de cobranza: DEBE mientras quede saldo. Una beca (total 0) o una
+      -- entrada pagada completa nunca deben.
+      CASE
+        WHEN (e.total_amount) = 0 THEN 'NO DEBE'
+        WHEN GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'
+        ELSE 'NO DEBE'
+      END AS status_deuda,
       COALESCE(c_ev.description, '') AS modalidad,
       COALESCE(e.event_seat, '')     AS asiento,
       COALESCE(pv.version_code, '')  AS cod

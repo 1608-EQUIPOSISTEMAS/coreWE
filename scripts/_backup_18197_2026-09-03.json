@@ -1,0 +1,31 @@
+{
+  "padre": {
+    "enrollment_id": 18197,
+    "program_version_id": 15,
+    "program_edition_id": null,
+    "total_amount": "760.00",
+    "notes": "Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion)"
+  },
+  "hijos": [],
+  "validaciones": [],
+  "PLAN": [
+    {
+      "pv": 1,
+      "modulo": "SAP HANA MM",
+      "tipo": "same_edition",
+      "edicion": null
+    },
+    {
+      "pv": 4,
+      "modulo": "SAP HANA PP",
+      "tipo": "edition_override",
+      "edicion": 14739
+    },
+    {
+      "pv": 6,
+      "modulo": "SAP HANA FI",
+      "tipo": "edition_override",
+      "edicion": 14733
+    }
+  ]
+}

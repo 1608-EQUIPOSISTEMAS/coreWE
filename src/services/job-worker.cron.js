@@ -118,7 +118,9 @@ const handlers = {
 
     if (startIdx <= 1) {
       try {
-        const email = await sendMembershipEmail({ enrollmentId })
+        // created_at acota el reenvio: si el correo ya salio despues de encolarse
+        // este job (reenvio manual de FICO, frontend viejo), no se manda de nuevo.
+        const email = await sendMembershipEmail({ enrollmentId, skipIfSentAfter: job.created_at })
         result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
         if (!email?.success) {
           throw Object.assign(new Error(email?.error || 'Email membresia no enviado'), { _failStep: 'email' })

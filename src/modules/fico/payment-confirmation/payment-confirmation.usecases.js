@@ -241,29 +241,38 @@ export async function confirmPayment (payload, deps = {}) {
     // que recibe el asistente es el correo, que dispara el frontend despues.
     const isEvent = await isEventEnrollment(payload.enrollment_id)
 
-    // Bifurcacion membresia diferida: encolar job en vez de ejecutar Odoo + email
-    // sincronicamente. El worker reclama el job al llegar runAt (9am Lima) y
-    // dispara enrollMembershipInOdoo + sendMembershipEmail.
-    if (activation.isMembership && activation.deferred) {
+    // TODA membresia sale por la cola, difiera o no. El correo de bienvenida es
+    // responsabilidad del job (steps odoo -> email, con reintentos y backoff) y
+    // no de una 2da llamada del navegador: si esa llamada no ocurria, el alumno
+    // quedaba sin credenciales y sin rastro del fallo. La inmediata va con
+    // runAt null, o sea que el worker la reclama en el proximo poll (~5s).
+    if (activation.isMembership) {
       try {
         const job = await jobQueue.enqueue({
           jobType: 'membership_activation',
           enrollmentId: payload.enrollment_id,
           payload: { enrollmentId: payload.enrollment_id },
-          runAt: activation.runAt
+          runAt: activation.deferred ? activation.runAt : null
         })
         // Flag para que el frontend NO llame a enrollInOdoo ni sendConfirmationEmail
-        // despues: el job lo hara en su momento. Sin esto se dispararia HOY.
-        resp.membership_deferred = true
-        resp.activation_date = activation.activationDate
+        // despues: el job lo hara. Sin esto se mandaria el correo dos veces.
+        resp.membership_queued = true
         resp.scheduled_job_id = job.job_id
+        if (activation.deferred) {
+          resp.membership_deferred = true
+          resp.activation_date = activation.activationDate
+        }
         await sideEffects.logAudit({
           enrollmentId: payload.enrollment_id,
-          action: 'membership_activation_scheduled',
+          action: activation.deferred ? 'membership_activation_scheduled' : 'membership_activation_queued',
           userId: payload.user_id,
-          details: `Activacion programada para ${activation.activationDate} 09:00 (job=${job.job_id})`
+          details: activation.deferred
+            ? `Activacion programada para ${activation.activationDate} 09:00 (job=${job.job_id})`
+            : `Activacion inmediata encolada (job=${job.job_id})`
         })
       } catch (qErr) {
+        // Sin job, el frontend sigue siendo el plan B: membership_queued queda
+        // en false y dispara el correo como antes.
         console.error('[confirmPayment] No se pudo encolar membership_activation:', qErr.message)
       }
     } else if (isEvent) {

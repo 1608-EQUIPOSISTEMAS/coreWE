@@ -1,3 +1,5 @@
+import { AREA_OF_LEADER } from '../audit/audit.entity.js'
+
 // Reglas puras del dominio dashboard. Sin BD, Odoo ni Slack.
 // Transformaciones de filas crudas de las vistas a DTO de salida y armado de
 // etiquetas de semana. Todo determinista a partir de su entrada.
@@ -248,4 +250,43 @@ export function aggregateVentasCanal (rows) {
   }))
 
   return { total: weeklyData.length, weeklyData }
+}
+
+// ── Panel de equipo (líder) y panel propio (colaborador) ──────────────────
+//
+// Etiqueta legible del área a la que pertenece un rol operativo. Solo existe
+// para pintar el encabezado; la BD nunca se filtra por esto.
+const AREA_LABEL = {
+  COMERCIAL: 'Comercial',
+  FICO: 'FICO',
+  ACADEMICA: 'Académica',
+  PRODUCTO: 'Producto',
+  FUNDACION: 'Fundación',
+  B2B: 'B2B'
+}
+
+// A quién ve quien consulta el panel. Tres alcances y una sola consulta detrás:
+//
+//   ADMIN        → toda la empresa      (areaRoles null, userId null)
+//   LIDER_<AREA> → su área              (areaRoles [...], userId null)
+//   cualquiera   → él mismo             (areaRoles null, userId <id>)
+//
+// El organigrama se importa de la Auditoría en vez de copiarse: es la misma
+// pregunta ("¿de quién soy responsable?") y una segunda copia se desincroniza
+// el día que alguien mueva un área.
+//
+// A diferencia de auditableRolesFor, esto NO lanza 403: un colaborador sin rol
+// de liderazgo tiene panel, solo que el equipo es de una persona.
+export function teamScopeFor ({ roles = [], userId = null } = {}) {
+  if (roles.includes('ADMIN')) {
+    return { areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true }
+  }
+
+  const areaRoles = [...new Set(roles.flatMap(role => AREA_OF_LEADER[role] || []))]
+  if (areaRoles.length) {
+    const label = areaRoles.map(r => AREA_LABEL[r]).find(Boolean) ?? 'Mi área'
+    return { areaRoles, userId: null, area: label, isLeader: true }
+  }
+
+  return { areaRoles: null, userId, area: 'Mi actividad', isLeader: false }
 }

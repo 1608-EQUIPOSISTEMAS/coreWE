@@ -1,5 +1,5 @@
 import { logAudit } from './audit/audit.usecases.js'
-import { enrollInOdoo, syncInstallmentPaymentToOdoo } from './odoo-sync/odoo-sync.usecases.js'
+import { enrollInOdoo, syncInstallmentPaymentToOdoo, setMembershipPort } from './odoo-sync/odoo-sync.usecases.js'
 import { enrollMembershipInOdoo } from './membership/membership.usecases.js'
 import { sendConfirmationEmail, configureEmailDeps } from './email-confirmation/email-confirmation.usecases.js'
 import { createChildEnrollments, validateChildEnrollmentSetup, setPorts as setValidationPorts } from './validation/validation.usecases.js'
@@ -17,6 +17,12 @@ let wired = false
 export function bootstrapFico () {
   if (wired) return
   wired = true
+
+  // odoo-sync deriva a este puerto cuando la inscripcion es de membresia. Sin
+  // cablearlo, enrollInOdoo tira 'enrollMembershipInOdoo no esta cableado' y
+  // mata el job register_followup en el step 'children': el correo de bienvenida
+  // (step 'email') nunca llega a salir.
+  setMembershipPort(enrollMembershipInOdoo)
 
   // email-confirmation necesita los efectos Odoo (ciclo email<->membership).
   configureEmailDeps({ enrollInOdoo, enrollMembershipInOdoo })

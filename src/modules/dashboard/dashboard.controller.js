@@ -64,3 +64,8 @@ export async function detailSalesHandler (req, reply) {
   const { data, page, size } = await usecases.detailSales(req.body)
   return reply.send({ ok: true, data, page, size })
 }
+
+export async function teamSummaryHandler (req, reply) {
+  const data = await usecases.teamSummary({ roles: req.user?.roles || [], userId: req.user?.id })
+  return reply.send({ ok: true, data })
+}

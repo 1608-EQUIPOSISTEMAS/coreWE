@@ -1,0 +1,35 @@
+{
+  "enrollment": [
+    {
+      "enrollment_id": 2425,
+      "list_price": "264.00",
+      "discount_amount": "145.20",
+      "total_amount": "118.00"
+    }
+  ],
+  "cuota": [
+    {
+      "installment_id": 3137,
+      "installment_number": 1,
+      "amount": "118.00"
+    }
+  ],
+  "pagos": [
+    {
+      "payment_id": 2153,
+      "amount": "118.00",
+      "active": "N"
+    },
+    {
+      "payment_id": 2177,
+      "amount": "118.00",
+      "active": "Y"
+    }
+  ],
+  "descuentos": [
+    {
+      "discount_id": 13,
+      "calculated_amount": "145.20"
+    }
+  ]
+}

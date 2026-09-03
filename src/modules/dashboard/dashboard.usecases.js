@@ -1,5 +1,6 @@
 import { dashboardRepository } from './dashboard.repository.js'
-import { aggregateVentasCanal } from './dashboard.entity.js'
+import { aggregateVentasCanal, teamScopeFor } from './dashboard.entity.js'
+import { AUDITED_TABLES } from '../audit/audit.entity.js'
 import {
   toDashboardDto,
   toProgramGoalsDto,
@@ -65,6 +66,42 @@ export async function adminSummary () {
   }))
 
   return { ...raw, modulos, topUsuarios, totalAcciones: totalActual }
+}
+
+// Panel de equipo: lo que ve un lider de su area y un colaborador de si mismo.
+//
+// Es el mismo resumen con distinto alcance (lo decide teamScopeFor), mas las
+// metas de venta cuando el area las tiene definidas. Comercial es hoy la unica
+// con metas por persona en la BD; pedirlas para las demas devolveria una tabla
+// vacia que se leeria como "no cumplieron".
+export async function teamSummary ({ roles = [], userId = null } = {}) {
+  const scope = teamScopeFor({ roles, userId })
+
+  const [resumen, metas] = await Promise.all([
+    repo.teamSummary(scope),
+    tieneMetasDeVenta(scope) ? repo.salesGoals() : Promise.resolve([])
+  ])
+
+  return {
+    scope: { area: scope.area, isLeader: scope.isLeader },
+    ...resumen,
+    porTabla: resumen.porTabla.map(fila => ({ ...fila, label: etiquetaDeTabla(fila.table_name) })),
+    movimientos: resumen.movimientos.map(m => ({ ...m, label: etiquetaDeTabla(m.table_name) })),
+    metas
+  }
+}
+
+// Comercial es la unica area con sales_targets_monthly. El ADMIN tambien las ve
+// porque su alcance es la empresa entera, y esas metas son parte de ella.
+function tieneMetasDeVenta ({ areaRoles }) {
+  return areaRoles === null || areaRoles.includes('COMERCIAL')
+}
+
+// Nombre legible de la tabla auditada. Primero el catalogo de la Auditoria (que
+// nombra la accion: "Inscripciones", "Pagos"); si no esta, el modulo del ERP al
+// que pertenece; y en ultimo caso el nombre crudo, que es mejor que mentir.
+function etiquetaDeTabla (tableName) {
+  return AUDITED_TABLES[tableName] ?? TABLE_MODULE[tableName] ?? tableName
 }
 
 export async function dashboardList (payload = {}) {

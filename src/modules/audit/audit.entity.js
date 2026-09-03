@@ -29,7 +29,12 @@ export const AUDITED_ACTIONS = ['INSERT', 'UPDATE', 'DELETE', 'LOGIN']
 // Cada líder audita a su propia área: LIDER_COMERCIAL ve lo que hicieron los
 // usuarios COMERCIAL (y los demás líderes comerciales, para que un equipo con
 // dos jefes se vea completo). El resto de roles no entra a la vista.
-const AREA_OF_LEADER = {
+//
+// Se exporta porque es el organigrama del ERP, no un detalle de la Auditoría:
+// el panel de equipo (dashboard.entity) decide con esta misma tabla a quién ve
+// cada líder. Duplicarla allá significaría que un cambio de organigrama tenga
+// que recordarse en dos archivos.
+export const AREA_OF_LEADER = {
   LIDER_COMERCIAL: ['COMERCIAL', 'LIDER_COMERCIAL'],
   LIDER_FICO: ['FICO', 'LIDER_FICO'],
   LIDER_ACADEMICA: ['ACADEMICA', 'LIDER_ACADEMICA'],

@@ -183,3 +183,9 @@ export const detailSalesSchema = {
     }
   }
 }
+
+// El alcance sale del token, nunca del cuerpo: un colaborador no puede pedir el
+// panel de otra area escribiendo su rol en el payload.
+export const teamSummarySchema = {
+  body: { type: 'object', additionalProperties: false, properties: {} }
+}

@@ -47,6 +47,40 @@ export class AuditRepository {
     return rows
   }
 
+  // Traduce a texto los ids que aparecen en los diffs de UNA página.
+  //
+  // Va en un solo viaje con UNION ALL: son ~5 lookups por PK sobre tablas
+  // chicas, y hacerlos por fila sería el N+1 clásico (50 filas x 3 campos =
+  // 150 queries para pintar una tabla).
+  //
+  // Devuelve un Map 'tipo:id' -> etiqueta. Un id que ya no existe no aparece:
+  // la vista lo muestra como '#123' en vez de mentir.
+  async resolveReferences ({ catalogo = [], usuario = [], edicion = [], version = [], empresa = [] }) {
+    const buckets = [catalogo, usuario, edicion, version, empresa]
+    if (buckets.every(ids => ids.length === 0)) return new Map()
+
+    const { rows } = await this.db.query(`
+      SELECT 'catalogo' AS kind, c.catalog_id AS id, c.description AS label
+        FROM public.catalog c WHERE c.catalog_id = ANY($1::int[])
+      UNION ALL
+      SELECT 'usuario', u.user_id, u.alias
+        FROM public.users u WHERE u.user_id = ANY($2::int[])
+      UNION ALL
+      SELECT 'edicion', e.edition_num_id, concat_ws(' ', v.version_code, e.global_code)
+        FROM public.program_editions e
+        LEFT JOIN public.program_versions v ON v.program_version_id = e.program_version_id
+       WHERE e.edition_num_id = ANY($3::int[])
+      UNION ALL
+      SELECT 'version', v.program_version_id, v.version_code
+        FROM public.program_versions v WHERE v.program_version_id = ANY($4::int[])
+      UNION ALL
+      SELECT 'empresa', co.company_id, co.razon_social
+        FROM public.companies co WHERE co.company_id = ANY($5::int[])
+    `, buckets)
+
+    return new Map(rows.filter(r => r.label).map(r => [`${r.kind}:${r.id}`, r.label]))
+  }
+
   // Usuarios que el consultante puede filtrar. Alimenta el desplegable de la
   // vista; con auditableRoles = null son todos.
   async listAuditableUsers (auditableRoles) {

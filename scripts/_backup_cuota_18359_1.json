@@ -1,0 +1,33 @@
+{
+  "cuota": {
+    "installment_id": 18989,
+    "enrollment_id": 18359,
+    "installment_number": 1,
+    "amount": "156.50",
+    "penalty_amount": "0.00",
+    "due_date": "2026-12-31T05:00:00.000Z",
+    "cat_status": 4454,
+    "notes": "Cuota 1 – Pendiente aprobación Finanzas",
+    "status_alias": "we_inst_paid",
+    "status_label": "Pagada"
+  },
+  "pagos": [
+    {
+      "payment_id": 10606,
+      "enrollment_id": 18359,
+      "installment_id": 18989,
+      "amount": "156.50",
+      "payment_date": "2026-09-03T22:03:52.353Z",
+      "transaction_code": "",
+      "evidence_url": null,
+      "cat_method_payment": 3204,
+      "cat_payment_type": 3115,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y",
+      "user_registration_id": 9,
+      "registration_date": "2026-09-03T17:03:52.355Z",
+      "cat_token_provider": null
+    }
+  ]
+}

@@ -309,6 +309,19 @@ export class EmailConfirmationRepository {
     return !!rows?.[0]
   }
 
+  // True si el correo ya salio DESPUES de `since`. Lo usa el job de membresia
+  // para no duplicar un envio que otro camino (reenvio manual de FICO, o un
+  // frontend viejo que todavia dispara el correo) ya hizo mientras esperaba turno.
+  async hasSuccessfulSendSince (enrollmentId, templateType, since) {
+    const { rows } = await this.db.query(`
+      SELECT 1 FROM public.email_logs
+      WHERE enrollment_id = $1 AND template_type = $2 AND status = 'sent'
+        AND sent_at >= $3
+      LIMIT 1
+    `, [enrollmentId, templateType, since])
+    return !!rows?.[0]
+  }
+
   // True si el mismo customer tiene otro enrollment ya creado en Odoo.
   async hasPriorOdooEnrollment (enrollmentId) {
     const { rows } = await this.db.query(`

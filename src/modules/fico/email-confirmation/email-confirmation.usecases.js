@@ -477,16 +477,24 @@ export async function sendPaymentConfirmationEmail ({ enrollmentId, cc }) {
 // ---------------------------------------------------------------------------
 // ENVIO: bienvenida membresia
 
-export async function sendMembershipEmail ({ enrollmentId, cc }) {
+// skipIfSentAfter: instante a partir del cual un envio exitoso ya cuenta como
+// hecho. Lo pasa el job de membresia con su created_at para no mandar dos veces
+// el correo si otro camino se le adelanto. No aplica al reenvio manual de FICO,
+// que llega sin este dato y siempre manda.
+export async function sendMembershipEmail ({ enrollmentId, cc, skipIfSentAfter = null }) {
   try {
-    return await sendMembershipEmailInner({ enrollmentId, cc })
+    return await sendMembershipEmailInner({ enrollmentId, cc, skipIfSentAfter })
   } catch (err) {
     console.error('[sendMembershipEmail] Throw inesperado:', err.message, err.stack)
     return { success: false, error: `sendMembershipEmail: ${err.message}` }
   }
 }
 
-async function sendMembershipEmailInner ({ enrollmentId, cc }) {
+async function sendMembershipEmailInner ({ enrollmentId, cc, skipIfSentAfter }) {
+  if (skipIfSentAfter && await repo.hasSuccessfulSendSince(enrollmentId, 'membresia', skipIfSentAfter)) {
+    return { success: true, skipped: true, message: 'El correo ya salio por otro camino' }
+  }
+
   let data = await repo.findMembershipDataForSend(enrollmentId)
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 

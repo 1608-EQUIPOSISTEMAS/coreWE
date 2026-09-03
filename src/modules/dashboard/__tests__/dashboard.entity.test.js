@@ -6,7 +6,8 @@ import {
   mapLiderRow,
   mapContactabilityRow,
   aggregateVentasCanal,
-  MONTHS_ES
+  MONTHS_ES,
+  teamScopeFor
 } from '../dashboard.entity.js'
 
 describe('parseJsonbField', () => {
@@ -138,5 +139,36 @@ describe('aggregateVentasCanal', () => {
     ])
     const newRow = out.weeklyData[0].rows.find(r => r.type === 'NEW')
     expect(newRow.channels.zzz).toBeUndefined()
+  })
+})
+
+describe('teamScopeFor', () => {
+  it('ADMIN ve la empresa entera: sin filtro de area ni de persona', () => {
+    expect(teamScopeFor({ roles: ['ADMIN'], userId: 7 }))
+      .toEqual({ areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true })
+  })
+
+  it('un lider ve su area, no a si mismo', () => {
+    const scope = teamScopeFor({ roles: ['LIDER_FICO'], userId: 7 })
+    expect(scope.areaRoles).toEqual(['FICO', 'LIDER_FICO'])
+    expect(scope.userId).toBeNull()
+    expect(scope.isLeader).toBe(true)
+  })
+
+  it('un lider de dos areas las ve a las dos sin repetir roles', () => {
+    const scope = teamScopeFor({ roles: ['LIDER_B2B', 'LIDER_COMERCIAL', 'COMERCIAL'], userId: 7 })
+    expect([...scope.areaRoles].sort())
+      .toEqual(['B2B', 'COMERCIAL', 'LIDER_B2B', 'LIDER_COMERCIAL'])
+  })
+
+  it('un colaborador solo se ve a si mismo', () => {
+    expect(teamScopeFor({ roles: ['COMERCIAL'], userId: 7 }))
+      .toEqual({ areaRoles: null, userId: 7, area: 'Mi actividad', isLeader: false })
+  })
+
+  // A diferencia de la Auditoria, que lanza 403: aqui todos tienen panel.
+  it('un rol sin area no revienta, cae a su propio panel', () => {
+    expect(teamScopeFor({ roles: ['MARKETING'], userId: 9 }).userId).toBe(9)
+    expect(teamScopeFor({ userId: 9 }).isLeader).toBe(false)
   })
 })

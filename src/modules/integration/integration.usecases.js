@@ -247,7 +247,7 @@ export async function syncFicoCuotasToSheet () {
 }
 
 // FICO -> hoja "4. Ventas Eventos". Solo las ventas de congresos/eventos
-// confirmadas por FICO: 15 columnas A..O. Crea la hoja con headers si no existe.
+// confirmadas por FICO: 16 columnas A..P. Crea la hoja con headers si no existe.
 // Estas ventas siguen apareciendo tambien en "0. Ventas Sistemas": esta hoja es
 // una vista aparte con la modalidad y el asiento, que las otras no llevan.
 export async function syncFicoEventosToSheet () {
@@ -259,7 +259,7 @@ export async function syncFicoEventosToSheet () {
 
   const created = await repo.ensureAndWrite(
     SPREADSHEET_ID, SHEET_NAME, EVENTOS_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:O`, `'${SHEET_NAME}'!A2`, values
+    `'${SHEET_NAME}'!A2:P`, `'${SHEET_NAME}'!A2`, values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
