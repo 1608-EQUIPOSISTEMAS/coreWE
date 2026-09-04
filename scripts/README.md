@@ -86,6 +86,7 @@ seguido → reintentar y meter cada operación en una sola conexión.
 | `marca-pagos-hoja-fico.mjs <csv> [--aplicar]` | Fase 2 del import: marca cobrado lo que la hoja da por cobrado. |
 | `backfill-pagos-cuotas.mjs <caso.json> [--apply]` | Cobra una inscripción importada cuando cada cuota tiene medio, cuenta y N° de operación propios (la fila de detalle de la hoja). Ver formato abajo. |
 | `fix-descuento-global.mjs <id> <porcentaje> [--apply]` | Reconstruye el descuento % que el importador no guardó (`list_price = total_amount`, `discount_amount = 0`, sin fila en `enrollment_discounts`). No toca el total. |
+| `fix-hijos-seg-e0.mjs <id> <pv:edicion> ... [--apply]` | Crea los hijos SEG que el import con ED "E0" nunca creó (padre de paquete sin aulas). Plan literal módulo por módulo de la fila FICO; sin Odoo ni correo. El padre no se toca. |
 | `check-rp-seg-cuotas.mjs [id]` | El filtro de cuotas pendientes del RP contra el payload real. |
 | `check-tooltip-descuentos.mjs [id...]` | El tooltip de descuentos cuadra con la barra. |
 | `check-hijos-online-sin-edicion.mjs` | Rama "módulo ONLINE sin edición" de `buildEditionPlan`. Puro, sin BD. |

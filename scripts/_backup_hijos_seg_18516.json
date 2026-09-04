@@ -1,0 +1,29 @@
+{
+  "padre": {
+    "enrollment_id": 18516,
+    "program_version_id": 24,
+    "program_edition_id": null,
+    "total_amount": "720.00",
+    "notes": "Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion). Fila 76 hoja FICO EX-EZ-03 (ESP. EXCEL EXPERT): OBS \"REASIGNACION 2DO MODULO\"; asesor de la hoja CG37 (no existe como usuario del ERP: seller_agent_id queda sin asignar); F. VENTA/F. PAGO 23/10/2025; inicial 500 op 18057274 + cuota 1 220 op 1155657, ambas YAPE WE Educacion BCP."
+  },
+  "hijos": [],
+  "validaciones": [],
+  "PLAN": [
+    {
+      "pv": 175,
+      "edicion": 15574
+    },
+    {
+      "pv": 18,
+      "edicion": 15014
+    },
+    {
+      "pv": 19,
+      "edicion": 14862
+    },
+    {
+      "pv": 20,
+      "edicion": 14948
+    }
+  ]
+}

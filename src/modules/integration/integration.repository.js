@@ -966,7 +966,12 @@ export class IntegrationRepository {
       END AS status_deuda,
       COALESCE(c_ev.description, '') AS modalidad,
       COALESCE(e.event_seat, '')     AS asiento,
-      COALESCE(pv.version_code, '')  AS cod
+      COALESCE(pv.version_code, '')  AS cod,
+      CASE
+        WHEN e.agent_origin IS NOT NULL AND COALESCE(ag_token.alias, u.alias) IS NOT NULL
+          THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
+        ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
+      END AS asesor
     FROM public.enrollments e
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -976,6 +981,15 @@ export class IntegrationRepository {
     LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
     LEFT JOIN public."catalog" c_plan ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_ev   ON c_ev.catalog_id   = e.cat_event_category
+    LEFT JOIN public.users u          ON u.user_id = e.seller_agent_id
+    LEFT JOIN LATERAL (
+      SELECT u_pt.alias
+        FROM public.payment_tokens pt
+        LEFT JOIN public.users u_pt ON u_pt.user_id = COALESCE(pt.requested_by, pt.created_by)
+       WHERE pt.enrollment_id = e.enrollment_id
+       ORDER BY pt.token_id ASC
+       LIMIT 1
+    ) ag_token ON TRUE
     LEFT JOIN LATERAL (
       -- Ver nota en getFicoSales: el total pagado se suma de las cuotas
       -- saldadas, no de payments, que puede traer filas duplicadas.

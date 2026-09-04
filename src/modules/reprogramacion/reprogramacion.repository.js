@@ -8,16 +8,24 @@ export class ReprogramacionRepository {
     this.db = db
   }
 
+  // Estados que sacan a un alumno del aula: ya no hay nada que reprogramarle.
+  static get TERMINALES () {
+    return `('we_enrollment_status_retired',
+             'we_enrollment_status_course_changed',
+             'we_enrollment_status_reprogrammed')`
+  }
+
   // Elegibilidad de "alumno vivo", identica a la del cronograma: activo,
   // FICO-aprobado y sin estado retirado / cambiado / reprogramado.
+  // La VENTA tambien tiene que estar viva: un CC retira solo los modulos que aun
+  // no empiezan, asi que un paquete ya reubicado deja atras modulos vivos en la
+  // edicion A5 que volvian a arrastrar a la bandeja una venta ya resuelta.
   static get VIVO () {
     return `
       e.active = 'Y'
       AND cf.alias = 'we_enrollment_status_checked'
-      AND (cts.alias IS NULL OR cts.alias NOT IN (
-             'we_enrollment_status_retired',
-             'we_enrollment_status_course_changed',
-             'we_enrollment_status_reprogrammed'))`
+      AND (cts.alias  IS NULL OR cts.alias  NOT IN ${ReprogramacionRepository.TERMINALES})
+      AND (vts.alias  IS NULL OR vts.alias  NOT IN ${ReprogramacionRepository.TERMINALES})`
   }
 
   // Bandeja: UNA fila por VENTA afectada. Si compro un paquete, la fila es la
@@ -37,6 +45,8 @@ export class ReprogramacionRepository {
         FROM public.enrollments e
         JOIN public."catalog" cf  ON cf.catalog_id = e.cat_fico_status
         LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
+        LEFT JOIN public.enrollments venta ON venta.enrollment_id = e.parent_enrollment_id
+        LEFT JOIN public."catalog" vts ON vts.catalog_id = venta.cat_type_status
         JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
         JOIN public."catalog" cseg ON cseg.catalog_id = pe.cat_segment
                                   AND cseg.alias = 'we_segment_a5'

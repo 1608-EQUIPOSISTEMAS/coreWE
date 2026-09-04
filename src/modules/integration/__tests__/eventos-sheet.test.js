@@ -20,7 +20,8 @@ const fila = {
   f_pago: '03/08/2026', dni: '45678912', nombres: 'ANA', apellidos: 'PEREZ LOPEZ',
   celular: '999888777', correo: 'ana@we.pe', ocup: 'P', estado: 'PT',
   dsct: '20,00%', inicial: '240,00', saldo: '0,00', ingreso: '240,00',
-  modalidad: 'VIP', asiento: '24', cod: 'CO-CE-01', status_deuda: 'NO DEBE'
+  modalidad: 'VIP', asiento: '24', cod: 'CO-CE-01', status_deuda: 'NO DEBE',
+  asesor: 'WEB - JF39'
 }
 
 describe('hoja "4. Ventas Eventos"', () => {
@@ -30,13 +31,13 @@ describe('hoja "4. Ventas Eventos"', () => {
     expect(row).toEqual([
       '03/08/2026', '45678912', 'ANA', 'PEREZ LOPEZ', '999888777', 'ana@we.pe',
       'P', 'PT', '20,00%', '240,00', '0,00', '240,00', 'VIP', '24', 'CO-CE-01',
-      'NO DEBE'
+      'NO DEBE', 'WEB - JF39'
     ])
   })
 
   it('una fila incompleta no desplaza columnas: los huecos van vacios', () => {
     expect(buildEventosRow({ nombres: 'ANA' }))
-      .toEqual(['', '', 'ANA', '', '', '', '', '', '', '', '', '', '', '', '', ''])
+      .toEqual(['', '', 'ANA', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
   })
 
   // Misma regla que las otras hojas con importe por alumno.
@@ -48,8 +49,8 @@ describe('hoja "4. Ventas Eventos"', () => {
   // STATUS es de cobranza: con saldo pendiente DEBE, y con beca o pago
   // completo NO DEBE. El de monto-cero nunca debe, aunque el SQL diga otra cosa.
   it('STATUS sale de la deuda que calculo el SQL', () => {
-    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE' }).at(-1)).toBe('DEBE')
-    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE', correo: 'wchambi@bancoripley.com.pe' }).at(-1))
+    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE' }).at(-2)).toBe('DEBE')
+    expect(buildEventosRow({ ...fila, status_deuda: 'DEBE', correo: 'wchambi@bancoripley.com.pe' }).at(-2))
       .toBe('NO DEBE')
   })
 
@@ -58,6 +59,15 @@ describe('hoja "4. Ventas Eventos"', () => {
     expect(sql).toContain("WHEN (e.total_amount) = 0 THEN 'NO DEBE'")
     expect(sql).toContain("COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'")
     expect(sql).toContain('AS status_deuda')
+  })
+
+  // Mismo codigo de asesor que las otras hojas: token de pago primero (la venta
+  // la cierra quien mando el link), y el agent_origin lo prefija cuando existe.
+  it('trae el codigo del asesor', () => {
+    const sql = captureEventosSql()
+    expect(sql).toContain('AS asesor')
+    expect(sql).toContain('u.user_id = e.seller_agent_id')
+    expect(sql).toContain('ag_token ON TRUE')
   })
 
   it('solo trae inscripciones de evento, por categoria de entrada o por tipo de programa', () => {

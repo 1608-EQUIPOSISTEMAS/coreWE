@@ -1,0 +1,51 @@
+{
+  "enrollment": {
+    "enrollment_id": 18516,
+    "registration_date": "2026-09-04T21:24:45.821Z",
+    "list_price": "1600.00",
+    "discount_amount": "880.00",
+    "total_amount": "720.00",
+    "cat_type_status": 3100,
+    "cat_payment_plan": 2467,
+    "seller_agent_id": null,
+    "notes": "Importacion masiva FICO (hoja) - convalidacion (ED E0, sin edicion)"
+  },
+  "cuotas": [
+    {
+      "installment_id": 19139,
+      "installment_number": 0,
+      "amount": "500.00",
+      "due_date": "2025-10-23T05:00:00.000Z",
+      "cat_status": 2471
+    },
+    {
+      "installment_id": 19140,
+      "installment_number": 1,
+      "amount": "220.00",
+      "due_date": "2025-10-24T05:00:00.000Z",
+      "cat_status": 4454
+    }
+  ],
+  "pagos": [
+    {
+      "payment_id": 10720,
+      "installment_id": 19139,
+      "amount": "500.00",
+      "payment_date": "2025-10-23T05:00:00.000Z",
+      "transaction_code": "18057274",
+      "cat_method_payment": 3205,
+      "cat_payment_type": 3113,
+      "settled_in_account_id": 6
+    },
+    {
+      "payment_id": 10721,
+      "installment_id": 19140,
+      "amount": "220.00",
+      "payment_date": "2025-10-24T05:00:00.000Z",
+      "transaction_code": null,
+      "cat_method_payment": 3205,
+      "cat_payment_type": 3115,
+      "settled_in_account_id": 6
+    }
+  ]
+}
