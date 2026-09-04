@@ -4,14 +4,17 @@ import { integrationRepository } from '../integration.repository.js'
 
 // Mismo truco que membresias-sheet.test.js: el SQL no se puede correr sin BD,
 // pero si leer, pasandole un `db` falso que solo guarda la query.
-const captureEventosSql = () => {
+const captureSql = (metodo) => {
   let sql = ''
   const repo = Object.create(Object.getPrototypeOf(integrationRepository))
   Object.assign(repo, integrationRepository)
   repo.db = { query: (text) => { sql = text; return { rows: [] } } }
-  repo.getFicoEventos()
+  repo[metodo]()
   return sql
 }
+
+const captureEventosSql = () => captureSql('getFicoEventos')
+const captureSalesSql = () => captureSql('getFicoSales')
 
 const fila = {
   f_pago: '03/08/2026', dni: '45678912', nombres: 'ANA', apellidos: 'PEREZ LOPEZ',
@@ -68,6 +71,14 @@ describe('hoja "4. Ventas Eventos"', () => {
     expect(sql).toContain("cf.alias = 'we_enrollment_status_checked'")
     expect(sql).toContain('masiva FICO')
     expect(sql).toMatch(/>= DATE '\d{4}-\d{2}-\d{2}'/)
+  })
+
+  // La entrada vendida contra Orden de Compra/Servicio todavia no cobrada SI
+  // sale aqui (marcada DEBE por su saldo), aunque el resto de hojas la esconda
+  // hasta el cobro: el asistente ocupa su butaca igual.
+  it('no esconde la Orden de Compra/Servicio sin cobrar, a diferencia de las otras hojas', () => {
+    expect(captureEventosSql()).not.toContain('c_doc.alias IN')
+    expect(captureSalesSql()).toContain('c_doc.alias IN')
   })
 
   // La hoja pide NOMBRES y APELLIDOS en columnas distintas; el resto de hojas

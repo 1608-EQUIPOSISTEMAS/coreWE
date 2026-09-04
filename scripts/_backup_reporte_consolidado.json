@@ -1,0 +1,736 @@
+[
+ [],
+ [],
+ [
+  "Nuevo #",
+  "Antigua #",
+  "CATEGORIAS",
+  "Actual Clasificacion ",
+  "Nueva Clasificacion ",
+  "CENTRO DE COSTO"
+ ],
+ [
+  "",
+  "",
+  "DEVOLUCIONES"
+ ],
+ [],
+ [
+  "",
+  "2.11.28",
+  "DEVOLUCION",
+  "FUNDACIÓN",
+  "1. Devoluciones y Ajustes de Ingresos"
+ ],
+ [
+  "",
+  "2.1.31",
+  "DEVOLUCION",
+  "MARKETING",
+  "1. Devoluciones y Ajustes de Ingresos"
+ ],
+ [
+  "",
+  "2.2.24",
+  "DEVOLUCION",
+  "COMERCIAL",
+  "1. Devoluciones y Ajustes de Ingresos"
+ ],
+ [
+  "",
+  "",
+  "TOTAL -  DEVOLUCIONES"
+ ],
+ [
+  "",
+  "",
+  "PERSONAL Y PLANILLAS"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Marketing",
+  "MARKETING",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Comercial",
+  "COMERCIAL",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Producto",
+  "PRODUCTO",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Experiencia al Alumno",
+  "EXPERIENCIA AL ALUMNO",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Finanzas",
+  "FINANZAS",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Contabilidad",
+  "CONTABILIDAD",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Sistemas",
+  "SISTEMAS",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Gestión de Talento",
+  "GESTION DE TALENTO",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "B2B",
+  "B2B",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Fundación WE",
+  "FUNDACIÓN",
+  "2. Personal y Planillas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Asesores Externos",
+  "GENERAL",
+  "2. Personal y Planillas"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL PERSONAL Y PLANILLAS"
+ ],
+ [
+  "",
+  "",
+  "OPERACIÓN ACADÉMICA"
+ ],
+ [
+  "",
+  "",
+  "Programas en Vivo"
+ ],
+ [
+  "",
+  "2.3.9",
+  "DOCENTES EN VIVO",
+  "PRODUCTO",
+  "3. Operación Académica"
+ ],
+ [
+  "",
+  "2.3.10",
+  "DOCENTES ONLINE",
+  "PRODUCTO",
+  "3. Operación Académica"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "SOPORTE ACADÉMICO",
+  "",
+  "3. Operación Académica"
+ ],
+ [
+  "",
+  "2.9.9",
+  "DOCENTES B2B",
+  "B2B",
+  "3. Operación Académica"
+ ],
+ [
+  "",
+  "2.11.8",
+  "EVENTOS-FUNDACION",
+  "FUNDACIÓN",
+  "3. Operación Académica"
+ ],
+ [
+  "",
+  "2.11.10",
+  "PONENTES",
+  "FUNDACIÓN",
+  "3. Operación Académica"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL OPERACIÓN ACADÉMICA"
+ ],
+ [
+  "",
+  "",
+  "MARKETING Y COMERCIAL"
+ ],
+ [
+  "",
+  "1.7.2",
+  "MERCHANDISING",
+  "GENERAL",
+  "4. Marketing y Comercial"
+ ],
+ [
+  "",
+  "2.1.12",
+  "PUBLICIDAD Y MARKETING",
+  "MARKETING",
+  "4. Marketing y Comercial"
+ ],
+ [
+  "",
+  "2.2.23",
+  "EVENTOS-COMERCIAL",
+  "COMERCIAL",
+  "4. Marketing y Comercial"
+ ],
+ [
+  "",
+  "2.9.17",
+  "MERCHANDISING",
+  "B2B",
+  "4. Marketing y Comercial"
+ ],
+ [
+  "",
+  "2.9.22",
+  "EVENTOS-B2B",
+  "B2B",
+  "4. Marketing y Comercial"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL MKT y COMERCIAL"
+ ],
+ [
+  "",
+  "",
+  "TECNOLOGÍA Y SOFTWARE"
+ ],
+ [
+  "",
+  "2.1.15",
+  "AMAZON WEB SERVICES",
+  "MARKETING",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.1.13",
+  "BITLY",
+  "MARKETING",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.1.14",
+  "FREEPIK",
+  "MARKETING",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.4.9",
+  "CUENTA ZOOM",
+  "EXPERIENCIA AL ALUMNO",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.4.15",
+  "ONE DRIVE MICROSOFT 365",
+  "EXPERIENCIA AL ALUMNO",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.6.18",
+  "SOFTWARE CONTABLE",
+  "CONTABILIDAD",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.7.18",
+  "DOMINIO",
+  "SISTEMAS",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "2.7.17",
+  "CONTABO",
+  "SISTEMAS",
+  "5. Tecnologia y software"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "ALMACENAMIENTO DE CORREOS",
+  "EXPERIENCIA AL ALUMNO",
+  "5. Tecnologia y software"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "CAMVA PRO",
+  "SISTEMAS",
+  "5. Tecnologia y software"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "CORREOS CORPORATIVOS",
+  "MARKETING",
+  "5. Tecnologia y software"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "YAMM",
+  "COMERCIAL",
+  "5. Tecnologia y software"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL TECNOLOGÍA Y SOFTWARE"
+ ],
+ [
+  "",
+  "",
+  "INFRAESTRUCTURA Y OFICINA"
+ ],
+ [
+  "",
+  "1.1.1",
+  "ALQUILER DE OFICINA",
+  "GENERAL",
+  "6. Infraestructura y Oficina"
+ ],
+ [
+  "",
+  "1.3.1",
+  "ARBITRIOS",
+  "GENERAL",
+  "6. Infraestructura y Oficina"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "MANTENIMIENTO OFICINA",
+  "GENERAL",
+  "6. Infraestructura y Oficina"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "INTERNET",
+  "GENERAL",
+  "6. Infraestructura y Oficina"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "PLAN DE TELEFONIA",
+  "B2B",
+  "6. Infraestructura y Oficina"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL INFRAESTRUCTURA Y OFICINA"
+ ],
+ [
+  "",
+  "",
+  "ADMINISTRACIÓN GENERAL"
+ ],
+ [
+  "",
+  "1.9.1",
+  "ACTIVOS FIJOS GENERAL",
+  "GENERAL",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "2.8.5",
+  "ASESORIA EXTERNA",
+  "GESTION DE TALENTO",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "1.8.1",
+  "CAFETIN",
+  "GENERAL",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "2.8.20",
+  "EVENTOS-TALENTO",
+  "GESTION DE TALENTO",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "1.7.1",
+  "MATERIALES DE OFICINA",
+  "GENERAL",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "1.8.2",
+  "MEDICINAS",
+  "GENERAL",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "1.11.1",
+  "OTROS GASTOS",
+  "GENERAL",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "RECARGA DE CELULARES",
+  "GESTION DE TALENTO",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "CONSUMO",
+  "GESTION DE TALENTO",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "ENVIOS",
+  "B2B",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "IMPRENTA",
+  "B2B",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "MOVILIDAD",
+  "B2B",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "REPARACION DE ACTIVOS FIJOS",
+  "B2B",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "TRAMITES",
+  "B2B",
+  "7. Administración General"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "UTILES DE OFICINA",
+  "COMERCIAL",
+  "7. Administración General"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL ADMINISTRACIÓN GENERAL"
+ ],
+ [
+  "",
+  "",
+  "IMPUESTOS Y OBLIGACIONES"
+ ],
+ [
+  "",
+  "1.4.1",
+  "IGV",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.2",
+  "RENTA DE 1RA CTG",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.3",
+  "RENTA DE 3RA CTG",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.4",
+  "RENTA DE 4TA CTG",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.5",
+  "RENTA DE 5TA CTG",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.6",
+  "RENTA ANUAL DE 3RA CTG",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "1.4.8",
+  "AUTODETRACCION",
+  "GENERAL",
+  "9. Impuestos y Obligaciones"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL IMPUESTOS Y OBLIGACIONES"
+ ],
+ [
+  "",
+  "",
+  "FINANCIAMIENTO Y BANCOS"
+ ],
+ [
+  "",
+  "1.5.1",
+  "BCP",
+  "GENERAL",
+  "10. Financiamientos y Bancos"
+ ],
+ [
+  "",
+  "1.5.2",
+  "BBVA",
+  "GENERAL",
+  "10. Financiamientos y Bancos"
+ ],
+ [
+  "",
+  "1.5.3",
+  "INTERBANK",
+  "GENERAL",
+  "10. Financiamientos y Bancos"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "COMISIONES",
+  "FINANZAS",
+  "10. Financiamientos y Bancos"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL FINANCIAMIENTO Y BANCOS"
+ ],
+ [
+  "",
+  "",
+  "INVERSIONES Y CRECIMIENTO"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "ACTIVOS FIJOS",
+  "FUNDACIÓN",
+  "11. Inversiones y Crecimiento"
+ ],
+ [
+  "",
+  "2.13.3",
+  "PROINNOVATE",
+  "INVERSIONES",
+  "11. Inversiones y Crecimiento"
+ ],
+ [
+  "",
+  "2.13.1",
+  "SISTEMAS DE GESTION",
+  "INVERSIONES",
+  "11. Inversiones y Crecimiento"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL INVERSIONES Y CRECIMIENTO"
+ ],
+ [
+  "",
+  "",
+  "DIRECCIÓN Y GOBIERNO CORPORATIVO"
+ ],
+ [
+  "",
+  "2.10.4",
+  "ASESORIA EXTERNA",
+  "GERENCIA",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.10.3",
+  "ONP",
+  "GERENCIA",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.10.6",
+  "BENEFICIOS SOCIALES",
+  "GERENCIA",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.10.5",
+  "LOCADORES DE SERVICIOS-RH",
+  "GERENCIA",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.10.8",
+  "SEGURO VIDA LEY",
+  "GERENCIA",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.12.8",
+  "GASTOS DE ABOGACIA",
+  "DIRECTORIO",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.12.5",
+  "CONSUMO",
+  "DIRECTORIO",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.12.11",
+  "MOVILIDAD",
+  "DIRECTORIO",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.12.12",
+  "VIAJES",
+  "DIRECTORIO",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "2.13.4",
+  "CAMARA DE COMERCIO",
+  "INVERSIONES",
+  "12. Dirección y Gobierno Corporativo"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL DIRECCIÓN Y GOBIERNO CORPORATIVO"
+ ],
+ [
+  "",
+  "",
+  "MOVIMIENTOS PATRIMONIALES Y DEUDAS"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Directorio",
+  "DIRECTORIO",
+  "13. Movimientos Patrimoniales y Deudas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Deudas 2025",
+  "GENERAL",
+  "13. Movimientos Patrimoniales y Deudas"
+ ],
+ [
+  "AGRUPADO",
+  "",
+  "Otros por area",
+  "GENERAL",
+  "13. Movimientos Patrimoniales y Deudas"
+ ],
+ [
+  "",
+  "",
+  "SUB TOTAL MOVIMIENTOS PATRIMONIALES Y DEUDAS"
+ ],
+ [
+  "",
+  "",
+  "NO CLASIFICADO (control automatico)"
+ ],
+ [
+  "",
+  "",
+  "TOTAL GENERAL"
+ ]
+]

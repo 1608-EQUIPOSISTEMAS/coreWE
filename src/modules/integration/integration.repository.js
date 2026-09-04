@@ -889,6 +889,15 @@ export class IntegrationRepository {
   // verificadas, sin la importacion masiva ni las retenidas, desde el corte),
   // acotadas a inscripciones de evento. NOMBRES y APELLIDOS van separados: la
   // hoja los usa como columnas distintas, a diferencia de Ventas/Consolidado.
+  //
+  // UNICA hoja que NO aplica EXCLUDE_UNCOLLECTED_SERVICE_ORDER: la entrada
+  // vendida contra Orden de Compra/Servicio todavia no cobrada tiene que
+  // aparecer aqui igual, porque el evento se organiza con esa persona sentada
+  // en la sala aunque la empresa deposite despues. La columna STATUS ya la
+  // distingue: sin pagos el saldo es el total, asi que sale DEBE, y pasa a
+  // NO DEBE sola cuando FICO registra el cobro -- que es tambien el momento en
+  // que entra al resto de hojas. EXCLUDE_HELD si se respeta: esa lista es una
+  // retencion decidida a mano, no una espera de cobranza.
   async getFicoEventos () {
     const { rows } = await this.db.query(`
     WITH approved AS (
@@ -899,7 +908,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_UNCOLLECTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
          ${IS_EVENT}
     )
