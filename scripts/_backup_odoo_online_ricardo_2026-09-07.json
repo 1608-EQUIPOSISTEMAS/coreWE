@@ -1,0 +1,165 @@
+{
+  "fecha": "2026-09-07T21:56:11.979Z",
+  "partner": 28463,
+  "motivo": {
+    "venta 13525 - Maricielo Jauregui": [
+      571908,
+      571909,
+      571910,
+      571911
+    ],
+    "venta 18018 - Juan Alpas": [
+      606554,
+      606555,
+      606556,
+      606557,
+      606558
+    ]
+  },
+  "filas": [
+    {
+      "id": 571908,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        117,
+        "Habilidades Gerenciales Logísticas"
+      ],
+      "create_date": "2026-07-08 15:18:17",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 571909,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        11,
+        "Excel Intermedio Online"
+      ],
+      "create_date": "2026-07-08 15:18:17",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 571910,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        129,
+        "Lean Supply Chain"
+      ],
+      "create_date": "2026-07-08 15:18:17",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 571911,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        78,
+        "Planeamiento & Pronóstico de la Demanda"
+      ],
+      "create_date": "2026-07-08 15:18:17",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 606554,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        1249,
+        "SAP S/4 HANA MM Online"
+      ],
+      "create_date": "2026-08-28 15:15:42",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 606555,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        319,
+        "Planeamiento estratégico con OKR's"
+      ],
+      "create_date": "2026-08-28 15:15:42",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 606556,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        110,
+        "PEE | Planeamiento de la Demanda"
+      ],
+      "create_date": "2026-08-28 15:15:42",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 606557,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        45,
+        "SAP S/4 HANA MM"
+      ],
+      "create_date": "2026-08-28 15:15:42",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    },
+    {
+      "id": 606558,
+      "partner_id": [
+        28463,
+        "ROCK ONE SAC, RICARDO ANDRES, CABELLO RIVADENEYRA"
+      ],
+      "channel_id": [
+        271,
+        "KPI's Logísticos con Power BI"
+      ],
+      "create_date": "2026-08-28 15:15:42",
+      "completion": 0,
+      "completed": false,
+      "points": 0,
+      "last_slide": false
+    }
+  ]
+}

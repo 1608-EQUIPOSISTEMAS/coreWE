@@ -128,19 +128,29 @@ BEGIN
 
   -- 3. Nueva, o completar la existente (aqui se ADOPTA el documento que antes
   --    creaba la gemela).
+  -- Lo que no sirve para identificar tampoco se guarda: si fn_doc_key no supo
+  -- sacar una clave (documento vacio o relleno de ceros), se persiste NULL.
+  -- Guardarlo crudo tenia dos costos: persons.document_number es UNICO, asi que
+  -- el segundo alumno registrado con '00000000' chocaba contra el indice; y
+  -- mientras el valor siguiera ahi, cualquier flujo que compare el documento
+  -- como texto lo trata como un DNI legitimo y fusiona alumnos distintos.
   IF v_person_id IS NULL THEN
     INSERT INTO public.persons (first_name, last_name, document_number,
                                 cat_type_document, active, registration_date,
                                 user_registration_id)
-    VALUES (p_first_name, p_last_name, p_document, p_cat_type_document,
+    VALUES (p_first_name, p_last_name,
+            CASE WHEN v_doc_key IS NULL THEN NULL ELSE p_document END,
+            CASE WHEN v_doc_key IS NULL THEN NULL ELSE p_cat_type_document END,
             'Y', NOW(), p_user_id)
     RETURNING person_id INTO v_person_id;
   ELSE
     UPDATE public.persons
        SET first_name           = COALESCE(p_first_name, first_name),
            last_name            = COALESCE(public.fn_last_name_sin_materno(p_last_name, mother_last_name), last_name),
-           document_number      = COALESCE(document_number, p_document),
-           cat_type_document    = COALESCE(cat_type_document, p_cat_type_document),
+           document_number      = COALESCE(document_number,
+                                           CASE WHEN v_doc_key IS NULL THEN NULL ELSE p_document END),
+           cat_type_document    = COALESCE(cat_type_document,
+                                           CASE WHEN v_doc_key IS NULL THEN NULL ELSE p_cat_type_document END),
            modification_date    = NOW(),
            user_modification_id = p_user_id
      WHERE person_id = v_person_id;

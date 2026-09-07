@@ -1,0 +1,48 @@
+{
+  "fecha": "2026-09-07T23:08:04.187Z",
+  "antes": {
+    "personas": [
+      {
+        "person_id": 1183,
+        "document_number": "0",
+        "cat_type_document": null,
+        "nombre": "AAROM VICTOR MONDRAGÓN VILLANUEVA"
+      },
+      {
+        "person_id": 90184,
+        "document_number": "000000000000000000",
+        "cat_type_document": 2303,
+        "nombre": "JUAN PEREZ"
+      },
+      {
+        "person_id": 90185,
+        "document_number": "000000000",
+        "cat_type_document": 2303,
+        "nombre": "FELIPE FELZENSZTEIN"
+      }
+    ],
+    "contactos": [
+      {
+        "person_contact_id": 1183,
+        "person_id": 1183,
+        "cat_way_contact": 2319,
+        "value": "0",
+        "active": "Y"
+      },
+      {
+        "person_contact_id": 82308,
+        "person_id": 90184,
+        "cat_way_contact": 2319,
+        "value": "0000000",
+        "active": "Y"
+      },
+      {
+        "person_contact_id": 82310,
+        "person_id": 90185,
+        "cat_way_contact": 2319,
+        "value": "000000000",
+        "active": "Y"
+      }
+    ]
+  }
+}

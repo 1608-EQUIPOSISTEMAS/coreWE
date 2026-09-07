@@ -59,6 +59,15 @@ describe('buildConveniosRow', () => {
     expect(buildConveniosRow({ ...fila, unidad: 'Online' })[18]).toBe('Online')
   })
 
+  // Un congreso vendido por convenio (18534) es 'EVENTO' / 'Evento' en la hoja:
+  // la BD lo guarda como 'Congreso / Evento' presencial, pero para el negocio
+  // el evento es una linea comercial y su modalidad de dictado no cuenta.
+  it('escribe los congresos como EVENTO / Evento', () => {
+    const celdas = buildConveniosRow({ ...fila, tipo_program: 'CONGRESO / EVENTO', unidad: 'Presencial' })
+    expect(celdas[17]).toBe('EVENTO')
+    expect(celdas[18]).toBe('Evento')
+  })
+
   it('fuerza monto y pago efectuado a 0 para los correos de monto-cero', () => {
     const celdas = buildConveniosRow({ ...fila, correo: 'wchambi@bancoripley.com.pe' })
     expect(celdas[11]).toBe(0)

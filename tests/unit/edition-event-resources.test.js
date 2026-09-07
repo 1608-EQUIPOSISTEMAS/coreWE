@@ -7,7 +7,7 @@ const repo = {
   getEventResources: vi.fn(async () => null),
   getEventBannerImage: vi.fn(async () => null),
   listEventEditions: vi.fn(async () => []),
-  getEventProgramVersion: vi.fn(async () => 77),
+  programVersionOf: vi.fn(async () => 77),
   getEventCategories: vi.fn(async () => CATALOG_CATEGORIES),
   saveEventCategories: vi.fn(async () => 4)
 }

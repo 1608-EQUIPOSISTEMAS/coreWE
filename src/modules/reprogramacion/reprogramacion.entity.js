@@ -24,6 +24,15 @@ export const KIND = {
   RESERVA_VACANTE: 'RV'
 }
 
+// De donde salio el destino. Producto lo propone al cancelar la edicion (no
+// ejecuta nada: solo deja dicho a donde iria el alumno); Academica lo confirma o
+// lo cambia despues de hablar con el. Sirve para que la bandeja muestre "esto lo
+// eligio Producto, falta preguntarle al alumno".
+export const ORIGEN = {
+  PRODUCTO: 'producto',
+  ACADEMICA: 'academica'
+}
+
 // Que decide hacer Academica con el alumno varado. Una sola opcion en vez de
 // varias banderas: son excluyentes y solo la primera necesita destino.
 export const SALIDA = {

@@ -2,6 +2,7 @@ import { reprogramacionRepository } from './reprogramacion.repository.js'
 import {
   ESTADO,
   KIND,
+  ORIGEN,
   ReprogramacionError,
   assertPuedeAceptar,
   assertPuedeProponer,
@@ -25,8 +26,10 @@ export async function listDestinationEditions ({ programVersionId }) {
   return repo.listDestinationEditions(programVersionId)
 }
 
-// Academica elige el destino. No ejecuta nada: solo deja la propuesta.
-export async function proposeDestination ({ enrollmentId, destProgramVersionId, destEditionId, salida, userId }) {
+// Se elige el destino. No ejecuta nada: solo deja la propuesta. Producto entra
+// por aqui al cancelar la edicion (origen PRODUCTO) y Academica al confirmarla o
+// cambiarla tras hablar con el alumno (origen ACADEMICA, el de por defecto).
+export async function proposeDestination ({ enrollmentId, destProgramVersionId, destEditionId, salida, userId, origen = ORIGEN.ACADEMICA }) {
   const venta = await repo.getVenta(enrollmentId)
   if (!venta) throw new ReprogramacionError('La inscripcion no existe o no esta activa')
 
@@ -46,7 +49,8 @@ export async function proposeDestination ({ enrollmentId, destProgramVersionId, 
     destProgramVersionId: sinDestino ? null : destProgramVersionId,
     destEditionId: sinDestino ? null : destEditionId,
     destKind,
-    userId
+    userId,
+    origen
   })
 }
 

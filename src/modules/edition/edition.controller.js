@@ -219,10 +219,10 @@ export async function a5PendingEnrollmentsHandler (req, reply) {
   return reply.code(200).send({ ok: true, items })
 }
 
-export async function a5MigrationExecuteHandler (req, reply) {
+export async function a5CancelAndHandOffHandler (req, reply) {
   const { user_id, ...rest } = req.body
   const resolvedUser = req.user?.id ?? user_id ?? null
-  const response = await usecases.a5MigrationExecute({ payload: rest, user_id: resolvedUser })
+  const response = await usecases.a5CancelAndHandOff({ payload: rest, user_id: resolvedUser })
   return reply.code(200).send(response)
 }
 

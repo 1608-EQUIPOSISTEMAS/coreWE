@@ -108,44 +108,24 @@ export const EXCLUDE_HELD = HELD_ENROLLMENT_IDS.length === 0
          AND e.enrollment_id NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})
          AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})`
 
-// Flujo NUEVO: el asesor marca la venta como Orden de Servicio / de Compra y
-// FICO la aprueba sin cobrar, porque la empresa deposita semanas despues
-// (`markCheckedWithoutPayment` en fico/payment-confirmation). Hasta ese momento
-// no hay plata y la venta no debe sumar en el Sheet; entraba igual, y solo se
-// frenaba metiendola a mano en HELD_ENROLLMENT_IDS.
+// Una venta con Orden de Servicio / de Compra la aprueba FICO sin cobrar, porque
+// la empresa deposita semanas despues (`markCheckedWithoutPayment` en
+// fico/payment-confirmation). Durante ese limbo NO se esconde de las hojas.
 //
-// La senal es la ausencia de `payments`: la OS sin cobrar se aprueba sin ninguna
-// fila de pago, y `sp_fico_confirm_payment` crea la primera recien cuando FICO
-// registra el cobro. Entonces la venta entra sola en la siguiente sincronizacion,
-// sin lista ni redeploy.
+// Se escondia, con un NOT EXISTS por doctype replicado en las 6 CTEs `approved`,
+// para que no inflara las ventas del mes con plata que no habia entrado. Eso
+// borraba la fila entera: el alumno desaparecia del aula y el asesor no veia su
+// propia venta en "0. Ventas Sistemas", de donde Comercial saca su reporte.
 //
-// NO sirve mirar `cat_settlement_status`: los 6167 pagos activos de produccion
-// dicen "Pendiente de liquidacion", nadie liquida nunca. Tampoco el estado de la
-// cuota: queda `we_inst_paid` en las dos.
+// La ausencia de fila era la herramienta equivocada. Las columnas de plata de
+// estas hojas ya son base caja -- INGRESO suma cuotas pagadas, SALDO es total
+// menos pagado, C1..C5 del Consolidado solo pintan si `cN_paid` -- asi que una
+// OS sin cobrar entra sola con INGRESO 0 y SALDO = total, que es exactamente lo
+// que hay que reportar. La unica columna que mentia era INICIAL (ver la nota en
+// getFicoSales), y se arreglo en su origen.
 //
-// Solo aplica con monto > 0. Las ventas documentales B2B de total 0 (cartas de
-// compromiso y las OC de convenio) no tienen nada que cobrar: excluirlas
-// borraria al alumno de las hojas sin que hubiera un ingreso pendiente detras.
-export const EXCLUDE_UNCOLLECTED_SERVICE_ORDER = `
-         AND NOT EXISTS (
-           SELECT 1
-             FROM public.enrollments os
-             JOIN public."catalog" c_doc ON c_doc.catalog_id = os.cat_b2b_doctype
-            WHERE os.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
-              AND c_doc.alias IN ('${ALIAS.B2B_DOCTYPE_SERVICE_ORDER}',
-                                  '${ALIAS.B2B_DOCTYPE_PURCHASE_ORDER}')
-              AND os.total_amount > 0
-              AND NOT EXISTS (
-                    SELECT 1 FROM public.payments py
-                     WHERE py.enrollment_id = os.enrollment_id AND py.active = 'Y'
-                  )
-         )`
-
-// Todo lo aprobado pero aun no cobrado, que es lo que ninguna hoja debe sumar:
-// la lista manual del flujo viejo mas la regla automatica de las OS nuevas.
-// Se aplica a las 7 CTEs `approved` para que ventas, aula, pagos, adicionales y
-// convenios cuenten lo mismo.
-export const EXCLUDE_UNCOLLECTED = EXCLUDE_HELD + EXCLUDE_UNCOLLECTED_SERVICE_ORDER
+// Queda entonces UN solo predicado de exclusion, EXCLUDE_HELD: la retencion
+// manual, que es una decision de negocio caso por caso y no una espera de cobro.
 
 // El destino de un Cambio de Curso lleva parent_enrollment_id = origen (lo setea
 // finalizeCourseChange), asi que el filtro "parent_enrollment_id IS NULL" que deja
@@ -230,14 +210,23 @@ export const NOT_FICO_OPERATOR = (u) => `(
 // Marcador de venta B2B. Misma union que usa edition.repository.js para la
 // columna B2B del cronograma: la venta puede venir marcada por el origen del
 // asesor (el "cambio de asesor" a B2B deja agent_origin = 'B2B'), por el
-// contrato, por el tipo de documento (OS/OP) o por el lead. Basta cualquiera.
-// Asume en el scope los alias `e` (enrollments) y `l` (leads).
+// contrato, por el lead o por el tipo de documento (OS/OP). Basta cualquiera.
+//
+// El DOCUMENTO es el unico que ademas exige asesor de convenios (o ninguno):
+// una Orden de Servicio cerrada por un comercial es venta suya, no convenio, y
+// se colaba en esta hoja solo por el doctype (07/09/26: 16699 y 16700 de AE30,
+// con lead b2b='N' y sin contrato). Los otros tres marcadores son explicitos:
+// alguien decidio que la venta es de convenio, ahi el asesor no manda.
+// Asume en el scope los alias `e` (enrollments), `l` (leads), `u` (asesor de la
+// venta) y `ag_token` (asesor del token de pago, que gana sobre `u`).
 const IS_B2B = `
          AND (
            e.agent_origin = 'B2B'
            OR e.b2b_contract_id IS NOT NULL
-           OR e.cat_b2b_doctype IS NOT NULL
            OR l.b2b = 'Y'
+           OR (e.cat_b2b_doctype IS NOT NULL
+               AND (COALESCE(ag_token.alias, u.alias) IS NULL
+                    OR COALESCE(ag_token.alias, u.alias) IN ('NY12','JF39')))
          )`
 
 // Contacto efectivo del alumno, en el orden que manda negocio: lo que el lead
@@ -377,7 +366,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_UNCOLLECTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
@@ -426,15 +415,22 @@ export class IntegrationRepository {
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
-      -- Misma logica de inicial que la hoja "2. Consolidado" (getFicoConsolidado):
-      -- PT no genera cuota 0 (su pago es la cuota 1), asi que leer solo pi_res
-      -- dejaba inicial=0 en todas las ventas al contado.
+      -- INICIAL es base caja, igual que INGRESO, SALDO y las C1..C5 del
+      -- Consolidado: cuenta lo COBRADO, no el monto pactado de la cuota.
+      --
+      -- Antes leia el monto de la cuota existiera o no el cobro, y publicaba
+      -- filas aritmeticamente imposibles: INICIAL 245 junto a SALDO 245 e
+      -- INGRESO 0, o sea "pago la inicial" y "debe todo" en el mismo renglon.
+      -- Es tambien lo que obligaba a esconder las OS/OP sin cobrar de la hoja.
+      --
+      -- PT no genera cuota 0 (su pago ES la cuota 1) y no tiene mas cuotas, asi
+      -- que su inicial es directamente lo cobrado. PP cobra la reserva aparte.
       CASE
         WHEN (e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_single'
-          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
         WHEN c_plan.alias = 'we_payment_way_installments'
-          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(CASE WHEN pi_res.pagada THEN pi_res.amount ELSE 0 END, 'FM999990.00'), '.', ',')
         ELSE '0'
       END                                                  AS inicial,
       replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
@@ -512,15 +508,13 @@ export class IntegrationRepository {
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+      SELECT pi.amount,
+             cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
-       LIMIT 1
-    ) pi_pt ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
@@ -695,7 +689,7 @@ export class IntegrationRepository {
       ${IS_B2B}
       ${PARENT_OR_CC_DESTINATION}
       ${EXCLUDE_IMPORTED}
-      ${EXCLUDE_UNCOLLECTED}
+      ${EXCLUDE_HELD}
       AND pay_eff.f_pago_date >= DATE '${CONVENIOS_FROM_DATE}'
     ORDER BY pay_eff.f_pago_date, e.enrollment_id
   `)
@@ -714,7 +708,7 @@ export class IntegrationRepository {
          -- hijos: asisten sus hijos SEG, no el).
          AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_UNCOLLECTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
@@ -878,7 +872,7 @@ export class IntegrationRepository {
       ) AS f
     ) inicio ON TRUE
     WHERE e.active = 'Y'
-      ${EXCLUDE_UNCOLLECTED}
+      ${EXCLUDE_HELD}
     ORDER BY inicio.f DESC, per.last_name
   `)
     return rows || []
@@ -890,14 +884,11 @@ export class IntegrationRepository {
   // acotadas a inscripciones de evento. NOMBRES y APELLIDOS van separados: la
   // hoja los usa como columnas distintas, a diferencia de Ventas/Consolidado.
   //
-  // UNICA hoja que NO aplica EXCLUDE_UNCOLLECTED_SERVICE_ORDER: la entrada
-  // vendida contra Orden de Compra/Servicio todavia no cobrada tiene que
-  // aparecer aqui igual, porque el evento se organiza con esa persona sentada
-  // en la sala aunque la empresa deposite despues. La columna STATUS ya la
-  // distingue: sin pagos el saldo es el total, asi que sale DEBE, y pasa a
-  // NO DEBE sola cuando FICO registra el cobro -- que es tambien el momento en
-  // que entra al resto de hojas. EXCLUDE_HELD si se respeta: esa lista es una
-  // retencion decidida a mano, no una espera de cobranza.
+  // La entrada vendida contra Orden de Compra/Servicio todavia no cobrada sale
+  // aqui igual: el evento se organiza con esa persona sentada en la sala aunque
+  // la empresa deposite despues. La columna STATUS la distingue -- sin pagos el
+  // saldo es el total, asi que sale DEBE, y pasa a NO DEBE cuando FICO registra
+  // el cobro. Esta hoja fue la primera en hacerlo; hoy lo hacen todas.
   async getFicoEventos () {
     const { rows } = await this.db.query(`
     WITH approved AS (
@@ -940,14 +931,15 @@ export class IntegrationRepository {
         WHEN COALESCE(e.list_price, 0) = 0 THEN ''
         ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END AS dsct,
-      -- La entrada de un evento se paga de una: la INICIAL es la cuota 1 (o el
-      -- total si no se registro cuota). Un evento en cuotas caeria en la rama
-      -- de la reserva, igual que en la hoja Consolidado.
+      -- La entrada de un evento se paga de una, asi que su INICIAL es lo cobrado.
+      -- Un evento en cuotas cae en la rama de la reserva, igual que Consolidado.
+      -- Base caja, ver la nota extensa en getFicoSales: aqui pesa el doble,
+      -- porque esta hoja lista a proposito las entradas contra OS/OP sin cobrar.
       CASE
         WHEN (e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_installments'
-          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
-        ELSE replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(CASE WHEN pi_res.pagada THEN pi_res.amount ELSE 0 END, 'FM999990.00'), '.', ',')
+        ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS inicial,
       CASE
         WHEN (e.total_amount) = 0 THEN '0'
@@ -1000,15 +992,13 @@ export class IntegrationRepository {
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+      SELECT pi.amount,
+             cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
-       LIMIT 1
-    ) pi_pt ON TRUE
     LEFT JOIN LATERAL (
       SELECT p.payment_date FROM public.payments p
        WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
@@ -1029,7 +1019,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_UNCOLLECTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     )
     SELECT
@@ -1075,12 +1065,13 @@ export class IntegrationRepository {
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END AS status_pago,
+      -- Base caja, ver la nota extensa en getFicoSales.
       CASE
         WHEN (e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_single'
-          THEN replace(to_char(COALESCE(pi_pt.amount, e.total_amount), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
         WHEN c_plan.alias = 'we_payment_way_installments'
-          THEN replace(to_char(COALESCE(pi_res.amount, 0), 'FM999990.00'), '.', ',')
+          THEN replace(to_char(CASE WHEN pi_res.pagada THEN pi_res.amount ELSE 0 END, 'FM999990.00'), '.', ',')
         ELSE '0'
       END AS inicial,
       CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c1_due IS NOT NULL
@@ -1166,15 +1157,13 @@ export class IntegrationRepository {
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 0
+      SELECT pi.amount,
+             cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
+        FROM public.payment_installments pi
+        JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT amount FROM public.payment_installments
-       WHERE enrollment_id = e.enrollment_id AND installment_number = 1
-       LIMIT 1
-    ) pi_pt ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
@@ -1244,7 +1233,7 @@ export class IntegrationRepository {
          AND e.active = 'Y'
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
-         ${EXCLUDE_UNCOLLECTED}
+         ${EXCLUDE_HELD}
          ${SYNC_FROM}
     )
     SELECT

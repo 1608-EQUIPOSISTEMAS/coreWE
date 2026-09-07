@@ -2,10 +2,19 @@ import { describe, it, expect } from 'vitest'
 import {
   HELD_ENROLLMENT_IDS,
   EXCLUDE_HELD,
-  EXCLUDE_UNCOLLECTED_SERVICE_ORDER,
-  EXCLUDE_UNCOLLECTED
+  integrationRepository
 } from '../integration.repository.js'
-import { ALIAS } from '../../../utils/catalog-aliases.js'
+
+// El SQL no se puede correr sin BD, pero si leer, pasandole un `db` falso que
+// solo guarda la query (mismo truco que eventos-sheet.test.js).
+const captureSql = (metodo) => {
+  let sql = ''
+  const repo = Object.create(Object.getPrototypeOf(integrationRepository))
+  Object.assign(repo, integrationRepository)
+  repo.db = { query: (text) => { sql = text; return { rows: [] } } }
+  repo[metodo]()
+  return sql
+}
 
 // Las ordenes de pago del flujo antiguo no deben llegar a las hojas hasta que
 // el alumno pague. Si el predicado deja de nombrar un id o la lista se vacia
@@ -22,43 +31,32 @@ describe('EXCLUDE_HELD', () => {
   })
 })
 
-// Una OS/OP se aprueba sin cobrar porque la empresa deposita semanas despues.
-// Mientras no exista el pago no hay ingreso, y sumarla en el Sheet infla las
-// ventas del mes con plata que todavia no entro.
-describe('EXCLUDE_UNCOLLECTED_SERVICE_ORDER', () => {
-  it('reconoce la orden por los alias canonicos del catalogo', () => {
-    // Escribir el alias a mano ya fallo una vez ('..._payment_order' no existe)
-    // y el filtro dejaba pasar todas las ordenes de compra sin avisar.
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).toContain(ALIAS.B2B_DOCTYPE_SERVICE_ORDER)
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).toContain(ALIAS.B2B_DOCTYPE_PURCHASE_ORDER)
+// El limbo de una OS/OP -- aprobada por FICO, cobrada semanas despues -- ya no
+// se representa escondiendo la fila. Si alguien reintroduce un filtro por
+// doctype, el asesor vuelve a perder su venta de "0. Ventas Sistemas" y el
+// alumno vuelve a caerse del aula, sin que nada avise.
+describe('OS/OP sin cobrar', () => {
+  const HOJAS = [
+    'getFicoSales', 'getFicoAula', 'getFicoConsolidado',
+    'getFicoCuotas', 'getFicoEventos', 'getFicoMembresias', 'getFicoConvenios'
+  ]
+
+  it('ninguna hoja la esconde por tipo de documento', () => {
+    for (const hoja of HOJAS) expect(captureSql(hoja)).not.toContain('c_doc.alias IN')
   })
 
-  it('frena por la ausencia de pago, no por el estado de liquidacion ni el de la cuota', () => {
-    // Los 6167 pagos activos de produccion dicen "pendiente de liquidacion" y la
-    // cuota queda `we_inst_paid` tanto si se cobro como si no: colgarse de
-    // cualquiera de los dos deja pasar la venta sin cobrar.
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).toContain("py.active = 'Y'")
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).not.toContain('cat_settlement_status')
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).not.toContain('cat_status')
+  it('toda hoja sigue respetando la retencion manual', () => {
+    for (const hoja of HOJAS) expect(captureSql(hoja)).toContain('e.enrollment_id NOT IN')
   })
 
-  it('deja pasar las ventas documentales de total 0', () => {
-    // Cartas de compromiso y OC de convenio no tienen nada que cobrar: sin este
-    // guard desaparecerian de las hojas 20 alumnos sin ingreso pendiente detras.
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER).toContain('os.total_amount > 0')
-  })
-
-  it('cubre a las hijas de paquete mirando al padre', () => {
-    expect(EXCLUDE_UNCOLLECTED_SERVICE_ORDER)
-      .toContain('COALESCE(e.parent_enrollment_id, e.enrollment_id)')
-  })
-})
-
-// Las 7 CTEs `approved` interpolan EXCLUDE_UNCOLLECTED: si dejara de sumar una
-// de las dos partes, media condicion se perderia en silencio.
-describe('EXCLUDE_UNCOLLECTED', () => {
-  it('combina la lista manual con la regla automatica', () => {
-    expect(EXCLUDE_UNCOLLECTED).toContain('e.enrollment_id NOT IN')
-    expect(EXCLUDE_UNCOLLECTED).toContain(ALIAS.B2B_DOCTYPE_SERVICE_ORDER)
+  // Lo que sostiene todo lo anterior: si INICIAL volviera a leer el monto de la
+  // cuota sin mirar el cobro, la OS entraria declarando plata que no existe --
+  // que es justo el motivo por el que antes se la escondia.
+  it('INICIAL cuenta lo cobrado, no el monto pactado de la cuota', () => {
+    for (const hoja of ['getFicoSales', 'getFicoConsolidado', 'getFicoEventos']) {
+      const sql = captureSql(hoja)
+      expect(sql).toContain('WHEN pi_res.pagada THEN pi_res.amount ELSE 0')
+      expect(sql).not.toContain('COALESCE(pi_pt.amount, e.total_amount)')
+    }
   })
 })

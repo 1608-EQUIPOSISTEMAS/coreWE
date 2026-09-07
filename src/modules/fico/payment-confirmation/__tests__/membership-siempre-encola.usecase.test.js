@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // (enrollment 18403, 2026-09-03).
 
 const repo = {
+  stampApprover: vi.fn(),
   markCheckedWithoutPayment: vi.fn(),
   confirmPaymentSp: vi.fn(),
   findPrevMaxPaymentId: vi.fn().mockResolvedValue(0),

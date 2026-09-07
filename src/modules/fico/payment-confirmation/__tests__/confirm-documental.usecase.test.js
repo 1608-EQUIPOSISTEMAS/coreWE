@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // entra al campus igual.
 
 const repo = {
+  stampApprover: vi.fn(),
   markCheckedWithoutPayment: vi.fn(),
   confirmPaymentSp: vi.fn(),
   findPrevMaxPaymentId: vi.fn().mockResolvedValue(0),
@@ -99,5 +100,40 @@ describe('confirmPayment con action confirm_documental', () => {
     expect(res).toEqual(expect.objectContaining({ result: 1, already_confirmed: true }))
     expect(sideEffects.createChildEnrollments).not.toHaveBeenCalled()
     expect(sideEffects.enrollInOdoo).not.toHaveBeenCalled()
+  })
+})
+
+// Quien aprueba tiene que quedar grabado en la FILA, no solo en el log: el
+// trigger fn_audit_changes lee el autor de user_modification_id, asi que sin
+// este sello la bitacora nombra al ultimo que edito la venta (el comercial que
+// la registro) y no a quien la aprobo.
+describe('trazabilidad de la aprobacion', () => {
+  it('sella al aprobador ANTES de cambiar el estado', async () => {
+    repo.markCheckedWithoutPayment.mockResolvedValue(1)
+
+    await confirmPayment(payload)
+
+    expect(repo.stampApprover).toHaveBeenCalledWith(4242, 9)
+    expect(repo.stampApprover.mock.invocationCallOrder[0])
+      .toBeLessThan(repo.markCheckedWithoutPayment.mock.invocationCallOrder[0])
+  })
+
+  it('tambien sella en la confirmacion con pago, que va por el SP', async () => {
+    repo.confirmPaymentSp.mockResolvedValue({ result: 1 })
+
+    await confirmPayment({ enrollment_id: 4242, action: 'confirm', user_id: 9 })
+
+    expect(repo.stampApprover).toHaveBeenCalledWith(4242, 9)
+    expect(repo.stampApprover.mock.invocationCallOrder[0])
+      .toBeLessThan(repo.confirmPaymentSp.mock.invocationCallOrder[0])
+  })
+
+  it('un fallo al sellar no tumba la confirmacion', async () => {
+    repo.stampApprover.mockRejectedValueOnce(new Error('socket perdido'))
+    repo.markCheckedWithoutPayment.mockResolvedValue(1)
+
+    const res = await confirmPayment(payload)
+
+    expect(res.result).toBe(1)
   })
 })

@@ -167,6 +167,18 @@ export async function confirmPayment (payload, deps = {}) {
 
   const isDocumental = payload.action === CONFIRM_DOCUMENTAL
 
+  // Quien aprueba queda grabado ANTES de aprobar: los dos caminos de abajo
+  // cambian cat_fico_status sin tocar user_modification_id, y el trigger de
+  // auditoria lee el autor de ahi. Sin este sello la bitacora nombra al ultimo
+  // que edito la venta. Best-effort: auditar no puede tumbar la confirmacion.
+  if (payload.enrollment_id) {
+    try {
+      await repo.stampApprover(payload.enrollment_id, payload.user_id)
+    } catch (e) {
+      console.error('[confirmPayment] No se pudo sellar al aprobador:', e.message)
+    }
+  }
+
   let resp
   if (isDocumental) {
     resp = await approveWithoutPayment(payload.enrollment_id)

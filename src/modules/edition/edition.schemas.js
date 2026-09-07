@@ -770,7 +770,7 @@ export const a5PendingEnrollmentsSchema = {
   }
 }
 
-export const a5MigrationExecuteSchema = {
+export const a5CancelAndHandOffSchema = {
   body: {
     type: 'object',
     required: ['edition_num_id', 'migrations', 'justificacion'],
@@ -780,9 +780,10 @@ export const a5MigrationExecuteSchema = {
       a5_segment_id: { type: ['integer', 'null'] },
       justificacion: { type: 'string', minLength: 1 },
       user_id: { type: ['integer', 'null'] },
+      // Puede venir vacio: si los unicos alumnos de la edicion son modulos de
+      // un paquete no hay ninguna venta propia a la que proponerle destino.
       migrations: {
         type: 'array',
-        minItems: 1,
         items: {
           type: 'object',
           required: ['enrollment_id', 'target_edition_id'],

@@ -60,3 +60,19 @@ COMMENT ON COLUMN public.reprogram_cases.dest_kind IS
   'RP = mismo program_version (reprogramEdition). CC = otro programa (courseChange). RF = el alumno pide reembolso: no hay destino y el ERP no mueve nada. RV = reserva de vacante: se retira de la edicion pero su pago queda a favor hasta que se reinscriba. Lo deriva la entity.';
 COMMENT ON COLUMN public.reprogram_cases.pending_steps IS
   'Pasos que fallaron al ejecutar y quedan manuales (ej. desinscribir del aula vieja en Odoo).';
+
+-- De donde salio el destino. Producto lo deja al CANCELAR la edicion: es una
+-- propuesta, no una decision — Academica todavia tiene que hablar con el alumno
+-- y puede pisarla (o cerrar el caso con reembolso / reserva de vacante).
+--
+-- No se deriva del rol de proposed_by: un ADMIN cancela desde las dos pantallas,
+-- asi que el rol no dice por que puerta entro la propuesta.
+ALTER TABLE public.reprogram_cases
+  ADD COLUMN IF NOT EXISTS proposed_source varchar(10);
+
+ALTER TABLE public.reprogram_cases DROP CONSTRAINT IF EXISTS reprogram_cases_source_chk;
+ALTER TABLE public.reprogram_cases ADD CONSTRAINT reprogram_cases_source_chk
+  CHECK (proposed_source IS NULL OR proposed_source IN ('producto', 'academica'));
+
+COMMENT ON COLUMN public.reprogram_cases.proposed_source IS
+  'Quien puso el destino vigente: producto (al cancelar la edicion A5) o academica (tras contactar al alumno). NULL = casos anteriores a esta columna.';

@@ -98,7 +98,7 @@ describe('buildA5Payload', () => {
   })
   it('rechaza id invalido o migraciones vacias', () => {
     expect(buildA5Payload({ edition_num_id: 0, migrations: [{}] }).valid).toBe(false)
-    expect(buildA5Payload({ edition_num_id: 5, migrations: [] }).valid).toBe(false)
+    expect(buildA5Payload({ edition_num_id: 5, migrations: [] }).valid).toBe(true)
     expect(buildA5Payload({}).valid).toBe(false)
   })
 })
@@ -151,6 +151,24 @@ describe('buildA5MigrationPlan', () => {
 
   it('sin alumnos vivos el plan es valido y vacio', () => {
     expect(buildA5MigrationPlan([], [])).toEqual({ valid: true, sinDestino: [], plan: [] })
+  })
+
+  // Un modulo de paquete no lleva destino propio: su caso vive en la venta y
+  // mover la venta le vuelve a crear los modulos en el destino. Si el plan lo
+  // incluyera, se guardaria una propuesta con el program_version del modulo
+  // sobre el caso del paquete, y FICO la leeria como Cambio de Curso.
+  it('no le exige destino al hijo de un paquete ni lo mete en el plan', () => {
+    const { valid, plan } = buildA5MigrationPlan(
+      [{ enrollment_id: 10 }, { enrollment_id: 20, is_child: true }],
+      [{ enrollment_id: 10, target_edition_id: 900 }]
+    )
+    expect(valid).toBe(true)
+    expect(plan).toEqual([{ enrollmentId: 10, targetEditionId: 900 }])
+  })
+
+  it('una edicion de puros hijos se cancela sin proponer ningun destino', () => {
+    expect(buildA5MigrationPlan([{ enrollment_id: 20, is_child: true }], []))
+      .toEqual({ valid: true, sinDestino: [], plan: [] })
   })
 })
 

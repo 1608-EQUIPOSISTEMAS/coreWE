@@ -349,36 +349,26 @@ BEGIN
 
     v_current_total := v_list_price;
 
-    SELECT person_id INTO v_person_id
-    FROM public.persons
-    WHERE document_number = (j_insc->>'document') AND active = 'Y'
-    LIMIT 1;
+    -- Persona: REGLA UNICA DE IDENTIDAD (public.fn_person_resolve), la misma que
+    -- usa el alta de FICO. Antes aqui se buscaba con `document_number = <texto>`:
+    -- comparacion literal, sin normalizar. Con eso '00000000' era un documento
+    -- valido como cualquier otro y toda venta sin DNI que lo rellenara con ceros
+    -- se pegaba a la misma persona. Caso 07/09/26: la ficha 14634 acumulo 6
+    -- alumnos distintos, y quien se fusionaba con quien lo terminaba decidiendo
+    -- la CANTIDAD de ceros tipeados (8 ceros si, 9 ceros no). fn_doc_key trata
+    -- cualquier cadena de ceros como "sin documento" y corta eso de raiz.
+    v_person_id := public.fn_person_resolve(
+        j_insc->>'document', (j_insc->>'cat_type_document')::int,
+        j_insc->>'full_name', j_insc->>'last_name', v_email, p_user_id);
 
-    IF v_person_id IS NULL THEN
-        INSERT INTO public.persons (
-            first_name, last_name, mother_last_name,
-            document_number, cat_type_document,
-            active, registration_date, user_registration_id
-        )
-        VALUES (
-            j_insc->>'full_name',
-            j_insc->>'last_name',
-            j_insc->>'mother_last_name',
-            j_insc->>'document',
-            (j_insc->>'cat_type_document')::int,
-            'Y', NOW(), p_user_id
-        )
-        RETURNING person_id INTO v_person_id;
-    ELSE
-        UPDATE public.persons
-        SET
-            first_name           = COALESCE(NULLIF(TRIM(j_insc->>'full_name'),        ''), first_name),
-            last_name            = COALESCE(NULLIF(TRIM(j_insc->>'last_name'),        ''), last_name),
-            mother_last_name     = COALESCE(NULLIF(TRIM(j_insc->>'mother_last_name'), ''), mother_last_name),
-            modification_date    = NOW(),
-            user_modification_id = p_user_id
-        WHERE person_id = v_person_id;
-    END IF;
+    -- El apellido materno no viaja en fn_person_resolve (el formulario de FICO no
+    -- lo pide y el comercial si), asi que se completa aparte para no perderlo.
+    UPDATE public.persons
+    SET
+        mother_last_name     = COALESCE(NULLIF(TRIM(j_insc->>'mother_last_name'), ''), mother_last_name),
+        modification_date    = NOW(),
+        user_modification_id = p_user_id
+    WHERE person_id = v_person_id;
 
     SELECT customer_id INTO v_customer_id
     FROM public.customers

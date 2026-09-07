@@ -83,12 +83,12 @@ describe('hoja "4. Ventas Eventos"', () => {
     expect(sql).toMatch(/>= DATE '\d{4}-\d{2}-\d{2}'/)
   })
 
-  // La entrada vendida contra Orden de Compra/Servicio todavia no cobrada SI
-  // sale aqui (marcada DEBE por su saldo), aunque el resto de hojas la esconda
-  // hasta el cobro: el asistente ocupa su butaca igual.
-  it('no esconde la Orden de Compra/Servicio sin cobrar, a diferencia de las otras hojas', () => {
+  // La entrada vendida contra Orden de Compra/Servicio todavia no cobrada sale
+  // aqui, marcada DEBE por su saldo: el asistente ocupa su butaca igual. Esta
+  // hoja fue la primera en hacerlo y hoy lo hacen todas (ver held-enrollments).
+  it('no esconde la Orden de Compra/Servicio sin cobrar', () => {
     expect(captureEventosSql()).not.toContain('c_doc.alias IN')
-    expect(captureSalesSql()).toContain('c_doc.alias IN')
+    expect(captureSalesSql()).not.toContain('c_doc.alias IN')
   })
 
   // La hoja pide NOMBRES y APELLIDOS en columnas distintas; el resto de hojas

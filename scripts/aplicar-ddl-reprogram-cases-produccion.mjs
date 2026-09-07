@@ -41,9 +41,13 @@ async function aplicar () {
     await cx.query(ddl)
     const { rows: [estado] } = await cx.query(`
       SELECT (SELECT COUNT(*)::int FROM public.reprogram_cases) AS casos,
-             pg_get_constraintdef(oid) AS check_kind
-        FROM pg_constraint
-       WHERE conname = 'reprogram_cases_kind_chk'`)
+             (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+               WHERE conname = 'reprogram_cases_kind_chk')   AS check_kind,
+             (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+               WHERE conname = 'reprogram_cases_source_chk') AS check_source,
+             EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'reprogram_cases'
+                        AND column_name = 'proposed_source')  AS tiene_proposed_source`)
     return { ...donde, ...estado }
   } finally {
     cx.release()

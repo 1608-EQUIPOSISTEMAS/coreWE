@@ -97,6 +97,7 @@ export class ReprogramacionRepository {
               FROM caida c WHERE c.venta_id = v.enrollment_id) AS caidas,
            rc.reprogram_case_id, rc.status, rc.dest_program_version_id,
            rc.dest_edition_id, rc.dest_kind,
+           rc.proposed_source,
            rc.contacted_at, rc.contact_notes, rc.verdict_at, rc.verdict_notes,
            rc.new_enrollment_id, rc.pending_steps,
            dest_p.program_name                    AS destino_programa,
@@ -149,19 +150,21 @@ export class ReprogramacionRepository {
     return rows[0] || null
   }
 
-  async upsertProposal ({ enrollmentId, destProgramVersionId, destEditionId, destKind, userId }) {
+  async upsertProposal ({ enrollmentId, destProgramVersionId, destEditionId, destKind, userId, origen }) {
     const { rows } = await this.db.query(`
       INSERT INTO public.reprogram_cases
-             (enrollment_id, status, dest_program_version_id, dest_edition_id, dest_kind, proposed_by, proposed_at)
-      VALUES ($1, 'propuesto', $2, $3, $4, $5, now())
+             (enrollment_id, status, dest_program_version_id, dest_edition_id, dest_kind,
+              proposed_by, proposed_at, proposed_source)
+      VALUES ($1, 'propuesto', $2, $3, $4, $5, now(), $6)
       ON CONFLICT (enrollment_id) WHERE active = 'Y'
       DO UPDATE SET dest_program_version_id = EXCLUDED.dest_program_version_id,
                     dest_edition_id         = EXCLUDED.dest_edition_id,
                     dest_kind               = EXCLUDED.dest_kind,
                     proposed_by             = EXCLUDED.proposed_by,
                     proposed_at             = now(),
+                    proposed_source         = EXCLUDED.proposed_source,
                     modification_date       = now()
-      RETURNING *`, [enrollmentId, destProgramVersionId, destEditionId, destKind, userId])
+      RETURNING *`, [enrollmentId, destProgramVersionId, destEditionId, destKind, userId, origen])
     return rows[0]
   }
 

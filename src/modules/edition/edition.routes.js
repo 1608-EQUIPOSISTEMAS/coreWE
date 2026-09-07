@@ -35,7 +35,7 @@ import {
   editionTreeUpdateSchema,
   bulkUpdateWhatsappSchema,
   a5PendingEnrollmentsSchema,
-  a5MigrationExecuteSchema,
+  a5CancelAndHandOffSchema,
   schedulePdfSchema
 } from './edition.schemas.js'
 import * as ctrl from './edition.controller.js'
@@ -225,10 +225,11 @@ export default async function editionRoutes (fastify) {
     schema: a5PendingEnrollmentsSchema
   }, ctrl.a5PendingEnrollmentsHandler)
 
-  // A5 MIGRATION: ejecutar migracion masiva + cancelacion.
-  fastify.post('/a5migrationexecute', {
-    schema: a5MigrationExecuteSchema
-  }, ctrl.a5MigrationExecuteHandler)
+  // A5: cancelar la edicion y derivar a sus alumnos a Reprogramaciones con el
+  // destino que propone Producto. No mueve a nadie: eso lo firma FICO despues.
+  fastify.post('/a5cancelandhandoff', {
+    schema: a5CancelAndHandOffSchema
+  }, ctrl.a5CancelAndHandOffHandler)
 
   // PDF: programacion del curso.
   fastify.post('/schedule-pdf', {

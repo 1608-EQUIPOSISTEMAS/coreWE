@@ -70,6 +70,30 @@ export class PaymentConfirmationRepository {
     return rows?.[0] || { result: 0, message: 'Sin respuesta' }
   }
 
+  // Deja constancia de QUIEN esta aprobando, antes de que la aprobacion ocurra.
+  //
+  // El trigger fn_audit_changes saca el autor de `user_modification_id` de la
+  // FILA, no del usuario que ejecuta. Como ni el SP ni la confirmacion
+  // documental tocaban ese campo, la fila de auditoria del cambio de
+  // cat_fico_status heredaba al ultimo que edito la venta — casi siempre el
+  // comercial que la registro. Resultado: 2873 de 5407 aprobaciones (53%)
+  // quedaron atribuidas a gente que ni siquiera puede abrir la ficha.
+  //
+  // Va ANTES de confirmar a proposito: asi el UPDATE que cambia el estado ya
+  // encuentra el autor correcto en la fila y la bitacora nace bien. El precio
+  // es que un intento fallido deja el validador anotado sin aprobacion; se pisa
+  // en el siguiente intento y `user_validator_id` solo se lee junto al estado.
+  async stampApprover (enrollmentId, userId) {
+    if (!userId) return 0
+    const { rowCount } = await this.db.query(
+      `UPDATE enrollments
+          SET user_validator_id = $2, user_modification_id = $2, modification_date = NOW()
+        WHERE enrollment_id = $1`,
+      [enrollmentId, userId]
+    )
+    return rowCount
+  }
+
   // Confirmacion de una venta OS/OP: la inscripcion se aprueba sin pago porque
   // la empresa deposita semanas despues. No pasa por sp_fico_confirm_payment
   // (ese SP existe para grabar un pago que aqui no hay) y la cuota queda

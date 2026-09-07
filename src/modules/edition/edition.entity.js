@@ -103,35 +103,44 @@ export function buildEditionByWeekFilters (payload = {}, now = new Date()) {
 // migracion. Devuelve el id resuelto o null cuando es invalido.
 export function buildA5Payload (payload = {}) {
   const editionId = Number(payload.edition_num_id)
-  const migrations = Array.isArray(payload.migrations) ? payload.migrations : []
-  const valid = Number.isFinite(editionId) && editionId > 0 && migrations.length > 0
+  // La lista de destinos puede venir vacia: una edicion cuyos unicos alumnos son
+  // modulos de un paquete no tiene ninguna venta propia que proponer, y aun asi
+  // hay que poder cancelarla. Que no falte ningun destino EXIGIBLE lo decide
+  // buildA5MigrationPlan contra lo que hay vivo en la BD.
+  const valid = Number.isFinite(editionId) && editionId > 0
   return { valid, editionId }
 }
 
-// Plan de migracion A5: cruza los alumnos vivos de la edicion contra los destinos
-// que eligio Producto.
+// Plan de destinos A5: cruza las VENTAS vivas de la edicion contra los destinos
+// que propuso Producto.
 //
-// Regla dura: si UNO solo queda sin destino no se migra nada y la edicion no se
-// cancela. Cancelar dejando alumnos atras es invisible —el cronograma oculta las
-// filas A5— pero sus modulos siguen ocupando el AULA de otros cursos. Se falla
-// cerrado a proposito: es preferible bloquear la cancelacion a perder alumnos.
+// Solo entran las ventas propias. Un modulo de un paquete (hijo) no lleva
+// destino: el caso vive en su venta y mover la venta le vuelve a crear los hijos
+// en el destino, asi que un destino propio para el hijo seria una propuesta que
+// nadie puede ejecutar. El hijo caido igual llega a la bandeja, adentro de su
+// venta, y ahi lo resuelve Academica.
+//
+// Regla dura: si UNA sola venta queda sin destino no se propone nada y la edicion
+// no se cancela. Cancelar dejando alumnos a medias es invisible —el cronograma
+// oculta las filas A5— pero sus modulos siguen ocupando el AULA de otros cursos.
 //
 // La fuente de verdad es `pending` (lo que hay vivo AHORA en la BD), no la lista
-// que mando el cliente: una migracion para alguien que ya no esta vigente se
-// ignora, pero un alumno vigente sin destino bloquea todo.
+// que mando el cliente: un destino para alguien que ya no esta vigente se ignora,
+// pero una venta vigente sin destino bloquea todo.
 export function buildA5MigrationPlan (pending = [], migrations = []) {
   const destinoDe = new Map(
     (migrations || []).map((m) => [Number(m.enrollment_id), Number(m.target_edition_id) || null])
   )
   const conDestino = (e) => destinoDe.get(Number(e.enrollment_id)) || null
+  const ventas = (pending || []).filter((e) => !e.is_child)
 
-  const sinDestino = (pending || []).filter((e) => !conDestino(e))
+  const sinDestino = ventas.filter((e) => !conDestino(e))
   if (sinDestino.length > 0) return { valid: false, sinDestino, plan: [] }
 
   return {
     valid: true,
     sinDestino: [],
-    plan: (pending || []).map((e) => ({
+    plan: ventas.map((e) => ({
       enrollmentId: Number(e.enrollment_id),
       targetEditionId: conDestino(e)
     }))

@@ -13,6 +13,24 @@ export const LEAD_STATUSES_CONSULTA = [
   'we_lead_status_bought'
 ]
 
+// B2B = venta de CONVENIOS. Manda el CANAL: si la venta dice "B2B - AE30", es
+// B2B aunque AE30 sea comercial (regla del usuario, 07/09/26 — el canal es una
+// decision explicita de alguien, el asesor solo dice quien la cerro). Esto
+// REVIERTE la guarda del 13/07/26, que sacaba del B2B a los comerciales con
+// codigo B2B y dejaba 156 ventas contradiciendo a la hoja "7. Convenios".
+//
+// El DOCUMENTO (OS/OP) es el unico marcador que si exige asesor de convenios
+// (users.alias NY12/JF39) o ninguno: una Orden de Servicio es una forma de
+// pago, no un convenio, y por si sola convertia en B2B las 4 ventas de AE30
+// (16699, 16700, 18507, 18508 — sin canal, lead b2b='N', sin contrato).
+//
+// Recibe EXPRESIONES SQL, no alias: la "venta" es el padre cuando la fila es un
+// hijo de paquete, y cada query la resuelve a su manera (par/e, e_sold/e, es/e).
+export const isB2bSaleSql = ({ doctype, origin, advisor }) => `
+           (COALESCE(${origin}, '') ILIKE '%b2b%'
+            OR ((${doctype}) IS NOT NULL
+                AND ((${advisor}) IS NULL OR (${advisor}) IN ('NY12','JF39'))))`
+
 // Persistencia del dominio edition. Envuelve los stored procedures sp_edition_*
 // y el SQL directo de metricas de aula y auditoria (classroom_audit_rubric).
 export class EditionRepository {
@@ -475,10 +493,10 @@ export class EditionRepository {
   }
 
   // ── CATEGORIAS DE ENTRADA POR EVENTO ──────────────────────────────────
-  // Las categorias y sus precios cuelgan de program_version_id, no de la
-  // edicion: es la llave de event_category_prices. El modulo de Fundacion
-  // trabaja por edicion, asi que aqui se traduce una en la otra.
-  async getEventProgramVersion (editionNumId) {
+  // Traduce edicion -> version del programa. Lo piden las categorias de entrada
+  // (sus precios cuelgan de program_version_id, no de la edicion) y la
+  // cancelacion A5, que necesita el programa destino para proponer el RP.
+  async programVersionOf (editionNumId) {
     const { rows } = await this.db.query(
       `SELECT program_version_id FROM public.program_editions WHERE edition_num_id = $1`,
       [editionNumId]
@@ -592,9 +610,9 @@ export class EditionRepository {
   //     el hijo. Por eso el PADRE (especializacion/diploma) SI muestra sus ventas
   //     en su fila (VENTAS/B2B/MEMB), aunque su AULA sea 0.
   //       - PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta. Canal
-  //         por el enrollment: MEMB (socio) > B2B (doctype, o canal B2B con
-  //         asesor convenio users.alias NY12/JF39 o sin asesor; un comercial
-  //         con codigo B2B es VENTAS y sus hijos SEGUI) > BECA (total 0) > VENTAS.
+  //         por el enrollment: MEMB (socio) > B2B (canal 'B2B', sea quien sea el
+  //         asesor; o documento OS/OP con asesor de convenios o sin asesor —
+  //         ver isB2bSaleSql) > BECA (total 0) > VENTAS.
   //       - 1er CURSO de un paquete (hijo sin hermano que empiece antes, = orden
   //         de la rama en la modal Jerarquia): NO cuenta comercial; su venta esta
   //         arriba, en el padre. EXCEPCION: si el paquete tiene algun modulo
@@ -672,21 +690,17 @@ export class EditionRepository {
                    ) THEN NULL
               -- 2do+ curso (o modulo E0): HEREDA el CANAL de la venta del padre.
               -- Si el padre es socio/B2B/beca, el seguimiento cuenta en MEM/B2B/BECA,
-              -- NO en SEG. SEG queda solo para hijos de una venta normal (incluye
-              -- padres con agente "B2B - ..." comercial que ahora son VENTAS).
+              -- NO en SEG. SEG queda solo para hijos de una venta normal (una OS
+              -- de un comercial lo es: documento no es convenio).
               -- Prioridad: socio manda > B2B > BECA > SEG.
               WHEN mem.is_member THEN 'MEMB'
-              WHEN par.cat_b2b_doctype IS NOT NULL
-                OR (par.agent_origin ILIKE '%b2b%'
-                    AND (upar.alias IS NULL OR upar.alias IN ('NY12','JF39'))) THEN 'B2B'
+              WHEN ${isB2bSaleSql({ doctype: 'par.cat_b2b_doctype', origin: 'par.agent_origin', advisor: 'upar.alias' })} THEN 'B2B'
               WHEN bec.is_beca THEN 'BECA'
               ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
           WHEN mem.is_member THEN 'MEMB'
-          WHEN e.cat_b2b_doctype IS NOT NULL
-            OR (e.agent_origin ILIKE '%b2b%'
-                AND (ua.alias IS NULL OR ua.alias IN ('NY12','JF39'))) THEN 'B2B'
+          WHEN ${isB2bSaleSql({ doctype: 'e.cat_b2b_doctype', origin: 'e.agent_origin', advisor: 'ua.alias' })} THEN 'B2B'
           WHEN bec.is_beca THEN 'BECA'
           ELSE 'VENTAS'
         END AS comm_bucket,
@@ -758,15 +772,22 @@ export class EditionRepository {
         ) mem ON TRUE
         LEFT JOIN LATERAL (
           -- BECA = la venta (propia o la del padre, que es donde vive) en total 0,
-          -- sin B2B y sin socio de ningun tier. Un destino RP/CC (o sus hijos) NO
+          -- sin documento corporativo y sin socio de ningun tier. OJO: aqui el
+          -- doctype o canal B2B excluyen la beca SIEMPRE, sin mirar al asesor.
+          -- Es mas ancho que el B2B de la cascada (isB2bSaleSql, donde el
+          -- documento exige asesor de convenios) y tiene que serlo: una OS/OP de
+          -- un comercial no es convenio, pero tampoco es una beca — la empresa
+          -- emitio un documento. Esa venta cae a VENTAS, la ultima rama, asi que
+          -- AULA = VEN+SEG+MEM+B2B se mantiene. Lo que NO puede pasar es lo
+          -- contrario (beca mas ancha que B2B): ahi la fila descuadra, porque el
+          -- alumno sale del AULA por is_beca_leaf pero sigue sumando en su canal.
+          -- Un destino RP/CC (o sus hijos) NO
           -- es beca: su total 0 es convencion del flujo, la venta real vive en el
           -- origen. Mismo criterio is_beca que classroomStudentsList.
           -- Fuente UNICA de la beca: la cascada comercial y la columna AULA leen
           -- de aqui, si no vuelven a divergir.
           SELECT (COALESCE(e.cat_b2b_doctype, par.cat_b2b_doctype) IS NULL
-            AND NOT (COALESCE(par.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
-                     AND (COALESCE(upar.alias, ua.alias) IS NULL
-                          OR COALESCE(upar.alias, ua.alias) IN ('NY12','JF39')))
+            AND COALESCE(par.agent_origin, e.agent_origin, '') NOT ILIKE '%b2b%'
             AND COALESCE(par.total_amount, e.total_amount, 0) = 0
             AND NOT mem.has_membership
             AND COALESCE(CASE WHEN e.parent_enrollment_id IS NOT NULL
@@ -872,24 +893,23 @@ export class EditionRepository {
            e.registration_date::date                    AS enrolled_on,
            c_prof.alias                                 AS profile_alias,
            (ccert.alias = 'we_certificate_status_paid') AS has_certificate,
-           -- B2B: doctype en el enrollment vendido (padre si es hijo de
-           -- paquete), O canal B2B con asesor convenio (users.alias NY12/JF39)
-           -- o sin asesor. MISMA regla que comm_bucket del cronograma: un
-           -- comercial con codigo B2B es VENTA, no B2B (fix 17/07 — antes solo
-           -- miraba doctype y la Lista de Notas/modal no cuadraban con el
-           -- contador del cronograma).
-           (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NOT NULL
-            OR (COALESCE(e_sold.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
-                AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39')))) AS is_b2b,
-           -- BECA: la venta (enrollment vendido) va en total 0 y NO es B2B NI socio.
-           -- B2B real = doctype, o canal B2B con asesor convenio (users.alias
-           -- NY12/JF39) o sin asesor; un comercial con codigo B2B ya no es B2B.
+           -- B2B: MISMA regla que comm_bucket del cronograma (isB2bSaleSql),
+           -- mirando el enrollment VENDIDO (el padre si es hijo de paquete). Sin
+           -- esto la Lista de Notas y el modal no cuadran con el contador
+           -- (fix 17/07 por el canal, 07/09 por el documento).
+           (${isB2bSaleSql({
+             doctype: 'COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype)',
+             origin: 'COALESCE(e_sold.agent_origin, e.agent_origin)',
+             advisor: 'usold.alias'
+           })}) AS is_b2b,
+           -- BECA: la venta (enrollment vendido) va en total 0 y no trae ni
+           -- documento ni canal B2B ni membresia. Espejo del LATERAL bec del
+           -- cronograma, incluido el porque de ser mas ancho que is_b2b.
            -- La membresia gana (si la persona es socia, es MEMB, no beca).
            -- Destino RP/CC (venta ficticia en 0, la real vive en el origen) no es
            -- beca: ni el destino ni sus hijos SEG.
            (COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype) IS NULL
-            AND NOT (COALESCE(e_sold.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
-                     AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39')))
+            AND COALESCE(e_sold.agent_origin, e.agent_origin, '') NOT ILIKE '%b2b%'
             AND COALESCE(e_sold.total_amount, e.total_amount, 0) = 0
             AND mem.tier_name IS NULL
             -- tier grabado en la propia venta: la membresia puede vivir en otra
@@ -1936,9 +1956,9 @@ export class EditionRepository {
   // (programs.cat_model_modality = we_modality_live).
   //
   // "Es B2B" usa LA MISMA regla que classroomStudentsList / el contador del
-  // cronograma: doctype B2B en la venta (padre si es hijo de paquete), O canal
-  // B2B con asesor de convenio (users.alias NY12/JF39) o sin asesor. Un
-  // comercial con codigo B2B es VENTA, no B2B.
+  // cronograma (isB2bSaleSql), mirando la venta (el padre si es hijo de
+  // paquete): canal 'B2B' con cualquier asesor, o documento OS/OP con asesor de
+  // convenios o sin asesor.
   //
   // Mismas exclusiones que la Lista de Notas: solo FICO-aprobados, sin los que
   // salieron del aula (retiro / CC / RP) y solo HOJAS (un padre de paquete no
@@ -2004,9 +2024,11 @@ export class EditionRepository {
       ) contact_phone ON TRUE
      WHERE e.active = 'Y'
        AND pe.active = 'Y'
-       AND (COALESCE(e.cat_b2b_doctype, es.cat_b2b_doctype) IS NOT NULL
-            OR (COALESCE(es.agent_origin, e.agent_origin, '') ILIKE '%b2b%'
-                AND (usold.alias IS NULL OR usold.alias IN ('NY12','JF39'))))
+       AND (${isB2bSaleSql({
+         doctype: 'COALESCE(e.cat_b2b_doctype, es.cat_b2b_doctype)',
+         origin: 'COALESCE(es.agent_origin, e.agent_origin)',
+         advisor: 'usold.alias'
+       })})
        AND (cts.alias IS NULL OR cts.alias NOT IN (
               'we_enrollment_status_retired',
               'we_enrollment_status_course_changed',

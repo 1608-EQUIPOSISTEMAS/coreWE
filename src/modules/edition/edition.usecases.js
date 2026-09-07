@@ -2,11 +2,12 @@ import { editionRepository } from './edition.repository.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import odooClient from '../../config/odooClient.js'
 import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js'
-// La cancelacion A5 reprograma con el MISMO motor que usa FICO: un solo RP en
-// todo el sistema. El bootstrap cablea logAudit (sin el, el RP corre sin dejar
-// bitacora y no avisa, ver enrollment.repository.js:26); es idempotente.
-import '../fico/fico.bootstrap.js'
-import { reprogramEdition } from '../fico/enrollment/enrollment.usecases.js'
+// La cancelacion A5 NO mueve alumnos: deja la propuesta de destino en la bandeja
+// de Reprogramaciones y ahi sigue el flujo (Academica contacta, FICO ejecuta).
+// Se entra por el caso de uso, no por su repositorio, para que valga la misma
+// validacion que cuando el destino lo pone Academica.
+import { proposeDestination } from '../reprogramacion/reprogramacion.usecases.js'
+import { ORIGEN } from '../reprogramacion/reprogramacion.entity.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
@@ -211,7 +212,7 @@ export async function editionSessionControlSave ({ edition_num_id, session_numbe
 }
 
 // Una edicion NO se cancela (A5) con alumnos vivos adentro: primero hay que
-// reubicarlos con a5MigrationExecute. Va en el backend y no solo en el modal
+// derivarlos con a5CancelAndHandOff. Va en el backend y no solo en el modal
 // porque el modal ya fallo una vez: cuando no pudo cargar la lista de alumnos
 // mostro "sin alumnos" y dejo cancelar igual. El resultado fueron ediciones
 // canceladas con sus hijos todavia inflando el AULA de otros cursos, y encima
@@ -464,7 +465,7 @@ export async function eventCategoriesGet ({ edition_num_id } = {}) {
   const editionId = Number(edition_num_id) || null
   if (!editionId) return { program_version_id: null, items: [] }
   return withMissingColumnHint(async () => {
-    const versionId = await repo.getEventProgramVersion(editionId)
+    const versionId = await repo.programVersionOf(editionId)
     if (!versionId) return { program_version_id: null, items: [] }
     return { program_version_id: versionId, items: await repo.getEventCategories(versionId) }
   })
@@ -480,7 +481,7 @@ export async function eventCategoriesSave ({ edition_num_id, categories = [] } =
   if (!editionId) return { updated: 0 }
 
   return withMissingColumnHint(async () => {
-    const versionId = await repo.getEventProgramVersion(editionId)
+    const versionId = await repo.programVersionOf(editionId)
     if (!versionId) throw new NotFoundError('La edicion no existe')
 
     // El cliente manda catalog_ids. Se cotejan contra las categorias reales del
@@ -601,20 +602,26 @@ export async function a5PendingEnrollments ({ edition_num_id } = {}) {
   return repo.a5PendingEnrollments(editionId)
 }
 
-// Migracion A5 = reprogramar (RP) cada alumno vivo a la edicion que eligio
-// Producto y RECIEN ENTONCES cancelar la edicion.
+// Cancelacion A5 = marcar la edicion como cancelada y DERIVAR a sus alumnos a
+// Reprogramaciones con el destino que propone Producto. No mueve a nadie.
 //
-// Reusa reprogramEdition de FICO en vez de tener un segundo motor de RP: el
-// origen queda RP conservando lo pagado, el destino nace ACT con sus hijos SEG,
-// y Odoo + correo salen por la cola. Un modulo SEG tambien se puede migrar: el
-// RP le conserva el parent_enrollment_id (enrollment.entity.js:307).
+// Producto conoce el cronograma, no al alumno: propone a donde iria cada venta,
+// pero la decision es del alumno. Academica lo contacta y confirma, cambia el
+// destino o cierra el caso (reembolso / reserva de vacante), y recien el
+// veredicto de FICO ejecuta el RP con su Odoo y su correo. Antes este endpoint
+// corria el RP en el acto y el alumno se enteraba por correo de una mudanza que
+// nadie le habia preguntado.
 //
-// Falla CERRADO: si queda una sola inscripcion sin destino, no se migra nada y
-// la edicion no se cancela. Cancelar dejando alumnos atras es exactamente el bug
-// que este flujo existe para evitar.
-export async function a5MigrationExecute ({ payload = {}, user_id } = {}) {
+// La bandeja de Reprogramaciones no necesita que le avisen: deriva sus casos en
+// vivo de las ediciones con segmento A5 (reprogramacion.repository.js), asi que
+// cancelar la edicion YA los pone ahi. Lo unico que se escribe es el destino.
+//
+// Falla CERRADO: si una sola propuesta no se puede guardar, la edicion no se
+// cancela. Nada de esto es irreversible —no se movio ningun alumno—, asi que
+// reintentar es seguro: upsertProposal es idempotente por venta.
+export async function a5CancelAndHandOff ({ payload = {}, user_id } = {}) {
   const { valid, editionId } = buildA5Payload(payload)
-  if (!valid) throw new DomainError('Migracion A5 invalida: falta la edicion o la lista de migraciones')
+  if (!valid) throw new DomainError('Cancelacion A5 invalida: falta la edicion')
 
   const justificacion = String(payload.justificacion || '').trim()
   if (!justificacion) throw new DomainError('La justificacion es obligatoria')
@@ -627,40 +634,30 @@ export async function a5MigrationExecute ({ payload = {}, user_id } = {}) {
     )
   }
 
-  const migradas = []
-  const fallidas = []
-  for (const { enrollmentId, targetEditionId } of plan) {
-    try {
-      await reprogramEdition({
-        enrollmentId,
-        newEditionId: targetEditionId,
-        justificacion,
-        userId: user_id
-      })
-      migradas.push(enrollmentId)
-    } catch (err) {
-      fallidas.push(`#${enrollmentId}: ${err.message}`)
-    }
-  }
-
-  // Un RP ya ejecutado no se deshace (Odoo y correo ya salieron), asi que las
-  // migradas quedan migradas. Lo que NO se hace es cancelar la edicion: sigue
-  // visible en el cronograma con los que faltan, y se reintenta sobre esos.
-  if (fallidas.length > 0) {
-    throw new DomainError(
-      `Migracion incompleta: ${migradas.length} ok, ${fallidas.length} con error. ` +
-      `La edicion NO se cancelo. Detalle: ${fallidas.join(' | ')}`
-    )
-  }
-
   const segmentId = payload.a5_segment_id || await repo.a5SegmentId()
   if (!segmentId) throw new DomainError('No se encontro el segmento A5 en el catalogo')
+
+  // El destino esta en el MISMO programa que la edicion cancelada (el selector de
+  // Producto solo ofrece ediciones de ese programa), asi que el caso nace como RP.
+  const programVersionId = await repo.programVersionOf(editionId)
+  if (!programVersionId) throw new DomainError('La edicion no tiene programa asociado')
+
+  for (const { enrollmentId, targetEditionId } of plan) {
+    await proposeDestination({
+      enrollmentId,
+      destProgramVersionId: programVersionId,
+      destEditionId: targetEditionId,
+      userId: user_id,
+      origen: ORIGEN.PRODUCTO
+    })
+  }
+
   await repo.setSegment(editionId, segmentId)
 
   return {
     result: 1,
-    message: `Edicion cancelada (A5). ${migradas.length} inscripcion(es) reprogramada(s).`,
-    migrated_count: migradas.length
+    message: `Edicion cancelada (A5). ${plan.length} venta(s) derivada(s) a Reprogramaciones con destino propuesto.`,
+    migrated_count: plan.length
   }
 }
 
