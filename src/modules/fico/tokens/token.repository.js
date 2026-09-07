@@ -339,6 +339,28 @@ export class TokenRepository {
     return res
   }
 
+  // El SP saca agent_origin de la situacion del lead y toma como vendedor a
+  // p_user_id, que en el flujo de token es el operador FICO que confirma. Un
+  // asesor de convenios que pide el token con un lead marcado "profesional"
+  // deja la venta sin ninguna marca B2B: no entra a la hoja "7. Convenios" y el
+  // cronograma la cuenta como VENTAS (paso con 18534, token de NY12).
+  // Solo rellena el hueco: un origen ya escrito (WEB/FWE/SA) no se pisa.
+  async stampB2bOriginFromAdvisor ({ enrollmentId, userId }) {
+    if (!enrollmentId || !userId) return
+    await this.db.query(
+      `UPDATE public.enrollments
+          SET agent_origin = 'B2B'
+        WHERE enrollment_id = $1
+          AND agent_origin IS NULL
+          AND EXISTS (SELECT 1
+                        FROM public.user_roles ur
+                        JOIN public.rol r ON r.rol_id = ur.rol_id
+                       WHERE ur.user_id = $2
+                         AND r.alias IN ('B2B', 'LIDER_B2B'))`,
+      [enrollmentId, userId]
+    )
+  }
+
   async replaceInstallments ({ enrollmentId, adelanto, plan, catDraft }) {
     await this.db.query('DELETE FROM payments WHERE enrollment_id = $1', [enrollmentId])
     await this.db.query('DELETE FROM payment_installments WHERE enrollment_id = $1', [enrollmentId])

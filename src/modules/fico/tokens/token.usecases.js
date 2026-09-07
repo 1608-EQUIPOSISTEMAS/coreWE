@@ -202,9 +202,13 @@ export async function confirmToken ({ tokenId, userId }) {
 
   await repo.linkTokenToEnrollment(tokenId, enrollmentId)
 
+  const advisorId = token.requested_by || token.created_by
+
   if (enrollmentId) {
+    await repo.stampB2bOriginFromAdvisor({ enrollmentId, userId: advisorId })
+
     const provName = await repo.findProviderDescription(token.cat_provider)
-    const reqName = await repo.findUserName(token.requested_by || token.created_by)
+    const reqName = await repo.findUserName(advisorId)
     try {
       await repo.reassignAuditLogToEnrollment(token.token_id, enrollmentId)
       await repo.insertCreatedFromTokenAudit({
