@@ -181,7 +181,12 @@ export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = fal
 
       let registerJobId = null
       try {
-        const job = await repo.enqueueRegisterFollowup({ enrollmentId: eid, userId })
+        const job = await repo.enqueueRegisterFollowup({
+          enrollmentId: eid,
+          userId,
+          sapUsername: data.sap_username ?? null,
+          sapPassword: data.sap_password ?? null
+        })
         registerJobId = job.job_id
       } catch (qErr) {
         console.error('[ficoEnrollmentRegister] enqueue register_followup fallo:', qErr.message)

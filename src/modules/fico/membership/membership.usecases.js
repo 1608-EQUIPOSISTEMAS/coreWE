@@ -32,7 +32,7 @@ const repo = membershipRepository
 const password = '1234567'
 
 // Reprograma la fecha de activacion de una membresia ya confirmada. FICO solo
-// puede mover la fecha mientras el correo de bienvenida NO se haya enviado.
+// puede mover la fecha mientras los cursos NO se hayan abierto en Odoo.
 // Lanza DomainError (status preservado) cuando la operacion no es valida; en el
 // camino feliz persiste, reagenda o crea el job y deja audit log.
 export async function updateMembershipActivationDate ({ enrollmentId, newDate, userId }) {
@@ -42,7 +42,7 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
   const fmt = validateActivationDateFormat(newDate)
   if (!fmt.ok) throw new DomainError('newDate debe ser YYYY-MM-DD')
 
-  const probe = await repo.findMembershipProbeWithEmailState(enrollmentId)
+  const probe = await repo.findMembershipProbeWithActivationState(enrollmentId)
   const c = probe
     ? await repo.resolveActivationWindow(fmt.value, MEMBERSHIP_ACTIVATION_WINDOW_MONTHS)
     : null
@@ -60,7 +60,7 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
     {
       found: !!probe,
       isMembershipProgram: probe ? isMembership(probe.abbreviation, probe.is_membership) : false,
-      emailAlreadySent: probe?.email_already_sent
+      alreadyActivated: probe?.already_activated
     },
     classification
   )
@@ -93,10 +93,30 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
   return toRescheduleDto({ job, activationDate: classification.activationDate })
 }
 
-// Inscribe la membresia en TODOS los cursos online de Odoo (no un curso
-// especifico). Contrato no-lanzante: cualquier throw se captura y se devuelve
-// como { success: false, error }. Exportada para el job worker
-// (membership_activation step 'odoo').
+// Da de alta al socio en Odoo SIN abrirle ningun curso. Es lo que necesita el
+// correo de bienvenida el dia de la inscripcion: las credenciales del campus son
+// reales desde el primer dia y el acceso a los cursos llega en la activacion.
+// Contrato no-lanzante, igual que enrollMembershipInOdoo.
+// Job worker: 'membership_welcome', step 'account'.
+export async function createMembershipOdooUser ({ enrollmentId }) {
+  try {
+    const data = await repo.findEnrollmentForOdoo(enrollmentId)
+    if (!data) throw new Error('Inscripcion no encontrada')
+    return await upsertMembershipOdooAccount({
+      enrollmentId,
+      data,
+      channels: [],
+      courseLabel: 'Usuario creado sin cursos — pendiente de activacion'
+    })
+  } catch (err) {
+    console.error('[createMembershipOdooUser] Throw inesperado:', err.message, err.stack)
+    return { success: false, error: `createMembershipOdooUser: ${err.message}`, odoo_user_id: null }
+  }
+}
+
+// Activacion: abre al socio los cursos del catalogo de membresia. Contrato
+// no-lanzante: cualquier throw se captura y se devuelve como
+// { success: false, error }. Job worker: 'membership_activation', step 'odoo'.
 export async function enrollMembershipInOdoo ({ enrollmentId }) {
   try {
     return await enrollMembershipInOdooInner({ enrollmentId })
@@ -111,8 +131,8 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
   if (!data) throw new Error('Inscripcion no encontrada')
 
   // Defensa: si la membresia esta diferida (activacion futura), abortamos antes
-  // de tocar Odoo. El job encolado la procesara al llegar la fecha. Cubre el caso
-  // de un caller que dispara esto sin saber que estaba diferida.
+  // de abrir cursos. El job encolado la procesara al llegar la fecha. Cubre el
+  // caso de un caller que dispara esto sin saber que estaba diferida.
   if (data.is_deferred) {
     return {
       success: true,
@@ -123,6 +143,33 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
     }
   }
 
+  // Catalogo curado en Configuracion. Sin lista guardada, resolveMembershipChannels
+  // devuelve todos los publicados (usedFallback) para no activar membresias vacias.
+  const [publishedChannels, configuredIds] = await Promise.all([
+    odoo.listOnlineChannels(),
+    repo.findMembershipCourseIds()
+  ])
+  const { channels, usedFallback } = resolveMembershipChannels(publishedChannels, configuredIds)
+  if (usedFallback) {
+    console.warn(`[enrollMembershipInOdoo] enrollment ${enrollmentId}: sin catalogo de membresia configurado, se inscribe en los ${channels.length} cursos publicados`)
+  }
+
+  // Las membresias inscriben en TODOS los cursos online del Campus, no a un curso
+  // especifico. La etiqueta deja el audit log claro.
+  return upsertMembershipOdooAccount({
+    enrollmentId,
+    data,
+    channels,
+    courseLabel: usedFallback
+      ? `Todos los cursos online (${channels.length}) — catalogo sin configurar`
+      : `Catalogo de membresia (${channels.length} cursos)`
+  })
+}
+
+// Resuelve el usuario Odoo del socio (reusa el existente o lo crea), le escribe
+// los datos del partner y lo inscribe en los `channels` que reciba. Con
+// `channels` vacio se limita al alta del usuario.
+async function upsertMembershipOdooAccount ({ enrollmentId, data, channels, courseLabel }) {
   // names/surnames: campos partidos del partner que lee Certificacion.
   // fullName = "APELLIDOS NOMBRES", materno incluido.
   const { names, surnames } = buildOdooNameParts({
@@ -148,18 +195,7 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
     createEmail
   })
   if (searchEmail !== createEmail) {
-    console.log(`[enrollMembershipInOdoo] enrollment ${enrollmentId}: reusando usuario Odoo existente (${searchEmail})`)
-  }
-
-  // Catalogo curado en Configuracion. Sin lista guardada, resolveMembershipChannels
-  // devuelve todos los publicados (usedFallback) para no activar membresias vacias.
-  const [publishedChannels, configuredIds] = await Promise.all([
-    odoo.listOnlineChannels(),
-    repo.findMembershipCourseIds()
-  ])
-  const { channels, usedFallback } = resolveMembershipChannels(publishedChannels, configuredIds)
-  if (usedFallback) {
-    console.warn(`[enrollMembershipInOdoo] enrollment ${enrollmentId}: sin catalogo de membresia configurado, se inscribe en los ${channels.length} cursos publicados`)
+    console.log(`[membership] enrollment ${enrollmentId}: reusando usuario Odoo existente (${searchEmail})`)
   }
 
   const result = await odoo.enrollInAllOnlineCourses({
@@ -184,12 +220,5 @@ async function enrollMembershipInOdooInner ({ enrollmentId }) {
     })
   }
 
-  // Las membresias inscriben en TODOS los cursos online del Campus, no a un curso
-  // especifico. La etiqueta deja el audit log claro.
-  return {
-    ...result,
-    course_search: usedFallback
-      ? `Todos los cursos online (${channels.length}) — catalogo sin configurar`
-      : `Catalogo de membresia (${channels.length} cursos)`
-  }
+  return { ...result, course_search: courseLabel }
 }

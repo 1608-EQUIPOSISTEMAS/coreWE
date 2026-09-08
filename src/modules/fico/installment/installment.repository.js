@@ -10,6 +10,7 @@ import {
   CAT_SETTLEMENT_STATUS_PAID,
   PAID_STATUS_ALIASES
 } from './installment.entity.js'
+import { selectFeeForInstallment } from '../odoo-sync/odoo-sync.entity.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 
 // Etiqueta legible del tipo de programa para el correo de confirmacion de pago.
@@ -321,8 +322,9 @@ export class InstallmentRepository {
     })
   }
 
-  // Marca en Odoo la primera fee pendiente de la orden como pagada.
-  async syncInstallmentPaymentToOdoo ({ enrollmentId }) {
+  // Marca en Odoo la fee que corresponde a `installmentNumber` (fee.seq), no la
+  // primera pendiente: ver selectFeeForInstallment en odoo-sync.entity.js.
+  async syncInstallmentPaymentToOdoo ({ enrollmentId, installmentNumber }) {
     try {
       const { rows } = await this.db.query(`
         SELECT e.odoo_user_id, e.odoo_order_id,
@@ -338,13 +340,18 @@ export class InstallmentRepository {
       if (isMembership(data?.abbreviation, data?.is_membership)) return { success: false, error: 'Membresias no sincronizan cuotas con Odoo' }
       if (!data?.odoo_order_id) return { success: false, error: 'Sin orden Odoo asociada' }
 
+      // Se piden TODAS las fees, no solo las pendientes: hay que poder distinguir
+      // "esta cuota ya la salda Mercado Pago" de "esta cuota no existe en Odoo".
       const fees = await this.odoo.callKw('sale.order.fee', 'search_read', [
-        [['order_id', '=', data.odoo_order_id], ['state', '=', 'pendiente']]
-      ], { fields: ['id', 'seq', 'amount'], limit: 20, order: 'seq asc' })
+        [['order_id', '=', data.odoo_order_id]]
+      ], { fields: ['id', 'seq', 'amount', 'state'], limit: 50, order: 'seq asc' })
 
-      if (!fees || fees.length === 0) return { success: false, error: 'No hay cuotas pendientes en Odoo' }
+      const { fee, alreadyPaid } = selectFeeForInstallment(fees, installmentNumber)
+      if (!fee) return { success: false, error: `La cuota ${installmentNumber} no existe en la orden de Odoo` }
+      if (alreadyPaid) {
+        return { success: true, fee_id: fee.id, already_paid: true, message: `La cuota ${fee.seq} ya figuraba pagada en Odoo (pasarela): no se toco nada` }
+      }
 
-      const fee = fees[0]
       await this.odoo.markFeeAsPaid(fee.id)
 
       return { success: true, fee_id: fee.id, message: `Cuota ${fee.seq} marcada como pagada en Odoo` }

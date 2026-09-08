@@ -9,7 +9,6 @@ const repo = {
   hasSuccessfulSendSince: vi.fn(),
   hasPriorSuccessfulSend: vi.fn().mockResolvedValue(false),
   findMembershipDataForSend: vi.fn(),
-  isMembershipActivationDeferred: vi.fn().mockResolvedValue(false),
   findInstallments: vi.fn().mockResolvedValue([]),
   insertEmailLog: vi.fn(),
   requiresEmailCc: vi.fn().mockResolvedValue(false),
@@ -41,7 +40,7 @@ beforeEach(() => {
   repo.findMembershipDataForSend.mockResolvedValue({ ...DATOS_COMPLETOS })
   repo.hasPriorSuccessfulSend.mockResolvedValue(false)
   sendEmail.mockResolvedValue({ success: true, messageId: 'msg-1' })
-  configureEmailDeps({ sendEmail, enrollMembershipInOdoo: vi.fn() })
+  configureEmailDeps({ sendEmail, createMembershipOdooUser: vi.fn() })
 })
 
 describe('sendMembershipEmail con skipIfSentAfter', () => {

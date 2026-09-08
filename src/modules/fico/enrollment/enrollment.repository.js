@@ -347,11 +347,14 @@ export class EnrollmentRepository {
     )
   }
 
-  async enqueueRegisterFollowup ({ enrollmentId, userId }) {
+  // sapUsername/sapPassword viajan en el payload porque el correo de este flujo
+  // lo manda el worker, no el request: sin ellas el alumno de un curso SAP online
+  // recibia la confirmacion sin sus accesos al servidor.
+  async enqueueRegisterFollowup ({ enrollmentId, userId, sapUsername = null, sapPassword = null }) {
     const job = await enqueueJob({
       jobType: 'register_followup',
       enrollmentId,
-      payload: { userId }
+      payload: { userId, sapUsername, sapPassword }
     })
     return job
   }

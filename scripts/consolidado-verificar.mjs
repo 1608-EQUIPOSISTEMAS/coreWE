@@ -17,9 +17,17 @@ const [egr, cons] = data.valueRanges.map((r) => r.values ?? []);
 const num = (v) => (typeof v === "number" ? v : 0);
 const buscar = (hoja, texto, col) =>
   hoja.find((f) => String(f?.[2] ?? "").toUpperCase().startsWith(texto))?.slice(col) ?? [];
+// La columna del primer mes se deduce de la cabecera: el Consolidado ya perdio
+// una columna de etiquetas una vez y el offset fijo dejo de cuadrar en silencio.
+const primerMes = (hoja) => {
+  const cabecera = hoja.find((f) => f?.some((c) => String(c).trim().toUpperCase() === "TOTAL"));
+  if (!cabecera) throw new Error("No se encontro la cabecera TOTAL; revisar la pestana.");
+  return cabecera.findIndex((c) => String(c).trim().toUpperCase() === "TOTAL") - 12;
+};
+const colCons = primerMes(cons);
 const totalEgresos = egr[3].slice(6, 18).map(num);
-const totalCons = buscar(cons, "TOTAL GENERAL", 7).slice(0, 12).map(num);
-const centCons = buscar(cons, "NO CLASIFICADO", 7).slice(0, 12).map(num);
+const totalCons = buscar(cons, "TOTAL GENERAL", colCons).slice(0, 12).map(num);
+const centCons = buscar(cons, "NO CLASIFICADO", colCons).slice(0, 12).map(num);
 const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Set","Oct","Nov","Dic"];
 const s = (n) => n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let falla = false;

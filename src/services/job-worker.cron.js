@@ -15,17 +15,21 @@ import '../modules/fico/fico.bootstrap.js'
 import { createChildEnrollments } from '../modules/fico/validation/validation.usecases.js'
 import { enrollInOdoo } from '../modules/fico/odoo-sync/odoo-sync.usecases.js'
 import { sendConfirmationEmail, sendMembershipEmail } from '../modules/fico/email-confirmation/email-confirmation.usecases.js'
-import { enrollMembershipInOdoo } from '../modules/fico/membership/membership.usecases.js'
+import { enrollMembershipInOdoo, createMembershipOdooUser } from '../modules/fico/membership/membership.usecases.js'
 
 // Steps del job 'register_followup' en orden topologico de dependencias.
 // children DEBE correr primero (puede mutar program_edition_id a NULL si E0).
 // odoo DEBE correr antes de email (email lee odoo_user_id).
 const REGISTER_FOLLOWUP_STEPS = ['children', 'odoo', 'email']
 
-// Steps del job 'membership_activation' (activacion diferida de membresia).
-// odoo crea el res.users + inscribe en cursos online. email manda bienvenida con
-// credenciales. El email lee odoo_email persistido por el step odoo.
-const MEMBERSHIP_ACTIVATION_STEPS = ['odoo', 'email']
+// La membresia se parte en dos jobs porque el socio recibe la bienvenida el dia
+// que se inscribe, pero el acceso a los cursos empieza en la fecha de activacion
+// que el mismo eligio:
+//   'membership_welcome'    (ya) -> account: crea el usuario Odoo SIN cursos,
+//                                   email: bienvenida con credenciales reales.
+//   'membership_activation' (en la fecha) -> odoo: le abre los cursos.
+// El email lee odoo_email persistido por el step account.
+const MEMBERSHIP_WELCOME_STEPS = ['account', 'email']
 
 const handlers = {
   /**
@@ -37,6 +41,8 @@ const handlers = {
     const { enrollment_id: enrollmentId, current_step: completed, payload } = job
     const userId = payload?.userId ?? null
     const cc = payload?.cc ?? null
+    const sapUsername = payload?.sapUsername ?? null
+    const sapPassword = payload?.sapPassword ?? null
 
     const startIdx = completed ? REGISTER_FOLLOWUP_STEPS.indexOf(completed) + 1 : 0
     const result = { skipped: [] }
@@ -66,7 +72,7 @@ const handlers = {
 
     if (startIdx <= 2) {
       try {
-        const email = await sendConfirmationEmail({ enrollmentId, cc })
+        const email = await sendConfirmationEmail({ enrollmentId, cc, sapUsername, sapPassword })
         result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
         // sendConfirmationEmail no tira — devuelve { success: false, error } en fallos
         // 'lentos' (Odoo no creado, etc.). Tratamos como fallo del step para que
@@ -87,33 +93,31 @@ const handlers = {
   },
 
   /**
-   * Activacion diferida de membresia: odoo -> email.
-   * Encolado por confirmPayment cuando enrollments.membership_activation_date
-   * es futura. El worker lo reclama al llegar la fecha (next_attempt_at <= NOW())
-   * y dispara los efectos que normalmente serian sincronicos.
+   * Bienvenida de membresia: account -> email. Corre el dia de la inscripcion,
+   * sin importar cuando activo el socio. Encolado por confirmPayment.
    *
    * payload: { enrollmentId } — el resto se lee de la BD para evitar staleness.
-   * current_step: null | 'odoo' | 'email' (ultimo completado).
+   * current_step: null | 'account' | 'email' (ultimo completado).
    */
-  async membership_activation (job) {
+  async membership_welcome (job) {
     const { enrollment_id: enrollmentId, current_step: completed } = job
-    const startIdx = completed ? MEMBERSHIP_ACTIVATION_STEPS.indexOf(completed) + 1 : 0
+    const startIdx = completed ? MEMBERSHIP_WELCOME_STEPS.indexOf(completed) + 1 : 0
     const result = { skipped: [] }
 
     if (startIdx <= 0) {
       try {
-        const odoo = await enrollMembershipInOdoo({ enrollmentId })
-        result.odoo = odoo
+        const odoo = await createMembershipOdooUser({ enrollmentId })
+        result.account = odoo
         if (!odoo?.success) {
-          throw Object.assign(new Error(odoo?.error || 'Odoo membership enrollment fallo'), { _failStep: 'odoo' })
+          throw Object.assign(new Error(odoo?.error || 'Alta del usuario Odoo fallo'), { _failStep: 'account' })
         }
-        await updateCurrentStep(job.job_id, 'odoo')
+        await updateCurrentStep(job.job_id, 'account')
       } catch (err) {
-        if (!err._failStep) err._failStep = 'odoo'
+        if (!err._failStep) err._failStep = 'account'
         throw err
       }
     } else {
-      result.skipped.push('odoo')
+      result.skipped.push('account')
     }
 
     if (startIdx <= 1) {
@@ -135,6 +139,31 @@ const handlers = {
     }
 
     return result
+  },
+
+  /**
+   * Activacion de membresia: abre los cursos del catalogo en Odoo. Corre en la
+   * fecha que eligio el socio (next_attempt_at <= NOW()); si activo hoy, en el
+   * proximo poll. La bienvenida ya salio por 'membership_welcome'.
+   *
+   * payload: { enrollmentId } — el resto se lee de la BD para evitar staleness.
+   * current_step: null | 'odoo' (ultimo completado).
+   */
+  async membership_activation (job) {
+    const { enrollment_id: enrollmentId, current_step: completed } = job
+    if (completed === 'odoo') return { skipped: ['odoo'] }
+
+    try {
+      const odoo = await enrollMembershipInOdoo({ enrollmentId })
+      if (!odoo?.success) {
+        throw Object.assign(new Error(odoo?.error || 'Odoo membership enrollment fallo'), { _failStep: 'odoo' })
+      }
+      await updateCurrentStep(job.job_id, 'odoo')
+      return { odoo }
+    } catch (err) {
+      if (!err._failStep) err._failStep = 'odoo'
+      throw err
+    }
   }
 }
 

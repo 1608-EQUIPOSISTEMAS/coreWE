@@ -51,15 +51,15 @@ describe('classifyActivation', () => {
 describe('assertReschedulable', () => {
   const future = { mode: 'deferred', activationDate: '2026-08-01', runAt: 'x' }
 
-  it('no lanza cuando es membresia, sin correo enviado y fecha futura valida', () => {
+  it('no lanza cuando es membresia, sin activar y con fecha futura valida', () => {
     expect(() => assertReschedulable(
-      { found: true, isMembershipProgram: true, emailAlreadySent: false }, future
+      { found: true, isMembershipProgram: true, alreadyActivated: false }, future
     )).not.toThrow()
   })
 
   it('lanza NotFound cuando la inscripcion no existe', () => {
     try {
-      assertReschedulable({ found: false, isMembershipProgram: false, emailAlreadySent: false }, future)
+      assertReschedulable({ found: false, isMembershipProgram: false, alreadyActivated: false }, future)
       throw new Error('debio lanzar')
     } catch (e) {
       expect(e).toBeInstanceOf(DomainError)
@@ -69,26 +69,28 @@ describe('assertReschedulable', () => {
 
   it('lanza si la inscripcion no es membresia', () => {
     expect(() => assertReschedulable(
-      { found: true, isMembershipProgram: false, emailAlreadySent: false }, future
+      { found: true, isMembershipProgram: false, alreadyActivated: false }, future
     )).toThrow(DomainError)
   })
 
-  it('lanza si el correo de bienvenida ya fue enviado', () => {
+  // El candado dejo de ser el correo (que ahora sale el dia de la inscripcion) y
+  // paso a ser la activacion: con los cursos ya abiertos, la fecha no significa nada.
+  it('lanza si la membresia ya fue activada', () => {
     expect(() => assertReschedulable(
-      { found: true, isMembershipProgram: true, emailAlreadySent: true }, future
-    )).toThrow(/correo de bienvenida ya fue enviado/i)
+      { found: true, isMembershipProgram: true, alreadyActivated: true }, future
+    )).toThrow(/ya fue activada/i)
   })
 
   it('lanza si la fecha es hoy o pasado (debe usar envio directo)', () => {
     expect(() => assertReschedulable(
-      { found: true, isMembershipProgram: true, emailAlreadySent: false },
+      { found: true, isMembershipProgram: true, alreadyActivated: false },
       { mode: 'immediate', activationDate: '2026-05-29' }
     )).toThrow(/posterior a hoy/i)
   })
 
   it('lanza si la fecha excede la ventana permitida', () => {
     expect(() => assertReschedulable(
-      { found: true, isMembershipProgram: true, emailAlreadySent: false },
+      { found: true, isMembershipProgram: true, alreadyActivated: false },
       { mode: 'out_of_window' }
     )).toThrow(/ventana permitida/i)
   })

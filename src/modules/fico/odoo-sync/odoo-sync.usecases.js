@@ -8,11 +8,12 @@ import { isEventEnrollment } from '../../../shared/event-category.js'
 import { odooSyncRepository } from './odoo-sync.repository.js'
 import {
   ODOO_DEFAULT_PASSWORD,
-  isE0Parent,
+  isPackageWithoutEdition,
   resolveCurrencyCode,
   buildOdooFullName,
   buildPresentialCourseName,
-  mapInstallmentsForOdoo
+  mapInstallmentsForOdoo,
+  selectFeeForInstallment
 } from './odoo-sync.entity.js'
 
 // Orquestacion del sync Odoo de inscripciones de cursos. No contiene SQL
@@ -103,6 +104,71 @@ async function createOdooOrderAndActivate ({ enrollmentId, result, odooActivatio
   }
 }
 
+// Inscribe en Odoo los modulos de un paquete sin edicion y hereda al padre la
+// identidad Odoo del alumno.
+//
+// Antes esto era un `return { success: true }` a secas, con el supuesto de que
+// alguien mas inscribiria a los hijos. Nadie lo hacia: el step 'odoo' de
+// register_followup solo llama a enrollInOdoo del padre. En un producto online
+// (padre e hijos con edicion NULL) eso dejaba a TODA la venta fuera del campus,
+// y como el skip decia `success`, la guarda anti-credenciales-falsas del correo
+// de confirmacion lo daba por inscrito y anunciaba un usuario inexistente.
+//
+// El padre hereda odoo_user_id/odoo_email porque el correo de confirmacion los
+// lee de ahi: sin ellos se sintetiza un login por convencion que puede no ser el
+// del alumno (si ya tenia cuenta Odoo, resolveOdooLogin reusa esa, no la
+// sintetica). No hereda odoo_order_id: la orden de venta cuelga de cada modulo.
+async function enrollPackageModules (parentEnrollmentId) {
+  const moduleIds = await repo.findChildEnrollmentIds(parentEnrollmentId)
+
+  if (moduleIds.length === 0) {
+    // E0 real: el paquete todavia no tiene modulos matriculados. No hay nada que
+    // inscribir, y `odoo_user_id: null` le dice al correo que aun no hay
+    // credenciales que anunciar.
+    console.log(`[enrollInOdoo] Skip - enrollment #${parentEnrollmentId}: paquete sin edicion y sin modulos matriculados.`)
+    return { success: true, skipped: true, reason: 'package_without_modules', odoo_user_id: null }
+  }
+
+  const outcomes = []
+  for (const moduleId of moduleIds) {
+    try {
+      outcomes.push({ moduleId, result: await enrollInOdoo({ enrollmentId: moduleId }) })
+    } catch (err) {
+      console.error(`[enrollInOdoo] modulo #${moduleId} del paquete #${parentEnrollmentId} fallo:`, err.message)
+      outcomes.push({ moduleId, error: err.message })
+    }
+  }
+
+  const enrolled = outcomes.find(o => o.result?.success && o.result.odoo_user_id)?.result
+  if (!enrolled) {
+    const detalle = outcomes.map(o => `#${o.moduleId}: ${o.error || o.result?.error || 'sin usuario Odoo'}`).join('; ')
+    return {
+      success: false,
+      reason: 'package_modules_failed',
+      odoo_user_id: null,
+      error: `Ningun modulo del paquete pudo inscribirse en Odoo (${detalle})`
+    }
+  }
+
+  await repo.updateOdooUser({
+    enrollmentId: parentEnrollmentId,
+    odooUserId: enrolled.odoo_user_id,
+    odooStudentId: enrolled.odoo_student_id,
+    passwordSet: enrolled.password_set,
+    odooEmail: enrolled.odoo_login || enrolled.odoo_email
+  })
+
+  const fallidos = outcomes.filter(o => o.error || !o.result?.success)
+  await repo.logAudit({
+    enrollmentId: parentEnrollmentId,
+    action: 'odoo_enrolled',
+    userId: null,
+    details: `Paquete sin edicion: ${outcomes.length - fallidos.length}/${outcomes.length} modulos inscritos en Odoo (user ${enrolled.odoo_user_id})`
+  })
+
+  return { ...enrolled, reason: 'package_modules', course_search: `${outcomes.length} modulos del paquete` }
+}
+
 // Sincroniza la inscripcion de un curso con Odoo: crea/encuentra al alumno,
 // genera la orden de venta con cuotas y activa los fees. Firma compatible con el
 // job-worker (step odoo de register_followup).
@@ -117,12 +183,14 @@ export async function enrollInOdoo ({ enrollmentId }) {
     return { success: true, skipped: true, reason: 'event', odoo_user_id: null }
   }
 
-  // Skip si la inscripcion esta en E0 (program_edition_id NULL) Y es padre con hijos.
-  // En ese caso los hijos se inscriben individualmente; el padre no se sincroniza con Odoo.
-  const e0Check = await repo.findE0Check(enrollmentId)
-  if (e0Check && isE0Parent({ programEditionId: e0Check.program_edition_id, childrenCount: e0Check.children_count })) {
-    console.log(`[enrollInOdoo] Skip - enrollment #${enrollmentId} en E0 (padre sin edicion programada). Hijos se inscriben individualmente.`)
-    return { success: true, skipped: true, reason: 'e0_parent', odoo_user_id: null }
+  // Un paquete sin edicion no tiene curso propio en el campus: lo que se
+  // inscribe son sus modulos.
+  const editionCheck = await repo.findE0Check(enrollmentId)
+  if (editionCheck && isPackageWithoutEdition({
+    programEditionId: editionCheck.program_edition_id,
+    childrenCount: editionCheck.children_count
+  })) {
+    return enrollPackageModules(enrollmentId)
   }
 
   const skip = await preCheck(enrollmentId)
@@ -244,13 +312,18 @@ export async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentN
     if (isMembership(data?.abbreviation, data?.is_membership)) return { success: false, error: 'Membresias no sincronizan cuotas con Odoo' }
     if (!data?.odoo_order_id) return { success: false, error: 'Sin orden Odoo asociada' }
 
+    // Se piden TODAS las fees, no solo las pendientes: hay que poder distinguir
+    // "esta cuota ya la salda Mercado Pago" de "esta cuota no existe en Odoo".
     const fees = await odoo.callKw('sale.order.fee', 'search_read', [
-      [['order_id', '=', data.odoo_order_id], ['state', '=', 'pendiente']]
-    ], { fields: ['id', 'seq', 'amount'], limit: 20, order: 'seq asc' })
+      [['order_id', '=', data.odoo_order_id]]
+    ], { fields: ['id', 'seq', 'amount', 'state'], limit: 50, order: 'seq asc' })
 
-    if (!fees || fees.length === 0) return { success: false, error: 'No hay cuotas pendientes en Odoo' }
+    const { fee, alreadyPaid } = selectFeeForInstallment(fees, installmentNumber)
+    if (!fee) return { success: false, error: `La cuota ${installmentNumber} no existe en la orden de Odoo` }
+    if (alreadyPaid) {
+      return { success: true, fee_id: fee.id, already_paid: true, message: `La cuota ${fee.seq} ya figuraba pagada en Odoo (pasarela): no se toco nada` }
+    }
 
-    const fee = fees[0]
     await odoo.markFeeAsPaid(fee.id)
 
     return { success: true, fee_id: fee.id, message: `Cuota ${fee.seq} marcada como pagada en Odoo` }

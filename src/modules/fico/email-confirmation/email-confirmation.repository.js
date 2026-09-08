@@ -252,6 +252,17 @@ export class EmailConfirmationRepository {
     return rows?.[0] || null
   }
 
+  // Credenciales ya persistidas. El reenvio y el correo que dispara la cola no
+  // vuelven a pedirlas por formulario: sin esta lectura, un curso SAP online
+  // salia con el correo completo pero SIN el bloque de credenciales, en silencio.
+  async findSapCredentials (enrollmentId) {
+    const { rows } = await this.db.query(
+      'SELECT sap_username, sap_password FROM public.enrollment_sap_credentials WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+    return rows?.[0] || null
+  }
+
   // Horario de la edicion (override opcional). Para preview se pasa editionId;
   // para envio se resuelve la edicion del enrollment.
   async findScheduleForPreview (enrollmentId, editionId) {
@@ -288,11 +299,27 @@ export class EmailConfirmationRepository {
   }
 
   // Cuotas con estado para el correo de progreso de pago.
+  // paid_at = fecha REAL del pago (la que digita FICO al confirmar), no la de
+  // vencimiento. El correo de ultima cuota anunciaba el due_date, asi que a quien
+  // pagaba tarde le llegaba una fecha que no era la suya.
+  //
+  // Casteado a ::date a proposito: payment_date es timestamp y la plantilla
+  // formatea con getters UTC, asi que un pago de la noche en Lima se imprimiria
+  // un dia despues. LATERAL con LIMIT 1 porque una cuota con detraccion tiene dos
+  // filas de payments (mismo dia, distinto tipo).
   async findInstallmentsWithStatus (enrollmentId) {
     const { rows } = await this.db.query(`
-      SELECT pi.installment_number, pi.amount, pi.due_date, c.alias AS status_alias
+      SELECT pi.installment_number, pi.amount, pi.due_date, c.alias AS status_alias,
+             pay.paid_at
       FROM payment_installments pi
       LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
+      LEFT JOIN LATERAL (
+        SELECT p.payment_date::date AS paid_at
+        FROM public.payments p
+        WHERE p.installment_id = pi.installment_id AND p.active = 'Y'
+        ORDER BY p.payment_date DESC, p.payment_id DESC
+        LIMIT 1
+      ) pay ON true
       WHERE pi.enrollment_id = $1 AND pi.installment_number > 0
       ORDER BY pi.installment_number
     `, [enrollmentId])
@@ -345,14 +372,6 @@ export class EmailConfirmationRepository {
       LIMIT 1
     `, [enrollmentId])
     return rows.length > 0
-  }
-
-  // Comprueba si la fecha de activacion de membresia aun es futura (Lima).
-  async isMembershipActivationDeferred (activationDate) {
-    const { rows } = await this.db.query(`
-      SELECT $1::date > (NOW() AT TIME ZONE 'America/Lima')::date AS is_deferred
-    `, [activationDate])
-    return !!rows?.[0]?.is_deferred
   }
 
   // Registro en email_logs tras intentar el envio.

@@ -76,11 +76,14 @@ export function resolveMembershipChannels (publishedChannels = [], configuredIds
 // Reglas de reprogramacion de fecha (FICO mueve la activacion). Recibe el estado
 // ya leido de BD y la clasificacion de la nueva fecha; lanza DomainError con el
 // mensaje del legacy si la operacion no esta permitida. No persiste nada.
-export function assertReschedulable ({ found, isMembershipProgram, emailAlreadySent }, classification) {
+export function assertReschedulable ({ found, isMembershipProgram, alreadyActivated }, classification) {
   if (!found) throw new DomainError('Inscripcion no encontrada', { statusCode: 404, code: 'NOT_FOUND' })
   if (!isMembershipProgram) throw new DomainError('Esta inscripcion no es membresia')
-  if (emailAlreadySent) {
-    throw new DomainError('El correo de bienvenida ya fue enviado. La fecha no puede cambiarse.')
+  // El candado es la activacion, no el correo: la bienvenida sale el dia de la
+  // inscripcion, asi que exigir que no haya salido bloquearia toda reprogramacion.
+  // Una vez abiertos los cursos en Odoo, mover la fecha ya no significa nada.
+  if (alreadyActivated) {
+    throw new DomainError('La membresia ya fue activada. La fecha no puede cambiarse.')
   }
   if (classification.mode === 'immediate') {
     throw new DomainError('La nueva fecha debe ser posterior a hoy. Para activar hoy, use el envio directo.')

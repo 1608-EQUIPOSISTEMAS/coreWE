@@ -253,14 +253,21 @@ export async function confirmPayment (payload, deps = {}) {
     // que recibe el asistente es el correo, que dispara el frontend despues.
     const isEvent = await isEventEnrollment(payload.enrollment_id)
 
-    // TODA membresia sale por la cola, difiera o no. El correo de bienvenida es
-    // responsabilidad del job (steps odoo -> email, con reintentos y backoff) y
-    // no de una 2da llamada del navegador: si esa llamada no ocurria, el alumno
-    // quedaba sin credenciales y sin rastro del fallo. La inmediata va con
-    // runAt null, o sea que el worker la reclama en el proximo poll (~5s).
+    // TODA membresia sale por la cola, difiera o no, y siempre en DOS jobs:
+    //   bienvenida  -> hoy, sin importar la fecha de activacion. El socio recibe
+    //                  credenciales el dia que se inscribe (pedido de FICO).
+    //   activacion  -> en la fecha elegida (o el proximo poll si activo hoy).
+    // El correo es responsabilidad del job y no de una 2da llamada del navegador:
+    // si esa llamada no ocurria, el alumno quedaba sin credenciales y sin rastro.
     if (activation.isMembership) {
       try {
-        const job = await jobQueue.enqueue({
+        const welcomeJob = await jobQueue.enqueue({
+          jobType: 'membership_welcome',
+          enrollmentId: payload.enrollment_id,
+          payload: { enrollmentId: payload.enrollment_id },
+          runAt: null
+        })
+        const activationJob = await jobQueue.enqueue({
           jobType: 'membership_activation',
           enrollmentId: payload.enrollment_id,
           payload: { enrollmentId: payload.enrollment_id },
@@ -269,7 +276,8 @@ export async function confirmPayment (payload, deps = {}) {
         // Flag para que el frontend NO llame a enrollInOdoo ni sendConfirmationEmail
         // despues: el job lo hara. Sin esto se mandaria el correo dos veces.
         resp.membership_queued = true
-        resp.scheduled_job_id = job.job_id
+        resp.scheduled_job_id = activationJob.job_id
+        resp.welcome_job_id = welcomeJob.job_id
         if (activation.deferred) {
           resp.membership_deferred = true
           resp.activation_date = activation.activationDate
@@ -279,13 +287,13 @@ export async function confirmPayment (payload, deps = {}) {
           action: activation.deferred ? 'membership_activation_scheduled' : 'membership_activation_queued',
           userId: payload.user_id,
           details: activation.deferred
-            ? `Activacion programada para ${activation.activationDate} 09:00 (job=${job.job_id})`
-            : `Activacion inmediata encolada (job=${job.job_id})`
+            ? `Bienvenida encolada hoy (job=${welcomeJob.job_id}); activacion programada para ${activation.activationDate} 09:00 (job=${activationJob.job_id})`
+            : `Bienvenida y activacion inmediatas encoladas (jobs=${welcomeJob.job_id}, ${activationJob.job_id})`
         })
       } catch (qErr) {
         // Sin job, el frontend sigue siendo el plan B: membership_queued queda
         // en false y dispara el correo como antes.
-        console.error('[confirmPayment] No se pudo encolar membership_activation:', qErr.message)
+        console.error('[confirmPayment] No se pudo encolar la membresia:', qErr.message)
       }
     } else if (isEvent) {
       console.log(`[confirmPayment] enrollment ${payload.enrollment_id} es evento: se omite Odoo`)
@@ -338,7 +346,7 @@ export async function confirmPayment (payload, deps = {}) {
             enrollmentId: payload.enrollment_id,
             action: 'odoo_fee_paid',
             userId: payload.user_id,
-            details: `Pago contado sincronizado con Odoo (fee_id: ${odooResult.fee_id})`
+            details: `Pago contado: ${odooResult.message} (fee_id: ${odooResult.fee_id})`
           })
         }
       } catch (odooErr) {

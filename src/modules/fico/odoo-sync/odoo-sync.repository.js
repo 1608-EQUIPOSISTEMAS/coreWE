@@ -9,7 +9,8 @@ export class OdooSyncRepository {
     this.db = db
   }
 
-  // Datos para el skip de E0 padre: edicion programada y conteo de hijos.
+  // Datos para detectar un paquete sin edicion: edicion programada y conteo
+  // de modulos en la estructura del programa (no de hijos ya matriculados).
   async findE0Check (enrollmentId) {
     const { rows } = await this.db.query(`
     SELECT e.program_edition_id,
@@ -19,6 +20,17 @@ export class OdooSyncRepository {
      WHERE e.enrollment_id = $1
   `, [enrollmentId])
     return rows?.[0] || null
+  }
+
+  // Modulos matriculados que cuelgan de un paquete. Son los que de verdad se
+  // inscriben en Odoo cuando el padre no tiene edicion propia.
+  async findChildEnrollmentIds (parentEnrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT enrollment_id FROM enrollments
+       WHERE parent_enrollment_id = $1 AND active = 'Y'
+       ORDER BY enrollment_id
+    `, [parentEnrollmentId])
+    return rows.map(r => r.enrollment_id)
   }
 
   // Pre-check de idempotencia/membresia: trae flag de membresia y los ids Odoo

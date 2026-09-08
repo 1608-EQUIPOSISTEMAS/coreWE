@@ -64,7 +64,9 @@ export async function confirmInstallment ({ installmentId, enrollmentId, catCurr
   try {
     const odooResult = await repo.syncInstallmentPaymentToOdoo({ enrollmentId, installmentNumber: inst.installment_number })
     if (odooResult?.success) {
-      await repo.logAudit({ enrollmentId, action: 'odoo_fee_paid', userId, details: `Cuota ${inst.installment_number} sincronizada con Odoo (fee_id: ${odooResult.fee_id})` })
+      // El mensaje del resultado distingue "la marque yo" de "ya la habia saldado
+      // la pasarela": sin eso la bitacora afirmaba una sincronizacion que no ocurrio.
+      await repo.logAudit({ enrollmentId, action: 'odoo_fee_paid', userId, details: `${odooResult.message} (fee_id: ${odooResult.fee_id})` })
     }
   } catch (odooErr) {
     console.error('[confirmInstallment] Odoo sync:', odooErr.message)

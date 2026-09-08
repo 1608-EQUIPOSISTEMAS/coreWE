@@ -39,7 +39,7 @@ import {
 
 const repo = emailConfirmationRepository
 
-// Efectos externos. enrollInOdoo / enrollMembershipInOdoo viven en el subdominio
+// Efectos externos. enrollInOdoo / createMembershipOdooUser viven en el subdominio
 // de inscripcion en Odoo; el orquestador los inyecta para evitar un ciclo de
 // import entre subdominios. Hasta entonces lanzan un error explicito si se usan.
 const deps = {
@@ -48,7 +48,7 @@ const deps = {
   generateCronogramaPdf,
   getEnrollmentOdoo,
   enrollInOdoo: async () => { throw new Error('enrollInOdoo no inyectado en email-confirmation.usecases') },
-  enrollMembershipInOdoo: async () => { throw new Error('enrollMembershipInOdoo no inyectado en email-confirmation.usecases') }
+  createMembershipOdooUser: async () => { throw new Error('createMembershipOdooUser no inyectado en email-confirmation.usecases') }
 }
 
 // Punto de inyeccion para el orquestador (cablear deps cruzados) y para tests.
@@ -299,7 +299,11 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   if (!isEvent && check && !check.odoo_user_id) {
     console.log(`[sendConfirmationEmail] enrollment ${enrollmentId}: sin odoo_user_id, reintentando enrollInOdoo`)
     const odooRetry = await safeAsync('[sendConfirmationEmail][Odoo] retry', () => deps.enrollInOdoo({ enrollmentId }))
-    if (odooRetry?.success) {
+    // `success` no alcanza: enrollInOdoo tambien lo devuelve cuando se SALTA la
+    // inscripcion (paquete sin modulos matriculados). Sin odoo_user_id no hay
+    // alumno en Odoo y las credenciales del correo serian inventadas, que es
+    // justo lo que esta guarda existe para impedir.
+    if (odooRetry?.success && odooRetry.odoo_user_id) {
       const cursoLabel = odooRetry.course_search || 'Curso no especificado'
       await repo.logAudit({
         enrollmentId,
@@ -308,10 +312,14 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
         details: `Odoo user ${odooRetry.odoo_user_id} - ${cursoLabel} (creado en reintento desde reenviar correo)`
       })
     } else {
-      console.error(`[sendConfirmationEmail] enrollInOdoo retry no exitoso para ${enrollmentId}:`, odooRetry?.error || 'sin respuesta')
+      // El motivo importa: un skip deja `error` vacio y el mensaje quedaba en
+      // "fallo desconocido", que fue lo que hizo invisible este caso.
+      const motivo = odooRetry?.error ||
+        (odooRetry?.reason ? `no se inscribio a nadie (${odooRetry.reason})` : 'fallo desconocido')
+      console.error(`[sendConfirmationEmail] enrollInOdoo retry no exitoso para ${enrollmentId}:`, motivo)
       return {
         success: false,
-        error: `No se pudo crear el alumno en Odoo (${odooRetry?.error || 'fallo desconocido'}). El correo NO fue enviado para evitar credenciales falsas.`
+        error: `No se pudo crear el alumno en Odoo (${motivo}). El correo NO fue enviado para evitar credenciales falsas.`
       }
     }
   }
@@ -322,19 +330,33 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
   const isSapOnline = !!(isOnline && sapCategoryId && data.cat_category === sapCategoryId)
 
   // Credenciales SAP: ya no se autogeneran, vienen del formulario de FICO.
-  //   - completas  -> se persisten (registro) y se pintan en el correo.
-  //   - faltantes + enforceSapCredentials (borde HTTP manual) -> aborta el envio.
-  //   - faltantes sin enforce (llamadores internos RP/CC) -> correo sin bloque SAP.
+  //   - completas       -> se persisten (registro) y se pintan en el correo.
+  //   - faltantes       -> se recuperan las ya persistidas (reenvio, RP/CC, cola).
+  //   - sin persistir + enforceSapCredentials (borde HTTP manual) -> aborta el envio.
   let sapCredentials = null
   if (isSapOnline) {
     const { username, password, complete } = normalizeSapCredentials({ sapUsername, sapPassword })
-    if (complete) {
-      sapCredentials = await repo.setSapCredentials(enrollmentId, username, password)
-    } else if (enforceSapCredentials) {
+    sapCredentials = complete
+      ? await repo.setSapCredentials(enrollmentId, username, password)
+      : await repo.findSapCredentials(enrollmentId)
+
+    if (!sapCredentials && enforceSapCredentials) {
       return {
         success: false,
         error: 'Debes ingresar el usuario y la contrasena SAP antes de enviar el correo.'
       }
+    }
+    // Un curso SAP online sin credenciales sale con el correo mutilado y nadie
+    // se entera. Los llamadores internos no pueden abortar (romperian el RP/CC),
+    // pero el aviso queda en el log y en la bitacora de la inscripcion.
+    if (!sapCredentials) {
+      console.warn(`[sendConfirmationEmail] enrollment ${enrollmentId}: curso SAP online SIN credenciales, el correo sale sin el bloque SAP`)
+      await repo.logAudit({
+        enrollmentId,
+        action: 'sap_credentials_missing',
+        userId: null,
+        details: 'Correo de confirmacion enviado sin el bloque de credenciales SAP: no se registraron.'
+      }).catch(() => {})
     }
   }
 
@@ -439,7 +461,11 @@ export async function sendPaymentConfirmationEmail ({ enrollmentId, cc }) {
     studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programType: resolveProgramTypeLabel(data.category_description),
     isLastPayment,
-    lastPaymentDate: lastPaid?.due_date || new Date().toISOString(),
+    // "ULTIMO PAGO REALIZADO" es la fecha en que el alumno pago, no la del
+    // vencimiento: si su cuota vencia el 10/08 y pago el 15/08, el correo dice
+    // 15/08. El due_date queda de respaldo para las cuotas viejas que no tienen
+    // fila en payments (importaciones masivas).
+    lastPaymentDate: lastPaid?.paid_at || lastPaid?.due_date || new Date().toISOString(),
     nextPaymentDate: nextInstallment?.due_date || null,
     nextPaymentAmount: nextInstallment?.amount || 0,
     currencySymbol: data.currency_symbol || 'S/.'
@@ -498,28 +524,16 @@ async function sendMembershipEmailInner ({ enrollmentId, cc, skipIfSentAfter }) 
   let data = await repo.findMembershipDataForSend(enrollmentId)
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
-  // Activacion futura: el correo no sale hoy; el job en cola lo mandara al
-  // llegar la fecha. success=true para no romper reintentos manuales en la UI.
-  if (data.membership_activation_date) {
-    const deferred = await repo.isMembershipActivationDeferred(data.membership_activation_date)
-    if (deferred) {
-      return {
-        success: true,
-        deferred: true,
-        scheduled_for: data.membership_activation_date,
-        message: 'Correo diferido — el job en cola lo enviara al llegar la fecha de activacion'
-      }
-    }
-  }
-
   const toEmail = data.origin_email
   if (!toEmail) return { success: false, error: 'Sin correo registrado' }
 
-  // Sin odoo_user_id: crear usuario + inscribir en cursos online antes de
-  // mandar credenciales reales.
+  // La bienvenida ya NO espera a la fecha de activacion: sale el dia de la
+  // inscripcion con las credenciales del campus y la fecha en que arranca el
+  // acceso. Por eso solo se crea el usuario en Odoo; los cursos los abre despues
+  // el job 'membership_activation'.
   if (!data.odoo_user_id) {
-    console.log(`[sendMembershipEmail] enrollment ${enrollmentId}: sin odoo_user_id, ejecutando enrollMembershipInOdoo`)
-    const odooRes = await deps.enrollMembershipInOdoo({ enrollmentId })
+    console.log(`[sendMembershipEmail] enrollment ${enrollmentId}: sin odoo_user_id, creando el usuario en Odoo`)
+    const odooRes = await deps.createMembershipOdooUser({ enrollmentId })
     if (!odooRes?.success) {
       const errMsg = odooRes?.error || 'fallo desconocido al crear usuario en Odoo'
       console.error(`[sendMembershipEmail] No se pudo crear user en Odoo para enrollment ${enrollmentId}: ${errMsg}`)

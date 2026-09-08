@@ -1,6 +1,6 @@
 import { logAudit } from './audit/audit.usecases.js'
 import { enrollInOdoo, syncInstallmentPaymentToOdoo, setMembershipPort } from './odoo-sync/odoo-sync.usecases.js'
-import { enrollMembershipInOdoo } from './membership/membership.usecases.js'
+import { enrollMembershipInOdoo, createMembershipOdooUser } from './membership/membership.usecases.js'
 import { sendConfirmationEmail, configureEmailDeps } from './email-confirmation/email-confirmation.usecases.js'
 import { createChildEnrollments, validateChildEnrollmentSetup, setPorts as setValidationPorts } from './validation/validation.usecases.js'
 import { setEnrollmentPorts } from './enrollment/enrollment.repository.js'
@@ -25,7 +25,7 @@ export function bootstrapFico () {
   setMembershipPort(enrollMembershipInOdoo)
 
   // email-confirmation necesita los efectos Odoo (ciclo email<->membership).
-  configureEmailDeps({ enrollInOdoo, enrollMembershipInOdoo })
+  configureEmailDeps({ enrollInOdoo, createMembershipOdooUser })
 
   // validation (escenario E0): audita, inscribe hijos en Odoo y envia confirmacion.
   setValidationPorts({ logAudit, enrollInOdoo, sendConfirmationEmail })

@@ -85,7 +85,13 @@ describe('confirmPayment de una membresia', () => {
     const res = await confirmPayment({ ...payload, activation_date: '2026-09-06' }, { jobQueue })
 
     expect(jobQueue.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobType: 'membership_activation',
       runAt: '2026-09-06T14:00:00.000Z'
+    }))
+    // La bienvenida NO espera a esa fecha: el socio recibe credenciales hoy.
+    expect(jobQueue.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      jobType: 'membership_welcome',
+      runAt: null
     }))
     expect(res.membership_queued).toBe(true)
     expect(res.membership_deferred).toBe(true)

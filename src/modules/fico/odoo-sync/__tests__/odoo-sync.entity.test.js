@@ -1,28 +1,28 @@
 import { describe, it, expect } from 'vitest'
 import {
   ODOO_DEFAULT_PASSWORD,
-  isE0Parent,
+  isPackageWithoutEdition,
   resolveCurrencyCode,
   buildOdooFullName,
   buildPresentialCourseName,
   mapInstallmentsForOdoo
 } from '../odoo-sync.entity.js'
 
-describe('isE0Parent', () => {
-  it('es E0 padre cuando no hay edicion y tiene hijos', () => {
-    expect(isE0Parent({ programEditionId: null, childrenCount: 3 })).toBe(true)
+describe('isPackageWithoutEdition', () => {
+  it('es paquete sin edicion cuando no hay edicion y tiene modulos', () => {
+    expect(isPackageWithoutEdition({ programEditionId: null, childrenCount: 3 })).toBe(true)
   })
 
-  it('no es E0 padre si tiene edicion programada', () => {
-    expect(isE0Parent({ programEditionId: 99, childrenCount: 3 })).toBe(false)
+  it('no lo es si tiene edicion programada', () => {
+    expect(isPackageWithoutEdition({ programEditionId: 99, childrenCount: 3 })).toBe(false)
   })
 
-  it('no es E0 padre si no tiene hijos', () => {
-    expect(isE0Parent({ programEditionId: null, childrenCount: 0 })).toBe(false)
+  it('no lo es si el programa no tiene modulos', () => {
+    expect(isPackageWithoutEdition({ programEditionId: null, childrenCount: 0 })).toBe(false)
   })
 
   it('trata undefined de edicion como ausente', () => {
-    expect(isE0Parent({ programEditionId: undefined, childrenCount: 2 })).toBe(true)
+    expect(isPackageWithoutEdition({ programEditionId: undefined, childrenCount: 2 })).toBe(true)
   })
 })
 

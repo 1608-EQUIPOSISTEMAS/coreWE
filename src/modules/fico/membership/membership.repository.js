@@ -14,17 +14,18 @@ export class MembershipRepository {
   }
 
   // Probe ampliado para la reprogramacion: ademas de la clasificacion, resuelve
-  // si ya existe un correo de bienvenida enviado (membresia/sent). Un solo round
-  // trip para evitar TOCTOU.
-  async findMembershipProbeWithEmailState (enrollmentId) {
+  // si la activacion ya corrio (job de cursos en 'done'). Un solo round trip para
+  // evitar TOCTOU. El correo de bienvenida ya no sirve de candado: sale el dia de
+  // la inscripcion, siempre antes de cualquier reprogramacion.
+  async findMembershipProbeWithActivationState (enrollmentId) {
     const { rows } = await this.db.query(`
       SELECT pv.abbreviation, prog.is_membership,
              EXISTS (
-               SELECT 1 FROM public.email_logs el
-               WHERE el.enrollment_id = e.enrollment_id
-                 AND el.template_type = 'membresia'
-                 AND el.status = 'sent'
-             ) AS email_already_sent
+               SELECT 1 FROM public.fico_jobs j
+               WHERE j.enrollment_id = e.enrollment_id
+                 AND j.job_type = 'membership_activation'
+                 AND j.status = 'done'
+             ) AS already_activated
       FROM enrollments e
       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
