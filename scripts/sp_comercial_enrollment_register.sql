@@ -237,6 +237,12 @@ BEGIN
         END IF;
 
         v_is_resubmit := true;
+
+        -- Mas abajo esta subsanacion devuelve la inscripcion a Pendiente y recien
+        -- despues escribe el lead. Para entonces trg_block_update_if_enrolled ya
+        -- no ve la venta Observada y volveria a congelar el lead en plena
+        -- correccion. Se avisa por la transaccion (el 'true' la limpia al cerrar).
+        PERFORM set_config('we.resubmit_lead_id', p_lead_id::text, true);
     END IF;
 
     IF v_program_modality_alias = 'we_modality_online'

@@ -23,28 +23,14 @@
 // Si Planeamiento arregla esa columna, MESES_DEL_ERP vuelve a quedar vacio.
 import fs from 'node:fs'
 import { leerCronograma } from './lib/cronograma-vacantes.mjs'
+import {
+  MES_FINAL, MESES_ALTOS, MESES_DEL_ERP, crearClasificador, mesDe, temporalidad
+} from './lib/clasificacion-ediciones.mjs'
 
-const [RUTA_CRONOGRAMA, RUTA_ERP] = process.argv.slice(2)
+const [RUTA_CRONOGRAMA, RUTA_ERP, RUTA_PAQUETES] = process.argv.slice(2)
 
-const MESES_ALTOS = new Set([1, 2, 3, 7])
-const MES_FINAL = 8
-const MESES_DEL_ERP = new Set([6, 7, 8])
-
-// Un arrastre de uno o dos alumnos no convierte una apertura en seguimiento:
-// SAP HANA IN E7-26 vendio 26 con UN alumno de seguimiento, y esa fila entera
-// se iba al promedio equivocado. Debajo de este minimo, la edicion es apertura.
-const SEGUIMIENTO_MINIMO = 3
-
-const mesDe = fila => Number(fila.inicio.slice(5, 7))
-
-// Un diplomado SIEMPRE cuenta como apertura, tenga o no seguimiento: es un
-// programa que se abre y se vende entero. El SEGUI que a veces arrastra es
-// residual —DIP SUPPLY V3 E1-26 marca 21 ventas y 1 de seguimiento— y mandaba
-// la fila completa, con sus 21 ventas, al promedio de seguimiento.
-const esDiplomado = fila => fila.curso.trim().toUpperCase().startsWith('DIP')
-const esSeguimiento = fila => !esDiplomado(fila) && fila.segui >= SEGUIMIENTO_MINIMO
-
-const temporalidad = fila => (MESES_ALTOS.has(mesDe(fila)) ? 'ALTA' : 'NORMAL')
+const clasificar = crearClasificador(JSON.parse(fs.readFileSync(RUTA_PAQUETES, 'utf8')))
+const esSeguimiento = fila => clasificar(fila) === 'SEGUIMIENTO'
 
 const promedio = valores =>
   valores.length ? Number((valores.reduce((a, b) => a + b, 0) / valores.length).toFixed(1)) : null

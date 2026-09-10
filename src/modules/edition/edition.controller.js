@@ -37,6 +37,19 @@ export async function weeklyControlHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function weeklyClosuresHandler (req, reply) {
+  const data = await usecases.editionWeeklyClosures(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function closureSaveHandler (req, reply) {
+  const data = await usecases.editionClosureSave({
+    ...req.body,
+    user_id: req.user?.id ?? null
+  })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function teacherFollowupHandler (req, reply) {
   const data = await usecases.editionTeacherFollowup(req.body)
   return reply.code(200).send({ ok: true, data })

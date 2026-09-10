@@ -1060,6 +1060,20 @@ export class EnrollmentRepository {
              -- guarda de canal token no lo deje encerrado.
              tok.cat_provider AS token_provider_id,
              tok.payment_type AS token_payment_type,
+             -- Resto de la inscripcion, por el mismo motivo que el canal: en la
+             -- subsanacion el SP BORRA pagos, cuotas, descuentos y adjuntos y los
+             -- reconstruye con lo que mande el modal. Lo que el modal no devuelva
+             -- se pierde, asi que viaja todo para repintarlo tal como quedo.
+             e.list_price, e.total_amount, e.cat_currency, e.cat_payment_plan,
+             e.cat_certificate_status, e.b2b_contract_id, e.cat_b2b_doctype,
+             e.notes AS observations, e.student_attachment_url,
+             e.requires_email_cc, e.email_cc,
+             per.document_number, per.cat_type_document, per.mother_last_name,
+             pay.cat_method_payment,
+             reserva.amount AS saved_money,
+             cuotas.plan AS installment_plan,
+             dsct.lista AS discounts,
+             vouchers.lista AS ticket_payment_urls,
              -- Curso SAP online: el reenvio rapido pide credenciales a mano.
              (prog.cat_category = cat_sap.catalog_id
               AND prog.cat_model_modality = mod_online.catalog_id) AS is_sap_online
@@ -1076,6 +1090,50 @@ export class EnrollmentRepository {
         ORDER BY pt.token_id DESC
         LIMIT 1
       ) tok ON true
+      LEFT JOIN LATERAL (
+        SELECT p.cat_method_payment
+        FROM payments p
+        WHERE p.enrollment_id = e.enrollment_id AND p.cat_method_payment IS NOT NULL
+        ORDER BY p.payment_id
+        LIMIT 1
+      ) pay ON true
+      -- La reserva es la cuota 0; las demas son el plan que el asesor ve en el modal.
+      LEFT JOIN LATERAL (
+        SELECT pi.amount
+        FROM payment_installments pi
+        WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
+        LIMIT 1
+      ) reserva ON true
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+                 'installment_number', pi.installment_number,
+                 'amount',             pi.amount,
+                 'due_date',           to_char(pi.due_date, 'YYYY-MM-DD')
+               ) ORDER BY pi.installment_number) AS plan
+        FROM payment_installments pi
+        WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number > 0
+      ) cuotas ON true
+      -- Se manda el valor y la etiqueta ya resueltos: el modal los necesita para
+      -- recalcular el total y no tiene por que volver a consultar el catalogo.
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+                 'discount_id', d.discount_id,
+                 'type_alias',  ct.alias,
+                 'value',       d.value,
+                 'label',       COALESCE(d.marketing_label, d.description)
+               )) AS lista
+        FROM enrollment_discounts ed
+        JOIN discounts d ON d.discount_id = ed.discount_id
+        LEFT JOIN catalog ct ON ct.catalog_id = d.cat_discount_type
+        WHERE ed.enrollment_id = e.enrollment_id
+      ) dsct ON true
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+                 'url', ea.file_url, 'name', ea.file_name, 'type', ea.file_type
+               )) AS lista
+        FROM enrollment_attachments ea
+        WHERE ea.enrollment_id = e.enrollment_id AND ea.active = 'Y'
+      ) vouchers ON true
       LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN catalog cat_sap ON cat_sap.alias = 'we_program_category_sap'

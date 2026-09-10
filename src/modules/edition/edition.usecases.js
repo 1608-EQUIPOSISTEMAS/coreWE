@@ -16,6 +16,9 @@ import {
   isoWeekRange,
   buildWeeklySessionDays,
   buildControlRow,
+  buildClosureRow,
+  closingDateOf,
+  CLOSURE_CHECKS,
   attachSessionAudits,
   buildSessionSchedule,
   getAllowedDays,
@@ -155,6 +158,60 @@ export async function editionWeeklyControl ({ year, week } = {}) {
       return first && first.date <= date_end && last.date >= date_start
     })
   return { year: y, week: w, date_start, date_end, editions }
+}
+
+// Cierre de cursos: aulas que TERMINAN en la semana ISO pedida, con el
+// checklist de cierre. Es la otra cara del control — mismas aulas, misma
+// consulta — filtrando por la ultima sesion en vez de por la primera.
+export async function editionWeeklyClosures ({ year, week } = {}) {
+  const y = Number(year)
+  const w = Number(week)
+  const { date_start, date_end } = isoWeekRange(y, w)
+  const [rows, catalog] = await Promise.all([
+    repo.weeklyControlEditions(date_start, date_end),
+    getCatalog()
+  ])
+  const controls = await repo.sessionControlsList(rows.map((r) => Number(r.edition_num_id)))
+  const ctx = {
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+    controls
+  }
+  const cerrando = rows
+    .map((r) => buildControlRow(r, ctx))
+    .filter((r) => {
+      const cierre = closingDateOf(r)
+      return cierre >= date_start && cierre <= date_end
+    })
+  const closures = await repo.closuresList(cerrando.map((r) => Number(r.edition_num_id)))
+  const editions = cerrando
+    .map((r) => buildClosureRow(r, closures))
+    .sort((a, b) => a.closing_date.localeCompare(b.closing_date))
+  // El catalogo viaja con los datos para que la vista no repita las etiquetas
+  // ni el orden de las columnas: agregar una tarea es tocar CLOSURE_CHECKS.
+  return { year: y, week: w, date_start, date_end, checks: CLOSURE_CHECKS, editions }
+}
+
+// Marca/desmarca UNA tarea del cierre. El nombre de la casilla se valida contra
+// el catalogo porque el repositorio lo interpola en el SQL.
+export async function editionClosureSave ({ edition_num_id, field, value, user_id } = {}) {
+  if (!CLOSURE_CHECKS.some((c) => c.field === field)) {
+    throw new DomainError(`Tarea de cierre desconocida: ${field}`)
+  }
+  await repo.closureSave({ edition_num_id, field, value: value === true }, user_id)
+  const row = await repo.controlEditionGet(edition_num_id)
+  if (!row) return null
+  const [controls, closures, catalog] = await Promise.all([
+    repo.sessionControlsList([Number(edition_num_id)]),
+    repo.closuresList([Number(edition_num_id)]),
+    getCatalog()
+  ])
+  const control = buildControlRow(row, {
+    dayCombos: catalog.we_day_combination || [],
+    holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+    controls
+  })
+  return buildClosureRow(control, closures)
 }
 
 // Seguimiento Docentes (Reporte Academico): mismo cronograma derivado del

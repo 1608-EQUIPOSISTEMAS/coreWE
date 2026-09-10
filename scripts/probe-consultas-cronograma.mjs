@@ -1,10 +1,10 @@
 // Por que el contador de CONSULTAS del cronograma no cuadra con el del modulo.
 //
-// El cronograma (edition.repository.js -> classroomLeadsCountList) cuenta por
-// LISTA NEGRA: todo lead activo de la edicion menos Desestimado, Cerrado e
-// Indiferente. Este script muestra el desglose por estado para ver que se cuela
-// frente a la lista blanca de negocio (Atendido, Interesado, Unico contacto,
-// Pagara, Pago).
+// Desde el fix de la lista blanca, el cronograma (edition.repository.js ->
+// classroomLeadsCountList) ya cuenta solo los cinco estados de negocio
+// (Atendido, Interesado, Unico contacto, Pagara, Pago). Este script muestra el
+// desglose por estado de una edicion para ver que queda fuera. Para saber
+// CUANDO un lead salio de la cuenta, ver probe-consultas-edicion.mjs.
 //
 // Uso:  node scripts/probe-consultas-cronograma.mjs [texto del programa]
 //       node scripts/probe-consultas-cronograma.mjs python

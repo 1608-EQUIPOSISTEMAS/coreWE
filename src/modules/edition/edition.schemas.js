@@ -1,4 +1,5 @@
 // Schemas de validacion Fastify para el modulo edition.
+import { CLOSURE_CHECKS } from './edition.entity.js'
 
 export const editionRegisterSchema = {
   body: {
@@ -447,6 +448,24 @@ export const sessionControlSaveSchema = {
       session_number: { type: 'integer', minimum: 1, maximum: 100 },
       status: { type: ['string', 'null'], enum: ['A', 'R', 'T', null] },
       new_date: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+    }
+  }
+}
+
+// Cierre de cursos: la semana ISO se valida igual que el control.
+export const weeklyClosuresSchema = weeklySessionsSchema
+
+export const closureSaveSchema = {
+  body: {
+    type: 'object',
+    required: ['edition_num_id', 'field', 'value'],
+    additionalProperties: false,
+    properties: {
+      edition_num_id: { type: 'integer' },
+      // El repositorio interpola este nombre en el SQL: el enum sale del
+      // catalogo de tareas, nunca del cliente.
+      field: { type: 'string', enum: CLOSURE_CHECKS.map((c) => c.field) },
+      value: { type: 'boolean' }
     }
   }
 }

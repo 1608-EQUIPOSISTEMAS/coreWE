@@ -683,6 +683,7 @@ export function buildControlRow (r, { dayCombos = [], holidaySet = new Set(), co
     edition_num_id: r.edition_num_id,
     abbreviation: r.abbreviation,
     specific_code: r.specific_code,
+    class_code: r.class_code,
     instructor: r.instructor,
     day_label: r.day_label,
     hour_label: r.hour_label,
@@ -723,6 +724,53 @@ export function attachSessionAudits (row, auditRows = []) {
         audited_at: audit?.audited_at || null
       }
     })
+  }
+}
+
+// ===================================================================
+// Cierre de cursos: las 6 tareas que el area Academica cierra cuando un aula
+// termina (hoja "CIERRE DE CURSOS"). El orden es el de la hoja y define el de
+// las columnas: cambiarlo aqui las mueve en la vista.
+// ===================================================================
+export const CLOSURE_CHECKS = [
+  { field: 'survey_reinforced', label: 'Refuerz. enc. final' },
+  { field: 'grades_delivered', label: 'Entregó notas' },
+  { field: 'certificate_done', label: 'Certificado' },
+  { field: 'debt_validated', label: 'Val. deuda' },
+  { field: 'teacher_survey', label: 'Enc. docente' },
+  { field: 'final_report_sent', label: 'Reporte final' }
+]
+
+// El cierre REAL de un aula es su ultima sesion con reprogramaciones aplicadas,
+// no el end_date planificado: una R al final corre el cierre a otra semana y la
+// bandeja tiene que seguirlo, si no el aula se revisa la semana equivocada.
+export function closingDateOf (row) {
+  return row.sessions?.[row.sessions.length - 1]?.date || row.end_date
+}
+
+// Pega el checklist sobre la fila del control. Un aula sin fila en
+// edition_closure no es un error: es un cierre que nadie empezo a gestionar.
+export function buildClosureRow (row, closureRows = []) {
+  const saved = closureRows.find(
+    (c) => Number(c.program_edition_id) === Number(row.edition_num_id)
+  )
+  const checks = Object.fromEntries(
+    CLOSURE_CHECKS.map(({ field }) => [field, saved?.[field] === true])
+  )
+  return {
+    edition_num_id: row.edition_num_id,
+    abbreviation: row.abbreviation,
+    class_code: row.class_code,
+    specific_code: row.specific_code,
+    instructor: row.instructor,
+    day_label: row.day_label,
+    hour_label: row.hour_label,
+    start_date: row.start_date,
+    closing_date: closingDateOf(row),
+    total_sessions: row.total_sessions,
+    checks,
+    done_count: CLOSURE_CHECKS.filter(({ field }) => checks[field]).length,
+    updated_at: saved?.updated_at || null
   }
 }
 

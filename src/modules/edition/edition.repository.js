@@ -1657,7 +1657,15 @@ export class EditionRepository {
            dayc.description          AS day_label,
            hourc.description         AS hour_label,
            pe.new_methodology,
-           INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor
+           INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor,
+           -- Codigo de aula de Nexus (vw_aula_auditoria_resumen_2026): siglas
+           -- del curso + fecha de inicio. Dos aulas del mismo curso que abren
+           -- el mismo dia se desempatan con las iniciales del docente.
+           CASE WHEN dup.n > 1
+                THEN UPPER(LEFT(SPLIT_PART(BTRIM(per.first_name), ' ', 1), 1)) ||
+                     UPPER(LEFT(SPLIT_PART(BTRIM(per.last_name), ' ', 1), 1))
+                ELSE '' END
+             || sg.siglas || '-' || TO_CHAR(pe.start_date, 'DD/MM/YY') AS class_code
       FROM public.program_editions pe
       JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
       JOIN public.programs p          ON p.program_id = pv.program_id
@@ -1668,6 +1676,22 @@ export class EditionRepository {
  LEFT JOIN public."catalog" hourc     ON hourc.catalog_id = pe.cat_hour_combination_id
  LEFT JOIN public.instructors i       ON i.instructor_id = pe.instructor_id
  LEFT JOIN public.persons per         ON per.person_id = i.person_id
+CROSS JOIN LATERAL (
+             SELECT STRING_AGG(LEFT(w, 1), '') AS siglas
+               FROM regexp_split_to_table(UPPER(pv.abbreviation), '\\s+') w
+           ) sg
+      -- El desempate se cuenta sobre TODA la tabla, no sobre las filas que deja
+      -- el WHERE variable: si no, pedir la edicion de a una le cambiaria el codigo.
+CROSS JOIN LATERAL (
+             SELECT COUNT(*) AS n
+               FROM public.program_editions pe2
+               JOIN public.program_versions pv2 ON pv2.program_version_id = pe2.program_version_id
+              WHERE pv2.abbreviation = pv.abbreviation
+                AND pe2.start_date = pe.start_date
+                -- Sin docente no hay iniciales que desempaten: la vista de Nexus
+                -- tampoco las cuenta (entra por JOIN instructors).
+                AND pe2.instructor_id IS NOT NULL
+           ) dup
      WHERE pe.active = 'Y'
        AND COALESCE(cseg.alias, '') <> 'we_segment_a5'
        AND ${where}
@@ -1775,6 +1799,81 @@ export class EditionRepository {
         ])
       }
       await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  }
+
+  // ===================================================================
+  // Cierre de cursos: checklist por aula (mismo patron lazy-create que
+  // edition_session_control). Una fila por edicion, no por casilla: el "quien y
+  // cuando" de cada marca se reconstruye desde audit_logs.
+  // ===================================================================
+  async ensureClosureTable () {
+    if (this._closureReady) return
+    await this.db.query(`
+    CREATE TABLE IF NOT EXISTS public.edition_closure (
+      program_edition_id  INTEGER PRIMARY KEY,
+      survey_reinforced   BOOLEAN NOT NULL DEFAULT FALSE,
+      grades_delivered    BOOLEAN NOT NULL DEFAULT FALSE,
+      certificate_done    BOOLEAN NOT NULL DEFAULT FALSE,
+      debt_validated      BOOLEAN NOT NULL DEFAULT FALSE,
+      teacher_survey      BOOLEAN NOT NULL DEFAULT FALSE,
+      final_report_sent   BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_by          INTEGER REFERENCES public.users(user_id),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `)
+    this._closureReady = true
+  }
+
+  async closuresList (editionIds) {
+    await this.ensureClosureTable()
+    if (!editionIds.length) return []
+    const { rows } = await this.db.query(`
+    SELECT * FROM public.edition_closure WHERE program_edition_id = ANY($1::int[])
+  `, [editionIds])
+    return rows
+  }
+
+  // `field` NO viene del request: el usecase lo valida contra CLOSURE_CHECKS
+  // antes de llegar aca, porque se interpola en el SQL.
+  async closureSave ({ edition_num_id, field, value }, uid) {
+    await this.ensureClosureTable()
+    const client = await this.db.connect()
+    try {
+      await client.query('BEGIN')
+      const { rows: prevRows } = await client.query(
+        'SELECT * FROM public.edition_closure WHERE program_edition_id = $1 FOR UPDATE',
+        [edition_num_id]
+      )
+      const prev = prevRows[0] || null
+      const { rows } = await client.query(`
+      INSERT INTO public.edition_closure (program_edition_id, ${field}, updated_by)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (program_edition_id)
+      DO UPDATE SET ${field} = EXCLUDED.${field}, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+      RETURNING *
+    `, [edition_num_id, value, uid ?? null])
+      const curr = rows[0]
+
+      await client.query(`
+      INSERT INTO public.audit_logs
+        (table_name, record_id, action, user_id, changed_fields, old_data, new_data, transaction_id)
+      VALUES ('edition_closure', $1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, txid_current())
+    `, [
+        edition_num_id,
+        prev ? 'UPDATE' : 'INSERT',
+        uid ?? null,
+        JSON.stringify({ [field]: { old: prev?.[field] ?? false, new: value } }),
+        prev ? JSON.stringify(prev) : null,
+        JSON.stringify(curr)
+      ])
+      await client.query('COMMIT')
+      return curr
     } catch (err) {
       await client.query('ROLLBACK')
       throw err

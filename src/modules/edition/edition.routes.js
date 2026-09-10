@@ -20,6 +20,8 @@ import {
   editionByWeekListSchema,
   weeklySessionsSchema,
   weeklyControlSchema,
+  weeklyClosuresSchema,
+  closureSaveSchema,
   teacherFollowupSchema,
   sessionControlSaveSchema,
   editionGetSchema,
@@ -77,6 +79,15 @@ export default async function editionRoutes (fastify) {
   fastify.post('/weeklycontrol', {
     schema: weeklyControlSchema
   }, ctrl.weeklyControlHandler)
+
+  // Cierre de cursos: aulas que terminan en la semana + checklist de cierre.
+  fastify.post('/weeklyclosures', {
+    schema: weeklyClosuresSchema
+  }, ctrl.weeklyClosuresHandler)
+
+  fastify.post('/closuresave', {
+    schema: closureSaveSchema
+  }, ctrl.closureSaveHandler)
 
   // Seguimiento Docentes: cronograma S1..Sn + auditoria por sesion en un rango.
   fastify.post('/teacherfollowup', {
