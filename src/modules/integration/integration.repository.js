@@ -97,16 +97,19 @@ export const IMPORT_OBSERVATION_TOKEN = 'masiva FICO'
 // ponytail: lista en codigo; las OS nuevas ya no la necesitan (ver abajo).
 //
 // 13790 y 13791 (Grupo Tawa, S/328 c/u) cobradas el 2026-08-28: liberadas.
-export const HELD_ENROLLMENT_IDS = [14344, 14345, 14346, 14347, 14348]
+// 14344-14348 (OS 'PAGA EN 30 DIAS') liberadas por FICO el 2026-09-11.
+export const HELD_ENROLLMENT_IDS = []
 
 // Retiene tambien a las hijas de paquete: sin esto la venta del padre no sube
 // pero sus hijos SEG si. La lista vacia devuelve '' porque `NOT IN ()` no es SQL
 // valido.
-export const EXCLUDE_HELD = HELD_ENROLLMENT_IDS.length === 0
+export const excludeHeld = (ids) => ids.length === 0
   ? ''
   : `
-         AND e.enrollment_id NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})
-         AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${HELD_ENROLLMENT_IDS.join(', ')})`
+         AND e.enrollment_id NOT IN (${ids.join(', ')})
+         AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${ids.join(', ')})`
+
+export const EXCLUDE_HELD = excludeHeld(HELD_ENROLLMENT_IDS)
 
 // Una venta con Orden de Servicio / de Compra la aprueba FICO sin cobrar, porque
 // la empresa deposita semanas despues (`markCheckedWithoutPayment` en

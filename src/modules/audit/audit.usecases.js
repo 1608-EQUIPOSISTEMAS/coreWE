@@ -1,5 +1,5 @@
 import { auditRepository } from './audit.repository.js'
-import { auditableRolesFor, normalizeFilters, AUDITED_TABLES } from './audit.entity.js'
+import { auditableRolesFor, normalizeFilters, AUDITED_TABLES, SYSTEM_ACTIONS } from './audit.entity.js'
 import { labelForField, referenceForField, formatFieldValue } from './audit.fields.js'
 
 const repo = auditRepository
@@ -32,6 +32,15 @@ export async function listAuditLog (roles, body) {
     has_more: hasMore,
     scope: auditableRoles
   }
+}
+
+// Registra una acción del menú de usuario. El autor sale del JWT, nunca del
+// body: la bitácora no puede quedar a merced de lo que diga el navegador.
+// Una acción fuera de la lista blanca se ignora en silencio; el schema ya la
+// rechaza con 400 y aquí solo queda el cinturón de seguridad.
+export async function recordSystemAction (userId, action) {
+  if (!userId || !SYSTEM_ACTIONS.includes(action)) return
+  await repo.recordSystemAction(userId, action)
 }
 
 // Junta, por tipo de referencia, todos los ids que aparecen en los diffs.

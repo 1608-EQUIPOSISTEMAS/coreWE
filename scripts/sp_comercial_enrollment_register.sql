@@ -569,7 +569,12 @@ BEGIN
         END LOOP;
     END;
 
-    v_current_total := TRUNC(v_current_total, 0);
+    -- B2B cobra al centimo lo que la empresa realmente paga; el resto de canales
+    -- se trunca a soles enteros. Espejo de chargedTotal() en
+    -- Frontend/src/features/apply-discounts/computeDiscounts.js.
+    IF v_agent_origin IS DISTINCT FROM 'B2B' THEN
+        v_current_total := TRUNC(v_current_total, 0);
+    END IF;
     v_front_total   := COALESCE(NULLIF(j_insc->>'total_amount', '')::numeric, 0);
 
     IF ABS(v_current_total - v_front_total) > 0.01 THEN

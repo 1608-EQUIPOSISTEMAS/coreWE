@@ -21,10 +21,25 @@ export const AUDITED_TABLES = {
   lead_contact_attempts: 'Intentos de contacto',
   program_editions: 'Ediciones y cronograma',
   edition_session_control: 'Control de sesiones',
-  logins: 'Accesos al sistema'
+  logins: 'Accesos al sistema',
+  system_actions: 'Acciones del sistema'
 }
 
-export const AUDITED_ACTIONS = ['INSERT', 'UPDATE', 'DELETE', 'LOGIN']
+// Acciones del menú de usuario (cabecera) que no cambian ninguna fila y por eso
+// ningún trigger las ve: cerrar sesión, actualizar la base del asesor, los dos
+// envíos a Google Sheets y el refresco del catálogo. Las reporta el frontend
+// contra /audit/action y esta es la lista blanca que impide que ese endpoint
+// escriba texto libre en la bitácora.
+//
+// Solo los códigos: la etiqueta en español de cada acción vive en la vista
+// (Auditoria.vue), junto a la de INSERT/UPDATE/DELETE/LOGIN, para no tener el
+// mismo texto en dos repos.
+export const SYSTEM_ACTIONS = [
+  'LOGOUT', 'UPDATE_BASE', 'SYNC_PROSPECTOS', 'SYNC_PLANEAMIENTO', 'CATALOG_REFRESH',
+  'SYNC_FICO'
+]
+
+export const AUDITED_ACTIONS = ['INSERT', 'UPDATE', 'DELETE', 'LOGIN', ...SYSTEM_ACTIONS]
 
 // Cada líder audita a su propia área: LIDER_COMERCIAL ve lo que hicieron los
 // usuarios COMERCIAL (y los demás líderes comerciales, para que un equipo con

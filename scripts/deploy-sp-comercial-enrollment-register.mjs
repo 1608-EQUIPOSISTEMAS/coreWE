@@ -8,6 +8,8 @@
 //   B) venta con Orden de Servicio -> cuota 1 pendiente y NINGUN payment: la
 //                                     empresa deposita semanas despues
 //   C) OS + plan de cuotas -> rechazada, en vez de perder el plan en silencio
+//   D) B2B con centimos -> total 205.50 intacto (cobra lo que paga la empresa)
+//   E) no-B2B con centimos -> rechazada: ahi el total sigue truncado a entero
 //
 //   node scripts/deploy-sp-comercial-enrollment-register.mjs --dry   # solo prueba
 //   node scripts/deploy-sp-comercial-enrollment-register.mjs         # prueba y aplica
@@ -32,11 +34,17 @@ async function callRegister (client, leadId, userId, inscription) {
   return rows[0] ?? { result: 0, message: 'sin respuesta' }
 }
 
-async function scenario (client, ctx, { titulo, extra, esperado }) {
+async function scenario (client, ctx, { titulo, situacion = 'we_prospect_situation_professional', extra, esperado }) {
   await client.query('SAVEPOINT esc')
-  // El SP exige fecha de pago en el lead antes de matricular; se revierte con
-  // el savepoint igual que el resto.
-  await client.query('UPDATE public.leads SET pay_date = NOW()::date WHERE lead_id = $1', [ctx.leadId])
+  // El SP exige fecha de pago en el lead antes de matricular, y la situacion del
+  // prospecto decide si la venta es B2B (y si trunca el total): se fija explicita
+  // para no depender del lead que toque. Se firma como el creador del lead porque
+  // trg_check_lead_modification_permission rechaza a cualquier otro; todo se
+  // revierte con el savepoint.
+  await client.query(`
+    UPDATE public.leads
+    SET pay_date = NOW()::date, cat_prospect_situation = $1, user_modification_id = user_registration_id
+    WHERE lead_id = $2`, [await catalogId(client, situacion), ctx.leadId])
 
   const insc = {
     document: '99999903',
@@ -84,6 +92,9 @@ async function scenario (client, ctx, { titulo, extra, esperado }) {
 
     if (String(head.cat_b2b_doctype ?? 'null') !== String(esperado.doctype)) {
       ok = false; console.log(`   ✗ doctype ${head.cat_b2b_doctype}, esperado ${esperado.doctype}`)
+    }
+    if (ok && esperado.total != null && Number(head.total_amount) !== esperado.total) {
+      ok = false; console.log(`   ✗ total ${head.total_amount}, esperado ${esperado.total}`)
     }
     if (ok && cuotas.length !== 1) { ok = false; console.log(`   ✗ ${cuotas.length} cuotas, esperada 1`) }
     if (ok && Number(cuotas[0].cat_status) !== ctx.instPending) {
@@ -146,7 +157,19 @@ try {
     extra: { cat_b2b_doctype: ctx.osDoctype, cat_type_payment: ctx.paymentInstall, saved_money: 300 },
     esperado: { result: 2, mensaje: 'OS/OP' }
   })
-  aprobado = a && b && c
+  const centimos = { list_price: 205.5, total_amount: 205.5 }
+  const d = await scenario(client, ctx, {
+    titulo: 'D) B2B con centimos → total exacto',
+    situacion: 'we_prospect_situation_convenios',
+    extra: centimos,
+    esperado: { result: 1, doctype: 'null', payments: 1, total: 205.5 }
+  })
+  const e = await scenario(client, ctx, {
+    titulo: 'E) no-B2B con centimos → rechazada (trunca a entero)',
+    extra: centimos,
+    esperado: { result: 2, mensaje: 'Discrepancia' }
+  })
+  aprobado = a && b && c && d && e
 } finally {
   await client.query('ROLLBACK')
   client.release()

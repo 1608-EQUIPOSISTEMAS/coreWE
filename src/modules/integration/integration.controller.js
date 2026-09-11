@@ -1,5 +1,6 @@
 import * as usecases from './integration.usecases.js'
 import { mapSlackReportPayload } from './integration.dto.js'
+import { recordSystemAction } from '../audit/audit.usecases.js'
 
 export async function syncLeadsToSheetHandler (req, reply) {
   const data = await usecases.syncLeadsToSheet(req.body)
@@ -32,6 +33,9 @@ export async function syncFicoSalesToSheetHandler (req, reply) {
 }
 
 export async function syncFicoToSheetsHandler (req, reply) {
+  // El sync corre en segundo plano y no cambia ninguna fila: sin esta huella
+  // no queda rastro de quien apreto "Sincronizar ventas" en Inscripciones.
+  await recordSystemAction(req.user?.id, 'SYNC_FICO')
   const data = usecases.startFicoSyncInBackground()
   return reply.code(202).send({ ok: true, data })
 }

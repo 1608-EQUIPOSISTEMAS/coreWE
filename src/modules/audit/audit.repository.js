@@ -1,10 +1,22 @@
 import { pool } from '../../shared/db/pool.js'
 
 // Lectura de audit_logs, la bitácora que llenan los triggers fn_audit_changes.
-// Este módulo NO escribe: quien audita nunca modifica la evidencia.
+// Lo único que escribe es su propia evidencia (recordSystemAction): jamás toca
+// ni corrige las filas que ya están en la bitácora.
 export class AuditRepository {
   constructor (db = pool) {
     this.db = db
+  }
+
+  // Deja huella de una acción de menú (tabla virtual 'system_actions', igual que
+  // 'logins' en auth.repository). record_id = el propio usuario porque no hay
+  // ninguna fila de negocio detrás a la que apuntar.
+  async recordSystemAction (userId, action) {
+    await this.db.query(
+      `INSERT INTO public.audit_logs (table_name, record_id, action, user_id)
+       VALUES ('system_actions', $1, $2, $1)`,
+      [userId, action]
+    )
   }
 
   // Una página de movimientos, del más reciente al más viejo.

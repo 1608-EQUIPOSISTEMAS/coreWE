@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { auditableRolesFor, normalizeFilters, AUDITED_TABLES } from '../audit.entity.js'
+import { auditableRolesFor, normalizeFilters, AUDITED_TABLES, SYSTEM_ACTIONS } from '../audit.entity.js'
 
 describe('auditableRolesFor', () => {
   it('ADMIN audita todo: sin filtro de rol', () => {
@@ -36,6 +36,16 @@ describe('normalizeFilters', () => {
   it('acepta lo que sí está auditado', () => {
     const f = normalizeFilters({ table_name: 'payments', action: 'UPDATE' })
     expect(f).toMatchObject({ tableName: 'payments', action: 'UPDATE' })
+  })
+
+  // Las acciones del menú de usuario se filtran como cualquier otra: si alguien
+  // agrega un código a SYSTEM_ACTIONS y olvida AUDITED_ACTIONS, el filtro las
+  // descartaría en silencio y la vista saldría vacía sin explicar por qué.
+  it('las acciones del menú de usuario son filtrables', () => {
+    for (const action of SYSTEM_ACTIONS) {
+      expect(normalizeFilters({ table_name: 'system_actions', action }))
+        .toMatchObject({ tableName: 'system_actions', action })
+    }
   })
 
   // Las dos que nadie recuerda: no tienen trigger, las inserta el codigo a

@@ -136,6 +136,29 @@ describe('wiring HTTP (sin BD)', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  // La bitacora solo acepta los codigos de SYSTEM_ACTIONS: el endpoint lo abre
+  // cualquier usuario autenticado, asi que la lista blanca es lo unico que
+  // impide escribir texto arbitrario en la auditoria.
+  it('/api/audit/action rechaza una accion fuera de la lista blanca', async () => {
+    const token = app.jwt.sign({ id: 1, username: 'tester', roles: ['COMERCIAL'] })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/audit/action',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { action: 'DROP_TABLE' }
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('/api/audit/action sin token responde 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/audit/action',
+      payload: { action: 'LOGOUT' }
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
   it('ruta inexistente responde 404', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/no-existe-esta-ruta' })
     expect(res.statusCode).toBe(404)
