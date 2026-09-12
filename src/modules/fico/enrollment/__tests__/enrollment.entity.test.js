@@ -7,6 +7,8 @@ import {
   resolveProgramTypeLabel,
   flattenDailyKpis,
   resolveSellerAgentChange,
+  assertSellerAgentChanged,
+  resolveWebMatchLead,
   assertChecked,
   assertModalityChangeNeeded,
   editionShiftDays,
@@ -90,9 +92,20 @@ describe('resolveSellerAgentChange (origin explicito)', () => {
     const r = resolveSellerAgentChange({ oldAgentId: 5, oldOrigin: 'B2B', newSellerAgentId: 7, newAgentOrigin: '' })
     expect(r.newOrigin).toBeNull()
   })
+})
+
+describe('assertSellerAgentChanged', () => {
   it('lanza si el canal y asesor son iguales a los actuales', () => {
-    expect(() => resolveSellerAgentChange({ oldAgentId: 7, oldOrigin: 'B2B', newSellerAgentId: 7, newAgentOrigin: 'B2B' }))
+    expect(() => assertSellerAgentChanged({ oldAgentId: 7, oldOrigin: 'B2B', newAgentId: 7, newOrigin: 'B2B', matchedLeadId: null }))
       .toThrow(DomainError)
+  })
+  it('deja pasar el mismo asesor cuando se engancha una consulta', () => {
+    expect(() => assertSellerAgentChanged({ oldAgentId: 2, oldOrigin: 'WEB', newAgentId: 2, newOrigin: 'WEB', matchedLeadId: 500 }))
+      .not.toThrow()
+  })
+  it('deja pasar cuando cambia el asesor', () => {
+    expect(() => assertSellerAgentChanged({ oldAgentId: 7, oldOrigin: 'B2B', newAgentId: 9, newOrigin: 'B2B', matchedLeadId: null }))
+      .not.toThrow()
   })
 })
 
@@ -399,5 +412,41 @@ describe('selectChildrenToRetireOnCourseChange', () => {
       destinationEnrollmentId: 9, today: new Date('2026-07-30T00:00:00Z')
     })
     expect(r.map(c => c.enrollment_id)).toEqual([3])
+  })
+})
+
+describe('resolveWebMatchLead (match WEB)', () => {
+  const candidatos = [
+    { lead_id: 500, user_id: 2, alias: 'AE30' },
+    { lead_id: 501, user_id: 9, alias: 'CA36' }
+  ]
+
+  it('ignora los canales que no son WEB', () => {
+    expect(resolveWebMatchLead({ newOrigin: 'B2B', newAgentId: 2, leadId: null, candidates: [] })).toBeNull()
+    expect(resolveWebMatchLead({ newOrigin: null, newAgentId: 2, leadId: null, candidates: [] })).toBeNull()
+  })
+
+  it('devuelve el lead cuando la consulta es del asesor elegido', () => {
+    expect(resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: 500, candidates: candidatos })).toBe(500)
+  })
+
+  it('bloquea WEB si el asesor nunca registro la consulta', () => {
+    expect(() => resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: null, candidates: [] }))
+      .toThrow(/debe registrar la consulta/)
+  })
+
+  it('exige elegir consulta cuando si hay candidatas', () => {
+    expect(() => resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: null, candidates: candidatos }))
+      .toThrow(/Elige la consulta/)
+  })
+
+  it('rechaza una consulta que no esta entre las candidatas', () => {
+    expect(() => resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: 999, candidates: candidatos }))
+      .toThrow(/ya no es un match valido/)
+  })
+
+  it('rechaza la consulta de otro asesor', () => {
+    expect(() => resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: 501, candidates: candidatos }))
+      .toThrow(/pertenece a otro asesor/)
   })
 })

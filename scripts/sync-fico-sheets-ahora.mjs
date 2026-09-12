@@ -5,28 +5,33 @@
 // OJO: la siguiente corrida del backend desplegado reescribe las hojas con SU
 // codigo; si el cambio no esta desplegado, lo deshace.
 //
+// Hojas UNA POR UNA, no el Promise.all de syncFicoToSheets: las 9 en paralelo
+// agotaron la RAM de esta maquina y Windows mato el proceso entre el clear y el
+// update de ensureAndWrite, que es justo el hueco donde una hoja queda vacia.
+//
 // Uso (desde Backend/, credentials/service.json se resuelve contra cwd):
-//   node scripts/sync-fico-sheets-ahora.mjs [correo ...]   # sin --aplicar solo muestra
-//   node scripts/sync-fico-sheets-ahora.mjs [correo ...] --aplicar
+//   node scripts/sync-fico-sheets-ahora.mjs              # las 9
+//   node scripts/sync-fico-sheets-ahora.mjs Sales Aula   # solo esas (por nombre de funcion)
 import { pool } from '../src/shared/db/pool.js'
-import { integrationRepository as repo } from '../src/modules/integration/integration.repository.js'
-import { syncFicoToSheets } from '../src/modules/integration/integration.usecases.js'
-
-const correos = process.argv.slice(2).filter(a => !a.startsWith('--')).map(c => c.toLowerCase())
-const HOJAS = ['getFicoSales', 'getFicoAula', 'getFicoConsolidado', 'getFicoCuotas', 'getFicoConvenios']
+import {
+  syncFicoSalesToSheet, syncFicoAulaToSheet, syncFicoConsolidadoToSheet,
+  syncFicoCuotasToSheet, syncFicoEventosToSheet, syncFicoCronogramaToSheet,
+  syncFicoAdicionalesToSheet, syncFicoMembresiasToSheet, syncFicoConveniosToSheet
+} from '../src/modules/integration/integration.usecases.js'
 
 console.log('BD:', (await pool.query('SELECT current_database() AS db')).rows[0].db)
 
-for (const hoja of HOJAS) {
-  const filas = await repo[hoja]()
-  const presentes = correos.map(c => [c, filas.filter(f => String(f.correo ?? '').toLowerCase() === c).length])
-  console.log(hoja.padEnd(20), 'filas', String(filas.length).padStart(5), '|', presentes.map(([c, n]) => `${c.split('@')[0]}=${n}`).join(' '))
-}
-
-if (process.argv.includes('--aplicar')) {
-  const r = await syncFicoToSheets()
-  console.log('sync ok:', Object.entries(r).map(([k, v]) => `${k}=${v.rows_synced}`).join(' '))
-} else {
-  console.log('\n(dry-run) volver a correr con --aplicar')
+const HOJAS = [
+  syncFicoSalesToSheet, syncFicoAulaToSheet, syncFicoConsolidadoToSheet,
+  syncFicoCuotasToSheet, syncFicoEventosToSheet, syncFicoCronogramaToSheet,
+  syncFicoAdicionalesToSheet, syncFicoMembresiasToSheet, syncFicoConveniosToSheet
+]
+const pedidas = process.argv.slice(2)
+const elegidas = pedidas.length
+  ? HOJAS.filter(f => pedidas.some(p => f.name === `syncFico${p}ToSheet`))
+  : HOJAS
+for (const sync of elegidas) {
+  const r = await sync()
+  console.log(`${r.sheet ?? sync.name}: ${r.rows_synced} filas`)
 }
 await pool.end()

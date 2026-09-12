@@ -79,7 +79,7 @@ export function flattenDailyKpis (rows = []) {
 //  - Explicito (con newAgentOrigin): se persiste el canal tal cual lo eligio la
 //    UI; '' o null = comercial sin canal.
 //
-// Lanza DomainError si el resultado coincide con el estado actual (no-op).
+// Solo deriva: quien decide si el cambio vale la pena es assertSellerAgentChanged.
 //
 // @returns {{ newAgentId: number|null, newOrigin: string|null, isSinAsesor: boolean }}
 export function resolveSellerAgentChange ({ oldAgentId, oldOrigin, newSellerAgentId, newAgentOrigin }) {
@@ -99,12 +99,47 @@ export function resolveSellerAgentChange ({ oldAgentId, oldOrigin, newSellerAgen
     newOrigin = oldOrigin
   }
 
+  return { newAgentId, newOrigin, isSinAsesor }
+}
+
+// Guardar tiene que cambiar algo. Enganchar la consulta del asesor cuenta como
+// cambio: las ventas que ya figuran como 'WEB - AE30' con el lead suelto se
+// arreglan reconfirmando el mismo asesor, y ahi el canal y el asesor no varian.
+export function assertSellerAgentChanged ({ oldAgentId, oldOrigin, newAgentId, newOrigin, matchedLeadId }) {
+  if (matchedLeadId) return
   const oldAgentIdN = oldAgentId == null ? null : Number(oldAgentId)
   if (oldAgentIdN === newAgentId && (oldOrigin || null) === (newOrigin || null)) {
     throw new DomainError('No hay cambios: el canal y el asesor son los mismos que los actuales')
   }
+}
 
-  return { newAgentId, newOrigin, isSinAsesor }
+// Match WEB: convertir una venta 'WEB' en 'WEB - AE30' exige que el asesor YA
+// haya registrado la consulta del alumno para ese programa. Sin esa consulta no
+// hay trazabilidad de que atendio la venta, asi que el canal WEB no se puede
+// atribuir a nadie: el asesor tiene que registrarla primero.
+//
+// Los otros canales (B2B, WE, SA, comercial) no pasan por aqui: se reasignan
+// como siempre, sin enganchar lead.
+//
+// @returns {number|null} lead_id a enganchar, o null si el canal no es WEB.
+export function resolveWebMatchLead ({ newOrigin, newAgentId, leadId, candidates }) {
+  if (newOrigin !== 'WEB') return null
+
+  if (!candidates || candidates.length === 0) {
+    throw new DomainError(
+      'No hay ninguna consulta registrada con el telefono del alumno para este programa. ' +
+      'El asesor debe registrar la consulta antes de que FICO le atribuya la venta.'
+    )
+  }
+  if (!leadId) throw new DomainError('Elige la consulta del asesor que corresponde a esta venta')
+
+  const elegida = candidates.find(c => Number(c.lead_id) === Number(leadId))
+  if (!elegida) throw new DomainError('La consulta elegida ya no es un match valido para esta venta')
+  if (Number(elegida.user_id) !== Number(newAgentId)) {
+    throw new DomainError('La consulta elegida pertenece a otro asesor')
+  }
+
+  return Number(elegida.lead_id)
 }
 
 // Verifica que el enrollment este en estado aprobado (checked) antes de permitir

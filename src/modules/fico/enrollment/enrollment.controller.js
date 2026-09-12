@@ -125,11 +125,17 @@ export async function changeModalityHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function webMatchCandidatesHandler (req, reply) {
+  const data = await usecases.listWebMatchCandidates({ enrollmentId: req.body.enrollment_id })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function editSellerAgentHandler (req, reply) {
   const data = await usecases.editSellerAgent({
     enrollmentId: req.body.enrollment_id,
     newSellerAgentId: req.body.new_seller_agent_id ?? null,
     newAgentOrigin: req.body.new_agent_origin === undefined ? undefined : req.body.new_agent_origin,
+    leadId: req.body.lead_id ?? null,
     justificacion: req.body.justificacion,
     userId: req.user?.id ?? req.body.user_id
   })

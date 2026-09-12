@@ -12,7 +12,7 @@ import { google } from "googleapis";
 const LIBRO = "1QZdliuhPYUhSbPeTi250_2u17rzFypP09ZV593ZkgZA";
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
                "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-const DESGLOSADOS = [["1.4.7", "ESSALUD"], ["1.4.5", "RENTA DE 5TA CTG"]];
+const DESGLOSADOS = [["1.4.7", "ESSALUD"], ["1.4.5", "RENTA DE 5TA CTG"], ["2.1.12", "PUBLICIDAD"]];
 const TOLERANCIA = 0.01;
 
 const auth = new google.auth.GoogleAuth({

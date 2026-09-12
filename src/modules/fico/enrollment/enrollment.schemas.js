@@ -173,7 +173,21 @@ export const editSellerAgentSchema = {
       enrollment_id: { type: 'integer' },
       new_seller_agent_id: { type: ['integer', 'null'] },
       new_agent_origin: { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'TWE', 'FWE', 'SA', null] },
+      // Consulta del asesor a enganchar. Obligatoria para el canal WEB (el
+      // usecase la exige), ignorada en el resto.
+      lead_id: { type: ['integer', 'null'] },
       justificacion: { type: 'string', minLength: 1 }
+    }
+  }
+}
+
+export const webMatchCandidatesSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id'],
+    additionalProperties: true,
+    properties: {
+      enrollment_id: { type: 'integer' }
     }
   }
 }

@@ -864,6 +864,90 @@ export class EnrollmentRepository {
     // (invalidateAdvisorsCache) tras esta escritura.
   }
 
+  // --- Match WEB ----------------------------------------------------------
+
+  // Consultas que un asesor registro para ESTE alumno y ESTE programa y que
+  // todavia no tienen venta. Son los unicos candidatos validos para convertir
+  // una venta WEB en 'WEB - AE30': el teléfono + el programa son la prueba de
+  // que el asesor atendio al alumno antes de que comprara por la web.
+  //
+  // El cruce es por PROGRAMA (programs.program_id), no por version: el asesor
+  // registra la consulta contra la version que le muestra el cronograma y la
+  // web vende la que esta en vivo, que suele ser otra. Le paso a la venta 16427
+  // (POWER APPS PC-CP-01) contra la consulta de AE30 en PC-CP-02 (V2): mismo
+  // curso, distinta version, y el match no salia. La etiqueta del dropdown
+  // muestra la version de la consulta para que FICO vea con cual se registro.
+  //
+  // El telefono del alumno se resuelve por la misma cadena que el resto del
+  // modulo (STUDENT_PHONE_SQL): lead enganchado primero, person_contacts
+  // despues. En una venta WEB casi nunca hay lead, asi que en la practica gana
+  // person_contacts.
+  async findWebMatchCandidates (enrollmentId) {
+    const { rows } = await this.db.query(`
+      WITH venta AS (
+        SELECT e.enrollment_id, pv.program_id,
+               ${STUDENT_PHONE_SQL} AS phone
+          FROM enrollments e
+          JOIN customers cust ON cust.customer_id = e.customer_id
+          JOIN persons   per  ON per.person_id    = cust.person_id
+          JOIN program_versions pv ON pv.program_version_id = e.program_version_id
+          LEFT JOIN leads l   ON l.enrollment_id  = e.enrollment_id
+         WHERE e.enrollment_id = $1
+      )
+      SELECT l.lead_id,
+             l.registration_date::date          AS lead_date,
+             c_sta.description                  AS lead_status,
+             lpv.abbreviation                   AS lead_program,
+             u.user_id, u.alias,
+             CONCAT(per_u.first_name, ' ', per_u.last_name) AS full_name
+        FROM venta v
+        JOIN leads l ON l.origin_phone = v.phone
+                    AND l.enrollment_id IS NULL
+                    AND l.active = 'Y'
+        JOIN program_versions lpv ON lpv.program_version_id = l.program_version_id
+                                 AND lpv.program_id         = v.program_id
+        JOIN users   u     ON u.user_id     = l.user_registration_id
+        JOIN persons per_u ON per_u.person_id = u.person_id
+        LEFT JOIN catalog c_sta ON c_sta.catalog_id = l.cat_status_lead
+       WHERE EXISTS (
+               SELECT 1 FROM user_roles ur JOIN rol r ON r.rol_id = ur.rol_id
+                WHERE ur.user_id = u.user_id
+                  AND UPPER(r.alias) IN ('COMERCIAL', 'LIDER_COMERCIAL')
+             )
+         -- Una consulta borrada o anulada no prueba nada: administrativamente
+         -- ya no existe. Desestimada si cuenta (el asesor atendio y se rindio,
+         -- pero el alumno termino comprando por la web).
+         AND COALESCE(c_sta.alias, '') NOT IN ('we_lead_status_deleted', 'we_lead_status_annulment')
+       ORDER BY l.registration_date DESC
+    `, [enrollmentId])
+    return rows
+  }
+
+  // Engancha la consulta del asesor a la venta WEB. Es el mismo UPDATE que hace
+  // sp_comercial_enrollment_register cuando la venta nace desde la consulta; la
+  // diferencia es la fecha de pago: ahi la pone el asesor a mano, aca sale del
+  // primer pago de la venta. leads.pay_date no puede quedar NULL porque
+  // v_dashboard_comercial arma fecha_cierre con ella y la venta desapareceria
+  // de la meta semanal del asesor.
+  async linkLeadToEnrollment (leadId, enrollmentId, userId) {
+    const boughtId = await this.resolveCatalogId(ALIAS.LEAD_STATUS_BOUGHT)
+    const { rowCount } = await this.db.query(`
+      UPDATE leads
+         SET enrollment_id        = $2,
+             cat_status_lead      = $3,
+             pay_date             = COALESCE(
+                                      pay_date,
+                                      (SELECT py.payment_date::date FROM payments py
+                                        WHERE py.enrollment_id = $2 AND py.active = 'Y'
+                                        ORDER BY py.payment_date ASC LIMIT 1)
+                                    ),
+             user_modification_id = $4,
+             modification_date    = NOW()
+       WHERE lead_id = $1
+    `, [leadId, enrollmentId, boughtId, userId])
+    return rowCount
+  }
+
   // --- Retiro / eliminacion ----------------------------------------------
 
   async getRetireTarget (enrollmentId) {

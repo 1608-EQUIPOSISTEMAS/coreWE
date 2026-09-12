@@ -18,6 +18,15 @@ export const temporalidad = fila => (MESES_ALTOS.has(mesDe(fila)) ? 'ALTA' : 'NO
 
 export const normalizar = nombre => nombre.replace(/\s+/g, ' ').trim().toUpperCase()
 
+// "GEST PROYECT I" en Obj Vacantes es "GEST PROYECT" en Plan 2027.
+const ALIAS = { 'GEST PROYECT I': 'GEST PROYECT' }
+
+// Las hojas de 2027 agrupan por PROGRAMA: "DIP SUPPLY V3" es "DIP SUPPLY".
+export const nombreDelPrograma = etiqueta => {
+  const limpio = etiqueta.replace(/\s+V\d+$/i, '').trim()
+  return ALIAS[limpio] ?? limpio
+}
+
 /**
  * Un PAQUETE (diploma, especializacion, PEE) SIEMPRE cuenta como apertura: es
  * donde NACE la venta, y el seguimiento lo reciben sus modulos, no el.

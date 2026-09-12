@@ -63,6 +63,9 @@ export const ALIAS = Object.freeze({
   PROFILE_STUDENT:                  'we_profile_student',
   PROFILE_GENERAL:                  'we_profile_general',
 
+  // Estado de la consulta (leads.cat_status_lead)
+  LEAD_STATUS_BOUGHT:               'we_lead_status_bought',
+
   // Tipos de documento B2B (enrollments.cat_b2b_doctype)
   B2B_DOCTYPE_SERVICE_ORDER:        'we_enrollment_b2b_doctype_service_order',
   B2B_DOCTYPE_PURCHASE_ORDER:       'we_enrollment_b2b_doctype_purchase_order',

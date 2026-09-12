@@ -15,6 +15,7 @@
 //    Vacantes es "DIP SUPPLY" en Plan 2027 desde que se agruparon las versiones.
 import fs from 'node:fs'
 import assert from 'node:assert'
+import { nombreDelPrograma } from './lib/clasificacion-ediciones.mjs'
 
 const CELDAS = ['APE_ALTA', 'APE_NORMAL', 'SEG_ALTA', 'SEG_NORMAL']
 
@@ -25,14 +26,6 @@ const MEDIANA_POR_CAT = {
   NORMAL: [14, 10, 7, 7],
   BAJO: [4, 3, 5, 3],
   NUEVO: [4, 3, 5, 3]
-}
-
-// "GEST PROYECT I" en Obj Vacantes es "GEST PROYECT" en Plan 2027.
-const ALIAS = { 'GEST PROYECT I': 'GEST PROYECT' }
-
-export const nombreDelPrograma = etiqueta => {
-  const limpio = etiqueta.replace(/\s+V\d+$/i, '').trim()
-  return ALIAS[limpio] ?? limpio
 }
 
 // En la hoja un guion es "no aplica"; cualquier otra cosa que no sea numero

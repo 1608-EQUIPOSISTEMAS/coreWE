@@ -8,6 +8,8 @@ import {
   advisorObservationOrNull,
   flattenDailyKpis,
   resolveSellerAgentChange,
+  assertSellerAgentChanged,
+  resolveWebMatchLead,
   assertChecked,
   assertModalityChangeNeeded,
   editionShiftDays,
@@ -662,7 +664,13 @@ export async function changeModality ({ enrollmentId, newModalityId, justificaci
   return { result: 1, message: `Modalidad actualizada correctamente${childrenNote}` }
 }
 
-export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgentOrigin, justificacion, userId }) {
+// Consultas que habilitan el match WEB de esta venta. La pantalla las pide al
+// abrir "Editar Asesor" para poblar el desplegable del canal WEB.
+export async function listWebMatchCandidates ({ enrollmentId }) {
+  return repo.findWebMatchCandidates(enrollmentId)
+}
+
+export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgentOrigin, leadId, justificacion, userId }) {
   const old = await repo.getSellerAgentOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   assertChecked(old.fico_status_alias)
@@ -680,7 +688,25 @@ export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgen
     if (!newAlias) throw new DomainError('Asesor seleccionado no existe')
   }
 
+  // El canal WEB exige consulta previa del asesor: se valida ANTES de escribir
+  // para no dejar la venta reasignada con el lead suelto, que es justo el estado
+  // a medias que este flujo viene a eliminar.
+  const matchedLeadId = resolveWebMatchLead({
+    newOrigin,
+    newAgentId,
+    leadId,
+    candidates: newOrigin === 'WEB' ? await repo.findWebMatchCandidates(enrollmentId) : []
+  })
+  assertSellerAgentChanged({
+    oldAgentId: old.old_agent_id,
+    oldOrigin: old.old_origin,
+    newAgentId,
+    newOrigin,
+    matchedLeadId
+  })
+
   await repo.setSellerAgent(enrollmentId, newAgentId, newOrigin)
+  if (matchedLeadId) await repo.linkLeadToEnrollment(matchedLeadId, enrollmentId, userId)
   invalidateAdvisorsCache()
 
   const changes = {
@@ -689,16 +715,22 @@ export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgen
       new: fmtAgent(newAlias, newOrigin)
     }
   }
+  const matchNote = matchedLeadId ? ` | Consulta #${matchedLeadId} enganchada y marcada como Pago` : ''
   await repo.logAudit({
     enrollmentId,
     action: 'seller_agent_changed',
     userId,
     justificacion,
     changes,
-    details: `Asesor: ${changes['Asesor'].old} → ${changes['Asesor'].new}`
+    details: `Asesor: ${changes['Asesor'].old} → ${changes['Asesor'].new}${matchNote}`
   })
 
-  return { result: 1, message: 'Asesor actualizado correctamente' }
+  return {
+    result: 1,
+    message: matchedLeadId
+      ? 'Asesor actualizado y consulta enganchada a la venta'
+      : 'Asesor actualizado correctamente'
+  }
 }
 
 // --- Retiro / eliminacion -----------------------------------------------
