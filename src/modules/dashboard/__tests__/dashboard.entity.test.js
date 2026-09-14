@@ -7,7 +7,10 @@ import {
   mapContactabilityRow,
   aggregateVentasCanal,
   MONTHS_ES,
-  teamScopeFor
+  teamScopeFor,
+  errorOriginOf,
+  describeChanges,
+  buildCorrectionsReport
 } from '../dashboard.entity.js'
 
 describe('parseJsonbField', () => {
@@ -145,7 +148,7 @@ describe('aggregateVentasCanal', () => {
 describe('teamScopeFor', () => {
   it('ADMIN ve la empresa entera: sin filtro de area ni de persona', () => {
     expect(teamScopeFor({ roles: ['ADMIN'], userId: 7 }))
-      .toEqual({ areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true })
+      .toEqual({ areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true, leaderKey: null })
   })
 
   it('un lider ve su area, no a si mismo', () => {
@@ -153,22 +156,87 @@ describe('teamScopeFor', () => {
     expect(scope.areaRoles).toEqual(['FICO', 'LIDER_FICO'])
     expect(scope.userId).toBeNull()
     expect(scope.isLeader).toBe(true)
+    expect(scope.leaderKey).toBe('LIDER_FICO')
   })
 
-  it('un lider de dos areas las ve a las dos sin repetir roles', () => {
+  it('un lider de dos areas las ve a las dos sin repetir roles, y los resultados de la primera', () => {
     const scope = teamScopeFor({ roles: ['LIDER_B2B', 'LIDER_COMERCIAL', 'COMERCIAL'], userId: 7 })
     expect([...scope.areaRoles].sort())
       .toEqual(['B2B', 'COMERCIAL', 'LIDER_B2B', 'LIDER_COMERCIAL'])
+    expect(scope.leaderKey).toBe('LIDER_B2B')
   })
 
   it('un colaborador solo se ve a si mismo', () => {
     expect(teamScopeFor({ roles: ['COMERCIAL'], userId: 7 }))
-      .toEqual({ areaRoles: null, userId: 7, area: 'Mi actividad', isLeader: false })
+      .toEqual({ areaRoles: null, userId: 7, area: 'Mi actividad', isLeader: false, leaderKey: null })
   })
 
   // A diferencia de la Auditoria, que lanza 403: aqui todos tienen panel.
   it('un rol sin area no revienta, cae a su propio panel', () => {
     expect(teamScopeFor({ roles: ['MARKETING'], userId: 9 }).userId).toBe(9)
     expect(teamScopeFor({ userId: 9 }).isLeader).toBe(false)
+  })
+
+  it('ADMIN con view_as ve exactamente el panel de ese lider', () => {
+    expect(teamScopeFor({ roles: ['ADMIN'], userId: 7, viewAs: 'LIDER_FICO' }))
+      .toEqual({ areaRoles: ['FICO', 'LIDER_FICO'], userId: null, area: 'FICO', isLeader: true, leaderKey: 'LIDER_FICO' })
+  })
+
+  it('view_as no amplia el alcance de quien no es ADMIN', () => {
+    const scope = teamScopeFor({ roles: ['LIDER_COMERCIAL'], userId: 7, viewAs: 'LIDER_FICO' })
+    expect(scope.area).toBe('Comercial')
+    expect(scope.areaRoles).toEqual(['COMERCIAL', 'LIDER_COMERCIAL'])
+  })
+
+  it('un view_as desconocido (incluso del prototipo) deja al ADMIN viendo todo', () => {
+    expect(teamScopeFor({ roles: ['ADMIN'], viewAs: 'toString' }).areaRoles).toBeNull()
+  })
+})
+
+describe('errorOriginOf', () => {
+  it('venta tecleada por un asesor y aprobada por FICO', () => {
+    expect(errorOriginOf({ registrarRoles: ['COMERCIAL'], approverRoles: ['FICO'] }))
+      .toEqual({ origen: 'Registro del asesor', aprobadoPorFico: true })
+  })
+
+  it('venta registrada por FICO desde su modulo', () => {
+    expect(errorOriginOf({ registrarRoles: ['LIDER_FICO'], approverRoles: [] }).origen).toBe('Registro de FICO')
+  })
+
+  it('ADMIN sin rol operativo = importacion; sin roles = otra area', () => {
+    expect(errorOriginOf({ registrarRoles: ['ADMIN'] }).origen).toBe('Importación / Admin')
+    expect(errorOriginOf({ registrarRoles: null }).origen).toBe('Otra área')
+  })
+})
+
+describe('describeChanges', () => {
+  it('arma antes → despues por campo y tolera formas viejas', () => {
+    expect(describeChanges({ 'Pago inicial': { old: 'S/300.00', new: 'S/195.00' } }))
+      .toBe('Pago inicial: S/300.00 → S/195.00')
+    expect(describeChanges({ nota: 'x' })).toBe('nota: "x"')
+    expect(describeChanges(null)).toBe('')
+  })
+})
+
+describe('buildCorrectionsReport', () => {
+  const fila = (overrides) => ({
+    audit_id: 1, enrollment_id: 10, fecha: '01/09 10:00', changes: null, details: 'd', justificacion: null,
+    registro_id: 5, registro_name: 'Ana', registro_alias: 'AN', registro_roles: ['COMERCIAL'],
+    aprobo_id: 21, aprobo_name: 'Raul', aprobo_alias: 'RA', aprobo_roles: ['FICO'],
+    ...overrides
+  })
+
+  it('una venta con dos correcciones cuenta una sola vez por persona', () => {
+    const { resumen, detalle } = buildCorrectionsReport([fila({ audit_id: 1 }), fila({ audit_id: 2 })])
+    expect(detalle).toHaveLength(2)
+    expect(resumen.find(p => p.user_id === 5)).toMatchObject({ registradas: 1, aprobadas: 0, area: 'Comercial' })
+    expect(resumen.find(p => p.user_id === 21)).toMatchObject({ registradas: 0, aprobadas: 1, area: 'FICO' })
+  })
+
+  it('sin autor de la correccion figura Sistema y sin aprobador no inventa persona', () => {
+    const [row] = buildCorrectionsReport([fila({ aprobo_id: null })]).detalle
+    expect(row.corrigio).toBe('Sistema')
+    expect(row.aprobo).toBeNull()
+    expect(row.aprobadoPorFico).toBe(false)
   })
 })

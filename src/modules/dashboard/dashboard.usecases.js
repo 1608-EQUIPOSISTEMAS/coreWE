@@ -1,6 +1,9 @@
 import { dashboardRepository } from './dashboard.repository.js'
-import { aggregateVentasCanal, teamScopeFor } from './dashboard.entity.js'
+import {
+  aggregateVentasCanal, teamScopeFor, buildCorrectionsReport, SALE_CORRECTION_ACTIONS
+} from './dashboard.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
+import { areaResults } from './results/results.usecases.js'
 import {
   toDashboardDto,
   toProgramGoalsDto,
@@ -70,31 +73,34 @@ export async function adminSummary () {
 
 // Panel de equipo: lo que ve un lider de su area y un colaborador de si mismo.
 //
-// Es el mismo resumen con distinto alcance (lo decide teamScopeFor), mas las
-// metas de venta cuando el area las tiene definidas. Comercial es hoy la unica
-// con metas por persona en la BD; pedirlas para las demas devolveria una tabla
-// vacia que se leeria como "no cumplieron".
-export async function teamSummary ({ roles = [], userId = null } = {}) {
-  const scope = teamScopeFor({ roles, userId })
+// El lider ve IMPACTO: los indicadores de resultado de su area y las
+// correcciones de ventas. El uso del ERP (acciones, horarios, movimientos) solo
+// lo ve el colaborador en su propio panel; al lider lo confundia y al ADMIN ya
+// se lo da "Uso del sistema". Por eso esas cinco consultas no corren para el lider.
+export async function teamSummary ({ roles = [], userId = null, viewAs = null } = {}) {
+  const scope = teamScopeFor({ roles, userId, viewAs })
 
-  const [resumen, metas] = await Promise.all([
-    repo.teamSummary(scope),
-    tieneMetasDeVenta(scope) ? repo.salesGoals() : Promise.resolve([])
+  const [uso, correcciones, resultados] = await Promise.all([
+    scope.leaderKey ? Promise.resolve(null) : repo.teamSummary(scope),
+    // Solo quien responde por un área audita las correcciones de ventas.
+    scope.isLeader ? repo.saleCorrections(scope, SALE_CORRECTION_ACTIONS) : Promise.resolve([]),
+    areaResults(scope.leaderKey)
   ])
 
   return {
     scope: { area: scope.area, isLeader: scope.isLeader },
-    ...resumen,
-    porTabla: resumen.porTabla.map(fila => ({ ...fila, label: etiquetaDeTabla(fila.table_name) })),
-    movimientos: resumen.movimientos.map(m => ({ ...m, label: etiquetaDeTabla(m.table_name) })),
-    metas
+    ...(uso && usageWithLabels(uso)),
+    correcciones: buildCorrectionsReport(correcciones),
+    resultados
   }
 }
 
-// Comercial es la unica area con sales_targets_monthly. El ADMIN tambien las ve
-// porque su alcance es la empresa entera, y esas metas son parte de ella.
-function tieneMetasDeVenta ({ areaRoles }) {
-  return areaRoles === null || areaRoles.includes('COMERCIAL')
+function usageWithLabels (uso) {
+  return {
+    ...uso,
+    porTabla: uso.porTabla.map(fila => ({ ...fila, label: etiquetaDeTabla(fila.table_name) })),
+    movimientos: uso.movimientos.map(m => ({ ...m, label: etiquetaDeTabla(m.table_name) }))
+  }
 }
 
 // Nombre legible de la tabla auditada. Primero el catalogo de la Auditoria (que

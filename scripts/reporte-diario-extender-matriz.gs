@@ -388,10 +388,15 @@ function arreglar() {
 }
 
 /**
- * Pie del mes, los 12. C = total OFICIAL (espejo del origen), F = detalle real
- * de Fuente Estatico, E = la diferencia escrita al lado. No se borra plata ni
- * se duplica en silencio: si el origen y el detalle no cuadran, se ve.
- * Un mes sin fila en Control cae a 0 y deja E vacia.
+ * Pie del mes, los 12. C = detalle real de Fuente Estatico, F = total OFICIAL
+ * (espejo del origen via Control), E = la diferencia escrita al lado. No se
+ * borra plata ni se duplica en silencio: si el origen y el detalle no cuadran,
+ * se ve. Un mes sin fila en Control cae a 0 y deja E vacia.
+ *
+ * OJO: C es el DETALLE, no el oficial. El 14/09/2026 el Consolidado leia
+ * $C$52:$C$63 y publicaba el detalle como si fuera el numero oficial: setiembre
+ * decia 127.578 contra 119.807,44 del origen. Quien mueva estas columnas mueve
+ * tambien la fila 'Ingresos' de construirConsolidado().
  */
 function pieDelMes() {
   var sh = hojaIngresos_(SpreadsheetApp.getActive());
@@ -400,13 +405,13 @@ function pieDelMes() {
     var fila = FILA_ENERO + m - 1;
     var filtro = filtroMes_(m);
 
-    sh.getRange(fila, 3).setFormula(
-      '=IFERROR(VLOOKUP(' + (ANIO * 100 + m) + ';Control!$A:$C;3;FALSE);0)');
+    sh.getRange(fila, 3).setFormula("=SUMIFS('Fuente Estatico'!$S:$S;" + filtro + ')');
     sh.getRange(fila, 4).setFormula(
       "=COUNTIFS('Fuente Estatico'!$K:$K;\"<>\";'Fuente Estatico'!$K:$K;\"<>0\";" + filtro + ')');
-    sh.getRange(fila, 6).setFormula("=SUMIFS('Fuente Estatico'!$S:$S;" + filtro + ')');
+    sh.getRange(fila, 6).setFormula(
+      '=IFERROR(VLOOKUP(' + (ANIO * 100 + m) + ';Control!$A:$C;3;FALSE);0)');
     sh.getRange(fila, 5).setFormula(
-      '=IF(C' + fila + '=0;"";TEXT(F' + fila + '-C' + fila + ';"+#,##0.00;-#,##0.00;""cuadrado"""))');
+      '=IF(F' + fila + '=0;"";TEXT(C' + fila + '-F' + fila + ';"+#,##0;-#,##0;""cuadrado"""))');
   }
   console.log('Pie del mes: 12 filas (' + FILA_ENERO + '-' + (FILA_ENERO + 11) + ').');
 }

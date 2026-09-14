@@ -86,6 +86,32 @@ export const editInstallmentAmountSchema = {
   }
 }
 
+export const correctInitialPaymentSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id', 'new_amount', 'justificacion'],
+    additionalProperties: false,
+    properties: {
+      enrollment_id: { type: 'integer' },
+      new_amount: { type: 'number', exclusiveMinimum: 0 },
+      justificacion: { type: 'string', minLength: 1 }
+    }
+  }
+}
+
+export const revertInstallmentPaymentSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id', 'installment_id', 'justificacion'],
+    additionalProperties: false,
+    properties: {
+      enrollment_id: { type: 'integer' },
+      installment_id: { type: 'integer' },
+      justificacion: { type: 'string', minLength: 1 }
+    }
+  }
+}
+
 export const addInstallmentSchema = {
   body: {
     type: 'object',

@@ -222,7 +222,7 @@ export const NOT_FICO_OPERATOR = (u) => `(
 // alguien decidio que la venta es de convenio, ahi el asesor no manda.
 // Asume en el scope los alias `e` (enrollments), `l` (leads), `u` (asesor de la
 // venta) y `ag_token` (asesor del token de pago, que gana sobre `u`).
-const IS_B2B = `
+export const IS_B2B = `
          AND (
            e.agent_origin = 'B2B'
            OR e.b2b_contract_id IS NOT NULL

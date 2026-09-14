@@ -63,6 +63,88 @@ export function assertEditableAmount (inst, newAmount) {
   return { oldAmount, newAmount: amt }
 }
 
+const round2 = n => Math.round(n * 100) / 100
+
+// Corrige el monto del pago inicial (cuota 0) registrado mal. El monto vive en
+// tres sitios —la cuota 0, el pago que la confirmo y el total de la inscripcion—
+// y se tocan los tres, o el listado FICO y el detalle cuadran distinto.
+//
+// Una sola formula sirve para contado y cuotas: el total pierde lo que sobraba
+// en la inicial (total - viejo + nuevo). En contado total == inicial, asi que
+// queda total = nuevo. El precio de lista no cambia: la diferencia va al
+// descuento para mantener list_price - discount = total. Sin precio de lista no
+// hay invariante que sostener y el descuento se deja como estaba.
+//
+// Con mas de un pago activo (reserva partida o detraccion) no se sabe cual de
+// ellos esta mal: se rechaza en vez de adivinar.
+//
+// @returns {{ installmentId, paymentId, oldAmount, newAmount, total, discount, changes }}
+export function planInitialPaymentCorrection ({ enrollment, initialInstallment, activePayments = [], newAmount }) {
+  const amt = Number(newAmount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new DomainError('Monto invalido')
+  if (!enrollment) throw new DomainError('Inscripcion no encontrada')
+  if (!initialInstallment) throw new DomainError('La inscripcion no tiene pago inicial')
+  if (activePayments.length > 1) {
+    throw new DomainError('El pago inicial tiene mas de un pago activo (reserva partida o detraccion): pedir la correccion a soporte')
+  }
+
+  const oldAmount = Number(initialInstallment.amount || 0)
+  if (Math.abs(oldAmount - amt) < 0.001) throw new DomainError('El monto nuevo es igual al actual')
+
+  const oldTotal = Number(enrollment.total_amount || 0)
+  const oldDiscount = Number(enrollment.discount_amount || 0)
+  const listPrice = enrollment.list_price == null ? null : Number(enrollment.list_price)
+  const total = round2(oldTotal - oldAmount + amt)
+  if (listPrice != null && total > listPrice + 0.001) {
+    throw new DomainError(`El total quedaria en ${fmtMoney(total)}, por encima del precio de lista (${fmtMoney(listPrice)})`)
+  }
+  const discount = listPrice == null ? oldDiscount : round2(listPrice - total)
+
+  return {
+    installmentId: initialInstallment.installment_id,
+    paymentId: activePayments[0]?.payment_id ?? null,
+    oldAmount,
+    newAmount: amt,
+    total,
+    discount,
+    changes: {
+      'Pago inicial': { old: fmtMoney(oldAmount), new: fmtMoney(amt) },
+      Total: { old: fmtMoney(oldTotal), new: fmtMoney(total) },
+      Descuento: { old: fmtMoney(oldDiscount), new: fmtMoney(discount) }
+    }
+  }
+}
+
+// Estado pendiente del catalogo nuevo. Solo se usa si la cuota revertida no
+// tiene hermanas vivas de las que copiar el estado.
+export const CAT_STATUS_PENDING_FALLBACK = 2470
+
+// Una confirmacion de cuota solo se revierte si la cuota esta pagada. La inicial
+// queda fuera: deshacerla es deshacer la aprobacion de la venta entera.
+export function assertRevertible (inst) {
+  if (!inst) throw new DomainError('Cuota no encontrada para esta inscripcion')
+  if (inst.installment_number === 0) throw new DomainError('El pago inicial no se revierte desde aqui')
+  if (!isPaidByCatStatus(inst.cat_status)) {
+    throw new DomainError(`La cuota ${inst.installment_number} no esta pagada: no hay nada que revertir`)
+  }
+}
+
+// Estado al que vuelve una cuota revertida: el que mas se repite entre sus
+// hermanas no pagadas ni anuladas. No se hardcodea porque conviven dos catalogos
+// de estado (we_inst_* 445x y we_payment_status_* 247x/3174) y meter el del
+// namespace equivocado deja la cuota con una etiqueta distinta a sus hermanas.
+// Empate: gana el id menor, para que el resultado no dependa del orden de filas.
+export function pickPendingStatus (siblings = []) {
+  const counts = new Map()
+  for (const s of siblings) {
+    const status = Number(s.cat_status)
+    if (s.installment_number === 0 || isPaidByCatStatus(status) || status === CAT_STATUS_ANNULLED) continue
+    counts.set(status, (counts.get(status) || 0) + 1)
+  }
+  if (!counts.size) return CAT_STATUS_PENDING_FALLBACK
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]
+}
+
 // Normaliza y valida la fecha de vencimiento de una cuota nueva. Exige formato
 // ISO YYYY-MM-DD identico al guard del service legacy.
 export function normalizeDueDate (dueDate) {

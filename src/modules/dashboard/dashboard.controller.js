@@ -66,6 +66,10 @@ export async function detailSalesHandler (req, reply) {
 }
 
 export async function teamSummaryHandler (req, reply) {
-  const data = await usecases.teamSummary({ roles: req.user?.roles || [], userId: req.user?.id })
+  const data = await usecases.teamSummary({
+    roles: req.user?.roles || [],
+    userId: req.user?.id,
+    viewAs: req.body?.view_as
+  })
   return reply.send({ ok: true, data })
 }

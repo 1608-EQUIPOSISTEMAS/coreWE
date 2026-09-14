@@ -13,6 +13,9 @@ import {
   summarizeOdooError,
   buildRescheduleAuditDetails,
   buildCampaignAuditDetails,
+  planInitialPaymentCorrection,
+  assertRevertible,
+  pickPendingStatus,
   CAT_STATUS_ANNULLED,
   fmtMoney,
   fmtFecha
@@ -223,6 +226,68 @@ export async function editInstallmentAmount ({ enrollmentId, installmentId, newA
   })
 
   return { result: 1, message: 'Monto actualizado', old_amount: oldAmount, new_amount: amt }
+}
+
+// Corrige el monto del pago inicial registrado mal (el caso que antes llegaba a
+// desarrollo como script). Queda firmado por el usuario real, no por "Sistema".
+// Devuelve warnings porque corregir la BD no deshace efectos ya externos.
+export async function correctInitialPayment ({ enrollmentId, newAmount, justificacion, userId }) {
+  if (!justificacion || !justificacion.trim()) throw new DomainError('Justificacion obligatoria')
+
+  const current = await repo.findInitialPaymentForCorrection(enrollmentId)
+  const plan = planInitialPaymentCorrection({ ...current, newAmount })
+
+  await repo.applyInitialPaymentCorrection({ enrollmentId, plan, userId })
+
+  await repo.logAudit({
+    enrollmentId,
+    action: 'initial_payment_corrected',
+    userId,
+    justificacion: justificacion.trim(),
+    changes: plan.changes,
+    details: `Pago inicial corregido: ${fmtMoney(plan.oldAmount)} → ${fmtMoney(plan.newAmount)}. Total ${fmtMoney(plan.total)}.`
+  })
+
+  const warnings = [
+    current.enrollment.email_sent && `El correo de confirmacion ya salio con ${fmtMoney(plan.oldAmount)}.`,
+    current.enrollment.odoo_order_id && 'La orden de Odoo no se actualiza: ajustar el monto alla.'
+  ].filter(Boolean)
+
+  return { result: 1, message: 'Pago inicial corregido', old_amount: plan.oldAmount, new_amount: plan.newAmount, total: plan.total, warnings }
+}
+
+// Devuelve a pendiente una cuota confirmada por error (el pago nunca entro) y da
+// de baja logica los pagos que se crearon al confirmarla.
+export async function revertInstallmentPayment ({ enrollmentId, installmentId, justificacion, userId }) {
+  if (!justificacion || !justificacion.trim()) throw new DomainError('Justificacion obligatoria')
+
+  const installments = await repo.findInstallmentsForRevert(enrollmentId)
+  const inst = installments.find(i => i.installment_id === installmentId)
+  assertRevertible(inst)
+  const catStatus = pickPendingStatus(installments.filter(i => i.installment_id !== installmentId))
+
+  const deactivated = await repo.revertInstallmentPaymentTx({ installmentId, enrollmentId, catStatus })
+
+  const bajas = deactivated.map(p => `#${p.payment_id} ${fmtMoney(p.amount)}`).join(', ') || 'ninguno'
+  await repo.logAudit({
+    enrollmentId,
+    action: 'installment_payment_reverted',
+    userId,
+    justificacion: justificacion.trim(),
+    changes: { [`Cuota ${inst.installment_number}`]: { old: 'Pagado', new: 'Pendiente' } },
+    details: `Cuota ${inst.installment_number} devuelta a Pendiente. Pago dado de baja: ${bajas}.`
+  })
+
+  const [emailSent, odooOrderId] = await Promise.all([
+    repo.wasInstallmentEmailSent(enrollmentId, inst.installment_number),
+    repo.findOdooOrderId(enrollmentId)
+  ])
+  const warnings = [
+    emailSent && `El correo de confirmacion de la cuota ${inst.installment_number} ya salio.`,
+    odooOrderId && 'En Odoo la cuota sigue pagada: revertirla alla.'
+  ].filter(Boolean)
+
+  return { result: 1, message: 'Cuota devuelta a pendiente', deactivated_payments: deactivated.length, warnings }
 }
 
 // Agrega UNA cuota a una inscripcion aprobada. Calcula el siguiente

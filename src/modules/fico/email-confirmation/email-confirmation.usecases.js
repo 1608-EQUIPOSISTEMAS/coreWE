@@ -182,9 +182,7 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
     }
   }
 
-  const sched = await repo.findScheduleForPreview(enrollmentId, editionId)
-  const frequency = sched.map(s => s.day_name).filter(Boolean).join(', ')
-  const schedule = sched.length > 0 ? `${sched[0].start_time || ''} - ${sched[0].end_time || ''}` : ''
+  const { frequency, schedule } = (await repo.findEditionSchedule(enrollmentId, editionId)) || {}
 
   // overrideInstallments: la reprogramacion previsualiza con el plan de cuotas
   // que se trasladara al enrollment destino (que aun no existe en este paso).
@@ -371,9 +369,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
     return { success: false, error: 'El estudiante no tiene correo registrado' }
   }
 
-  const sched = await repo.findScheduleForSend(enrollmentId)
-  const frequency = sched.map(s => s.day_name).filter(Boolean).join(', ')
-  const schedule = sched.length > 0 ? `${sched[0].start_time || ''} - ${sched[0].end_time || ''}` : ''
+  const { frequency, schedule } = (await repo.findEditionSchedule(enrollmentId)) || {}
 
   const instRows = await repo.findInstallments(enrollmentId)
 

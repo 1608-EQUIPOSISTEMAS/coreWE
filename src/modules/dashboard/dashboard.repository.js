@@ -8,7 +8,8 @@ import { pool } from '../../shared/db/pool.js'
 // cinco consultas porque todas necesitan exactamente el mismo conjunto de gente
 // y repetirlo a mano seria la forma mas facil de que una se desincronice.
 // No lleva datos del usuario: son dos parametros ligados, no concatenacion.
-const TEAM_SCOPE_SQL = `
+// Se exporta para los indicadores de resultado (results/), que miden al mismo equipo.
+export const TEAM_SCOPE_SQL = `
   SELECT u.user_id, u.name, u.alias
     FROM public.users u
    WHERE u.active = 'Y'
@@ -499,29 +500,68 @@ export class DashboardRepository {
     }
   }
 
-  // Metas de venta del mes por asesor, con lo logrado al corte.
+  // Correcciones de ventas del mes actual y el anterior, con quién registró y
+  // quién aprobó cada venta corregida.
   //
-  // Solo Comercial tiene metas por persona en la BD (sales_targets_monthly); el
-  // resto de areas nunca las definio, por eso esto no se llama para ellas en vez
-  // de devolver ceros que se leerian como incumplimiento.
-  async salesGoals () {
+  // Quien aprobó sale del PRIMER 'approved' de la bitácora y no de
+  // enrollments.user_validator_id: esa columna está vacía en todas las ventas.
+  //
+  // Alcance: la corrección entra si el equipo registró O aprobó la venta. Así
+  // Comercial ve lo que tecleó su gente y FICO ve además lo que dejó pasar.
+  // Sin área ni persona (ADMIN viendo todo) no se filtra: TEAM_SCOPE_SQL solo
+  // trae usuarios activos y escondería lo que registró alguien que ya se fue.
+  async saleCorrections ({ areaRoles = null, userId = null }, correctionActions) {
     const { rows } = await this.db.query(`
-      SELECT t.seller_agent_id AS user_id, u.name, u.alias,
-             t.target_vacancies::int AS objetivo,
-             COUNT(e.enrollment_id)::int AS logrado
-        FROM public.sales_targets_monthly t
-        JOIN public.users u ON u.user_id = t.seller_agent_id
-        LEFT JOIN public.enrollments e
-               ON e.seller_agent_id = t.seller_agent_id
-              AND e.active = 'Y'
-              AND date_trunc('month', e.registration_date) = date_trunc('month', now())
-       WHERE t.active = 'Y'
-         AND t.year_period  = EXTRACT(year  FROM now())::int
-         AND t.month_period = EXTRACT(month FROM now())::int
-       GROUP BY 1, 2, 3, 4
-       ORDER BY objetivo DESC`)
+      WITH equipo AS (${TEAM_SCOPE_SQL}),
+      correcciones AS (
+        SELECT l.audit_id, l.enrollment_id, l.performed_at, l.performed_by,
+               l.justificacion, l.changes, l.details
+          FROM public.enrollment_audit_log l
+         WHERE l.performed_at >= date_trunc('month', now()) - interval '1 month'
+           AND (l.action = ANY($3::text[]) OR (l.action = 'edited' AND l.performed_by IS NULL))
+      ),
+      aprobacion AS (
+        SELECT DISTINCT ON (a.enrollment_id) a.enrollment_id, a.performed_by
+          FROM public.enrollment_audit_log a
+         WHERE a.action = 'approved' AND a.performed_by IS NOT NULL
+           AND a.enrollment_id IN (SELECT enrollment_id FROM correcciones)
+         ORDER BY a.enrollment_id, a.performed_at, a.audit_id
+      ),
+      roles AS (
+        SELECT ur.user_id, array_agg(DISTINCT r.alias)::text[] AS aliases
+          FROM public.user_roles ur
+          JOIN public.rol r ON r.rol_id = ur.rol_id
+         GROUP BY ur.user_id
+      )
+      SELECT c.audit_id, c.enrollment_id,
+             to_char(c.performed_at, 'DD/MM HH24:MI') AS fecha,
+             c.justificacion, c.changes, c.details,
+             cu.alias AS corrigio,
+             TRIM(BOTH FROM concat_ws(' ', p.first_name, p.last_name, p.mother_last_name)) AS alumno,
+             v.version_code AS programa,
+             e.user_registration_id AS registro_id, ru.name AS registro_name,
+             ru.alias AS registro_alias, rr.aliases AS registro_roles,
+             ap.performed_by AS aprobo_id, au.name AS aprobo_name,
+             au.alias AS aprobo_alias, ar.aliases AS aprobo_roles
+        FROM correcciones c
+        JOIN public.enrollments e ON e.enrollment_id = c.enrollment_id
+        LEFT JOIN public.customers cust ON cust.customer_id = e.customer_id
+        LEFT JOIN public.persons p ON p.person_id = cust.person_id
+        LEFT JOIN public.program_versions v ON v.program_version_id = e.program_version_id
+        LEFT JOIN public.users cu ON cu.user_id = c.performed_by
+        LEFT JOIN public.users ru ON ru.user_id = e.user_registration_id
+        LEFT JOIN roles rr ON rr.user_id = e.user_registration_id
+        LEFT JOIN aprobacion ap ON ap.enrollment_id = c.enrollment_id
+        LEFT JOIN public.users au ON au.user_id = ap.performed_by
+        LEFT JOIN roles ar ON ar.user_id = ap.performed_by
+       WHERE ($1::text[] IS NULL AND $2::int IS NULL)
+          OR e.user_registration_id IN (SELECT user_id FROM equipo)
+          OR ap.performed_by IN (SELECT user_id FROM equipo)
+       ORDER BY c.performed_at DESC, c.audit_id DESC
+       LIMIT 300`, [areaRoles, userId, correctionActions])
     return rows
   }
+
 }
 
 export const dashboardRepository = new DashboardRepository()

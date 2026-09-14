@@ -91,7 +91,10 @@ function construirConsolidado() {
     // espeja el ING. TOTALES de 'Ing. Operativos'. Ese archivo es la fuente oficial y no se
     // toca, asi que el reporte tiene que dar SU numero; sumar 'Fuente Estatico' por nuestra
     // cuenta da otro (ver reporte-diario-sync-fix.md) y tener dos verdades no sirve a nadie.
-    { k: 'ing', t: 'mon', b: 'Ingresos', f: "=INDEX('" + diario.getName() + "'!$C$52:$C$63;MONTH(C$4))", o: 'SUMA' },
+    // El oficial del pie es la columna F (C es el detalle de Fuente Estatico): leer C publicaba
+    // el detalle como cifra oficial y descuadraba con el origen en marzo, abril, agosto y
+    // setiembre (setiembre: 127.578 vs 119.807,44). Ver pieDelMes() en extender-matriz.
+    { k: 'ing', t: 'mon', b: 'Ingresos', f: "=INDEX('" + diario.getName() + "'!$F$52:$F$63;MONTH(C$4))", o: 'SUMA' },
     { k: 'gro', t: 'pct', b: 'Crecimiento vs mes anterior', f: '', o: '' },
     { k: 'trx', t: 'num', b: 'Transacciones', f: '=COUNTIFS(' + FE + '$K:$K;">0";' + MES + ')', o: 'SUMA' },
     { k: 'tkt', t: 'mon', b: 'Ticket promedio', f: '=IFERROR(C{ing}/C{trx};0)', o: '=IFERROR(O{ing}/O{trx};0)' },

@@ -20,7 +20,11 @@ export const CANONICAL_ACTIONS = Object.freeze([
   'odoo_fee_paid',
   'email_sent',
   'email_failed',
-  'seller_agent_changed'
+  'seller_agent_changed',
+  // Correcciones de FICO desde el detalle (antes eran scripts firmados por
+  // "Sistema"). El panel de lideres las cuenta como ventas corregidas.
+  'initial_payment_corrected',
+  'installment_payment_reverted'
 ])
 
 export function isCanonicalAction (action) {

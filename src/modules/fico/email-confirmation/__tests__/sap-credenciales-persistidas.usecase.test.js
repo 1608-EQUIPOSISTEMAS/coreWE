@@ -14,7 +14,7 @@ const repo = {
   findConfirmationDataForSend: vi.fn(),
   setSapCredentials: vi.fn(),
   findSapCredentials: vi.fn(),
-  findScheduleForSend: vi.fn().mockResolvedValue([]),
+  findEditionSchedule: vi.fn().mockResolvedValue(null),
   findInstallments: vi.fn().mockResolvedValue([]),
   hasPriorSuccessfulSend: vi.fn().mockResolvedValue(false),
   hasPriorOdooEnrollment: vi.fn().mockResolvedValue(false),

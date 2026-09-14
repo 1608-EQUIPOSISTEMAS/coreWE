@@ -13,8 +13,9 @@
 // equivocado deja la cuota con una etiqueta que no cuadra con sus hermanas.
 //
 // Uso:
-//   node scripts/revertir-cuota-a-pendiente.mjs <enrollmentId> <nroCuota> [--aplicar] [--produccion]
+//   node scripts/revertir-cuota-a-pendiente.mjs <enrollmentId> <nroCuota> [--aplicar] [--produccion] [--motivo="..."]
 // Sin --aplicar hace un ensayo (rollback al final) y muestra el antes/despues.
+// --motivo queda en el historial; sin el, se asume que FICO confirmo la cuota equivocada.
 // Sin --produccion va contra la BD local de pruebas.
 import fs from 'node:fs'
 import pg from 'pg'
@@ -45,6 +46,8 @@ const JUSTIFICACION = 'Edicion de estado por solicitud de FICO'
 const [enrollmentIdArg, installmentNumberArg] = process.argv.slice(2)
 const aplicar = process.argv.includes('--aplicar')
 const produccion = process.argv.includes('--produccion')
+const motivo = process.argv.find(a => a.startsWith('--motivo='))?.slice('--motivo='.length) ||
+  'la confirmacion de pago fue un error de FICO'
 const enrollmentId = Number(enrollmentIdArg)
 const installmentNumber = Number(installmentNumberArg)
 if (!enrollmentId || !Number.isInteger(installmentNumber)) {
@@ -115,7 +118,7 @@ try {
   `, [
     enrollmentId, AUDIT_ACTION, SYSTEM_USER_ID, JUSTIFICACION,
     JSON.stringify({ [`Cuota ${installmentNumber}`]: { old: antes.cuota.status_label, new: 'Pendiente' } }),
-    `Cuota ${installmentNumber} devuelta a Pendiente: la confirmacion de pago fue un error de FICO. Pago dado de baja: ${detalleBajas}.`
+    `Cuota ${installmentNumber} devuelta a Pendiente: ${motivo}. Pago dado de baja: ${detalleBajas}.`
   ])
 
   const despues = await snapshot(client)

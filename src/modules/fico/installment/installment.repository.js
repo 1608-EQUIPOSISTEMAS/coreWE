@@ -215,6 +215,97 @@ export class InstallmentRepository {
     )
   }
 
+  // Lo que la correccion del pago inicial necesita leer: montos de la
+  // inscripcion, la cuota 0 y sus pagos vivos. email_sent y odoo_order_id solo
+  // alimentan los avisos: corregir la BD no retira un correo ya enviado ni toca Odoo.
+  async findInitialPaymentForCorrection (enrollmentId) {
+    const { rows: [enrollment] } = await this.db.query(`
+      SELECT e.enrollment_id, e.total_amount, e.discount_amount, e.list_price, e.odoo_order_id,
+             EXISTS (SELECT 1 FROM enrollment_audit_log a
+                      WHERE a.enrollment_id = e.enrollment_id AND a.action = 'email_sent') AS email_sent
+        FROM enrollments e
+       WHERE e.enrollment_id = $1
+    `, [enrollmentId])
+    const { rows: [initialInstallment] } = await this.db.query(
+      'SELECT installment_id, installment_number, amount FROM payment_installments WHERE enrollment_id = $1 AND installment_number = 0',
+      [enrollmentId]
+    )
+    const { rows: activePayments } = initialInstallment
+      ? await this.db.query(
+        "SELECT payment_id, amount FROM payments WHERE installment_id = $1 AND active = 'Y' ORDER BY payment_id",
+        [initialInstallment.installment_id]
+      )
+      : { rows: [] }
+    return { enrollment: enrollment || null, initialInstallment: initialInstallment || null, activePayments }
+  }
+
+  // Aplica el plan de planInitialPaymentCorrection de forma atomica: cuota 0,
+  // pago y totales cambian juntos o no cambia nada. user_modification_id firma
+  // el cambio para el trigger fn_audit_changes de enrollments.
+  async applyInitialPaymentCorrection ({ enrollmentId, plan, userId }) {
+    await withTransaction(async client => {
+      await client.query(
+        'UPDATE payment_installments SET amount = $1 WHERE installment_id = $2 AND enrollment_id = $3',
+        [plan.newAmount, plan.installmentId, enrollmentId]
+      )
+      if (plan.paymentId) {
+        await client.query(
+          'UPDATE payments SET amount = $1 WHERE payment_id = $2 AND enrollment_id = $3',
+          [plan.newAmount, plan.paymentId, enrollmentId]
+        )
+      }
+      await client.query(`
+        UPDATE enrollments
+           SET total_amount = $1, discount_amount = $2, modification_date = NOW(), user_modification_id = $3
+         WHERE enrollment_id = $4
+      `, [plan.total, plan.discount, userId, enrollmentId])
+    })
+  }
+
+  // Todas las cuotas de la inscripcion: la revertida y sus hermanas, de las que
+  // se copia el estado pendiente.
+  async findInstallmentsForRevert (enrollmentId) {
+    const { rows } = await this.db.query(
+      'SELECT installment_id, installment_number, amount, cat_status FROM payment_installments WHERE enrollment_id = $1',
+      [enrollmentId]
+    )
+    return rows
+  }
+
+  // Si ya salio el correo de confirmacion de esa cuota. El texto lo escribe
+  // confirmInstallment ('Correo confirmacion cuota N enviado').
+  async wasInstallmentEmailSent (enrollmentId, installmentNumber) {
+    const { rows } = await this.db.query(`
+      SELECT 1 FROM enrollment_audit_log
+       WHERE enrollment_id = $1 AND action = 'email_sent'
+         AND details LIKE 'Correo confirmacion cuota ' || $2::text || ' enviado%'
+       LIMIT 1
+    `, [enrollmentId, installmentNumber])
+    return rows.length > 0
+  }
+
+  async findOdooOrderId (enrollmentId) {
+    const { rows } = await this.db.query('SELECT odoo_order_id FROM enrollments WHERE enrollment_id = $1', [enrollmentId])
+    return rows[0]?.odoo_order_id ?? null
+  }
+
+  // Devuelve la cuota a pendiente y da de BAJA LOGICA sus pagos (active='N'):
+  // se conservan voucher, numero de operacion y fecha por si la plata aparece.
+  // Devuelve los pagos dados de baja para el detalle de auditoria.
+  async revertInstallmentPaymentTx ({ installmentId, enrollmentId, catStatus }) {
+    return withTransaction(async client => {
+      await client.query(
+        'UPDATE payment_installments SET cat_status = $1 WHERE installment_id = $2 AND enrollment_id = $3',
+        [catStatus, installmentId, enrollmentId]
+      )
+      const { rows } = await client.query(
+        "UPDATE payments SET active = 'N' WHERE installment_id = $1 AND active = 'Y' RETURNING payment_id, amount",
+        [installmentId]
+      )
+      return rows
+    })
+  }
+
   // Inscripcion + datos de edicion para validar la ventana de reprogramacion.
   async findEnrollmentForReschedule (enrollmentId) {
     const { rows } = await this.db.query(`

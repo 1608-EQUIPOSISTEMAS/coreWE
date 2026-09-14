@@ -277,16 +277,137 @@ const AREA_LABEL = {
 //
 // A diferencia de auditableRolesFor, esto NO lanza 403: un colaborador sin rol
 // de liderazgo tiene panel, solo que el equipo es de una persona.
-export function teamScopeFor ({ roles = [], userId = null } = {}) {
+//
+// viewAs ('LIDER_FICO', ...) solo lo respeta el ADMIN: no tiene área propia y
+// usa el selector del dashboard para ver exactamente lo que ve cada líder. A
+// cualquier otro rol se le ignora, así nadie amplía su alcance desde el payload.
+//
+// leaderKey dice de qué área se piden los indicadores de resultado. Un líder de
+// dos áreas ve la actividad de ambas, pero los resultados de la primera: son
+// paneles distintos (ventas vs cobranza) y mezclarlos no respondería a ninguno.
+export function teamScopeFor ({ roles = [], userId = null, viewAs = null } = {}) {
   if (roles.includes('ADMIN')) {
-    return { areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true }
+    // hasOwn y no AREA_OF_LEADER[viewAs] a secas: 'toString' existe en el prototipo.
+    return Object.hasOwn(AREA_OF_LEADER, viewAs ?? '')
+      ? leaderScope([...AREA_OF_LEADER[viewAs]], viewAs)
+      : { areaRoles: null, userId: null, area: 'Todas las áreas', isLeader: true, leaderKey: null }
   }
 
-  const areaRoles = [...new Set(roles.flatMap(role => AREA_OF_LEADER[role] || []))]
-  if (areaRoles.length) {
-    const label = areaRoles.map(r => AREA_LABEL[r]).find(Boolean) ?? 'Mi área'
-    return { areaRoles, userId: null, area: label, isLeader: true }
+  const leaderKeys = roles.filter(role => Object.hasOwn(AREA_OF_LEADER, role))
+  if (leaderKeys.length) {
+    const areaRoles = [...new Set(leaderKeys.flatMap(role => AREA_OF_LEADER[role]))]
+    return leaderScope(areaRoles, leaderKeys[0])
   }
 
-  return { areaRoles: null, userId, area: 'Mi actividad', isLeader: false }
+  return { areaRoles: null, userId, area: 'Mi actividad', isLeader: false, leaderKey: null }
+}
+
+function leaderScope (areaRoles, leaderKey) {
+  return { areaRoles, userId: null, area: areaLabelOf(areaRoles, 'Mi área'), isLeader: true, leaderKey }
+}
+
+function areaLabelOf (roles = [], fallback) {
+  return (roles || []).map(r => AREA_LABEL[r.replace(/^LIDER_/, '')]).find(Boolean) ?? fallback
+}
+
+// ── Correcciones de ventas ────────────────────────────────────────────────
+//
+// Acciones de enrollment_audit_log que corrigen una venta YA registrada. Más
+// 'edited' sin autor, que es la huella de los arreglos hechos por script. El
+// reporte existe para que los líderes vean dónde nace el error (registro del
+// asesor o de FICO) en vez de que desarrollo corrija a ciegas cada semana.
+export const SALE_CORRECTION_ACTIONS = [
+  'installment_amount_edited', 'initial_payment_corrected', 'installment_payment_reverted',
+  'financial_data_fixed', 'financial_correction', 'discount_amount_corrected',
+  'payment_deleted', 'status_corrected'
+]
+
+const hasRoleOf = (roles, leader) => (roles || []).some(r => AREA_OF_LEADER[leader].includes(r))
+
+// Dónde nació el error: quién tecleó la venta. El monto lo escribe quien la
+// registra (el asesor en su formulario o FICO desde su módulo); quien aprueba
+// solo no lo detectó, y eso se marca aparte para no mezclar las dos culpas.
+export function errorOriginOf ({ registrarRoles = [], approverRoles = [] } = {}) {
+  return {
+    origen: registrationOrigin(registrarRoles),
+    aprobadoPorFico: hasRoleOf(approverRoles, 'LIDER_FICO')
+  }
+}
+
+function registrationOrigin (roles) {
+  if (hasRoleOf(roles, 'LIDER_COMERCIAL')) return 'Registro del asesor'
+  if (hasRoleOf(roles, 'LIDER_FICO')) return 'Registro de FICO'
+  if ((roles || []).includes('ADMIN')) return 'Importación / Admin'
+  return 'Otra área'
+}
+
+// changes llega como { campo: { old, new } }; algunos arreglos viejos guardaron
+// otra forma, que se muestra tal cual en vez de inventar un antes/después.
+export function describeChanges (changes) {
+  if (!changes || typeof changes !== 'object') return ''
+  return Object.entries(changes)
+    .map(([campo, diff]) => (diff && typeof diff === 'object' && ('old' in diff || 'new' in diff)
+      ? `${campo}: ${diff.old ?? '—'} → ${diff.new ?? '—'}`
+      : `${campo}: ${JSON.stringify(diff)}`))
+    .join(' · ')
+}
+
+// Cuántas ventas corregidas registró y cuántas aprobó cada persona. Cuenta
+// ventas distintas: una venta con dos correcciones es un solo error de origen.
+export function summarizeCorrections (rows = []) {
+  const people = new Map()
+  const tally = (person, field, enrollmentId) => {
+    if (!person) return
+    const entry = people.get(person.user_id) ??
+      { user_id: person.user_id, name: person.name, alias: person.alias, area: person.area, registradas: new Set(), aprobadas: new Set() }
+    entry[field].add(enrollmentId)
+    people.set(person.user_id, entry)
+  }
+
+  for (const row of rows) {
+    tally(row.registro, 'registradas', row.enrollment_id)
+    tally(row.aprobo, 'aprobadas', row.enrollment_id)
+  }
+
+  return [...people.values()]
+    .map(p => ({ ...p, registradas: p.registradas.size, aprobadas: p.aprobadas.size }))
+    .sort((a, b) => (b.registradas + b.aprobadas) - (a.registradas + a.aprobadas) || String(a.name).localeCompare(String(b.name), 'es'))
+}
+
+export function buildCorrectionsReport (rawRows = []) {
+  const detalle = rawRows.map(toCorrectionRow)
+  return { resumen: summarizeCorrections(detalle), detalle }
+}
+
+function toCorrectionRow (raw) {
+  const registro = personOf(raw, 'registro')
+  const aprobo = personOf(raw, 'aprobo')
+  return {
+    audit_id: raw.audit_id,
+    enrollment_id: raw.enrollment_id,
+    fecha: raw.fecha,
+    alumno: raw.alumno,
+    programa: raw.programa,
+    cambios: describeChanges(raw.changes) || raw.details || '',
+    motivo: raw.justificacion || '',
+    corrigio: raw.corrigio || 'Sistema',
+    registro,
+    aprobo,
+    ...errorOriginOf({ registrarRoles: registro?.roles, approverRoles: aprobo?.roles })
+  }
+}
+
+// La consulta trae a cada persona aplanada con prefijo (registro_id,
+// registro_name...); aquí se vuelve objeto. Sin id no hay persona: null.
+function personOf (raw, prefix) {
+  const userId = raw[`${prefix}_id`]
+  if (!userId) return null
+  const roles = raw[`${prefix}_roles`] || []
+  return {
+    user_id: userId,
+    name: raw[`${prefix}_name`],
+    alias: raw[`${prefix}_alias`],
+    roles,
+    area: areaLabelOf(roles, roles.includes('ADMIN') ? 'Admin' : '—')
+  }
 }

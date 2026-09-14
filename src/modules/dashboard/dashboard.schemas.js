@@ -1,3 +1,5 @@
+import { AREA_OF_LEADER } from '../audit/audit.entity.js'
+
 // JSON schemas de validacion (Fastify/AJV) del dominio dashboard.
 // Movidos verbatim desde las rutas legacy durante la migracion.
 
@@ -185,7 +187,12 @@ export const detailSalesSchema = {
 }
 
 // El alcance sale del token, nunca del cuerpo: un colaborador no puede pedir el
-// panel de otra area escribiendo su rol en el payload.
+// panel de otra area escribiendo su rol en el payload. view_as es la unica
+// entrada, y teamScopeFor solo la respeta cuando quien pide es ADMIN.
 export const teamSummarySchema = {
-  body: { type: 'object', additionalProperties: false, properties: {} }
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { view_as: { type: 'string', enum: Object.keys(AREA_OF_LEADER) } }
+  }
 }

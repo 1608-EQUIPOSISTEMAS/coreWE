@@ -32,12 +32,14 @@ describe('POST /api/dashboard/team-summary', () => {
     expect(res.statusCode).toBe(401)
   })
 
-  it('un lider recibe su area y mas de una persona', async () => {
+  // El lider ve impacto (resultados de su area), no el uso del ERP.
+  it('un lider recibe los resultados de su area y no el uso del ERP', async () => {
     const res = await pedirPanel({ id: 1, username: 'lider', roles: ['LIDER_COMERCIAL'] })
     expect(res.statusCode).toBe(200)
     const { data } = res.json()
     expect(data.scope).toEqual({ area: 'Comercial', isLeader: true })
-    expect(data.equipo.length).toBeGreaterThan(1)
+    expect(data.resultados.tarjetas.length).toBeGreaterThan(0)
+    expect(data.equipo).toBeUndefined()
   })
 
   it('un colaborador solo se ve a si mismo', async () => {
@@ -60,6 +62,7 @@ describe('POST /api/dashboard/team-summary', () => {
     )
     const { data } = res.json()
     expect(data.scope).toEqual({ area: 'Mi actividad', isLeader: false })
+    expect(data.resultados).toBeNull()
     expect(data.equipo).toHaveLength(1)
     expect(data.equipo[0].user_id).toBe(2)
   })

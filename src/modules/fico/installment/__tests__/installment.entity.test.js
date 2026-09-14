@@ -13,6 +13,10 @@ import {
   summarizeOdooError,
   buildRescheduleAuditDetails,
   buildCampaignAuditDetails,
+  planInitialPaymentCorrection,
+  assertRevertible,
+  pickPendingStatus,
+  CAT_STATUS_PENDING_FALLBACK,
   fmtMoney,
   fmtFecha,
   PAID_STATUS_IDS,
@@ -84,6 +88,79 @@ describe('assertEditableAmount', () => {
 
   it('devuelve montos normalizados cuando es valido', () => {
     expect(assertEditableAmount(instRow({ amount: 300 }), 450)).toEqual({ oldAmount: 300, newAmount: 450 })
+  })
+})
+
+describe('planInitialPaymentCorrection', () => {
+  const contado = { enrollment_id: 1, total_amount: 300, discount_amount: 0, list_price: 300 }
+  const inicial = (amount) => ({ installment_id: 50, installment_number: 0, amount })
+
+  it('contado: total = nueva inicial y la diferencia va al descuento', () => {
+    const plan = planInitialPaymentCorrection({
+      enrollment: contado, initialInstallment: inicial(300), activePayments: [{ payment_id: 9 }], newAmount: 195
+    })
+    expect(plan).toMatchObject({ installmentId: 50, paymentId: 9, oldAmount: 300, newAmount: 195, total: 195, discount: 105 })
+    expect(plan.changes['Pago inicial']).toEqual({ old: 'S/. 300.00', new: 'S/. 195.00' })
+  })
+
+  it('cuotas: el total solo pierde la diferencia de la inicial', () => {
+    const plan = planInitialPaymentCorrection({
+      enrollment: { total_amount: 1950, discount_amount: 2050, list_price: 4000 },
+      initialInstallment: inicial(300), activePayments: [], newAmount: 250
+    })
+    expect(plan).toMatchObject({ paymentId: null, total: 1900, discount: 2100 })
+  })
+
+  it('sin precio de lista deja el descuento como estaba', () => {
+    const plan = planInitialPaymentCorrection({
+      enrollment: { total_amount: 300, discount_amount: 20, list_price: null },
+      initialInstallment: inicial(300), newAmount: 280
+    })
+    expect(plan).toMatchObject({ total: 280, discount: 20 })
+  })
+
+  it('rechaza un total por encima del precio de lista', () => {
+    expect(() => planInitialPaymentCorrection({ enrollment: contado, initialInstallment: inicial(300), newAmount: 350 }))
+      .toThrow('por encima del precio de lista')
+  })
+
+  it('rechaza monto igual, invalido, sin inicial o con varios pagos activos', () => {
+    const base = { enrollment: contado, initialInstallment: inicial(300) }
+    expect(() => planInitialPaymentCorrection({ ...base, newAmount: 300 })).toThrow('igual al actual')
+    expect(() => planInitialPaymentCorrection({ ...base, newAmount: 0 })).toThrow('Monto invalido')
+    expect(() => planInitialPaymentCorrection({ ...base, initialInstallment: null, newAmount: 100 })).toThrow('no tiene pago inicial')
+    expect(() => planInitialPaymentCorrection({ ...base, activePayments: [{}, {}], newAmount: 100 })).toThrow('mas de un pago activo')
+  })
+})
+
+describe('assertRevertible', () => {
+  it('acepta una cuota pagada en cualquiera de los dos catalogos', () => {
+    expect(() => assertRevertible(instRow({ cat_status: 4454 }))).not.toThrow()
+    expect(() => assertRevertible(instRow({ cat_status: 2471 }))).not.toThrow()
+  })
+
+  it('rechaza cuota inexistente, no pagada o la inicial', () => {
+    expect(() => assertRevertible(null)).toThrow('Cuota no encontrada')
+    expect(() => assertRevertible(instRow({ cat_status: 3174 }))).toThrow('no esta pagada')
+    expect(() => assertRevertible(instRow({ installment_number: 0, cat_status: 4454 }))).toThrow('pago inicial')
+  })
+})
+
+describe('pickPendingStatus', () => {
+  const sib = (installment_number, cat_status) => ({ installment_number, cat_status })
+
+  it('copia el estado mas repetido entre hermanas vivas, ignorando pagadas, anuladas y la inicial', () => {
+    expect(pickPendingStatus([sib(0, 3174), sib(1, 4454), sib(2, 3174), sib(3, 2470), sib(4, 3174), sib(5, CAT_STATUS_ANNULLED)]))
+      .toBe(3174)
+  })
+
+  it('empate: gana el id menor', () => {
+    expect(pickPendingStatus([sib(1, 3174), sib(2, 2470)])).toBe(2470)
+  })
+
+  it('sin hermanas vivas cae al pendiente del catalogo nuevo', () => {
+    expect(pickPendingStatus([sib(1, 4454), sib(2, 2471)])).toBe(CAT_STATUS_PENDING_FALLBACK)
+    expect(CAT_STATUS_PENDING_FALLBACK).toBe(2470)
   })
 })
 

@@ -76,6 +76,28 @@ export async function editInstallmentAmountHandler (req, reply) {
   return reply.code(200).send({ ok: true, data: toResultDto(data) })
 }
 
+// El autor sale solo del token: estas correcciones quedan firmadas en el
+// historial y no pueden atribuirse a otro usuario desde el body.
+export async function correctInitialPaymentHandler (req, reply) {
+  const data = await usecases.correctInitialPayment({
+    enrollmentId: req.body.enrollment_id,
+    newAmount: req.body.new_amount,
+    justificacion: req.body.justificacion,
+    userId: req.user.id
+  })
+  return reply.code(200).send({ ok: true, data: toResultDto(data) })
+}
+
+export async function revertInstallmentPaymentHandler (req, reply) {
+  const data = await usecases.revertInstallmentPayment({
+    enrollmentId: req.body.enrollment_id,
+    installmentId: req.body.installment_id,
+    justificacion: req.body.justificacion,
+    userId: req.user.id
+  })
+  return reply.code(200).send({ ok: true, data: toResultDto(data) })
+}
+
 export async function addInstallmentHandler (req, reply) {
   const data = await usecases.addInstallment({
     enrollmentId: req.body.enrollment_id,

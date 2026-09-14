@@ -263,28 +263,21 @@ export class EmailConfirmationRepository {
     return rows?.[0] || null
   }
 
-  // Horario de la edicion (override opcional). Para preview se pasa editionId;
-  // para envio se resuelve la edicion del enrollment.
-  async findScheduleForPreview (enrollmentId, editionId) {
+  // Horario de la edicion (override opcional: el preview de RP/CC pasa la
+  // edicion destino). Sale de las combinaciones de dias/horas de la edicion,
+  // las mismas que pinta el cronograma: edition_schedules nunca se lleno y el
+  // correo salia con "Horario: ( banderas GMT-5)" vacio.
+  // variable_3 = nombre largo del dia ("Martes y Jueves"); description = "Mar-Jue".
+  async findEditionSchedule (enrollmentId, editionId = null) {
     const { rows } = await this.db.query(`
-      SELECT c.description AS day_name, es.start_time, es.end_time
-      FROM edition_schedules es
-      LEFT JOIN catalog c ON es.cat_day_id = c.catalog_id
-      WHERE es.edition_num_id = COALESCE($2::integer, (SELECT program_edition_id FROM enrollments WHERE enrollment_id = $1))
-      ORDER BY es.schedule_id
+      SELECT COALESCE(NULLIF(dayc.variable_3, ''), dayc.description) AS frequency,
+             hourc.description AS schedule
+      FROM program_editions pe
+      LEFT JOIN catalog dayc  ON dayc.catalog_id  = pe.cat_day_combination_id
+      LEFT JOIN catalog hourc ON hourc.catalog_id = pe.cat_hour_combination_id
+      WHERE pe.edition_num_id = COALESCE($2::integer, (SELECT program_edition_id FROM enrollments WHERE enrollment_id = $1))
     `, [enrollmentId, editionId])
-    return rows || []
-  }
-
-  async findScheduleForSend (enrollmentId) {
-    const { rows } = await this.db.query(`
-      SELECT c.description AS day_name, es.start_time, es.end_time
-      FROM edition_schedules es
-      LEFT JOIN catalog c ON es.cat_day_id = c.catalog_id
-      WHERE es.edition_num_id = (SELECT program_edition_id FROM enrollments WHERE enrollment_id = $1)
-      ORDER BY es.schedule_id
-    `, [enrollmentId])
-    return rows || []
+    return rows?.[0] || null
   }
 
   // Cuotas (installment_number > 0) para construir el cronograma del correo.

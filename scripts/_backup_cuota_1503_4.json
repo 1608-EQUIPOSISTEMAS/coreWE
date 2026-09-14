@@ -1,0 +1,33 @@
+{
+  "cuota": {
+    "installment_id": 2188,
+    "enrollment_id": 1503,
+    "installment_number": 4,
+    "amount": "330.00",
+    "penalty_amount": "0.00",
+    "due_date": "2026-10-01T05:00:00.000Z",
+    "cat_status": 4454,
+    "notes": null,
+    "status_alias": "we_inst_paid",
+    "status_label": "Pagada"
+  },
+  "pagos": [
+    {
+      "payment_id": 11136,
+      "enrollment_id": 1503,
+      "installment_id": 2188,
+      "amount": "330.00",
+      "payment_date": "2026-09-13T05:00:00.000Z",
+      "transaction_code": "",
+      "evidence_url": "https://we-educacion-ejecutiva.site/uploads/1789399426817_a4e9010c-7dba-429b-bd5a-aa5e67a39e35_Screenshot_330.png",
+      "cat_method_payment": 3208,
+      "cat_payment_type": 3115,
+      "cat_settlement_status": 2573,
+      "settled_in_account_id": null,
+      "active": "Y",
+      "user_registration_id": 21,
+      "registration_date": "2026-09-14T15:23:50.077Z",
+      "cat_token_provider": null
+    }
+  ]
+}
