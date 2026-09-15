@@ -182,7 +182,8 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
     }
   }
 
-  const { frequency, schedule } = (await repo.findEditionSchedule(enrollmentId, editionId)) || {}
+  const { frequency, schedule, first_module_start_date: firstModuleStartDate } =
+    (await repo.findEditionSchedule(enrollmentId, editionId)) || {}
 
   // overrideInstallments: la reprogramacion previsualiza con el plan de cuotas
   // que se trasladara al enrollment destino (que aun no existe en este paso).
@@ -205,7 +206,7 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
 
   const { html: htmlBody, kind } = renderConfirmationEmail({
     data, firstName, lastName, odooEmail, isNew,
-    frequency, schedule, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
+    frequency, schedule, firstModuleStartDate, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
   })
   // Un evento no lleva PDF de cronograma: no tiene sesiones semanales.
   const isEventKind = kind === 'evento'
@@ -369,7 +370,8 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
     return { success: false, error: 'El estudiante no tiene correo registrado' }
   }
 
-  const { frequency, schedule } = (await repo.findEditionSchedule(enrollmentId)) || {}
+  const { frequency, schedule, first_module_start_date: firstModuleStartDate } =
+    (await repo.findEditionSchedule(enrollmentId)) || {}
 
   const instRows = await repo.findInstallments(enrollmentId)
 
@@ -401,7 +403,7 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
 
   const { html: htmlBody } = renderConfirmationEmail({
     data, firstName, lastName, odooEmail, isNew,
-    frequency, schedule, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
+    frequency, schedule, firstModuleStartDate, instRows, sapCredentials, isOnline, isParentProgram, bannerUrl
   })
 
   // CC en cascada: parametro explicito (override) -> enrollments.email_cc.

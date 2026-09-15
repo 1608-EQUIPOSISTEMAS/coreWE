@@ -38,12 +38,12 @@ describe('templates/confirmacion-inscripcion', () => {
       bannerUrl: 'https://lh3.googleusercontent.com/d/FIXTUREBANNER',
       installments: INSTALLMENTS,
       currencySymbol: 'S/.',
-      hideWhatsapp: false
+      isParentProgram: false
     })
     expect(html).toMatchSnapshot()
   })
 
-  // Programa padre: sin cuotas y con el bloque de WhatsApp oculto.
+  // Programa padre: sin cuotas, sin WhatsApp y sin horario (va en el PDF).
   it('alumno recurrente, sin cuotas y con WhatsApp oculto', () => {
     const html = buildConfirmacionHTML({
       studentName: 'maria',
@@ -57,7 +57,7 @@ describe('templates/confirmacion-inscripcion', () => {
       bannerUrl: '',
       installments: [],
       currencySymbol: 'S/.',
-      hideWhatsapp: true
+      isParentProgram: true
     })
     expect(html).toMatchSnapshot()
   })

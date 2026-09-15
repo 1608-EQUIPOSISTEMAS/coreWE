@@ -276,10 +276,19 @@ export class EmailConfirmationRepository {
   // las mismas que pinta el cronograma: edition_schedules nunca se lleno y el
   // correo salia con "Horario: ( banderas GMT-5)" vacio.
   // variable_3 = nombre largo del dia ("Martes y Jueves"); description = "Mar-Jue".
+  // first_module_start_date: inicio del primer modulo del arbol de ediciones. Un
+  // padre casi nunca tiene horario propio y su start_date puede faltar o no
+  // coincidir con el del primer hijo; el alumno empieza cuando empieza el modulo.
+  // Sale del arbol y no de los enrollments hijos: el preview de RP/CC corre antes
+  // de que existan. En un programa sin hijos es NULL.
   async findEditionSchedule (enrollmentId, editionId = null) {
     const { rows } = await this.db.query(`
       SELECT COALESCE(NULLIF(dayc.variable_3, ''), dayc.description) AS frequency,
-             hourc.description AS schedule
+             hourc.description AS schedule,
+             (SELECT MIN(ce.start_date)
+              FROM edition_structure es
+              JOIN program_editions ce ON ce.edition_num_id = es.child_edition_id
+              WHERE es.parent_edition_id = pe.edition_num_id) AS first_module_start_date
       FROM program_editions pe
       LEFT JOIN catalog dayc  ON dayc.catalog_id  = pe.cat_day_combination_id
       LEFT JOIN catalog hourc ON hourc.catalog_id = pe.cat_hour_combination_id

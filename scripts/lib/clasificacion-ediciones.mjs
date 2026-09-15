@@ -18,8 +18,13 @@ export const temporalidad = fila => (MESES_ALTOS.has(mesDe(fila)) ? 'ALTA' : 'NO
 
 export const normalizar = nombre => nombre.replace(/\s+/g, ' ').trim().toUpperCase()
 
-// "GEST PROYECT I" en Obj Vacantes es "GEST PROYECT" en Plan 2027.
-const ALIAS = { 'GEST PROYECT I': 'GEST PROYECT' }
+// Obj Vacantes y Plan 2027 los escriben distinto: sin alias el curso no cruza y
+// el Plan se queda con la mediana de relleno (paso con N8N y CLAUDE, 15/09/2026).
+const ALIAS = {
+  'GEST PROYECT I': 'GEST PROYECT',
+  'N8N: AGENTES IA': 'N8N:AGENTES IA',
+  CLAUDE: 'CLAUDE IA'
+}
 
 // Las hojas de 2027 agrupan por PROGRAMA: "DIP SUPPLY V3" es "DIP SUPPLY".
 export const nombreDelPrograma = etiqueta => {

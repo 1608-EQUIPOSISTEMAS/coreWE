@@ -993,10 +993,7 @@ exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y co
                 <td align="left"> <ol style="margin-left: 20px;">
                     <li><strong><font face="Tahoma" size="4">Programa:</font></strong> <font face="Tahoma" size="4">ESP. EN LOGISTICA INTEGRAL</font></li>
                     <li><strong><font face="Tahoma" size="4">Inicio:</font></strong> <font face="Tahoma" size="4">Sábado 15 de Agosto 2026</font></li>
-                    <li><strong><font face="Tahoma" size="4">Horario:</font></strong> <font face="Tahoma" size="4">Sabados 09:00 - 13:00 (
-                      <img src="https://lh3.googleusercontent.com/d/1gDkGBweHdVcdTyFAC4hUGs59Tv_8lrlg" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
-                      <img src="https://lh3.googleusercontent.com/d/1JW2PWvO0LW9UsE308zLR93nAVTLk-dlT" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
-                      <img src="https://lh3.googleusercontent.com/d/1wNwEHIIUMQdKtpz9Ouvg3LqU2v7gqNtJ" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"> GMT-5)</font></li>
+                    
                   </ol>
                 </td>
               </tr>

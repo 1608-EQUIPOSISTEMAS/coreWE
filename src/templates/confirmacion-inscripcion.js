@@ -93,7 +93,9 @@ export function buildConfirmacionHTML (data) {
     bannerUrl,
     installments,
     currencySymbol,
-    hideWhatsapp
+    // Un padre no tiene grupo de WhatsApp ni horario unico: lleva el PDF de
+    // cronograma con los horarios de cada modulo.
+    isParentProgram
   } = data
 
   const nombre = capitalizeName(studentName)
@@ -172,10 +174,10 @@ export function buildConfirmacionHTML (data) {
                 <td align="left"> <ol style="margin-left: 20px;">
                     <li><strong><font face="Tahoma" size="4">Programa:</font></strong> <font face="Tahoma" size="4">${programName || ''}</font></li>
                     <li><strong><font face="Tahoma" size="4">Inicio:</font></strong> <font face="Tahoma" size="4">${fechaInicio}</font></li>
-                    <li><strong><font face="Tahoma" size="4">Horario:</font></strong> <font face="Tahoma" size="4">${frequency || ''} ${schedule || ''} (
+                    ${isParentProgram ? '' : `<li><strong><font face="Tahoma" size="4">Horario:</font></strong> <font face="Tahoma" size="4">${frequency || ''} ${schedule || ''} (
                       <img src="https://lh3.googleusercontent.com/d/1gDkGBweHdVcdTyFAC4hUGs59Tv_8lrlg" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
                       <img src="https://lh3.googleusercontent.com/d/1JW2PWvO0LW9UsE308zLR93nAVTLk-dlT" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;">
-                      <img src="https://lh3.googleusercontent.com/d/1wNwEHIIUMQdKtpz9Ouvg3LqU2v7gqNtJ" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"> GMT-5)</font></li>
+                      <img src="https://lh3.googleusercontent.com/d/1wNwEHIIUMQdKtpz9Ouvg3LqU2v7gqNtJ" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"> GMT-5)</font></li>`}
                   </ol>
                 </td>
               </tr>
@@ -194,7 +196,7 @@ export function buildConfirmacionHTML (data) {
         </td></tr>
 
         <!--DATOS DE BOTONES LINKS-->
-        ${hideWhatsapp ? `
+        ${isParentProgram ? `
         <tr style="text-align:center">
             <td>
               <font face="Tahoma" size="4"><img src="${PASO[1]}" width="22" height="22" style="vertical-align: middle; margin-right: 5px; display: inline-block;"><strong>Cronograma acad\u00e9mico</strong>

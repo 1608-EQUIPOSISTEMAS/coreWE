@@ -68,6 +68,37 @@ describe('renderConfirmationEmail — cronograma en el correo de evento', () => 
   })
 })
 
+// Un padre no tiene horario unico (cada modulo trae el suyo en el PDF) y su
+// start_date puede faltar o no coincidir con el del primer modulo. Si esto se
+// cae, el alumno del padre vuelve a recibir "Horario: ( GMT-5)" vacio.
+describe('renderConfirmationEmail — inicio y horario de padre vs hijo', () => {
+  const curso = { program_name: 'ESP. EN LOGISTICA', start_date: '2026-08-15', currency_symbol: 'S/.' }
+
+  const render = ({ isParentProgram, firstModuleStartDate = null, data = curso }) => renderConfirmationEmail({
+    data, firstName: 'Ana', lastName: 'Perez', odooEmail: 'ana@we.pe',
+    isNew: true, frequency: 'Sabados', schedule: '9AM - 12PM', firstModuleStartDate,
+    instRows: [], sapCredentials: null, isOnline: false, isParentProgram
+  }).html
+
+  it('el hijo muestra su horario y su propia fecha', () => {
+    const html = render({ isParentProgram: false, firstModuleStartDate: '2026-08-29' })
+    expect(html).toContain('Horario:')
+    expect(html).toContain('9AM - 12PM')
+    expect(html).toContain('15 de Agosto 2026')
+  })
+
+  it('el padre oculta el horario y arranca con el primer modulo', () => {
+    const html = render({ isParentProgram: true, firstModuleStartDate: '2026-08-29' })
+    expect(html).not.toContain('Horario:')
+    expect(html).toContain('29 de Agosto 2026')
+    expect(html).not.toContain('15 de Agosto 2026')
+  })
+
+  it('padre sin modulos en el arbol cae a su propia fecha', () => {
+    expect(render({ isParentProgram: true })).toContain('15 de Agosto 2026')
+  })
+})
+
 // El ponente es invitado, no cliente: su correo no puede hablar de cuotas, de
 // certificado con costo ni de formularios. Si esto se cae, el expositor recibe
 // el correo de un asistente que pago entrada.

@@ -68,6 +68,7 @@ export function renderConfirmationEmail ({
   isNew,
   frequency,
   schedule,
+  firstModuleStartDate = null,
   instRows,
   sapCredentials,
   isOnline,
@@ -128,7 +129,9 @@ export function renderConfirmationEmail ({
     html: buildConfirmacionHTML({
       studentName,
       programName: data.program_name,
-      startDate: data.start_date,
+      // Un padre arranca cuando arranca su primer modulo; cada modulo tiene su
+      // propio horario y ese detalle ya va en el PDF de cronograma adjunto.
+      startDate: isParentProgram ? (firstModuleStartDate || data.start_date) : data.start_date,
       frequency,
       schedule,
       whatsappLink: data.whatsapp_link || '',
@@ -137,7 +140,7 @@ export function renderConfirmationEmail ({
       bannerUrl: data.banner_link || '',
       installments: isSinglePayment(data.payment_plan_alias) ? [] : instRows,
       currencySymbol: data.currency_symbol || 'S/.',
-      hideWhatsapp: isParentProgram
+      isParentProgram
     })
   }
 }
