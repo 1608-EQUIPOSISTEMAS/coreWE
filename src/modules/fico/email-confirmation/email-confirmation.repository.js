@@ -1,6 +1,14 @@
 import { pool } from '../../../shared/db/pool.js'
 import { STUDENT_EMAIL_SQL } from '../../../utils/student-contacts.sql.js'
 
+// Nombre del programa que ve el alumno (asunto y cuerpo). abbreviation es la
+// nomenclatura interna ("DIP INTELIG. Y ANALIST. DATOS V2"): abrevia y arrastra
+// la version, que es control interno. brand_name es el nombre comercial con el
+// que se promociona. El fallback cubre una version nueva cargada sin brand_name.
+// Las consultas de membresia siguen con abbreviation a proposito:
+// detectMembershipType reconoce el tier por "WE GOLD", "WE PLUS", etc.
+const STUDENT_PROGRAM_NAME_SQL = "COALESCE(NULLIF(TRIM(pv.brand_name), ''), pv.abbreviation)"
+
 // Persistencia de los correos transaccionales FICO. Envuelve pool.query; no
 // contiene reglas de negocio (esas viven en email-confirmation.entity.js) ni
 // efectos externos (Odoo/email/PDF). Las credenciales SAP se guardan por upsert
@@ -42,7 +50,7 @@ export class EmailConfirmationRepository {
       SELECT e.enrollment_id, e.total_amount, e.discount_amount,
              per.first_name, per.last_name, per.mother_last_name, per.document_number,
              ${STUDENT_EMAIL_SQL} AS origin_email,
-             pv.abbreviation AS program_name,
+             ${STUDENT_PROGRAM_NAME_SQL} AS program_name,
              COALESCE(NULLIF(pe.banner_link, ''), prog.banner_link) AS banner_link,
              pe.edition_num_id,
              pe.banner_mime,
@@ -91,7 +99,7 @@ export class EmailConfirmationRepository {
       SELECT e.enrollment_id, e.total_amount, e.discount_amount,
              per.first_name, per.last_name, per.mother_last_name, per.document_number,
              ${STUDENT_EMAIL_SQL} AS origin_email,
-             pv.abbreviation AS program_name,
+             ${STUDENT_PROGRAM_NAME_SQL} AS program_name,
              COALESCE(NULLIF(pe.banner_link, ''), prog.banner_link) AS banner_link,
              pe.edition_num_id,
              pe.banner_mime,
@@ -201,7 +209,7 @@ export class EmailConfirmationRepository {
       SELECT e.enrollment_id,
              per.first_name, per.last_name,
              ${STUDENT_EMAIL_SQL} AS origin_email,
-             pv.abbreviation AS program_name,
+             ${STUDENT_PROGRAM_NAME_SQL} AS program_name,
              curr.variable_2 AS currency_symbol,
              c_cat.description AS category_description,
              e.email_cc
