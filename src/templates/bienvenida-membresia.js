@@ -1,3 +1,5 @@
+import { buildFirmaHTML } from './partials/we-firma.js'
+
 function capitalizeName (name) {
   if (!name) return ''
   return name.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase())
@@ -330,21 +332,7 @@ export function buildMembresiaHTML (data) {
 <table align="left" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-left:0;">
   <tr>
     <td style="padding: 20px 20px 10px 20px;">
-      <table border="0" cellpadding="0" cellspacing="0">
-        <tr>
-          <td valign="top" style="padding-right:15px">
-            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96" height="96" alt="Logo WE">
-          </td>
-          <td valign="top" style="font-family: Tahoma, sans-serif; font-size: 12px; color: #000;">
-            <b>Raul Rivera</b><br>
-            Ejecutivo de <span style="background-color:#ffe599;">pagos</span><br>
-            <b>+51 943 882 766</b><br>
-            <span style="color:#444;">Revisa TC y Pol\u00edticas de privacidad y tratamiento de datos</span><br>
-            <a href="http://www.we-educacion/TC.com" style="color:#1155cc;" target="_blank">www.we-educacion/TC.com</a><br>
-            <span style="color:#1155cc;">Av. Rep. de Panam\u00e1 3418-Piso 2 / San Isidro</span>
-          </td>
-        </tr>
-      </table>
+${buildFirmaHTML()}
       <br>
       <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
            alt="Empresas que conf\u00edan en nosotros" width="500" style="max-width:100%; height:auto; display:block;">

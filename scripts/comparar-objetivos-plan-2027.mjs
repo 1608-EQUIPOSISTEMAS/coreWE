@@ -46,7 +46,10 @@ const obj = await leer(`'${titulo(OBJ_ID)}'!A1:BZ`, 'FORMATTED_VALUE')
 // Plan: fila 10. El primer "APE Alta" abre el objetivo; el primer "Mkt", las ventas.
 const cabPlan = plan[PRIMERA_FILA - 2]
 const colObjetivo = columnaDe(cabPlan, 'APE Alta')
-const colVentas = columnaDe(cabPlan, 'Mkt')
+// Cada bloque de ventas empieza en su propio "Mkt": desde el 15/09/2026 hay una
+// columna OBJ delante de cada bloque, asi que no estan pegados de 4 en 4.
+const colsVentas = cabPlan.flatMap((c, i) => String(c).trim() === 'Mkt' ? [i] : []).slice(0, BLOQUES)
+const colVentas = colsVentas[0]
 const colCat = columnaDe(cabPlan, 'CAT')
 const filaPropuesta = obj.findIndex(f => (f ?? []).some(c => String(c).trim() === 'Propuesta Nueva 2027'))
 const colPropuesta = columnaDe(obj[filaPropuesta], 'Propuesta Nueva 2027')
@@ -109,10 +112,12 @@ for (let fila = PRIMERA_FILA; fila <= ULTIMA_FILA; fila++) {
   const f = valores[fila - 1] ?? []
   for (let b = 0; b < BLOQUES; b++) {
     const objetivo = norma(f[colObjetivo + b])
-    const canales = [0, 1, 2, 3].map(k => f[colVentas + b * 4 + k])
+    const canales = [0, 1, 2, 3].map(k => f[colsVentas[b] + k])
     const suma = canales.reduce((a, c) => a + (Number(c) || 0), 0)
     if (objetivo === '') {
-      assert.ok(canales.every(c => norma(c) === ''), `fila ${fila} bloque ${b + 1}: sin objetivo pero con ventas ${canales}`)
+      // Planeamiento pisa a mano con 0 los bloques que no corren (DIP INTELIG., 15/09/2026):
+      // un 0 no es venta, lo que no puede haber es venta sin objetivo.
+      assert.equal(suma, 0, `fila ${fila} ${f[0]} bloque ${b + 1}: sin objetivo pero con ventas ${canales}`)
     } else {
       assert.equal(suma, Number(objetivo), `fila ${fila} ${f[0]} bloque ${b + 1}: canales ${canales} suman ${suma}, objetivo ${objetivo}`)
       sumas.push(fila)

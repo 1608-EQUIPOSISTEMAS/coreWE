@@ -209,21 +209,27 @@ exports[`templates/bienvenida-membresia > membresia GOLD 1`] = `
 <table align="left" width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-left:0;">
   <tr>
     <td style="padding: 20px 20px 10px 20px;">
-      <table border="0" cellpadding="0" cellspacing="0">
-        <tr>
-          <td valign="top" style="padding-right:15px">
-            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96" height="96" alt="Logo WE">
-          </td>
-          <td valign="top" style="font-family: Tahoma, sans-serif; font-size: 12px; color: #000;">
-            <b>Raul Rivera</b><br>
-            Ejecutivo de <span style="background-color:#ffe599;">pagos</span><br>
-            <b>+51 943 882 766</b><br>
-            <span style="color:#444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span><br>
-            <a href="http://www.we-educacion/TC.com" style="color:#1155cc;" target="_blank">www.we-educacion/TC.com</a><br>
-            <span style="color:#1155cc;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</span>
-          </td>
-        </tr>
-      </table>
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
       <br>
       <img src="https://lh3.googleusercontent.com/d/1oEbOYXIaf_ckV_iQobLmCINBYFp2fwP5"
            alt="Empresas que confían en nosotros" width="500" style="max-width:100%; height:auto; display:block;">
@@ -353,10 +359,10 @@ exports[`templates/confirmacion-evento > entrada VIP con asiento asignado 1`] = 
           <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
             <tbody>
               <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
               <tr><td><b>+51 943 882 766</b></td></tr>
               <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
               <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
             </tbody>
           </table>
@@ -510,10 +516,10 @@ exports[`templates/confirmacion-evento > entrada VIRTUAL con los tres botones 1`
           <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
             <tbody>
               <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
               <tr><td><b>+51 943 882 766</b></td></tr>
               <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
               <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
             </tbody>
           </table>
@@ -646,10 +652,10 @@ exports[`templates/confirmacion-evento > entrada presencial sin banner ni links 
           <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
             <tbody>
               <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
               <tr><td><b>+51 943 882 766</b></td></tr>
               <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
               <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
             </tbody>
           </table>
@@ -917,10 +923,10 @@ exports[`templates/confirmacion-inscripcion > alumno nuevo, con cuotas y WhatsAp
           <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
             <tbody>
               <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
               <tr><td><b>+51 943 882 766</b></td></tr>
               <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
               <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
             </tbody>
           </table>
@@ -1152,10 +1158,10 @@ exports[`templates/confirmacion-inscripcion > alumno recurrente, sin cuotas y co
           <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
             <tbody>
               <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
               <tr><td><b>+51 943 882 766</b></td></tr>
               <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
               <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
             </tbody>
           </table>
@@ -1357,27 +1363,27 @@ exports[`templates/confirmacion-online > con credenciales SAP 1`] = `
 
     <br><br>
 
-    <table border="0" cellpadding="0" cellspacing="0">
-      <tbody>
-        <tr>
-          <td valign="top" style="padding-right:15px">
-            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
-          </td>
-          <td valign="top">
-            <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
-              <tbody>
-                <tr><td><b>Raul Rivera</b></td></tr>
-                <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
-                <tr><td><b>+51 943 882 766</b></td></tr>
-                <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-                <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
-                <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
 
     <br>
 
@@ -1559,27 +1565,27 @@ exports[`templates/confirmacion-online > sin credenciales SAP 1`] = `
 
     <br><br>
 
-    <table border="0" cellpadding="0" cellspacing="0">
-      <tbody>
-        <tr>
-          <td valign="top" style="padding-right:15px">
-            <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
-          </td>
-          <td valign="top">
-            <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
-              <tbody>
-                <tr><td><b>Raul Rivera</b></td></tr>
-                <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
-                <tr><td><b>+51 943 882 766</b></td></tr>
-                <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
-                <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
-                <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
 
     <br>
 
@@ -1650,13 +1656,27 @@ exports[`templates/confirmacion-pago > cuota pagada, con siguiente cuota pendien
         </div>
     </div>
 
-    <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
-    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
-        <tr><td>Encargado de Finanzas</td></tr>
-        <tr><td><b>+51 943 882 766</b></td></tr>
-        <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Políticas de privacidad y tratamiento de datos</a></td></tr>
-        <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr></table>
-</td></tr></table>
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
 <table><tr><td><img width="450" src="https://ci3.googleusercontent.com/mail-sig/AIorK4w-9ncNp5__1uLTZl_JQGHDDN7VKBtIZMx5wsKgHZri8lvyhzNGSFc5oHSLGGGQZAijQlaMtCs"></td></tr></table>
 
   </body>
@@ -1716,13 +1736,27 @@ exports[`templates/confirmacion-pago > pago completado, sin deuda 1`] = `
         </table>
     </div>
 
-    <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
-    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
-        <tr><td>Encargado de Finanzas</td></tr>
-        <tr><td><b>+51 943 882 766</b></td></tr>
-        <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Políticas de privacidad y tratamiento de datos</a></td></tr>
-        <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr></table>
-</td></tr></table>
+  <table border="0" cellpadding="0" cellspacing="0">
+    <tbody>
+      <tr>
+        <td valign="top" style="padding-right:15px">
+          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
+        </td>
+        <td valign="top">
+          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
+            <tbody>
+              <tr><td><b>Raul Rivera</b></td></tr>
+              <tr><td>Coordinador de Finanzas</td></tr>
+              <tr><td><b>+51 943 882 766</b></td></tr>
+              <tr><td><span style="color: #444;">Revisa TC y Políticas de privacidad y tratamiento de datos</span></td></tr>
+              <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">we-educacion.com/politicas-privacidadwe</a></td></tr>
+              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panamá 3418-Piso 2 / San Isidro</td></tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
 <table><tr><td><img width="450" src="https://ci3.googleusercontent.com/mail-sig/AIorK4w-9ncNp5__1uLTZl_JQGHDDN7VKBtIZMx5wsKgHZri8lvyhzNGSFc5oHSLGGGQZAijQlaMtCs"></td></tr></table>
 
   </body>

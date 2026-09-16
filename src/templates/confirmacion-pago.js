@@ -1,3 +1,5 @@
+import { buildFirmaHTML } from './partials/we-firma.js'
+
 function capitalizeName (name) {
   if (!name) return ''
   return name.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase())
@@ -16,17 +18,11 @@ function calcFecha (dateStr) {
   return `${dd}/${mm}/${yyyy}`
 }
 
-// Firma del area de Finanzas. Unica para las dos ramas del correo (cuota
-// pagada y pago completado): estaban duplicadas y la de pago completado quedo
-// con la encargada anterior hasta 08/2026.
+// Unica para las dos ramas del correo (cuota pagada y pago completado): la
+// tarjeta la pone el partial compartido y lo propio de este correo es el
+// banner de empresas que va debajo.
 function firmaFinanzas () {
-  return `    <table><tr><td rowspan="5" style="padding-right:10px"><img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px"></td><td>
-    <table style="line-height:14px"><tr><td>Raul Rivera</td></tr>
-        <tr><td>Encargado de Finanzas</td></tr>
-        <tr><td><b>+51 943 882 766</b></td></tr>
-        <tr><td><a href="https://we-educacion.com/politicas-privacidadwe" target="_blank" style="color:rgb(17,85,204)">Revisa TC y Pol\u00edticas de privacidad y tratamiento de datos</a></td></tr>
-        <tr><td style="color:rgb(17,85,204)">Av. Rep. de Panam\u00e1 3418-Piso 2 / San Isidro</td></tr></table>
-</td></tr></table>
+  return `${buildFirmaHTML()}
 <table><tr><td><img width="450" src="https://ci3.googleusercontent.com/mail-sig/AIorK4w-9ncNp5__1uLTZl_JQGHDDN7VKBtIZMx5wsKgHZri8lvyhzNGSFc5oHSLGGGQZAijQlaMtCs"></td></tr></table>`
 }
 

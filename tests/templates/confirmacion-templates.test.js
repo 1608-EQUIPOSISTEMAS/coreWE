@@ -219,12 +219,57 @@ describe('templates/confirmacion-pago', () => {
   })
 
   it('las dos ramas firman igual, como Finanzas', () => {
-    const firma = 'Encargado de Finanzas'
+    const firma = 'Coordinador de Finanzas'
     for (const isLastPayment of [true, false]) {
       const html = buildConfirmacionPagoHTML({ ...PAGO, isLastPayment })
       expect(html).toContain('Raul Rivera')
       expect(html).toContain(firma)
       expect(html).toContain('+51 943 882 766')
     }
+  })
+})
+
+// La firma estuvo CUADRUPLICADA y las cuatro copias divergieron: dos decian
+// "Encargado de pagos", una "Encargado de Finanzas" y la de membresia
+// "Ejecutivo de pagos". Ahora sale toda de partials/we-firma.js. Este test
+// falla si alguien vuelve a pegar una copia a mano en vez de usar el partial.
+describe('templates/firma compartida', () => {
+  const HTMLS = {
+    inscripcion: buildConfirmacionHTML({
+      studentName: 'luis', programName: 'DIP. GESTION', startDate: START_DATE,
+      frequency: 'Lunes', schedule: '19:00 - 22:00', whatsappLink: '',
+      email: 'luis@weeducacion.edu.pe', isNew: true, bannerUrl: '',
+      installments: INSTALLMENTS, currencySymbol: 'S/.', isParentProgram: false
+    }),
+    online: buildConfirmacionOnlineHTML({
+      studentName: 'jose', programName: 'CURSO ONLINE DE EXCEL',
+      email: 'jose@weeducacion.edu.pe', isNew: true,
+      sapUser: null, sapPassword: null
+    }),
+    membresia: buildMembresiaHTML({
+      studentName: 'ana', programName: 'WE GOLD',
+      email: 'ana@weeducacion.edu.pe', password: '1234567', isNew: true,
+      duracion: '6 meses', fechaActivacion: '15/08/2026',
+      fechaRenovacion: '15/02/2027', installmentsHTML: ''
+    }),
+    cuota: buildConfirmacionPagoHTML({
+      studentName: 'elizabeth yalle', programType: 'curso',
+      isLastPayment: false, lastPaymentDate: '2026-08-18',
+      nextPaymentDate: '2026-09-18', nextPaymentAmount: 500,
+      currencySymbol: 'S/.'
+    })
+  }
+
+  it.each(Object.keys(HTMLS))('%s firma como Coordinador de Finanzas', (correo) => {
+    const html = HTMLS[correo]
+    expect(html).toContain('Raul Rivera')
+    expect(html).toContain('Coordinador de Finanzas')
+    // Resaltado de edicion de Gmail que se colo en el copy-paste original.
+    expect(html).not.toContain('#ffe599')
+    // Cargos viejos: si reaparece uno, alguien pego una copia a mano.
+    expect(html).not.toContain('Encargado de')
+    expect(html).not.toContain('Ejecutivo de')
+    // Host sin TLD: no resolvia.
+    expect(html).not.toContain('http://www.we-educacion/TC.com')
   })
 })

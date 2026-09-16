@@ -16,7 +16,7 @@ for (const s of meta.sheets) {
 const HOJA = meta.sheets.find(s => s.properties.sheetId === SHEET_ID).properties.title
 
 const { data } = await sheets.spreadsheets.values.get({
-  spreadsheetId: LIBRO, range: `'${HOJA}'!A1:AZ84`, valueRenderOption: 'FORMULA'
+  spreadsheetId: LIBRO, range: `'${HOJA}'!A1:BZ84`, valueRenderOption: 'FORMULA'
 })
 data.values.forEach((fila, i) => console.log(`${i + 1}\t${fila.join(' | ')}`))
 

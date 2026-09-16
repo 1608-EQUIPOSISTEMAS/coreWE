@@ -23,7 +23,8 @@ export const normalizar = nombre => nombre.replace(/\s+/g, ' ').trim().toUpperCa
 const ALIAS = {
   'GEST PROYECT I': 'GEST PROYECT',
   'N8N: AGENTES IA': 'N8N:AGENTES IA',
-  CLAUDE: 'CLAUDE IA'
+  CLAUDE: 'CLAUDE IA',
+  'Pricing & R.M.': 'PRICING & R. M.'
 }
 
 // Las hojas de 2027 agrupan por PROGRAMA: "DIP SUPPLY V3" es "DIP SUPPLY".

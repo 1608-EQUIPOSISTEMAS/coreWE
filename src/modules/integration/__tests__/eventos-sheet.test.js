@@ -54,9 +54,13 @@ describe('hoja "4. Ventas Eventos"', () => {
       .toBe('NO DEBE')
   })
 
+  // El "total 0" que marca la beca se lee del ORIGEN cuando la fila es el
+  // destino de una reprogramacion: ese destino nace pago-cero, y leyendo su
+  // propio total_amount una entrada reprogramada se declaraba beca y NO DEBE
+  // teniendo saldo. Ver rp-split-sale.test.js.
   it('una beca y una entrada saldada no deben; una con saldo si', () => {
     const sql = captureEventosSql()
-    expect(sql).toContain("WHEN (e.total_amount) = 0 THEN 'NO DEBE'")
+    expect(sql).toContain("WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN 'NO DEBE'")
     expect(sql).toContain("COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'")
     expect(sql).toContain('AS status_deuda')
   })

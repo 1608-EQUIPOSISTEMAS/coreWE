@@ -1,3 +1,5 @@
+import { buildFirmaHTML } from './we-firma.js'
+
 // Pie compartido de los correos transaccionales: redes, firma, banner de
 // empresas y disclaimer legal.
 //
@@ -30,27 +32,7 @@ export function buildWeFooterHTML () {
   <br>
   <br>
 
-  <table border="0" cellpadding="0" cellspacing="0">
-    <tbody>
-      <tr>
-        <td valign="top" style="padding-right:15px">
-          <img src="https://ci3.googleusercontent.com/mail-sig/AIorK4zCXJR1jwmEHVcU8GNE_r7fng1f3_VzVw1uOP18czCf2df7R8l1PVG6tGVM27KRHMTnIpVPd1c" width="96px" height="96px" alt="Logo WE">
-        </td>
-        <td valign="top">
-          <table style="line-height:16px; font-family: Tahoma, sans-serif; font-size: 12px; color: #000000;">
-            <tbody>
-              <tr><td><b>Raul Rivera</b></td></tr>
-              <tr><td>Encargado de <span style="background-color: #ffe599;">pagos</span></td></tr>
-              <tr><td><b>+51 943 882 766</b></td></tr>
-              <tr><td><span style="color: #444;">Revisa TC y Pol\u00edticas de privacidad y tratamiento de datos</span></td></tr>
-              <tr><td><a href="http://www.we-educacion/TC.com" style="color:rgb(17,85,204); text-decoration: underline;" target="_blank">www.we-educacion/TC.com</a></td></tr>
-              <tr><td style="color:rgb(17,85,204); padding-top: 2px;">Av. Rep. de Panam\u00e1 3418-Piso 2 / San Isidro</td></tr>
-            </tbody>
-          </table>
-        </td>
-      </tr>
-    </tbody>
-  </table>
+${buildFirmaHTML()}
 
   <br>
 

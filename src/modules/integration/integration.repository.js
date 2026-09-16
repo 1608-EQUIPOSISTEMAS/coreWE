@@ -146,6 +146,74 @@ export const PARENT_OR_CC_DESTINATION = `
               )
          )`
 
+// Una Reprogramacion (RP) parte la venta en DOS inscripciones (ver
+// `reprogramEdition`): el origen queda en estado RP conservando lo ya cobrado, y
+// el destino nace pago-cero con las cuotas pendientes trasladadas. Para estas
+// hojas eso eran dos filas del mismo alumno y ninguna decia la verdad: el origen
+// publicaba un monto mutilado (la venta de 250 de #18939 salia en 100) y el
+// destino, con `total_amount = 0`, caia en la rama de BECA -- "Saldado", SALDO 0
+// -- del Consolidado, del Aula y de Cuotas. Son 112 origenes y 85 destinos vivos
+// en produccion, todos `checked`: ~197 filas, no un caso aislado.
+//
+// El vinculo origen->destino vive en tres lugares y ninguno cubre solo las 112
+// RP (82 / 79 / 66 origenes; la union llega a 83), asi que se usan los tres:
+//   1. audit del ORIGEN  `edition_reprogrammed`: changes->>'new_enrollment_id'
+//   2. audit del DESTINO `created_from_rp`:      changes->'Enrollment origen'->>'new' = '#18939'
+//   3. notes del DESTINO:                        'Reprogramacion desde inscripcion #18939'
+// Las RP anteriores a que el flujo grabara el ancla numerica de (1) solo se
+// pescan por (2) y (3); de ahi que se unan las tres y no se elija "la mejor".
+export const RP_LINK_SQL = `
+      SELECT DISTINCT
+             a.enrollment_id                        AS origen_id,
+             (a.changes->>'new_enrollment_id')::int AS destino_id
+        FROM public.enrollment_audit_log a
+       WHERE a.action = 'edition_reprogrammed'
+         AND a.changes->>'new_enrollment_id' ~ '^[0-9]+$'
+      UNION
+      SELECT substring(a.changes->'Enrollment origen'->>'new' FROM '#([0-9]+)')::int,
+             a.enrollment_id
+        FROM public.enrollment_audit_log a
+       WHERE a.action = 'created_from_rp'
+         AND a.changes->'Enrollment origen'->>'new' ~ '#[0-9]+'
+      UNION
+      SELECT substring(d.notes FROM 'inscripcion #([0-9]+)')::int,
+             d.enrollment_id
+        FROM public.enrollments d
+       WHERE d.notes LIKE 'Reprogramacion desde inscripcion #%'`
+
+// Un origen con destino hallable ya no representa la venta: la representa el
+// destino, que hereda su plata y sus datos via RP_ORIGIN_JOIN.
+//
+// Los 29 origenes SIN destino hallable no se excluyen a proposito: 19 son RP
+// marcadas a mano o por la importacion masiva del 03/08 y nunca tuvieron
+// destino, y en los otros 10 el vinculo se perdio. En ambos casos esconderlos
+// borraria la venta entera de la hoja, que es peor que mostrarla partida.
+//
+// Las cadenas A->B->C se resuelven solas: A y B tienen destino y salen, queda C.
+export const EXCLUDE_RP_ORIGIN = `
+         AND NOT EXISTS (
+               SELECT 1 FROM (${RP_LINK_SQL}) rp_link
+                WHERE rp_link.origen_id = e.enrollment_id
+             )`
+
+// El origen de la RP, para que el destino herede lo que el no tiene: el precio
+// pactado y el descuento (nace en 0) y el lead, que sigue colgado del origen y
+// es de donde salen EMPRESA y F. PAGO -- la fila del destino en "7. Convenios"
+// salia sin ninguno de los dos.
+//
+// ponytail: un solo salto destino->origen. En produccion hay UNA cadena de dos
+// saltos (8208->8271->8372), cuyo tramo del medio pierde su parte; si aparecen
+// mas, esto pasa a ser un WITH RECURSIVE sobre RP_LINK_SQL.
+export const RP_ORIGIN_JOIN = `
+    LEFT JOIN LATERAL (
+      SELECT o.enrollment_id, o.total_amount, o.list_price, o.discount_amount
+        FROM (${RP_LINK_SQL}) rp_link
+        JOIN public.enrollments o ON o.enrollment_id = rp_link.origen_id
+       WHERE rp_link.destino_id = e.enrollment_id
+       ORDER BY o.enrollment_id DESC
+       LIMIT 1
+    ) rp_origen ON TRUE`
+
 // Un evento/congreso se reconoce por dos vias, las mismas que usa
 // shared/event-category.js: la inscripcion tiene categoria de entrada
 // (VIP/GENERAL/PREMIUM/VIRTUAL) o su programa es de tipo evento. Basta
@@ -370,6 +438,7 @@ export class IntegrationRepository {
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${EXCLUDE_HELD}
+         ${EXCLUDE_RP_ORIGIN}
          ${SYNC_FROM}
     ),
     -- Historico de momentos por telefono (misma fuente que sp_search_phone_get).
@@ -409,12 +478,14 @@ export class IntegrationRepository {
         WHEN 'we_payment_way_installments'  THEN 'PP'
         ELSE ''
       END                                                  AS estado,
+      -- Lista y descuento tambien salen del origen en una RP: el destino nace
+      -- con list_price 0 y la columna quedaba vacia.
       CASE
-        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
-        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+        WHEN COALESCE(rp_origen.list_price, e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(COALESCE(rp_origen.discount_amount, e.discount_amount) / COALESCE(rp_origen.list_price, e.list_price) * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END                                                  AS dsct,
       CASE
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= COALESCE(rp_origen.total_amount, e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
@@ -428,15 +499,19 @@ export class IntegrationRepository {
       --
       -- PT no genera cuota 0 (su pago ES la cuota 1) y no tiene mas cuotas, asi
       -- que su inicial es directamente lo cobrado. PP cobra la reserva aparte.
+      --
+      -- El precio pactado sale del ORIGEN cuando la fila es el destino de una
+      -- RP: el destino nace pago-cero (total_amount = 0) y sin esto la venta
+      -- entera caia en la rama de BECA -- "Saldado", SALDO 0, INICIAL 0.
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_single'
           THEN replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
         WHEN c_plan.alias = 'we_payment_way_installments'
           THEN replace(to_char(CASE WHEN pi_res.pagada THEN pi_res.amount ELSE 0 END, 'FM999990.00'), '.', ',')
         ELSE '0'
       END                                                  AS inicial,
-      replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      replace(to_char(GREATEST(0, COALESCE(rp_origen.total_amount, e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
       replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',') AS ingreso,
       CASE
         WHEN COALESCE(c_moment.variable_2, '') <> '' THEN c_moment.variable_2
@@ -469,7 +544,10 @@ export class IntegrationRepository {
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
-    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead no viaja con la RP: se queda en el ORIGEN, y de el salen F. PAGO,
+    -- el momento de cliente y la marca b2b.
+    LEFT JOIN public.leads l            ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN public.programs prog       ON prog.program_id = pv.program_id
     LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
@@ -504,34 +582,45 @@ export class IntegrationRepository {
       -- vive en payment_installments.cat_status.
       -- Aceptamos ambos aliases que el sistema usa como sinonimos de "paid":
       -- 'we_inst_paid' (legacy) y 'we_payment_status_paid' (nuevo).
+      --
+      -- Sobre la FAMILIA RP: la reprogramacion deja lo cobrado en el origen y
+      -- solo lo pendiente en el destino (ver RP_LINK_SQL).
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
+      -- La reserva (cuota 0) se cobro ANTES de reprogramar, asi que vive en el
+      -- origen: sin la familia, INICIAL salia 0 junto a un INGRESO que si tenia
+      -- la plata -- el renglon imposible que describe la nota de arriba.
       SELECT pi.amount,
              cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+         AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
     LEFT JOIN LATERAL (
+      -- El destino de una RP no tiene pagos propios: sin mirar al origen, F.
+      -- PAGO caia a registration_date, o sea el dia en que FICO reprogramo en
+      -- vez del dia en que el alumno pago.
       SELECT COALESCE(
         l.pay_date,
         (SELECT py.payment_date::date FROM public.payments py
-          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          WHERE py.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+            AND py.active = 'Y'
           ORDER BY py.payment_date ASC LIMIT 1),
         e.registration_date::date
       ) AS f_pago_date
@@ -633,7 +722,11 @@ export class IntegrationRepository {
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per    ON per.person_id = cust.person_id
     JOIN public."catalog" cf   ON cf.catalog_id = e.cat_fico_status
-    LEFT JOIN public.leads l              ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead no viaja con la RP: se queda colgado del ORIGEN, y de el salen
+    -- FECHA, EMPRESA y la marca b2b. Sin heredarlo, la fila del destino salia
+    -- sin fecha y sin razon social (#18956, DINET).
+    LEFT JOIN public.leads l              ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.companies comp_lead  ON comp_lead.company_id = l.company_id
     LEFT JOIN public.b2b_contracts ctr    ON ctr.b2b_contract_id = e.b2b_contract_id
     LEFT JOIN public.companies comp_ctr   ON comp_ctr.company_id = ctr.company_id
@@ -674,17 +767,23 @@ export class IntegrationRepository {
       -- edita el precio, la edicion vive en las cuotas y enrollments.total_amount
       -- se queda con el valor viejo (16394: total 410, cuotas 80+248 = 328). La
       -- ficha del alumno muestra el 328 y la hoja tiene que decir lo mismo.
+      --
+      -- Suma sobre la FAMILIA RP, no sobre la fila: una reprogramacion deja las
+      -- cuotas pagadas en el origen y las pendientes en el destino, asi que
+      -- mirar una sola publicaba media venta (#18956 salia 150 de una de 250).
       SELECT COUNT(*)::int AS cuotas, COALESCE(SUM(pi.amount), 0) AS total
         FROM public.payment_installments pi
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
     ) inst_agg ON TRUE
     LEFT JOIN LATERAL (
       -- Mismo criterio que la hoja de ventas: lo cobrado son las cuotas
       -- marcadas como pagadas, no las filas de payments (que se duplican).
+      -- Sobre la familia RP por lo mismo que inst_agg: lo ya cobrado se quedo
+      -- en el origen y el destino nace sin un sol.
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     WHERE e.active = 'Y'
@@ -693,6 +792,7 @@ export class IntegrationRepository {
       ${PARENT_OR_CC_DESTINATION}
       ${EXCLUDE_IMPORTED}
       ${EXCLUDE_HELD}
+      ${EXCLUDE_RP_ORIGIN}
       AND pay_eff.f_pago_date >= DATE '${CONVENIOS_FROM_DATE}'
     ORDER BY pay_eff.f_pago_date, e.enrollment_id
   `)
@@ -712,6 +812,7 @@ export class IntegrationRepository {
          AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
          ${EXCLUDE_IMPORTED}
          ${EXCLUDE_HELD}
+         ${EXCLUDE_RP_ORIGIN}
          ${SYNC_FROM}
     ),
     -- Ver nota en getFicoSales: fallback de momento de cliente por telefono
@@ -743,19 +844,21 @@ export class IntegrationRepository {
       END AS asesor,
       'ACT'                                                AS estado_alumno,
       CASE
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= COALESCE(rp_origen.total_amount, e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END                                                  AS al_dia,
-      replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
+      -- El precio sale del ORIGEN si la fila es el destino de una RP: nace en 0
+      -- y el alumno salia "Saldado" con SALDO 0 debiendo sus cuotas.
+      replace(to_char(GREATEST(0, COALESCE(rp_origen.total_amount, e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',') AS saldo,
       CASE c_plan.alias
         WHEN 'we_payment_way_single'        THEN 'PT'
         WHEN 'we_payment_way_installments'  THEN 'PP'
         ELSE ''
       END                                                  AS estado_pago,
       CASE
-        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
-        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 1), 'FM999990.0'), '.', ',') || '%'
+        WHEN COALESCE(rp_origen.list_price, e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(COALESCE(rp_origen.discount_amount, e.discount_amount) / COALESCE(rp_origen.list_price, e.list_price) * 100, 1), 'FM999990.0'), '.', ',') || '%'
       END                                                  AS descuento,
       CASE
         WHEN COALESCE(c_moment.variable_2, '') <> '' THEN c_moment.variable_2
@@ -772,7 +875,10 @@ export class IntegrationRepository {
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
-    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead se queda en el ORIGEN de la RP: de el salen F. PAGO y el momento
+    -- de cliente.
+    LEFT JOIN public.leads l            ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN public.programs prog       ON prog.program_id = pv.program_id
     LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
@@ -806,26 +912,30 @@ export class IntegrationRepository {
       -- Ver nota en syncFicoSalesToSheet: sumamos monto de cuotas saldadas
       -- (cat_status = paid) en lugar de SUM de payments, porque payments
       -- puede contener filas duplicadas que distorsionan el total.
+      -- Sobre la FAMILIA RP: lo cobrado se quedo en el origen (ver RP_LINK_SQL).
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
     ) inst_overdue ON TRUE
     LEFT JOIN LATERAL (
+      -- El destino de una RP no tiene pagos propios: sin el origen, F. PAGO
+      -- caia al dia en que FICO reprogramo.
       SELECT COALESCE(
         l.pay_date,
         (SELECT py.payment_date::date FROM public.payments py
-          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
+          WHERE py.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+            AND py.active = 'Y'
           ORDER BY py.payment_date ASC LIMIT 1),
         e.registration_date::date
       ) AS f_pago_date
@@ -903,6 +1013,7 @@ export class IntegrationRepository {
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${EXCLUDE_HELD}
+         ${EXCLUDE_RP_ORIGIN}
          ${SYNC_FROM}
          ${IS_EVENT}
     )
@@ -924,39 +1035,41 @@ export class IntegrationRepository {
         WHEN 'we_profile_student' THEN 'E'
         ELSE 'P'
       END AS ocup,
+      -- Precio, lista y descuento salen del ORIGEN si la fila es el destino de
+      -- una RP: nace pago-cero y sin esto la entrada salia marcada BECA.
       CASE
-        WHEN (e.total_amount) = 0 THEN 'BECA'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
         WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
         ELSE ''
       END AS estado,
       CASE
-        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
-        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+        WHEN COALESCE(rp_origen.list_price, e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(COALESCE(rp_origen.discount_amount, e.discount_amount) / COALESCE(rp_origen.list_price, e.list_price) * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END AS dsct,
       -- La entrada de un evento se paga de una, asi que su INICIAL es lo cobrado.
       -- Un evento en cuotas cae en la rama de la reserva, igual que Consolidado.
       -- Base caja, ver la nota extensa en getFicoSales: aqui pesa el doble,
       -- porque esta hoja lista a proposito las entradas contra OS/OP sin cobrar.
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_installments'
           THEN replace(to_char(CASE WHEN pi_res.pagada THEN pi_res.amount ELSE 0 END, 'FM999990.00'), '.', ',')
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS inicial,
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
-        ELSE replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
+        ELSE replace(to_char(GREATEST(0, COALESCE(rp_origen.total_amount, e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
       END AS saldo,
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
       -- STATUS de cobranza: DEBE mientras quede saldo. Una beca (total 0) o una
       -- entrada pagada completa nunca deben.
       CASE
-        WHEN (e.total_amount) = 0 THEN 'NO DEBE'
-        WHEN GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN 'NO DEBE'
+        WHEN GREATEST(0, COALESCE(rp_origen.total_amount, e.total_amount) - COALESCE(pay_agg.total_paid, 0)) > 0 THEN 'DEBE'
         ELSE 'NO DEBE'
       END AS status_deuda,
       COALESCE(c_ev.description, '') AS modalidad,
@@ -972,7 +1085,9 @@ export class IntegrationRepository {
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
     LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
-    LEFT JOIN public.leads l          ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead se queda en el ORIGEN de la RP y de el sale F. PAGO.
+    LEFT JOIN public.leads l          ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
     LEFT JOIN public."catalog" c_plan ON c_plan.catalog_id = e.cat_payment_plan
     LEFT JOIN public."catalog" c_ev   ON c_ev.catalog_id   = e.cat_event_category
@@ -988,23 +1103,27 @@ export class IntegrationRepository {
     LEFT JOIN LATERAL (
       -- Ver nota en getFicoSales: el total pagado se suma de las cuotas
       -- saldadas, no de payments, que puede traer filas duplicadas.
+      -- Sobre la FAMILIA RP: lo cobrado se quedo en el origen.
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
+      -- La reserva se cobro antes de reprogramar: vive en el origen.
       SELECT pi.amount,
              cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+         AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
     LEFT JOIN LATERAL (
       SELECT p.payment_date FROM public.payments p
-       WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+       WHERE p.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+         AND p.active = 'Y'
        ORDER BY p.payment_id ASC LIMIT 1
     ) first_pay ON TRUE
     ORDER BY COALESCE(l.pay_date, first_pay.payment_date::date, e.registration_date::date) NULLS LAST, e.enrollment_id
@@ -1023,6 +1142,7 @@ export class IntegrationRepository {
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${EXCLUDE_HELD}
+         ${EXCLUDE_RP_ORIGIN}
          ${SYNC_FROM}
     )
     SELECT
@@ -1052,25 +1172,28 @@ export class IntegrationRepository {
           THEN e.agent_origin || ' - ' || COALESCE(ag_token.alias, u.alias)
         ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
       END AS asesor,
+      -- Precio, lista y descuento salen del ORIGEN si la fila es el destino de
+      -- una RP: nace con total_amount 0 y toda la columna de plata caia en la
+      -- rama de BECA -- la venta figuraba regalada y saldada.
       CASE
-        WHEN (e.total_amount) = 0 THEN 'BECA'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
         WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
         ELSE ''
       END AS estado,
       CASE
-        WHEN COALESCE(e.list_price, 0) = 0 THEN ''
-        ELSE replace(to_char(ROUND(e.discount_amount / e.list_price * 100, 2), 'FM999990.00'), '.', ',') || '%'
+        WHEN COALESCE(rp_origen.list_price, e.list_price, 0) = 0 THEN ''
+        ELSE replace(to_char(ROUND(COALESCE(rp_origen.discount_amount, e.discount_amount) / COALESCE(rp_origen.list_price, e.list_price) * 100, 2), 'FM999990.00'), '.', ',') || '%'
       END AS dsct,
       CASE
-        WHEN (e.total_amount) = 0 THEN 'Saldado'
-        WHEN COALESCE(pay_agg.total_paid, 0) >= (e.total_amount) THEN 'Saldado'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= COALESCE(rp_origen.total_amount, e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END AS status_pago,
       -- Base caja, ver la nota extensa en getFicoSales.
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
         WHEN c_plan.alias = 'we_payment_way_single'
           THEN replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
         WHEN c_plan.alias = 'we_payment_way_installments'
@@ -1103,14 +1226,14 @@ export class IntegrationRepository {
       CASE WHEN c_plan.alias = 'we_payment_way_installments' AND cuotas.c5_paid
            THEN replace(to_char(cuotas.c5_amount, 'FM999990.00'), '.', ',') ELSE '' END AS c5,
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
-        ELSE replace(to_char(GREATEST(0, (e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
+        ELSE replace(to_char(GREATEST(0, COALESCE(rp_origen.total_amount, e.total_amount) - COALESCE(pay_agg.total_paid, 0)), 'FM999990.00'), '.', ',')
       END AS saldo,
       CASE
-        WHEN (e.total_amount) = 0 THEN '0'
+        WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN '0'
         ELSE replace(to_char(COALESCE(pay_agg.total_paid, 0), 'FM999990.00'), '.', ',')
       END AS ingreso,
-      CASE WHEN (e.total_amount) = 0 THEN ''
+      CASE WHEN COALESCE(rp_origen.total_amount, e.total_amount) = 0 THEN ''
            ELSE CASE
                   WHEN curr.alias = 'we_currency_soles' THEN 'PEN'
                   WHEN curr.alias = 'we_currency_usd'   THEN 'USD'
@@ -1134,7 +1257,9 @@ export class IntegrationRepository {
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
-    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead se queda en el ORIGEN de la RP: de el sale F. PAGO.
+    LEFT JOIN public.leads l            ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
@@ -1153,25 +1278,28 @@ export class IntegrationRepository {
       -- Ver nota en syncFicoSalesToSheet: sumamos monto de cuotas saldadas
       -- (cat_status = paid) en lugar de SUM de payments, porque payments
       -- puede contener filas duplicadas que distorsionan el total.
+      -- Sobre la FAMILIA RP: lo cobrado se quedo en el origen.
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
+      -- La reserva se cobro antes de reprogramar: vive en el origen.
       SELECT pi.amount,
              cs.alias IN ('we_inst_paid', 'we_payment_status_paid') AS pagada
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id AND pi.installment_number = 0
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+         AND pi.installment_number = 0
        LIMIT 1
     ) pi_res ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
@@ -1181,7 +1309,8 @@ export class IntegrationRepository {
         p.payment_date, p.transaction_code,
         p.cat_method_payment, p.settled_in_account_id
       FROM public.payments p
-      WHERE p.enrollment_id = e.enrollment_id AND p.active = 'Y'
+      WHERE p.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
+        AND p.active = 'Y'
       ORDER BY p.payment_id ASC
       LIMIT 1
     ) first_pay ON TRUE
@@ -1217,7 +1346,7 @@ export class IntegrationRepository {
       FROM public.payment_installments pi
       JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
       LEFT JOIN public.payments p ON p.installment_id = pi.installment_id AND p.active = 'Y'
-      WHERE pi.enrollment_id = e.enrollment_id
+      WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
         AND pi.installment_number BETWEEN 1 AND 5
         AND cs.alias <> 'we_inst_cancelled'
     ) cuotas ON TRUE
@@ -1237,6 +1366,7 @@ export class IntegrationRepository {
          ${PARENT_OR_CC_DESTINATION}
          ${EXCLUDE_IMPORTED}
          ${EXCLUDE_HELD}
+         ${EXCLUDE_RP_ORIGIN}
          ${SYNC_FROM}
     )
     SELECT
@@ -1259,7 +1389,7 @@ export class IntegrationRepository {
         ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
       END AS asesor,
       CASE
-        WHEN COALESCE(pay_agg.total_paid, 0) >= e.total_amount THEN 'Saldado'
+        WHEN COALESCE(pay_agg.total_paid, 0) >= COALESCE(rp_origen.total_amount, e.total_amount) THEN 'Saldado'
         WHEN inst_overdue.cnt > 0 THEN 'Deuda ' || inst_overdue.cnt::text
         ELSE 'Al dia'
       END AS estado,
@@ -1310,7 +1440,7 @@ export class IntegrationRepository {
           LEFT JOIN public.bank_accounts ba ON ba.account_id = p.settled_in_account_id
           LEFT JOIN public."catalog" c_meth ON c_meth.catalog_id = p.cat_method_payment
           LEFT JOIN public."catalog" c_be   ON c_be.catalog_id = ba.business_entity_catalog_id
-          WHERE pi.enrollment_id = e.enrollment_id
+          WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
             AND pi.installment_number > 0
             AND cs.alias <> 'we_inst_cancelled'
         ) cuota_row
@@ -1319,7 +1449,9 @@ export class IntegrationRepository {
     JOIN approved a ON a.enrollment_id = e.enrollment_id
     JOIN public.customers cust ON cust.customer_id = e.customer_id
     JOIN public.persons per   ON per.person_id   = cust.person_id
-    LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+    ${RP_ORIGIN_JOIN}
+    -- El lead se queda en el ORIGEN de la RP.
+    LEFT JOIN public.leads l            ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
     LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
     LEFT JOIN public.users u             ON u.user_id = e.seller_agent_id
@@ -1333,17 +1465,19 @@ export class IntegrationRepository {
        ORDER BY pt.token_id ASC LIMIT 1
     ) ag_token ON TRUE
     LEFT JOIN LATERAL (
+      -- Sobre la FAMILIA RP: lo cobrado se quedo en el origen y solo lo
+      -- pendiente viajo al destino (ver RP_LINK_SQL).
       SELECT COALESCE(SUM(pi.amount), 0) AS total_paid
         FROM public.payment_installments pi
         JOIN public."catalog" cs_pi ON cs_pi.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND cs_pi.alias IN ('we_inst_paid', 'we_payment_status_paid')
     ) pay_agg ON TRUE
     LEFT JOIN LATERAL (
       SELECT COUNT(*)::int AS cnt
         FROM public.payment_installments pi
         JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-       WHERE pi.enrollment_id = e.enrollment_id
+       WHERE pi.enrollment_id IN (e.enrollment_id, COALESCE(rp_origen.enrollment_id, e.enrollment_id))
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
          AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
