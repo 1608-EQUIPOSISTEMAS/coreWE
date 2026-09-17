@@ -66,4 +66,7 @@ tests/local/
 # Volcados de la BD: son datos reales de produccion, nunca al repo
 *.dump
 *.sql.gz
-scripts/.produccion.*
+
+# Sondeos, backfills y respaldos locales (traen DNI y montos de alumnos): se
+# corren desde la PC del equipo y nunca forman parte del sistema desplegado.
+scripts/

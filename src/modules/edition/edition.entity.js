@@ -1,5 +1,60 @@
 // Reglas puras del dominio edition. Sin BD, Odoo, Slack ni red.
 
+// =====================================================================
+// RUBRICA DE AUDITORIA DE AULA — dos versiones conviviendo
+// =====================================================================
+// El area academica recorto la rubrica de 20 criterios a 10 (16/09/26). La
+// nota sigue siendo sobre 20, asi que cada criterio paso a valer 2 puntos.
+//
+// Las auditorias YA CARGADAS se siguen calificando con la rubrica con la que
+// se llenaron: la version se decide por la FECHA en que se guardo la auditoria
+// (classroom_audit_rubric.updated_at), no por la fecha de la sesion. Una
+// auditoria vieja que alguien vuelva a guardar pasa a la rubrica vigente, que
+// es lo correcto: se esta auditando de nuevo, hoy.
+//
+// V1 esta CONGELADA. Es el texto y el alcance con el que se evaluo a esos
+// docentes; no se toca aunque la rubrica siga evolucionando.
+export const FECHA_CORTE_RUBRICA = '2026-09-15'
+
+export const RUBRIC_KEYS_V1 = [
+  'interaction.1', 'interaction.2', 'interaction.3', 'interaction.4', 'interaction.5',
+  'content.1', 'content.2', 'content.3', 'content.4', 'content.5', 'content.6',
+  'environment.1', 'environment.2', 'environment.3',
+  'communication.1', 'communication.2', 'communication.3',
+  'communication.4', 'communication.5', 'communication.6'
+]
+
+// Las claves sobrevivientes conservan su numero original y por eso quedan
+// salteadas (falta interaction.1, interaction.3...). Renumerarlas
+// reinterpretaria las marcas ya guardadas con el criterio equivocado.
+export const RUBRIC_KEYS_V2 = [
+  'interaction.2', 'interaction.4',
+  'content.2', 'content.3', 'content.5',
+  'environment.1', 'environment.2',
+  'communication.1', 'communication.2', 'communication.5'
+]
+
+export const NOTA_MAXIMA_RUBRICA = 20
+
+// Version aplicable a una auditoria guardada en 'fecha'. Sin fecha asumimos la
+// vigente: una rubrica que todavia no se guardo se esta llenando ahora.
+export function rubricaDe (fecha) {
+  const dia = fecha ? String(fecha instanceof Date ? fecha.toISOString() : fecha).slice(0, 10) : ''
+  const esAnteriorAlCorte = dia !== '' && dia <= FECHA_CORTE_RUBRICA
+  const keys = esAnteriorAlCorte ? RUBRIC_KEYS_V1 : RUBRIC_KEYS_V2
+  return { version: esAnteriorAlCorte ? 1 : 2, keys, puntosPorCriterio: NOTA_MAXIMA_RUBRICA / keys.length }
+}
+
+// Nota sobre 20 de una auditoria. Solo cuentan las claves de SU version: el
+// JSONB de una auditoria vieja trae marcadas claves que la rubrica nueva ya no
+// tiene, y contarlas daria mas de 20.
+export function notaRubrica (criteria, fecha) {
+  if (!criteria || typeof criteria !== 'object') return null
+  const { keys, puntosPorCriterio } = rubricaDe(fecha)
+  const marcados = keys.filter((key) => criteria[key] === true).length
+  return marcados * puntosPorCriterio
+}
+
 // Normaliza el filtro 'active' al dominio del SP ('Y' | 'N' | string | null).
 // Semantica del listado: booleano -> Y/N, string -> tal cual, resto -> null.
 export function normalizeActive (active) {
@@ -703,8 +758,8 @@ export function buildControlRow (r, { dayCombos = [], holidaySet = new Set(), co
 // Seguimiento Docentes: pega la nota de auditoria sobre el cronograma
 // derivado. Una sesion sin fila en la rubrica queda en null — "todavia no
 // auditada" no es lo mismo que "auditada en cero", y la vista las pinta
-// distinto. La nota manual ya viene sobre 20 (cantidad de criterios marcados
-// de RUBRIC_TOTAL_ITEMS); la de IA la escalo el repositorio.
+// distinto. Ambas notas vienen ya sobre 20 desde el repositorio, la manual
+// calificada con la version de rubrica que regia cuando se guardo la auditoria.
 export function attachSessionAudits (row, auditRows = []) {
   const byNumber = new Map(
     auditRows
@@ -715,7 +770,7 @@ export function attachSessionAudits (row, auditRows = []) {
     ...row,
     sessions: row.sessions.map((s) => {
       const audit = byNumber.get(Number(s.session_number))
-      const manual = Number(audit?.manual_marked)
+      const manual = Number(audit?.manual_score20)
       const ai = Number(audit?.ai_score20)
       return {
         ...s,

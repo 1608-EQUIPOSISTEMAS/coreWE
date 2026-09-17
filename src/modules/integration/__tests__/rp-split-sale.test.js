@@ -65,10 +65,10 @@ describe('venta partida por reprogramacion (RP)', () => {
     })
   })
 
-  const HOJAS_MIGRADAS = [
-    'getFicoConvenios', 'getFicoSales', 'getFicoAula',
-    'getFicoEventos', 'getFicoConsolidado', 'getFicoCuotas'
-  ]
+  // SOLO "7. Convenios". El flujo RP es correcto como esta y las demas hojas
+  // deben seguir viendo las dos inscripciones por separado: es B2B quien mira la
+  // venta del convenio como un todo, y por eso solo esa hoja la colapsa.
+  const HOJAS_MIGRADAS = ['getFicoConvenios']
 
   describe.each(HOJAS_MIGRADAS)('%s', (hoja) => {
     it('no publica el origen de la RP como fila aparte', () => {

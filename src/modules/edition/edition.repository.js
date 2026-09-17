@@ -1,6 +1,7 @@
 import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
+import { FECHA_CORTE_RUBRICA, rubricaDe } from './edition.entity.js'
 
 // Los unicos estados de lead que negocio considera una CONSULTA. Cualquier otro
 // (Eliminado, Cerrado, Desestimado, Indiferente, Prox. Inicio, Inscrito,
@@ -12,6 +13,22 @@ export const LEAD_STATUSES_CONSULTA = [
   'we_lead_status_will_pay',
   'we_lead_status_bought'
 ]
+
+// Nota /20 de la rubrica de auditoria de aula, calculada en SQL para no traerse
+// el JSONB entero. Cada auditoria se califica con la version de rubrica que
+// regia cuando se guardo (ver rubricaDe en edition.entity.js): las dos cuentan
+// solo SUS claves, porque una auditoria vieja trae marcadas claves que la
+// rubrica nueva ya no tiene.
+const marcadosSql = (keys) => `(
+            SELECT COUNT(*) FROM jsonb_each(car.criteria)
+            WHERE key = ANY('{${keys.join(',')}}'::text[]) AND value::boolean = true
+          )`
+
+const MANUAL_SCORE20_SQL = `(CASE
+          WHEN car.updated_at::date <= DATE '${FECHA_CORTE_RUBRICA}'
+          THEN ${marcadosSql(rubricaDe(FECHA_CORTE_RUBRICA).keys)} * ${rubricaDe(FECHA_CORTE_RUBRICA).puntosPorCriterio}
+          ELSE ${marcadosSql(rubricaDe(null).keys)} * ${rubricaDe(null).puntosPorCriterio}
+        END)::numeric`
 
 // B2B = venta de CONVENIOS. Manda el CANAL: si la venta dice "B2B - AE30", es
 // B2B aunque AE30 sea comercial (regla del usuario, 07/09/26 — el canal es una
@@ -1347,8 +1364,8 @@ export class EditionRepository {
         car.session_number,
         car.updated_at,
         car.ai_generated_at,
-        (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
-          AS manual_marked,
+        ${MANUAL_SCORE20_SQL}
+          AS manual_score20,
         CASE
           WHEN car.ai_report IS NOT NULL
            AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
@@ -1360,10 +1377,10 @@ export class EditionRepository {
     )
     SELECT
       program_edition_id                                                       AS edition_num_id,
-      COUNT(*) FILTER (WHERE manual_marked > 0)::int                            AS sessions_manual,
+      COUNT(*) FILTER (WHERE manual_score20 > 0)::int                            AS sessions_manual,
       COUNT(*) FILTER (WHERE ai_score20 IS NOT NULL)::int                       AS sessions_ai,
-      ROUND(AVG((manual_marked::numeric / 20.0) * 20.0)
-        FILTER (WHERE manual_marked > 0)::numeric, 2)                           AS manual_avg_20,
+      ROUND(AVG(manual_score20)
+        FILTER (WHERE manual_score20 > 0)::numeric, 2)                           AS manual_avg_20,
       ROUND(AVG(ai_score20)
         FILTER (WHERE ai_score20 IS NOT NULL)::numeric, 2)                      AS ai_avg_20,
       MAX(GREATEST(updated_at, COALESCE(ai_generated_at, '-infinity'::timestamptz)))
@@ -1399,18 +1416,18 @@ export class EditionRepository {
     audit AS (
       SELECT
         s.program_edition_id,
-        COUNT(*) FILTER (WHERE s.manual_marked > 0)::int      AS sessions_manual,
+        COUNT(*) FILTER (WHERE s.manual_score20 > 0)::int      AS sessions_manual,
         COUNT(*) FILTER (WHERE s.ai_score20 IS NOT NULL)::int AS sessions_ai,
-        ROUND(AVG((s.manual_marked::numeric / 20.0) * 20.0)
-          FILTER (WHERE s.manual_marked > 0)::numeric, 2)     AS manual_avg_20,
+        ROUND(AVG(s.manual_score20)
+          FILTER (WHERE s.manual_score20 > 0)::numeric, 2)     AS manual_avg_20,
         ROUND(AVG(s.ai_score20)
           FILTER (WHERE s.ai_score20 IS NOT NULL)::numeric, 2) AS ai_avg_20,
         MAX(GREATEST(s.updated_at, COALESCE(s.ai_generated_at, '-infinity'::timestamptz)))
                                                               AS last_activity_at
       FROM (
         SELECT car.program_edition_id, car.updated_at, car.ai_generated_at,
-          (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
-            AS manual_marked,
+          ${MANUAL_SCORE20_SQL}
+            AS manual_score20,
           CASE
             WHEN car.ai_report IS NOT NULL
              AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
@@ -1480,8 +1497,8 @@ export class EditionRepository {
     const { rows } = await this.db.query(`
     SELECT car.program_edition_id,
            car.session_number,
-           (SELECT COUNT(*) FROM jsonb_each(car.criteria) WHERE value::boolean = true)::int
-             AS manual_marked,
+           ${MANUAL_SCORE20_SQL}
+             AS manual_score20,
            CASE
              WHEN car.ai_report IS NOT NULL
               AND (car.ai_report #>> '{metricas_rapidas,puntuacion_global}') ~ '^[0-9]+(\\.[0-9]+)?$'
