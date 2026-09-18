@@ -17,10 +17,10 @@ export function toTicketDto (t) {
     prioridad: t.priority,
     estado: t.status,
     creadoPor: persona(t.creador, t.creador_alias),
-    // No se guarda: se deriva del rol de quien lo creo (ver ticketScopeFor en
-    // tickets.entity.js). A diferencia del area del scope, aqui no se colapsa
-    // lider con base: la fila quiere ver "Líder Comercial", no solo "Comercial".
-    rol: ticketRoleLabel(t.creador_roles),
+    // La columna se llama "Área" pero en realidad muestra el rol de quien creo
+    // el ticket (más específico que el área: distingue "Líder Comercial" de
+    // "Comercial"). No se guarda: se deriva en cada consulta.
+    area: ticketRoleLabel(t.creador_roles),
     asignadoA: persona(t.asignado, t.asignado_alias),
     creadoEn: t.registration_date,
     comentarios: t.comentarios ?? 0,

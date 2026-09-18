@@ -13,13 +13,17 @@ const repo = {
   overdueClocks: vi.fn(),
   sealAlert: vi.fn(),
   saveSlackThread: vi.fn(),
-  findActiveUserByEmail: vi.fn()
+  findActiveUserByEmail: vi.fn(),
+  unassignedOlderThan: vi.fn(),
+  reassign: vi.fn()
 }
 
 const slack = {
   notificarTicketCreado: vi.fn(),
   notificarTicketCerrado: vi.fn(),
   notificarTicketEscalado: vi.fn(),
+  notificarTicketReabierto: vi.fn(),
+  notificarEsperandoAsignacion: vi.fn(),
   notificarSlaIncumplido: vi.fn(),
   avisarTicketTomado: vi.fn(),
   avisarTicketResuelto: vi.fn(),
@@ -32,7 +36,7 @@ const slack = {
 vi.mock('../tickets.repository.js', () => ({ ticketsRepository: repo }))
 vi.mock('../../../shared/adapters/slack/tickets-slack.adapter.js', () => slack)
 
-const { createTicket, runSlaSweep, createTicketFromSlack } = await import('../tickets.usecases.js')
+const { createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack } = await import('../tickets.usecases.js')
 
 const AHORA = new Date('2026-03-15T12:00:00Z')
 const hace = h => new Date(AHORA.getTime() - h * 3600_000)
@@ -109,6 +113,46 @@ describe('createTicket', () => {
     await createTicket({ userId: 10, ...VALIDO })
 
     expect(repo.create.mock.calls[0][0].first_response_due_at).toBeNull()
+  })
+
+  it('nace SIN asignar y avisa por Slack que espera asignacion manual', async () => {
+    repo.slaPolicy.mockResolvedValue({ first_response_minutes: 60, resolution_minutes: 480 })
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+    repo.create.mockResolvedValue(1)
+
+    await createTicket({ userId: 10, ...VALIDO })
+
+    // Solo se comprueba que EXISTA algun agente; no se elige ninguno todavia.
+    expect(repo.create.mock.calls[0][0].assigned_to_id).toBeNull()
+    expect(slack.notificarEsperandoAsignacion).toHaveBeenCalled()
+  })
+})
+
+describe('runAutoAssignSweep', () => {
+  it('reparte un ABIERTO sin asignar cuya ventana de gracia ya paso', async () => {
+    repo.unassignedOlderThan.mockResolvedValue([ticketFila({ assigned_to_id: null })])
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+
+    const asignados = await runAutoAssignSweep(AHORA)
+
+    expect(asignados).toBe(1)
+    expect(repo.reassign).toHaveBeenCalledWith(1, 7)
+    expect(slack.notificarTicketEscalado).toHaveBeenCalled()
+  })
+
+  it('sin agentes disponibles no rompe: se reintenta en la proxima corrida', async () => {
+    repo.unassignedOlderThan.mockResolvedValue([ticketFila({ assigned_to_id: null })])
+    repo.agentCandidates.mockResolvedValue([])
+
+    expect(await runAutoAssignSweep(AHORA)).toBe(0)
+    expect(repo.reassign).not.toHaveBeenCalled()
+  })
+
+  it('sin candidatos vencidos no consulta agentes', async () => {
+    repo.unassignedOlderThan.mockResolvedValue([])
+
+    expect(await runAutoAssignSweep(AHORA)).toBe(0)
+    expect(repo.agentCandidates).not.toHaveBeenCalled()
   })
 })
 

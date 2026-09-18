@@ -1,4 +1,4 @@
-import { authenticate, ADMIN_ONLY } from '../../shared/http/auth.middleware.js'
+import { authenticate, ADMIN_ONLY, ALL_TICKETS_INTERNO } from '../../shared/http/auth.middleware.js'
 import {
   listSchema, detailSchema, commentsSchema, statusSchema, assigneesSchema,
   reassignSchema, slaPoliciesSchema, slaPolicySaveSchema, attachmentSchema
@@ -12,25 +12,27 @@ import { slashCommandHandler } from './slack/slack.command.js'
 const LIMITE_SUBIDA = { rateLimit: { max: 40, timeWindow: '15 minutes' } }
 
 export default async function ticketsRoutes (fastify) {
-  // ── Lectura y alta: cualquier usuario logueado ───────────────────────────
+  // ── Lectura y alta: cualquier usuario con el modulo TICKETS ──────────────
   //
-  // Sin gate de rol a proposito: la autorizacion aca es de DATOS, no de ruta.
-  // ticketScopeFor decide que ve cada quien (ADMIN y GERENCIA todo, un lider lo
-  // de su area, el resto lo suyo) y assertCanRead vuelve a preguntarlo en cada
-  // recurso que entra por id.
-  fastify.post('/list', { schema: listSchema, preHandler: [authenticate] }, ctrl.listHandler)
-  fastify.post('/detail', { schema: detailSchema, preHandler: [authenticate] }, ctrl.detailHandler)
-  fastify.post('/comments', { schema: commentsSchema, preHandler: [authenticate] }, ctrl.commentsHandler)
+  // La autorizacion de que TICKETS ve cada quien sigue siendo de DATOS, no de
+  // ruta: ticketScopeFor decide (ADMIN y GERENCIA todo, un lider lo de su
+  // area, el resto lo suyo) y assertCanRead vuelve a preguntarlo en cada
+  // recurso que entra por id. Pero entrar al modulo si es un gate de ruta:
+  // ALL_TICKETS_INTERNO respeta la matriz de Roles y Permisos (modulo
+  // TICKETS) y solo ADMIN la esquiva siempre.
+  fastify.post('/list', { schema: listSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.listHandler)
+  fastify.post('/detail', { schema: detailSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.detailHandler)
+  fastify.post('/comments', { schema: commentsSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentsHandler)
 
   // Multipart: sin schema.body (AJV con removeAdditional lo vaciaria). Validan
   // tickets.entity y tickets.files.
-  fastify.post('/create', { config: LIMITE_SUBIDA, preHandler: [authenticate] }, ctrl.createHandler)
-  fastify.post('/comment', { config: LIMITE_SUBIDA, preHandler: [authenticate] }, ctrl.commentCreateHandler)
+  fastify.post('/create', { config: LIMITE_SUBIDA, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.createHandler)
+  fastify.post('/comment', { config: LIMITE_SUBIDA, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentCreateHandler)
 
   // Los adjuntos no se sirven como estaticos: pasan por aca para heredar el
   // control de acceso del ticket al que pertenecen.
-  fastify.get('/attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate] }, ctrl.attachmentHandler)
-  fastify.get('/comment-attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate] }, ctrl.commentAttachmentHandler)
+  fastify.get('/attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.attachmentHandler)
+  fastify.get('/comment-attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentAttachmentHandler)
 
   // ── Gestion: solo ADMIN ──────────────────────────────────────────────────
   //

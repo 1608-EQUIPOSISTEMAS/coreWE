@@ -17,6 +17,11 @@ import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
 
 const repo = ticketsRepository
 
+// Ventana de gracia antes del reparto automatico: nace sin asignar para que un
+// admin lo pueda tomar a mano (vía "Reasignar a", que ya acepta un ticket sin
+// dueño) antes de que el cron lo reparta solo. 2 a 3 min de margen real.
+const AUTOASSIGN_ESPERA_MINUTOS = Number(process.env.TICKETS_AUTOASSIGN_MINUTOS ?? 3)
+
 // ── Lectura ────────────────────────────────────────────────────────────────
 
 export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS', busqueda = '', orden = 'sla' } = {}) {
@@ -78,8 +83,11 @@ export async function downloadAttachment ({ roles = [], userId = null, attachmen
 
 /**
  * Alta de ticket. Mismo camino para la web y para el slash command de Slack:
- * validar, clasificar la prioridad, congelar los plazos con la politica vigente
- * y repartir entre los agentes disponibles.
+ * validar, clasificar la prioridad, congelar los plazos con la politica
+ * vigente y dejarlo SIN asignar unos minutos (ver AUTOASSIGN_ESPERA_MINUTOS):
+ * nace abierto y sin dueño a proposito, para que un admin lo pueda tomar a
+ * mano dentro de la ventana de gracia antes de que el reparto automatico entre
+ * a jugar (tickets-autoassign.cron.js).
  */
 export async function createTicket ({ userId, titulo, problema, link, archivos = [], slackUserId = null }) {
   const datos = validateTicketInput({ titulo, problema, link })
@@ -93,9 +101,11 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   const policy = await repo.slaPolicy(priority)
   const vencimientos = computeDueDates(policy, registrationDate)
 
-  const asignadoA = pickAgent(await repo.agentCandidates())
-  if (asignadoA === null) {
-    // 503 y no 500: no hay nada roto, no hay a quien asignarlo todavia.
+  // No se asigna aca: solo se comprueba que exista AL MENOS un agente, para no
+  // dejar el ticket huerfano para siempre si el sistema no tiene a quien
+  // repartirselo. 503 y no 500: no hay nada roto, no hay a quien asignarlo.
+  const hayAgentes = (await repo.agentCandidates()).length > 0
+  if (!hayAgentes) {
     await removeAttachments(archivos.map(a => a.stored_name))
     throw new DomainError('No hay agentes disponibles para atender el ticket', { statusCode: 503, code: 'NO_AGENTS' })
   }
@@ -108,7 +118,7 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
       link: datos.link,
       priority,
       created_by_id: userId,
-      assigned_to_id: asignadoA,
+      assigned_to_id: null,
       registration_date: registrationDate,
       ...vencimientos
     }, archivos)
@@ -123,6 +133,9 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   // creador_roles) para que el adaptador de Slack no tenga que conocer el
   // organigrama del ERP.
   void slack.notificarTicketCreado({ ...ticket, area: ticketAreaLabel(ticket.creador_roles) })
+  // Aviso plano aparte: es el que de verdad le importa a un admin de guardia
+  // ("andate corriendo a tomarlo"), no el resumen completo de arriba.
+  void slack.notificarEsperandoAsignacion(ticket, AUTOASSIGN_ESPERA_MINUTOS)
 
   // El efimero del slash command se pierde al cerrar Slack y su response_url
   // caduca a los 30 minutos: el seguimiento vive en un DM propio.
@@ -153,6 +166,9 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
 
+  // Se lee ANTES del update: despues de guardar el estado previo ya no esta.
+  const reabriendo = ticket.status === 'CERRADO' && estado === 'EN_PROGRESO'
+
   const ahora = new Date()
   const cambios = nextStatus(ticket, userId, estado, ahora)
   await repo.updateStatus(ticketId, cambios)
@@ -160,11 +176,15 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   const actualizado = await repo.detail(ticketId)
   const agente = actualizado.asignado ?? 'Soporte'
 
-  // Unico punto por el que un ticket llega a CERRADO: lo garantiza nextStatus.
-  if (estado === 'CERRADO') void slack.notificarTicketCerrado(actualizado)
-  void (estado === 'CERRADO'
-    ? slack.avisarTicketResuelto(actualizado, agente)
-    : slack.avisarTicketTomado(actualizado, agente))
+  if (reabriendo) {
+    void slack.notificarTicketReabierto(actualizado)
+  } else if (estado === 'CERRADO') {
+    // Unico punto por el que un ticket llega a CERRADO: lo garantiza nextStatus.
+    void slack.notificarTicketCerrado(actualizado)
+    void slack.avisarTicketResuelto(actualizado, agente)
+  } else {
+    void slack.avisarTicketTomado(actualizado, agente)
+  }
 
   return withSla(actualizado, ahora)
 }
@@ -236,6 +256,39 @@ export async function saveSlaPolicy ({ roles = [], userId = null, prioridad, min
   const guardada = await repo.saveSlaPolicy(datos, userId)
   if (!guardada) throw new NotFoundError('No existe una política para esa prioridad')
   return guardada
+}
+
+// ── Reparto automatico diferido (lo llama tickets-autoassign.cron.js) ──────
+
+/**
+ * Pasado AUTOASSIGN_ESPERA_MINUTOS desde que se creo, un ABIERTO que sigue sin
+ * asignar entra al reparto automatico de siempre (pickAgent). Si nadie lo tomo
+ * a mano en la ventana de gracia, esto es lo que hace que no se quede huerfano.
+ */
+export async function runAutoAssignSweep (ahora = new Date()) {
+  const cutoff = new Date(ahora.getTime() - AUTOASSIGN_ESPERA_MINUTOS * 60_000)
+  const pendientes = await repo.unassignedOlderThan(cutoff)
+  if (!pendientes.length) return 0
+
+  let asignados = 0
+  for (const ticket of pendientes) {
+    const nuevo = pickAgent(await repo.agentCandidates())
+    if (nuevo === null) {
+      // Sin agentes: se reintenta en la proxima corrida, por si alguien se
+      // activa mientras tanto.
+      console.warn(`[tickets-autoassign] ticket #${formatTicketCode(ticket.ticket_id)} sigue sin agentes disponibles`)
+      continue
+    }
+
+    await repo.reassign(ticket.ticket_id, nuevo)
+    asignados++
+
+    const actualizado = await repo.detail(ticket.ticket_id)
+    // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
+    // noticia (el ticket tiene dueño), sin importar por que camino llego.
+    void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
+  }
+  return asignados
 }
 
 // ── Barrido del SLA (lo llama el cron) ─────────────────────────────────────

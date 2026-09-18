@@ -117,13 +117,23 @@ describe('nextStatus', () => {
     expect(nextStatus(ticket({ first_response_at: antes }), 99, 'EN_PROGRESO', AHORA).first_response_at).toBe(antes)
   })
 
-  it('no se salta pasos ni se reabre', () => {
+  it('no se salta pasos', () => {
     expect(() => nextStatus(ticket(), 99, 'CERRADO', AHORA)).toThrow(/ABIERTO a CERRADO/)
-    expect(() => nextStatus(ticket({ status: 'CERRADO' }), 99, 'EN_PROGRESO', AHORA)).toThrow(/CERRADO/)
   })
 
   it('solo el agente asignado mueve el estado, ser ADMIN no alcanza', () => {
     expect(() => nextStatus(ticket({ assigned_to_id: 99 }), 42, 'EN_PROGRESO', AHORA)).toThrow(/permiso/i)
+  })
+
+  it('reabre un CERRADO a EN_PROGRESO y destraba la resolucion', () => {
+    const primeraRespuesta = new Date('2026-01-01T11:00:00Z')
+    const cerrado = ticket({ status: 'CERRADO', first_response_at: primeraRespuesta, resolved_at: new Date('2026-01-01T13:00:00Z') })
+    expect(nextStatus(cerrado, 99, 'EN_PROGRESO', AHORA))
+      .toEqual({ status: 'EN_PROGRESO', first_response_at: primeraRespuesta, resolved_at: null })
+  })
+
+  it('reabrir tambien exige ser el agente asignado', () => {
+    expect(() => nextStatus(ticket({ status: 'CERRADO', assigned_to_id: 99 }), 42, 'EN_PROGRESO', AHORA)).toThrow(/permiso/i)
   })
 })
 
