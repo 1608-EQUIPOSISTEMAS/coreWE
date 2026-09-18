@@ -78,6 +78,14 @@ export const ALL_REPROGRAMACION = hasModuleOrRole('REPROGRAMACION', [
   'ADMIN', 'ACADEMICA', 'LIDER_ACADEMICA', 'FICO', 'LIDER_FICO'
 ])
 
+// Tickets de alumnos: mismo caso que Reprogramaciones. Academica valida que el
+// tramite corresponde y FICO el pago, asi que las dos areas entran a la bandeja.
+// Quien puede FIRMAR cada paso lo decide tickets.entity (assertPuedeFirmar), no
+// este gate: el mismo endpoint sirve a los dos pasos segun el estado del ticket.
+export const ALL_TICKETS = hasModuleOrRole('ACADEMICA', [
+  'ADMIN', 'ACADEMICA', 'LIDER_ACADEMICA', 'FICO', 'LIDER_FICO'
+])
+
 // Gates combinados (OR) — usar uno solo en preHandler.
 // Apilar varios hasRole en preHandler los AND-ea (todos deben pasar), por eso
 // se exportan estas uniones explícitas.

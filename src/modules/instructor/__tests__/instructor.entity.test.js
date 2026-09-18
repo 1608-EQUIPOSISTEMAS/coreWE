@@ -3,7 +3,8 @@ import {
   buildTempPassword,
   buildFullName,
   normalizeActive,
-  normalizeActiveForCaller
+  normalizeActiveForCaller,
+  normalizePhotoUrl
 } from '../instructor.entity.js'
 
 describe('buildTempPassword', () => {
@@ -50,5 +51,32 @@ describe('normalizeActiveForCaller', () => {
     expect(normalizeActiveForCaller(true)).toBe('Y')
     expect(normalizeActiveForCaller(false)).toBe('N')
     expect(normalizeActiveForCaller('N')).toBe('N')
+  })
+})
+
+describe('normalizePhotoUrl', () => {
+  const thumb = 'https://drive.google.com/thumbnail?id=1BB9ejpeZLVoHyq29xF7KPnk-RaDTwC62&sz=w400'
+
+  it('convierte el link de "Copiar vinculo" de Drive en un thumbnail usable', () => {
+    expect(normalizePhotoUrl('https://drive.google.com/file/d/1BB9ejpeZLVoHyq29xF7KPnk-RaDTwC62/view?usp=sharing')).toBe(thumb)
+    expect(normalizePhotoUrl('https://drive.google.com/open?id=1BB9ejpeZLVoHyq29xF7KPnk-RaDTwC62')).toBe(thumb)
+    expect(normalizePhotoUrl('https://drive.google.com/uc?export=view&id=1BB9ejpeZLVoHyq29xF7KPnk-RaDTwC62')).toBe(thumb)
+  })
+
+  it('es idempotente sobre un thumbnail ya normalizado', () => {
+    expect(normalizePhotoUrl(thumb)).toBe(thumb)
+  })
+
+  it('deja intacta cualquier URL que no sea de Drive', () => {
+    const propia = 'https://we-educacion-ejecutiva.site/uploads/1783353380218_foto.png'
+    expect(normalizePhotoUrl(propia)).toBe(propia)
+    expect(normalizePhotoUrl('  ' + propia + '  ')).toBe(propia)
+  })
+
+  it('trata el vacio como "sin foto" para que el SP la borre', () => {
+    expect(normalizePhotoUrl('')).toBeNull()
+    expect(normalizePhotoUrl('   ')).toBeNull()
+    expect(normalizePhotoUrl(null)).toBeNull()
+    expect(normalizePhotoUrl(undefined)).toBeNull()
   })
 })

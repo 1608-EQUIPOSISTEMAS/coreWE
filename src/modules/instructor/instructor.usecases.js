@@ -2,7 +2,7 @@ import { DomainError } from '../../shared/errors.js'
 import { odoo } from '../../shared/adapters/odoo/odoo.adapter.js'
 import { slack } from '../../shared/adapters/slack/slack.adapter.js'
 import { instructorRepository } from './instructor.repository.js'
-import { buildTempPassword, buildFullName, normalizeActive, normalizeActiveForCaller } from './instructor.entity.js'
+import { buildTempPassword, buildFullName, normalizeActive, normalizeActiveForCaller, normalizePhotoUrl } from './instructor.entity.js'
 import { toListDto, toRegisterDto, toUpdateDto } from './instructor.dto.js'
 
 const repo = instructorRepository
@@ -54,7 +54,12 @@ export async function getInstructor ({ id }) {
 }
 
 export async function updateInstructor ({ id, instructor = {} }) {
-  const row = await repo.update(id, instructor)
+  // La ficha manda el link tal como Drive lo copia al portapapeles; se guarda ya
+  // convertido para que quien lea photo_url no tenga que saber nada de Drive.
+  const conFoto = 'photo_url' in instructor
+    ? { ...instructor, photo_url: normalizePhotoUrl(instructor.photo_url) }
+    : instructor
+  const row = await repo.update(id, conFoto)
   return toUpdateDto({ row, id })
 }
 

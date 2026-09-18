@@ -99,6 +99,9 @@ export const instructorUpdateSchema = {
           relevant_work: { type: ['string', 'null'] },
           cv_url: { type: ['string', 'null'] },
           cv_documents_url: { type: ['string', 'null'] },
+          // Foto del docente: URL, no bytes. Se guarda normalizada a thumbnail
+          // de Drive (ver normalizePhotoUrl en instructor.entity.js).
+          photo_url: { type: ['string', 'null'] },
           // Accesos del docente. odoo_username es el usuario con el que entra a
           // Odoo (dato de contacto); no confundir con odoo_user_id, que es la FK
           // que escribe la sincronizacion y no se toca desde la ficha.

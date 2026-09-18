@@ -27,3 +27,26 @@ export function normalizeActiveForCaller (active = 'Y') {
   if (typeof active === 'string' && active !== '') return active
   return null
 }
+
+// Ancho del thumbnail de Drive. 400px alcanza para la ficha y para un avatar en
+// una tabla; pedir el original haria que cada listado bajase megas de PNG.
+const ANCHO_FOTO = 400
+
+// Drive entrega links de VISTA (/file/d/<id>/view, /open?id=, /uc?id=) que
+// devuelven una pagina HTML, no la imagen: puestos en un <img src> salen rotos.
+// El unico formato que renderiza sin sesion de Google es /thumbnail?id=.
+// Cualquier otra URL (subida a /uploads, CDN) pasa intacta.
+const ID_DE_DRIVE = [
+  /\/file\/d\/([A-Za-z0-9_-]+)/,
+  /[?&]id=([A-Za-z0-9_-]+)/,
+  /\/d\/([A-Za-z0-9_-]+)/
+]
+
+export function normalizePhotoUrl (url) {
+  const limpia = typeof url === 'string' ? url.trim() : ''
+  if (!limpia) return null
+  if (!limpia.includes('drive.google.com') && !limpia.includes('docs.google.com')) return limpia
+
+  const id = ID_DE_DRIVE.reduce((hallado, patron) => hallado ?? limpia.match(patron)?.[1], null)
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${ANCHO_FOTO}` : limpia
+}
