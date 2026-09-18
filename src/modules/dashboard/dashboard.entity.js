@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER } from '../audit/audit.entity.js'
+import { AREA_OF_LEADER, areaLabelOf } from '../audit/audit.entity.js'
 
 // Reglas puras del dominio dashboard. Sin BD, Odoo ni Slack.
 // Transformaciones de filas crudas de las vistas a DTO de salida y armado de
@@ -254,17 +254,6 @@ export function aggregateVentasCanal (rows) {
 
 // ── Panel de equipo (líder) y panel propio (colaborador) ──────────────────
 //
-// Etiqueta legible del área a la que pertenece un rol operativo. Solo existe
-// para pintar el encabezado; la BD nunca se filtra por esto.
-const AREA_LABEL = {
-  COMERCIAL: 'Comercial',
-  FICO: 'FICO',
-  ACADEMICA: 'Académica',
-  PRODUCTO: 'Producto',
-  FUNDACION: 'Fundación',
-  B2B: 'B2B'
-}
-
 // A quién ve quien consulta el panel. Tres alcances y una sola consulta detrás:
 //
 //   ADMIN        → toda la empresa      (areaRoles null, userId null)
@@ -306,108 +295,3 @@ function leaderScope (areaRoles, leaderKey) {
   return { areaRoles, userId: null, area: areaLabelOf(areaRoles, 'Mi área'), isLeader: true, leaderKey }
 }
 
-function areaLabelOf (roles = [], fallback) {
-  return (roles || []).map(r => AREA_LABEL[r.replace(/^LIDER_/, '')]).find(Boolean) ?? fallback
-}
-
-// ── Correcciones de ventas ────────────────────────────────────────────────
-//
-// Acciones de enrollment_audit_log que corrigen una venta YA registrada. Más
-// 'edited' sin autor, que es la huella de los arreglos hechos por script. El
-// reporte existe para que los líderes vean dónde nace el error (registro del
-// asesor o de FICO) en vez de que desarrollo corrija a ciegas cada semana.
-export const SALE_CORRECTION_ACTIONS = [
-  'installment_amount_edited', 'initial_payment_corrected', 'installment_payment_reverted',
-  'financial_data_fixed', 'financial_correction', 'discount_amount_corrected',
-  'payment_deleted', 'status_corrected'
-]
-
-const hasRoleOf = (roles, leader) => (roles || []).some(r => AREA_OF_LEADER[leader].includes(r))
-
-// Dónde nació el error: quién tecleó la venta. El monto lo escribe quien la
-// registra (el asesor en su formulario o FICO desde su módulo); quien aprueba
-// solo no lo detectó, y eso se marca aparte para no mezclar las dos culpas.
-export function errorOriginOf ({ registrarRoles = [], approverRoles = [] } = {}) {
-  return {
-    origen: registrationOrigin(registrarRoles),
-    aprobadoPorFico: hasRoleOf(approverRoles, 'LIDER_FICO')
-  }
-}
-
-function registrationOrigin (roles) {
-  if (hasRoleOf(roles, 'LIDER_COMERCIAL')) return 'Registro del asesor'
-  if (hasRoleOf(roles, 'LIDER_FICO')) return 'Registro de FICO'
-  if ((roles || []).includes('ADMIN')) return 'Importación / Admin'
-  return 'Otra área'
-}
-
-// changes llega como { campo: { old, new } }; algunos arreglos viejos guardaron
-// otra forma, que se muestra tal cual en vez de inventar un antes/después.
-export function describeChanges (changes) {
-  if (!changes || typeof changes !== 'object') return ''
-  return Object.entries(changes)
-    .map(([campo, diff]) => (diff && typeof diff === 'object' && ('old' in diff || 'new' in diff)
-      ? `${campo}: ${diff.old ?? '—'} → ${diff.new ?? '—'}`
-      : `${campo}: ${JSON.stringify(diff)}`))
-    .join(' · ')
-}
-
-// Cuántas ventas corregidas registró y cuántas aprobó cada persona. Cuenta
-// ventas distintas: una venta con dos correcciones es un solo error de origen.
-export function summarizeCorrections (rows = []) {
-  const people = new Map()
-  const tally = (person, field, enrollmentId) => {
-    if (!person) return
-    const entry = people.get(person.user_id) ??
-      { user_id: person.user_id, name: person.name, alias: person.alias, area: person.area, registradas: new Set(), aprobadas: new Set() }
-    entry[field].add(enrollmentId)
-    people.set(person.user_id, entry)
-  }
-
-  for (const row of rows) {
-    tally(row.registro, 'registradas', row.enrollment_id)
-    tally(row.aprobo, 'aprobadas', row.enrollment_id)
-  }
-
-  return [...people.values()]
-    .map(p => ({ ...p, registradas: p.registradas.size, aprobadas: p.aprobadas.size }))
-    .sort((a, b) => (b.registradas + b.aprobadas) - (a.registradas + a.aprobadas) || String(a.name).localeCompare(String(b.name), 'es'))
-}
-
-export function buildCorrectionsReport (rawRows = []) {
-  const detalle = rawRows.map(toCorrectionRow)
-  return { resumen: summarizeCorrections(detalle), detalle }
-}
-
-function toCorrectionRow (raw) {
-  const registro = personOf(raw, 'registro')
-  const aprobo = personOf(raw, 'aprobo')
-  return {
-    audit_id: raw.audit_id,
-    enrollment_id: raw.enrollment_id,
-    fecha: raw.fecha,
-    alumno: raw.alumno,
-    programa: raw.programa,
-    cambios: describeChanges(raw.changes) || raw.details || '',
-    motivo: raw.justificacion || '',
-    corrigio: raw.corrigio || 'Sistema',
-    registro,
-    aprobo,
-    ...errorOriginOf({ registrarRoles: registro?.roles, approverRoles: aprobo?.roles })
-  }
-}
-
-// La consulta trae a cada persona aplanada con prefijo (registro_id,
-// registro_name...); aquí se vuelve objeto. Sin id no hay persona: null.
-function personOf (raw, prefix) {
-  const userId = raw[`${prefix}_id`]
-  if (!userId) return null
-  const roles = raw[`${prefix}_roles`] || []
-  return {
-    user_id: userId,
-    name: raw[`${prefix}_name`],
-    alias: raw[`${prefix}_alias`],
-    roles,
-    area: areaLabelOf(roles, roles.includes('ADMIN') ? 'Admin' : '—')
-  }
-}

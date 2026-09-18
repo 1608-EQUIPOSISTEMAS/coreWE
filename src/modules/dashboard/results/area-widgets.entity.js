@@ -15,12 +15,12 @@ export const previousMonths = (rows) => rows.filter(r => r.meses_atras > 0)
 // Siete meses, del más viejo al actual, con la mediana de los 6 cerrados como
 // línea de referencia: separa un mes flojo de una caída sostenida. null sin filas
 // (no se dibuja un gráfico vacío).
-export function monthlyChart ({ serie, unidad, rows, valorDelMes, now }) {
+export function monthlyChart ({ serie, unidad, rows, valorDelMes, now, tipo = 'barras' }) {
   if (!rows.length) return null
   const orden = [...rows].sort((a, b) => b.meses_atras - a.meses_atras)
   const referencia = median(previousMonths(rows).map(valorDelMes))
   return {
-    tipo: 'barras',
+    tipo,
     unidad,
     categorias: orden.map(r => monthLabel(now, r.meses_atras)),
     series: [{ nombre: serie, datos: orden.map(valorDelMes), rol: 'principal' }],
