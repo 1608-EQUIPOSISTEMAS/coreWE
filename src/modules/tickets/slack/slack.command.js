@@ -2,19 +2,22 @@ import { createTicketFromSlack } from '../tickets.usecases.js'
 import { responderResponseUrl } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
 import { formatTicketCode } from '../tickets.entity.js'
 
-// Slash command /ticket.
+// Slash command /Crearticket.
 //
-// Formato: `/ticket Título | Problemática | link opcional`
+// Formato: `/Crearticket Título - Problemática - link opcional`
+//
+// El separador es " - " (con espacios obligatorios): un "-" pegado, como el
+// que trae el dominio we-educacion-ejecutiva.site, no cuenta como separador.
 //
 // Slack exige el ACK en menos de 3 segundos y crear el ticket encadena varias
 // llamadas a su API (resolver el email, insertar, abrir el DM) que pueden
 // tardar mas. Por eso se responde de inmediato y el resultado real se entrega
 // despues por la response_url, que es de un solo uso y caduca a los 30 minutos.
 
-const AYUDA = 'Formato: `/ticket Título | Descripción del problema | link opcional`'
+const AYUDA = 'Formato: `/Crearticket Título - Descripción del problema - link opcional`'
 
 export function parsearComando (texto = '') {
-  const [titulo, problema, link] = String(texto).split('|').map(p => p.trim())
+  const [titulo, problema, link] = String(texto).split(/\s+-\s+/).map(p => p.trim())
   return { titulo, problema, link: link || null }
 }
 

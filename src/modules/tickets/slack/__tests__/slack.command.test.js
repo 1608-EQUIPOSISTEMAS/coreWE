@@ -20,20 +20,25 @@ const RESPONSE_URL = 'https://hooks.slack.com/commands/1/2'
 beforeEach(() => vi.clearAllMocks())
 
 describe('parsearComando', () => {
-  it('separa titulo, problema y link por barras', () => {
-    expect(parsearComando('No abre el ERP | Desde hoy no entro | https://erp.test'))
+  it('separa titulo, problema y link por guiones con espacios', () => {
+    expect(parsearComando('No abre el ERP - Desde hoy no entro - https://erp.test'))
       .toEqual({ titulo: 'No abre el ERP', problema: 'Desde hoy no entro', link: 'https://erp.test' })
   })
 
   it('el link es opcional', () => {
-    expect(parsearComando('Titulo | Problema').link).toBeNull()
+    expect(parsearComando('Titulo - Problema').link).toBeNull()
   })
 
   it('recorta los espacios de cada parte', () => {
-    expect(parsearComando('  Titulo   |   Problema  ').titulo).toBe('Titulo')
+    expect(parsearComando('  Titulo   -   Problema  ').titulo).toBe('Titulo')
   })
 
-  it('sin barras no hay problema, y eso se detecta despues', () => {
+  it('un guion pegado (sin espacios) no separa, por ejemplo en un dominio', () => {
+    expect(parsearComando('Titulo - Problema - https://we-educacion-ejecutiva.site').link)
+      .toBe('https://we-educacion-ejecutiva.site')
+  })
+
+  it('sin guiones no hay problema, y eso se detecta despues', () => {
     expect(parsearComando('solo un titulo').problema).toBeUndefined()
   })
 
@@ -49,7 +54,7 @@ describe('slashCommandHandler', () => {
     createTicketFromSlack.mockImplementation(() => new Promise(() => {}))
     const reply = replyDoble()
 
-    slashCommandHandler({ body: { text: 'A | Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
+    slashCommandHandler({ body: { text: 'A - Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
 
     expect(reply.code).toHaveBeenCalledWith(200)
     expect(reply.payload.response_type).toBe('ephemeral')
@@ -59,7 +64,7 @@ describe('slashCommandHandler', () => {
     createTicketFromSlack.mockResolvedValue({ ticket_id: 42, priority: 'ALTA' })
     const reply = replyDoble()
 
-    slashCommandHandler({ body: { text: 'No abre | El ERP no carga', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
+    slashCommandHandler({ body: { text: 'No abre - El ERP no carga', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
 
     await vi.waitFor(() => expect(responderResponseUrl).toHaveBeenCalled())
     expect(createTicketFromSlack).toHaveBeenCalledWith({
@@ -84,7 +89,7 @@ describe('slashCommandHandler', () => {
     createTicketFromSlack.mockRejectedValue(err)
     const reply = replyDoble()
 
-    slashCommandHandler({ body: { text: 'A | Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
+    slashCommandHandler({ body: { text: 'A - Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
 
     await vi.waitFor(() => expect(responderResponseUrl).toHaveBeenCalled())
     expect(responderResponseUrl.mock.calls[0][1]).toMatch(/cuenta activa/)
@@ -95,7 +100,7 @@ describe('slashCommandHandler', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const reply = replyDoble()
 
-    slashCommandHandler({ body: { text: 'A | Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
+    slashCommandHandler({ body: { text: 'A - Problema largo', response_url: RESPONSE_URL, user_id: 'U1' } }, reply)
 
     await vi.waitFor(() => expect(responderResponseUrl).toHaveBeenCalled())
     const mensaje = responderResponseUrl.mock.calls[0][1]
@@ -106,7 +111,7 @@ describe('slashCommandHandler', () => {
   it('sin response_url no intenta contestar a ningun lado', async () => {
     const reply = replyDoble()
 
-    slashCommandHandler({ body: { text: 'A | Problema largo', user_id: 'U1' } }, reply)
+    slashCommandHandler({ body: { text: 'A - Problema largo', user_id: 'U1' } }, reply)
 
     await new Promise(r => setTimeout(r, 10))
     expect(responderResponseUrl).not.toHaveBeenCalled()
