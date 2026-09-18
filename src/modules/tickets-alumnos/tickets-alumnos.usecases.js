@@ -1,4 +1,4 @@
-import { ticketsRepository } from './tickets.repository.js'
+import { ticketsRepository } from './tickets-alumnos.repository.js'
 import {
   ESTADO,
   TicketError,
@@ -7,7 +7,7 @@ import {
   assertPuedeFirmar,
   avanzar,
   rechazar
-} from './tickets.entity.js'
+} from './tickets-alumnos.entity.js'
 
 const repo = ticketsRepository
 

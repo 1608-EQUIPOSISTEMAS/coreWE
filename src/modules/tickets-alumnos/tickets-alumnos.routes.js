@@ -1,6 +1,6 @@
 import { authenticate, ALL_TICKETS } from '../../middlewares/auth.hooks.js'
-import { listSchema, firmaSchema } from './tickets.schemas.js'
-import * as ctrl from './tickets.controller.js'
+import { listSchema, firmaSchema } from './tickets-alumnos.schemas.js'
+import * as ctrl from './tickets-alumnos.controller.js'
 
 export default async function ticketsRoutes (fastify) {
   // Las dos areas entran a los tres endpoints: quien puede FIRMAR cada tramite

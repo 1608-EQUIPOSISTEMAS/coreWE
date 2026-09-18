@@ -1,4 +1,4 @@
-import * as usecases from './tickets.usecases.js'
+import * as usecases from './tickets-alumnos.usecases.js'
 
 // Unico lugar que sabe de HTTP. Traduce body -> caso de uso y resultado -> reply.
 const num = v => (v === null || v === undefined || v === '' ? null : Number(v))

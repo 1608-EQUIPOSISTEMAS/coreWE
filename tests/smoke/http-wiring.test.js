@@ -204,7 +204,7 @@ describe('modulos montados en buildApp', () => {
   it.each([
     ['b2b', '/api/b2b'],
     ['reprogramacion', '/api/reprogramacion'],
-    ['tickets', '/api/tickets'],
+    ['tickets-alumnos', '/api/tickets-alumnos'],
     ['scheduleplan', '/api/scheduleplan'],
     ['audit', '/api/audit']
   ])(

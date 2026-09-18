@@ -9,7 +9,7 @@ import {
   avanzar,
   rechazar,
   siguienteArea
-} from '../tickets.entity.js'
+} from '../tickets-alumnos.entity.js'
 
 const abierto = (tipo, extra = {}) => ({ tipo, status: ESTADO.ABIERTA, area_actual: areaInicial(tipo), ...extra })
 
