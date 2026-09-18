@@ -107,6 +107,36 @@ function payloadCreado (t) {
   return { text: `Ticket #${codigo(t.ticket_id)} creado: ${t.title}`, blocks }
 }
 
+// Mensaje PLANO a proposito (solo `text`, sin blocks): es un aviso operativo
+// de "andate corriendo a tomarlo", no un resumen para leer con calma. Sale una
+// sola vez, apenas se crea el ticket sin asignar.
+function payloadEsperandoAsignacion (t, minutos) {
+  return {
+    text: `⏳ El ticket #${codigo(t.ticket_id)} "${t.title}" está a la espera de asignación. ` +
+      `Tiempo: ${minutos} minutos para que algún admin lo tome manualmente antes de que se asigne automáticamente.`
+  }
+}
+
+function payloadReabierto (t) {
+  const emoji = EMOJI_PRIORIDAD[t.priority] ?? ':white_circle:'
+  return {
+    text: `Ticket #${codigo(t.ticket_id)} reabierto: ${t.title}`,
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: `🔓 Ticket #${codigo(t.ticket_id)} reabierto`, emoji: true } },
+      { type: 'section', text: { type: 'mrkdwn', text: `*${t.title}*` } },
+      { type: 'divider' },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
+          { type: 'mrkdwn', text: `*A cargo de:*\n${t.asignado ?? 'sin asignar'}` },
+          { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` }
+        ]
+      }
+    ]
+  }
+}
+
 function payloadCerrado (t) {
   const emoji = EMOJI_PRIORIDAD[t.priority] ?? ':white_circle:'
   return {
@@ -180,6 +210,14 @@ export function notificarTicketCreado (ticket) {
 
 export function notificarTicketCerrado (ticket) {
   return enviarWebhook(payloadCerrado(ticket), `ticket #${ticket.ticket_id} (cerrado)`)
+}
+
+export function notificarEsperandoAsignacion (ticket, minutos) {
+  return enviarWebhook(payloadEsperandoAsignacion(ticket, minutos), `ticket #${ticket.ticket_id} (esperando asignación)`)
+}
+
+export function notificarTicketReabierto (ticket) {
+  return enviarWebhook(payloadReabierto(ticket), `ticket #${ticket.ticket_id} (reabierto)`)
 }
 
 export function notificarSlaIncumplido (ticket, reloj, venceEn) {
