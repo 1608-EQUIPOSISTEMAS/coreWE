@@ -1,0 +1,290 @@
+import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../audit/audit.entity.js'
+import { calcularSla, sumarMinutos, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
+import { DomainError, ForbiddenError } from '../../shared/errors.js'
+
+// Reglas puras del dominio tickets. Sin BD, sin disco y sin Slack: todo entra
+// por parametro y todo es determinista, asi que se testea entero sin levantar nada.
+
+export const ESTADOS = ['ABIERTO', 'EN_PROGRESO', 'CERRADO']
+export const ESTADOS_ACTIVOS = ['ABIERTO', 'EN_PROGRESO']
+
+// Flujo irreversible. Cualquier otro salto (reabrir un cerrado, o saltar directo
+// a CERRADO sin haberlo tomado) se rechaza. Que cada transicion ocurra una sola
+// vez es lo que garantiza que las marcas del SLA se escriban una sola vez.
+export const TRANSICIONES_VALIDAS = {
+  ABIERTO: ['EN_PROGRESO'],
+  EN_PROGRESO: ['CERRADO'],
+  CERRADO: []
+}
+
+const TITULO_MIN = 3
+const TITULO_MAX = 120
+const PROBLEMA_MIN = 10
+const PROBLEMA_MAX = 2000
+const LINK_MAX = 2048
+export const COMENTARIO_MAX = 2000
+export const SLA_MINUTOS_MIN = 1
+export const SLA_MINUTOS_MAX = 43200
+
+/** El numero visible del ticket. El id ES el correlativo; esto solo lo viste. */
+export function formatTicketCode (ticketId) {
+  return String(ticketId ?? '').padStart(5, '0')
+}
+
+// ── Alcance de lectura ─────────────────────────────────────────────────────
+//
+// Sustituye el catalogo de permisos del sistema origen (ticket:leer:todos,
+// dashboard:leer...) por los roles del ERP:
+//
+//   ADMIN     -> todos los tickets, y es el unico que los gestiona
+//   GERENCIA  -> todos los tickets, en solo lectura
+//   LIDER_X   -> los que reporto cualquiera de su area
+//   resto     -> solo los que creo el mismo
+//
+// El area de un ticket no se guarda: se deriva del rol de quien lo creo, igual
+// que hace el dashboard. Asi mover a alguien de area no obliga a reescribir su
+// historial de tickets.
+export function ticketScopeFor ({ roles = [], userId = null } = {}) {
+  if (roles.includes('ADMIN')) {
+    return { kind: 'ALL', areaRoles: null, userId: null, canManage: true, area: 'Todos los tickets' }
+  }
+  if (roles.includes('GERENCIA')) {
+    return { kind: 'ALL', areaRoles: null, userId: null, canManage: false, area: 'Todos los tickets' }
+  }
+
+  // Un lider de dos areas ve las dos: son los tickets por los que responde.
+  const areaRoles = [...new Set(roles.filter(r => Object.hasOwn(AREA_OF_LEADER, r)).flatMap(r => AREA_OF_LEADER[r]))]
+  if (areaRoles.length) {
+    return { kind: 'AREA', areaRoles, userId: null, canManage: false, area: 'Tickets de mi área' }
+  }
+
+  return { kind: 'OWN', areaRoles: null, userId, canManage: false, area: 'Mis tickets' }
+}
+
+// El area de ESTE ticket (para mostrarla en la fila y en el aviso de Slack), a
+// diferencia de ticketScopeFor que es el area de QUIEN CONSULTA. Misma regla
+// (rol del creador -> area), aplicada a un ticket en vez de a un usuario.
+export function ticketAreaLabel (creadorRoles = []) {
+  return areaLabelOf(creadorRoles, 'Sin área')
+}
+
+// El rol de quien creo el ticket, sin colapsar lider y base en la misma area
+// (a diferencia de ticketAreaLabel): la fila del listado quiere distinguir
+// "Líder Comercial" de "Comercial", no solo saber que ambos son de Comercial.
+export function ticketRoleLabel (creadorRoles = []) {
+  return roleLabelOf(creadorRoles?.[0]) ?? 'Sin rol'
+}
+
+// ¿Puede este usuario abrir ESTE ticket? El listado ya filtra por alcance, pero
+// el detalle, los comentarios y la descarga de adjuntos entran por id, asi que
+// cada uno vuelve a preguntar.
+export function canRead (ticket, scope, userId) {
+  if (!ticket) return false
+  if (scope.kind === 'ALL') return true
+  if (ticket.created_by_id === userId) return true
+  if (ticket.assigned_to_id === userId) return true
+  if (scope.kind === 'AREA') {
+    return (ticket.creador_roles || []).some(rol => scope.areaRoles.includes(rol))
+  }
+  return false
+}
+
+export function assertCanRead (ticket, scope, userId) {
+  if (!canRead(ticket, scope, userId)) {
+    throw new ForbiddenError('No tienes permiso sobre este ticket')
+  }
+  return ticket
+}
+
+// Comentar tiene el mismo alcance que leer: si lo ves, participas del hilo.
+export const assertCanComment = assertCanRead
+
+export function assertCanManage (scope) {
+  if (!scope.canManage) throw new ForbiddenError('Solo un administrador puede gestionar tickets')
+  return scope
+}
+
+// ── Transiciones ───────────────────────────────────────────────────────────
+//
+// Devuelve los campos a actualizar, no toca la BD. Sella los relojes: al tomar
+// el ticket queda la primera respuesta; al resolverlo, la resolucion.
+export function nextStatus (ticket, agentId, nuevoEstado, ahora = new Date()) {
+  // Ownership: ser ADMIN no alcanza, hay que ser el agente asignado. Si no,
+  // dos administradores se pisarian el trabajo del otro.
+  if (ticket.assigned_to_id !== agentId) {
+    throw new ForbiddenError('No tienes permiso sobre este ticket')
+  }
+
+  const permitidas = TRANSICIONES_VALIDAS[ticket.status] ?? []
+  if (!permitidas.includes(nuevoEstado)) {
+    throw new DomainError(`No se puede pasar de ${ticket.status} a ${nuevoEstado}`)
+  }
+
+  // El ?? no pisa una marca existente. Hoy TRANSICIONES_VALIDAS ya impide
+  // llegar dos veces, pero la regla queda escrita donde importa.
+  return nuevoEstado === 'EN_PROGRESO'
+    ? { status: nuevoEstado, first_response_at: ticket.first_response_at ?? ahora }
+    : { status: nuevoEstado, first_response_at: ticket.first_response_at ?? ahora, resolved_at: ahora }
+}
+
+// ── Reparto automatico ─────────────────────────────────────────────────────
+//
+// Entre los candidatos (usuarios ADMIN activos, que los trae el repositorio),
+// elige a quien no tenga nada EN_PROGRESO; a igualdad, al de menor carga
+// activa; y a igualdad, al que hace mas tiempo no recibe un ticket.
+//
+// excluirId lo usa el escalamiento del SLA: "el disponible que no sea el que ya
+// lo tiene", para no reasignarle el ticket a la misma persona.
+export function pickAgent (candidatos = [], excluirId = null) {
+  const elegibles = candidatos
+    .filter(c => c.user_id !== excluirId)
+    .map(c => ({
+      user_id: c.user_id,
+      enProgreso: Boolean(c.en_progreso),
+      cargaActiva: Number(c.carga_activa ?? 0),
+      ultimoAsignado: c.ultimo_asignado ? new Date(c.ultimo_asignado).getTime() : 0
+    }))
+
+  if (!elegibles.length) return null
+
+  elegibles.sort((a, b) => {
+    if (a.enProgreso !== b.enProgreso) return a.enProgreso ? 1 : -1
+    if (a.cargaActiva !== b.cargaActiva) return a.cargaActiva - b.cargaActiva
+    return a.ultimoAsignado - b.ultimoAsignado
+  })
+
+  return elegibles[0].user_id
+}
+
+// Reasignacion manual. A diferencia del reparto automatico no elige por carga
+// (quien la pide ya decidio a quien), pero sostiene las mismas invariantes.
+export function assertReassignable (ticket, destino, nuevoAsignadoId) {
+  if (ticket.status === 'CERRADO') {
+    throw new DomainError('No se puede reasignar un ticket cerrado')
+  }
+  if (ticket.assigned_to_id === nuevoAsignadoId) {
+    throw new DomainError('El ticket ya está asignado a ese usuario')
+  }
+  if (!destino || destino.active !== 'Y' || !destino.es_agente) {
+    throw new DomainError('Ese usuario no puede recibir tickets')
+  }
+  // Mismo criterio de "activos" que el reparto automatico: no se le carga mas
+  // trabajo a mano a quien ya tiene un ABIERTO o un EN_PROGRESO.
+  if (Number(destino.carga_activa ?? 0) > 0) {
+    throw new DomainError('Ese usuario ya tiene tickets activos asignados')
+  }
+  return true
+}
+
+// ── Validacion de entrada ──────────────────────────────────────────────────
+//
+// Vive aca y no en un schema de Fastify porque las rutas que crean ticket y
+// comentario son multipart: declararles schema.body haria que AJV vaciara el
+// body. Ademas la comparte el slash command de Slack, que no pasa por AJV.
+export function validateTicketInput ({ titulo, problema, link } = {}) {
+  const t = String(titulo ?? '').trim()
+  const p = String(problema ?? '').trim()
+  const l = String(link ?? '').trim()
+
+  if (t.length < TITULO_MIN || t.length > TITULO_MAX) {
+    throw new DomainError(`El título debe tener entre ${TITULO_MIN} y ${TITULO_MAX} caracteres`)
+  }
+  if (p.length < PROBLEMA_MIN || p.length > PROBLEMA_MAX) {
+    throw new DomainError(`La problemática debe tener entre ${PROBLEMA_MIN} y ${PROBLEMA_MAX} caracteres`)
+  }
+
+  return { titulo: t, problema: p, link: l ? validateLink(l) : null }
+}
+
+// Solo http(s). Sin esto un `javascript:` guardado aca se vuelve XSS el dia que
+// alguien lo pinte en un <a href>.
+function validateLink (link) {
+  if (link.length > LINK_MAX) throw new DomainError('El enlace es demasiado largo')
+  let url
+  try {
+    url = new URL(link)
+  } catch {
+    throw new DomainError('El enlace no es una URL válida')
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new DomainError('El enlace debe empezar con http:// o https://')
+  }
+  return link
+}
+
+export function validateComment (cuerpo) {
+  const c = String(cuerpo ?? '').trim()
+  if (!c || c.length > COMENTARIO_MAX) {
+    throw new DomainError(`El comentario debe tener entre 1 y ${COMENTARIO_MAX} caracteres`)
+  }
+  return c
+}
+
+export function validateSlaPolicy ({ prioridad, minutosPrimeraRespuesta, minutosResolucion } = {}) {
+  if (!['ALTA', 'MEDIA', 'BAJA'].includes(prioridad)) {
+    throw new DomainError('Prioridad desconocida')
+  }
+  const respuesta = Number(minutosPrimeraRespuesta)
+  const resolucion = Number(minutosResolucion)
+  const enRango = n => Number.isInteger(n) && n >= SLA_MINUTOS_MIN && n <= SLA_MINUTOS_MAX
+
+  if (!enRango(respuesta) || !enRango(resolucion)) {
+    throw new DomainError(`Los plazos deben ser minutos enteros entre ${SLA_MINUTOS_MIN} y ${SLA_MINUTOS_MAX}`)
+  }
+  // Prometer resolver antes de responder no significa nada.
+  if (resolucion < respuesta) {
+    throw new DomainError('El plazo de resolución no puede ser menor que el de primera respuesta')
+  }
+  return { prioridad, minutosPrimeraRespuesta: respuesta, minutosResolucion: resolucion }
+}
+
+/**
+ * Congela los vencimientos con la politica vigente. Se pasa createdAt explicito
+ * (y no se deja el default de la BD) para que ambos relojes cuenten desde
+ * exactamente el mismo instante que queda guardado en la fila.
+ */
+export function computeDueDates (policy, createdAt) {
+  if (!policy) return { first_response_due_at: null, resolution_due_at: null }
+  return {
+    first_response_due_at: sumarMinutos(createdAt, policy.first_response_minutes),
+    resolution_due_at: sumarMinutos(createdAt, policy.resolution_minutes)
+  }
+}
+
+// ── Presentacion ───────────────────────────────────────────────────────────
+
+/** Adjunta a la fila el codigo visible y los dos relojes ya evaluados. */
+export function withSla (row, ahora = new Date()) {
+  if (!row) return row
+  const sla = calcularSla(row, ahora)
+  return { ...row, codigo: formatTicketCode(row.ticket_id), sla, riesgo: estadosEnRiesgo(sla) }
+}
+
+export const FILTROS = ['TODOS', 'MIOS', 'SIN_ASIGNAR', 'POR_VENCER', 'VENCIDOS']
+
+/**
+ * Filtro y orden de la bandeja, en JS y no en SQL: POR_VENCER depende del
+ * umbral de sla-clock y reimplementarlo en la consulta duplicaria la regla.
+ */
+export function applyFilter (tickets = [], filtro = 'TODOS', userId = null) {
+  switch (filtro) {
+    case 'MIOS': return tickets.filter(t => t.assigned_to_id === userId)
+    case 'SIN_ASIGNAR': return tickets.filter(t => !t.assigned_to_id)
+    case 'POR_VENCER': return tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido)
+    case 'VENCIDOS': return tickets.filter(t => t.riesgo.vencido)
+    default: return tickets
+  }
+}
+
+/** Los numeros de la cabecera de la bandeja, uno por cada chip de filtro. */
+export function buildKpis (tickets = [], userId = null) {
+  return {
+    total: tickets.length,
+    misAsignados: tickets.filter(t => t.assigned_to_id === userId && ESTADOS_ACTIVOS.includes(t.status)).length,
+    sinAsignar: tickets.filter(t => !t.assigned_to_id).length,
+    // Mismo criterio que applyFilter('POR_VENCER'): por vencer y no vencido, para
+    // que un ticket no cuente en los dos chips a la vez.
+    porVencer: tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido).length,
+    vencidos: tickets.filter(t => t.riesgo.vencido).length
+  }
+}

@@ -58,6 +58,38 @@ export const AREA_OF_LEADER = {
   LIDER_B2B: ['B2B', 'LIDER_B2B']
 }
 
+// Nombre legible de cada area del organigrama. Vive junto a AREA_OF_LEADER por
+// la misma razon: es el mismo mapa (rol -> area), no un detalle de quien lo usa.
+// Dashboard lo usa para el nombre del area en el panel de lider; Tickets, para
+// mostrar de que area es cada ticket.
+export const AREA_LABEL = {
+  COMERCIAL: 'Comercial',
+  FICO: 'FICO',
+  ACADEMICA: 'Académica',
+  PRODUCTO: 'Producto',
+  FUNDACION: 'Fundación',
+  B2B: 'B2B'
+}
+
+// A que area pertenece un conjunto de roles (los de un lider o los de quien
+// creo un ticket). find(Boolean) y no un Set: si alguien tiene mas de un rol de
+// area, se queda con el primero que matchea, no con "varias areas" a la vez.
+export function areaLabelOf (roles = [], fallback = null) {
+  return (roles || []).map(r => AREA_LABEL[r.replace(/^LIDER_/, '')]).find(Boolean) ?? fallback
+}
+
+// Nombre legible de UN rol puntual (a diferencia de areaLabelOf, que colapsa
+// un lider y su base en la misma area). LIDER_COMERCIAL -> "Líder Comercial",
+// COMERCIAL -> "Comercial", ADMIN -> "Administrador".
+export function roleLabelOf (role) {
+  if (!role) return null
+  if (role === 'ADMIN') return 'Administrador'
+  const esLider = role.startsWith('LIDER_')
+  const base = esLider ? role.slice('LIDER_'.length) : role
+  const nombreBase = AREA_LABEL[base] ?? base
+  return esLider ? `Líder ${nombreBase}` : nombreBase
+}
+
 // Devuelve los alias de rol cuyos movimientos puede ver quien consulta.
 // null = sin filtro (ADMIN lo ve todo). Lanza 403 a cualquier otro rol.
 export function auditableRolesFor (roles = []) {

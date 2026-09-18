@@ -1,9 +1,7 @@
 import { dashboardRepository } from './dashboard.repository.js'
-import {
-  aggregateVentasCanal, teamScopeFor, buildCorrectionsReport, SALE_CORRECTION_ACTIONS
-} from './dashboard.entity.js'
+import { aggregateVentasCanal, teamScopeFor } from './dashboard.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
-import { areaResults } from './results/results.usecases.js'
+import { areaResults, myTicketReports, orgTicketReports } from './results/results.usecases.js'
 import {
   toDashboardDto,
   toProgramGoalsDto,
@@ -68,30 +66,36 @@ export async function adminSummary () {
     area: TABLE_MODULE[u.tabla_top] ?? 'Otros'
   }))
 
-  return { ...raw, modulos, topUsuarios, totalAcciones: totalActual }
+  // Soporte de toda la empresa: el ADMIN es el unico que ve tickets sin
+  // filtrar por area ni autor. Best-effort (orgTicketReports ya no relanza):
+  // si falla, el resto del panel de uso del sistema igual carga.
+  const tickets = await orgTicketReports()
+
+  return { ...raw, modulos, topUsuarios, totalAcciones: totalActual, tickets }
 }
 
 // Panel de equipo: lo que ve un lider de su area y un colaborador de si mismo.
 //
-// El lider ve IMPACTO: los indicadores de resultado de su area y las
-// correcciones de ventas. El uso del ERP (acciones, horarios, movimientos) solo
-// lo ve el colaborador en su propio panel; al lider lo confundia y al ADMIN ya
-// se lo da "Uso del sistema". Por eso esas cinco consultas no corren para el lider.
+// El lider ve IMPACTO: los indicadores de resultado de su area, incluido el
+// estado del soporte (tickets). El uso del ERP (acciones, horarios, movimientos)
+// solo lo ve el colaborador en su propio panel; al lider lo confundia y al ADMIN
+// ya se lo da "Uso del sistema". Por eso esas cinco consultas no corren para el lider.
 export async function teamSummary ({ roles = [], userId = null, viewAs = null } = {}) {
   const scope = teamScopeFor({ roles, userId, viewAs })
 
-  const [uso, correcciones, resultados] = await Promise.all([
+  const [uso, resultados, misTickets] = await Promise.all([
     scope.leaderKey ? Promise.resolve(null) : repo.teamSummary(scope),
-    // Solo quien responde por un área audita las correcciones de ventas.
-    scope.isLeader ? repo.saleCorrections(scope, SALE_CORRECTION_ACTIONS) : Promise.resolve([]),
-    areaResults(scope.leaderKey)
+    areaResults(scope.leaderKey),
+    // Solo aplica a quien no tiene area propia (colaborador): un lider ya ve
+    // el soporte de su area dentro de `resultados`, verlo dos veces confundiria.
+    scope.leaderKey ? Promise.resolve(null) : myTicketReports(scope.userId)
   ])
 
   return {
     scope: { area: scope.area, isLeader: scope.isLeader },
     ...(uso && usageWithLabels(uso)),
-    correcciones: buildCorrectionsReport(correcciones),
-    resultados
+    resultados,
+    misTickets
   }
 }
 

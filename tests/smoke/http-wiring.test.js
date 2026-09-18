@@ -205,6 +205,7 @@ describe('modulos montados en buildApp', () => {
     ['b2b', '/api/b2b'],
     ['reprogramacion', '/api/reprogramacion'],
     ['tickets-alumnos', '/api/tickets-alumnos'],
+    ['tickets', '/api/tickets'],
     ['scheduleplan', '/api/scheduleplan'],
     ['audit', '/api/audit']
   ])(

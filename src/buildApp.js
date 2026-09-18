@@ -34,6 +34,7 @@ import marketingRoutes from './modules/marketing/marketing.routes.js'
 import b2bRoutes from './modules/b2b/b2b.routes.js'
 import reprogramacionRoutes from './modules/reprogramacion/reprogramacion.routes.js'
 import ticketsAlumnosRoutes from './modules/tickets-alumnos/tickets-alumnos.routes.js'
+import ticketsRoutes from './modules/tickets/tickets.routes.js'
 import { setImporterPorts } from './modules/importer/importer.ports.js'
 import { ficoEnrollmentRegister } from './modules/fico/enrollment/enrollment.usecases.js'
 import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
@@ -217,6 +218,7 @@ export async function buildApp (opts = {}) {
   await app.register(b2bRoutes, { prefix: '/api/b2b' })
   await app.register(reprogramacionRoutes, { prefix: '/api/reprogramacion' })
   await app.register(ticketsAlumnosRoutes, { prefix: '/api/tickets-alumnos' })
+  await app.register(ticketsRoutes, { prefix: '/api/tickets' })
 
   app.get('/health', async () => ({ ok: true }))
 

@@ -12,6 +12,9 @@ import { fetchFundacionRaw } from './fundacion.repository.js'
 import { buildFundacionResults } from './fundacion.entity.js'
 import { fetchB2bRaw } from './b2b.repository.js'
 import { buildB2bResults } from './b2b.entity.js'
+import { fetchAreaTicketsRaw } from './tickets.repository.js'
+import { buildTicketRows, AMBITO_PERSONAL, AMBITO_GLOBAL } from './tickets.entity.js'
+import { safeAsync } from '../../../shared/utils/safe-async.js'
 
 // Indicadores de resultado del área que lidera quien consulta.
 //
@@ -37,9 +40,49 @@ const RESULTS_BY_LEADER = {
 }
 
 // null = sin resultados (ADMIN "Todas las áreas" o un colaborador).
+//
+// El soporte es transversal: los dos reportes de tickets (estado y tiempos de
+// respuesta) se anexan al final del panel de las seis áreas en vez de repetirse
+// dentro de cada build<Area>Results. Ocupan el lugar que tenía "Correcciones de
+// ventas", con la misma pregunta detrás: qué le está costando al equipo.
 export async function areaResults (leaderKey, now = new Date()) {
   if (!Object.hasOwn(RESULTS_BY_LEADER, leaderKey ?? '')) return null
-  return RESULTS_BY_LEADER[leaderKey]({ areaRoles: [...AREA_OF_LEADER[leaderKey]] }, now)
+
+  const scope = { areaRoles: [...AREA_OF_LEADER[leaderKey]] }
+  const [panel, tickets] = await Promise.all([
+    RESULTS_BY_LEADER[leaderKey](scope, now),
+    // Best-effort: el soporte es un añadido al panel. Si sus tablas todavía no
+    // existen (DDL sin correr) o la consulta falla, el líder tiene que seguir
+    // viendo sus ventas y su cobranza, no un 500.
+    safeAsync('[dashboard][tickets]', () => fetchAreaTicketsRaw(scope))
+  ])
+
+  // Un área sin tickets no ve filas vacías: row() ya devuelve null sin widgets.
+  const filasTickets = tickets ? buildTicketRows(tickets, now) : []
+  return { ...panel, filas: [...panel.filas, ...filasTickets] }
+}
+
+// Panel de soporte de un colaborador sin rol de liderazgo: no tiene area
+// propia en el ticket (esa la tiene el lider), tiene AUTORIA. Mismo contrato
+// de widgets que el panel de area, con el alcance acotado a lo que el mismo
+// reporto. Best-effort por la misma razon que en areaResults: un fallo aqui
+// no debe tumbar el resto del panel de "mi actividad".
+export async function myTicketReports (userId, now = new Date()) {
+  if (!userId) return null
+  const tickets = await safeAsync('[dashboard][tickets:mine]', () => fetchAreaTicketsRaw({ userId }))
+  if (!tickets) return null
+  const filas = buildTicketRows(tickets, now, AMBITO_PERSONAL)
+  return filas.length ? { filas } : null
+}
+
+// Panel de soporte para el ADMIN viendo "toda la empresa": sin areaRoles ni
+// userId, fetchAreaTicketsRaw no filtra nada (los dos filtros son NULL-abiertos),
+// asi que esto es, a proposito, el total de tickets de la organizacion.
+export async function orgTicketReports (now = new Date()) {
+  const tickets = await safeAsync('[dashboard][tickets:org]', () => fetchAreaTicketsRaw({}))
+  if (!tickets) return null
+  const filas = buildTicketRows(tickets, now, AMBITO_GLOBAL)
+  return filas.length ? { filas } : null
 }
 
 function lastDaysRange (now, days) {
