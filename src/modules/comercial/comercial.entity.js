@@ -50,6 +50,7 @@ export function buildFilterPayload (payload = {}) {
     owner_user_ids,
     status_lead_ids,
     last_follow_ids,
+    last_attempt_type_ids,
     interest_level_ids,
     channel_ids,
     query_ids,
@@ -120,6 +121,7 @@ export function buildFilterPayload (payload = {}) {
     payment_type_ids: payment_type_ids || [],
     settlement_status_ids: settlement_status_ids || [],
     payment_channel_ids: payment_channel_ids || [],
+    last_attempt_type_ids: last_attempt_type_ids || [],
 
     prospect_situation_ids: ps.ids,
     include_null_situation: ps.includeNull,

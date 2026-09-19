@@ -63,6 +63,11 @@ describe('buildFilterPayload', () => {
     expect(f.owner_user_ids).toEqual([])
     expect(f.payment_channel_ids).toEqual([])
     expect(f.settlement_status_ids).toEqual([])
+    expect(f.last_attempt_type_ids).toEqual([])
+  })
+
+  it('pasa el filtro de tipo de intento (columna Seguimiento) al SP', () => {
+    expect(buildFilterPayload({ last_attempt_type_ids: [5094] }).last_attempt_type_ids).toEqual([5094])
   })
 })
 
