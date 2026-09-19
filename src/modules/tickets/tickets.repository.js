@@ -173,12 +173,15 @@ export class TicketsRepository {
     })
   }
 
+  // SET directo, sin COALESCE: nextStatus ya manda el valor final de
+  // resolved_at en los tres casos (null al tomar, ahora al resolver, null de
+  // nuevo al reabrir). Con COALESCE no se podia limpiar una resolucion previa.
   async updateStatus (ticketId, { status, first_response_at: firstResponseAt, resolved_at: resolvedAt = null }) {
     await this.db.query(`
       UPDATE public.tickets
          SET status = $2,
              first_response_at = $3,
-             resolved_at = COALESCE($4, resolved_at),
+             resolved_at = $4,
              modification_date = now()
        WHERE ticket_id = $1`, [ticketId, status, firstResponseAt, resolvedAt])
   }
@@ -307,7 +310,28 @@ export class TicketsRepository {
 
   // ── Colas del cron ───────────────────────────────────────────────────────
 
-  /** Abiertos que nadie tomo y todavia no fueron escalados. */
+  /**
+   * ABIERTOS sin asignar cuyo tiempo de gracia ya paso: nacieron sin agente a
+   * proposito (ver createTicket) para que un admin pueda tomarlos a mano
+   * dentro de la ventana; pasado el corte, el cron los reparte solo.
+   */
+  async unassignedOlderThan (cutoff) {
+    const { rows } = await this.db.query(`
+      SELECT t.ticket_id, t.title, t.registration_date
+        FROM public.tickets t
+       WHERE t.active = 'Y'
+         AND t.status = 'ABIERTO'
+         AND t.assigned_to_id IS NULL
+         AND t.registration_date <= $1`, [cutoff])
+    return rows
+  }
+
+  /**
+   * Abiertos CON dueño que nadie tomo y todavia no fueron escalados. Los
+   * abiertos SIN dueño son terreno de unassignedOlderThan/tickets-autoassign:
+   * mientras estan en su ventana de gracia no tienen a quien "excluir" del
+   * reparto, asi que no son candidatos a escalamiento.
+   */
   async escalationCandidates () {
     const { rows } = await this.db.query(`
       SELECT t.ticket_id, t.assigned_to_id, t.registration_date,
@@ -315,6 +339,7 @@ export class TicketsRepository {
         FROM public.tickets t
        WHERE t.active = 'Y'
          AND t.status = 'ABIERTO'
+         AND t.assigned_to_id IS NOT NULL
          AND t.escalated_at IS NULL
          AND t.first_response_due_at IS NOT NULL`)
     return rows

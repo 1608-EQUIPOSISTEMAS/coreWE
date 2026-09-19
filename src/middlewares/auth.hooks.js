@@ -78,6 +78,12 @@ export const ALL_REPROGRAMACION = hasModuleOrRole('REPROGRAMACION', [
   'ADMIN', 'ACADEMICA', 'LIDER_ACADEMICA', 'FICO', 'LIDER_FICO'
 ])
 
+// Tickets internos (soporte, /api/tickets): antes cualquier usuario logueado
+// entraba sin gate de modulo, asi que desactivar "Tickets" para un rol en
+// Roles y Permisos no tenia ningun efecto. Ahora respeta la matriz (modulo
+// TICKETS) y ADMIN siempre pasa, sin importar lo que diga la matriz.
+export const ALL_TICKETS_INTERNO = hasModuleOrRole('TICKETS', ['ADMIN'])
+
 // Tickets de alumnos: mismo caso que Reprogramaciones. Academica valida que el
 // tramite corresponde y FICO el pago, asi que las dos areas entran a la bandeja.
 // Quien puede FIRMAR cada paso lo decide tickets.entity (assertPuedeFirmar), no

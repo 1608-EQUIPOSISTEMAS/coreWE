@@ -8,13 +8,13 @@ import { DomainError, ForbiddenError } from '../../shared/errors.js'
 export const ESTADOS = ['ABIERTO', 'EN_PROGRESO', 'CERRADO']
 export const ESTADOS_ACTIVOS = ['ABIERTO', 'EN_PROGRESO']
 
-// Flujo irreversible. Cualquier otro salto (reabrir un cerrado, o saltar directo
-// a CERRADO sin haberlo tomado) se rechaza. Que cada transicion ocurra una sola
-// vez es lo que garantiza que las marcas del SLA se escriban una sola vez.
+// Casi irreversible: la unica vuelta atras permitida es reabrir un CERRADO,
+// para cuando quien reporto avisa que el problema sigue. Saltar directo a
+// CERRADO sin haberlo tomado se sigue rechazando.
 export const TRANSICIONES_VALIDAS = {
   ABIERTO: ['EN_PROGRESO'],
   EN_PROGRESO: ['CERRADO'],
-  CERRADO: []
+  CERRADO: ['EN_PROGRESO']
 }
 
 const TITULO_MIN = 3
@@ -69,8 +69,8 @@ export function ticketAreaLabel (creadorRoles = []) {
 }
 
 // El rol de quien creo el ticket, sin colapsar lider y base en la misma area
-// (a diferencia de ticketAreaLabel): la fila del listado quiere distinguir
-// "Líder Comercial" de "Comercial", no solo saber que ambos son de Comercial.
+// (a diferencia de ticketAreaLabel): la columna "Área" del listado en realidad
+// quiere distinguir "Líder Comercial" de "Comercial", no solo el area comun.
 export function ticketRoleLabel (creadorRoles = []) {
   return roleLabelOf(creadorRoles?.[0]) ?? 'Sin rol'
 }
@@ -120,8 +120,16 @@ export function nextStatus (ticket, agentId, nuevoEstado, ahora = new Date()) {
     throw new DomainError(`No se puede pasar de ${ticket.status} a ${nuevoEstado}`)
   }
 
+  // Reabrir (CERRADO -> EN_PROGRESO): la resolucion anterior ya no vale, asi
+  // que resolved_at se destraba a null. first_response_at no se toca: la
+  // primera respuesta ya paso y reabrir no la borra.
+  if (ticket.status === 'CERRADO' && nuevoEstado === 'EN_PROGRESO') {
+    return { status: nuevoEstado, first_response_at: ticket.first_response_at, resolved_at: null }
+  }
+
   // El ?? no pisa una marca existente. Hoy TRANSICIONES_VALIDAS ya impide
-  // llegar dos veces, pero la regla queda escrita donde importa.
+  // llegar dos veces (salvo el reabrir de arriba), pero la regla queda escrita
+  // donde importa.
   return nuevoEstado === 'EN_PROGRESO'
     ? { status: nuevoEstado, first_response_at: ticket.first_response_at ?? ahora }
     : { status: nuevoEstado, first_response_at: ticket.first_response_at ?? ahora, resolved_at: ahora }
