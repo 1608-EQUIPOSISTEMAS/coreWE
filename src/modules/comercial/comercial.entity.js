@@ -80,6 +80,7 @@ export function buildFilterPayload (payload = {}) {
   const mom = splitNullSentinel(moment_ids)
   const intLvl = splitNullSentinel(interest_level_ids)
   const chan = splitNullSentinel(channel_ids)
+  const lat = splitNullSentinel(last_attempt_type_ids)
 
   return {
     current_user_id: user_id,
@@ -121,7 +122,6 @@ export function buildFilterPayload (payload = {}) {
     payment_type_ids: payment_type_ids || [],
     settlement_status_ids: settlement_status_ids || [],
     payment_channel_ids: payment_channel_ids || [],
-    last_attempt_type_ids: last_attempt_type_ids || [],
 
     prospect_situation_ids: ps.ids,
     include_null_situation: ps.includeNull,
@@ -137,6 +137,9 @@ export function buildFilterPayload (payload = {}) {
 
     last_follow_ids: lf.ids,
     include_null_follow: lf.includeNull,
+
+    last_attempt_type_ids: lat.ids,
+    include_null_attempt_type: lat.includeNull,
 
     moment_ids: mom.ids,
     include_null_moment: mom.includeNull,

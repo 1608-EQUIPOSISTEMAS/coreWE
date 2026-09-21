@@ -69,6 +69,12 @@ describe('buildFilterPayload', () => {
   it('pasa el filtro de tipo de intento (columna Seguimiento) al SP', () => {
     expect(buildFilterPayload({ last_attempt_type_ids: [5094] }).last_attempt_type_ids).toEqual([5094])
   })
+
+  it('el "—" de Seguimiento (-1) pide los leads sin intentos', () => {
+    const f = buildFilterPayload({ last_attempt_type_ids: [-1, 5094] })
+    expect(f.last_attempt_type_ids).toEqual([5094])
+    expect(f.include_null_attempt_type).toBe(true)
+  })
 })
 
 describe('buildStatsFilterPayload', () => {
