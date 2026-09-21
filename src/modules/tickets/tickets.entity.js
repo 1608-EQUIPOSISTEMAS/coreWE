@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../audit/audit.entity.js'
+import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
 import { calcularSla, sumarMinutos, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
 import { DomainError, ForbiddenError } from '../../shared/errors.js'
 

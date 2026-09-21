@@ -298,11 +298,29 @@ export async function postearMensaje (destino, payload, hilo = null) {
  * Slack manda en cada invocacion.
  */
 export async function responderResponseUrl (responseUrl, texto) {
+  return enviarResponseUrl(responseUrl, { response_type: 'ephemeral', text: texto })
+}
+
+/**
+ * Reemplaza el mensaje al que le pulsaron un boton, dejandolo sin botones.
+ *
+ * `blocks: []` va explicito: si solo se manda `text`, Slack conserva los bloques
+ * anteriores y los botones seguirian ahi, invitando a pulsarlos de nuevo sobre
+ * un borrador que ya se resolvio.
+ */
+export async function reemplazarMensaje (responseUrl, texto) {
+  return enviarResponseUrl(responseUrl, {
+    text: texto,
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: texto } }]
+  })
+}
+
+async function enviarResponseUrl (responseUrl, payload) {
   try {
     const res = await fetch(responseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ response_type: 'ephemeral', replace_original: true, text: texto }),
+      body: JSON.stringify({ replace_original: true, ...payload }),
       signal: AbortSignal.timeout(TIMEOUT_MS)
     })
     if (!res.ok) console.error(`[tickets-slack] response_url: HTTP ${res.status}`)

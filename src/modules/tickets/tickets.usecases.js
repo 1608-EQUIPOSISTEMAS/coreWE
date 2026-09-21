@@ -4,7 +4,8 @@ import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
   nextStatus, pickAgent, assertReassignable,
   validateTicketInput, validateComment, validateSlaPolicy,
-  computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel
+  computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
+  ESTADOS_ACTIVOS
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
@@ -380,6 +381,16 @@ async function barrerAlertas (ahora) {
  * pregunta se entera por que, no con un error generico.
  */
 export async function createTicketFromSlack ({ slackUserId, titulo, problema, link }) {
+  const usuario = await resolverUsuarioDeSlack(slackUserId)
+  return createTicket({ userId: usuario.user_id, titulo, problema, link, archivos: [], slackUserId })
+}
+
+/**
+ * Del user_id de Slack a la cuenta del ERP, cruzando por email. Es el unico
+ * puente entre las dos identidades: Slack no conoce el user_id del ERP y el
+ * payload del evento solo trae el suyo.
+ */
+export async function resolverUsuarioDeSlack (slackUserId) {
   const email = slackUserId ? await slack.obtenerEmailDeUsuarioSlack(slackUserId) : null
   if (!email) {
     throw new DomainError('No pudimos leer tu email de Slack. Crea el ticket desde el ERP.')
@@ -390,5 +401,36 @@ export async function createTicketFromSlack ({ slackUserId, titulo, problema, li
     throw new DomainError(`No encontramos una cuenta activa del ERP con el correo ${email}. Crea el ticket desde el ERP o avisa a soporte.`)
   }
 
-  return createTicket({ userId: usuario.user_id, titulo, problema, link, archivos: [], slackUserId })
+  return usuario
+}
+
+/**
+ * Los tickets que este usuario de Slack puede consultar por DM.
+ *
+ * Alcance deliberadamente mas estrecho que el de la web: por DM cada quien ve
+ * lo SUYO y nada mas, aunque en el ERP sea lider o gerencia. El canal privado
+ * de un bot no es el lugar para asomarse al area entera, y la bandeja completa
+ * ya esta a un clic en el ERP.
+ *
+ * Con `ticketRef` responde por ese ticket (null si no existe o no es suyo); sin
+ * el, devuelve los activos, del mas urgente al menos.
+ */
+export async function consultarAvanceDesdeSlack ({ slackUserId, ticketRef = null }) {
+  const usuario = await resolverUsuarioDeSlack(slackUserId)
+  const ahora = new Date()
+
+  if (ticketRef) {
+    const fila = await repo.detail(ticketRef)
+    // Mismo criterio que canRead para un scope OWN, escrito aca porque el
+    // usuario de Slack no llega con sus roles cargados.
+    if (!fila || fila.created_by_id !== usuario.user_id) return { ticket: null, activos: [] }
+    return { ticket: withSla(fila, ahora), activos: [] }
+  }
+
+  const filas = await repo.list({ areaRoles: null, userId: usuario.user_id })
+  const activos = filas
+    .filter(f => ESTADOS_ACTIVOS.includes(f.status))
+    .map(f => withSla(f, ahora))
+
+  return { ticket: null, activos }
 }

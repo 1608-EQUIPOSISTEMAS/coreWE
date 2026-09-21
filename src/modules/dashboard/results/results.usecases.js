@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER } from '../../audit/audit.entity.js'
+import { AREA_OF_LEADER } from '../../../shared/organigrama.js'
 import { editionTeacherFollowup } from '../../edition/edition.usecases.js'
 import { fetchComercialRaw } from './comercial.repository.js'
 import { buildComercialResults } from './comercial.entity.js'

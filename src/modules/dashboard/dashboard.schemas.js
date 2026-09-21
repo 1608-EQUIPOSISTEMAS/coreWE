@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER } from '../audit/audit.entity.js'
+import { AREA_OF_LEADER } from '../../shared/organigrama.js'
 
 // JSON schemas de validacion (Fastify/AJV) del dominio dashboard.
 // Movidos verbatim desde las rutas legacy durante la migracion.

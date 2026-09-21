@@ -24,6 +24,19 @@ export function registrarParserSlack (fastify) {
         done(err)
       }
     })
+
+  // La Events API no manda formularios sino JSON, asi que el parser propio de
+  // Fastify tampoco sirve: descarta el buffer original y la firma se calcula
+  // sobre el body crudo. Se sobreescribe solo dentro de este plugin.
+  fastify.addContentTypeParser('application/json', { parseAs: 'buffer' },
+    (req, body, done) => {
+      req.rawBody = body
+      try {
+        done(null, body.length ? JSON.parse(body.toString('utf8')) : {})
+      } catch (err) {
+        done(err)
+      }
+    })
 }
 
 /**

@@ -6,6 +6,8 @@ import {
 import * as ctrl from './tickets.controller.js'
 import { registrarParserSlack, verificarFirmaSlack } from './slack/slack.verify.js'
 import { slashCommandHandler } from './slack/slack.command.js'
+import { eventsHandler } from './slack/slack.events.js'
+import { interactionsHandler } from './slack/slack.interactions.js'
 
 // Subir archivos es mas caro que una consulta: limite propio, mas holgado que
 // el global por segundo pero acotado en el rato.
@@ -45,17 +47,33 @@ export default async function ticketsRoutes (fastify) {
   fastify.post('/sla/policies', { schema: slaPoliciesSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.slaPoliciesHandler)
   fastify.post('/sla/policy-save', { schema: slaPolicySaveSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.slaPolicySaveHandler)
 
-  // ── Slash command de Slack ───────────────────────────────────────────────
+  // ── Slack ────────────────────────────────────────────────────────────────
   //
-  // Sub-plugin encapsulado: el parser de urlencoded solo rige aca dentro, no
-  // cambia como parsea el resto de la aplicacion. No lleva authenticate (Slack
-  // no tiene JWT): la autenticidad la da la firma HMAC del request.
+  // Sub-plugin encapsulado: los parsers de urlencoded y JSON solo rigen aca
+  // dentro, no cambian como parsea el resto de la aplicacion. Ninguna de estas
+  // rutas lleva authenticate (Slack no tiene JWT): la autenticidad la da la
+  // firma HMAC del request, que es lo que verifica verificarFirmaSlack.
   //
-  // Si faltan las credenciales la ruta no se monta, igual que en el sistema
+  // Si faltan las credenciales las rutas no se montan, igual que en el sistema
   // origen: mejor un 404 claro que un endpoint que siempre responde 503.
   if (process.env.SLACK_SIGNING_SECRET && process.env.SLACK_BOT_TOKEN) {
     await fastify.register(async (slack) => {
       registrarParserSlack(slack)
+
+      // Via principal: DM en texto plano al bot. Lo lee la IA y devuelve un
+      // borrador con botones, que se resuelven en /interactions.
+      slack.post('/events', {
+        schema: { tags: ['Tickets'], summary: 'Events API: DM al bot (lo llama Slack, no el ERP)' },
+        preHandler: [verificarFirmaSlack]
+      }, eventsHandler)
+
+      slack.post('/interactions', {
+        schema: { tags: ['Tickets'], summary: 'Botones del borrador de ticket (lo llama Slack, no el ERP)' },
+        preHandler: [verificarFirmaSlack]
+      }, interactionsHandler)
+
+      // Via anterior, con formato `Titulo - Problema - link`. Se mantiene
+      // mientras la gente se acostumbra al DM; no estorba a nadie.
       slack.post('/commands', {
         schema: { tags: ['Tickets'], summary: 'Slash command /ticket (lo llama Slack, no el ERP)' },
         preHandler: [verificarFirmaSlack]
