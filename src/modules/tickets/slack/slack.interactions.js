@@ -63,9 +63,10 @@ async function resolver (accion, payload) {
       link: borrador.link
     })
     // El detalle completo llega aparte: createTicket abre el hilo de
-    // seguimiento en este mismo DM. Aca solo se cierra el borrador.
+    // seguimiento en este mismo DM. Aca solo se cierra el borrador con la
+    // confirmacion minima; la info completa la ve el area en su canal.
     await reemplazarMensaje(responseUrl,
-      `✅ Ticket *#${formatTicketCode(ticket.ticket_id)}* creado con prioridad *${ticket.priority}*.`)
+      `✅ Tu ticket fue creado correctamente. Número: *#${formatTicketCode(ticket.ticket_id)}*.`)
   } catch (err) {
     await reemplazarMensaje(responseUrl, mensajeDeError(err, '[tickets-slack] botón crear'))
   }

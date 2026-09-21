@@ -62,7 +62,7 @@ describe('interactionsHandler', () => {
       problema: BORRADOR.problema,
       link: 'https://erp.test/r'
     })
-    expect(ultimoTexto()).toMatch(/#00042.*ALTA/s)
+    expect(ultimoTexto()).toMatch(/#00042/)
   })
 
   it('descartar no crea nada', async () => {
