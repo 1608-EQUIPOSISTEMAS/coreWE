@@ -11,6 +11,7 @@ import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import { removeAttachments } from './tickets.files.js'
 import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
+import { startTicketNote, getTicketNote } from './ai-note/ticket-ai.usecases.js'
 
 // Orquestacion: consulta al repositorio, decide con la entity y dispara los
 // efectos externos. Los avisos a Slack van siempre con `void`: no suman latencia
@@ -54,6 +55,18 @@ export async function ticketDetail ({ roles = [], userId = null, ticketId }) {
     // Mover el estado exige ser el agente asignado, no solo ser ADMIN.
     canChangeStatus: scope.canManage && ticket.assigned_to_id === userId
   }
+}
+
+// Nota IA del ticket, con el mismo permiso de lectura que el detalle.
+export async function ticketAiNote ({ roles = [], userId = null, ticketId }) {
+  const scope = ticketScopeFor({ roles, userId })
+  const ticket = await repo.detail(ticketId)
+  if (!ticket) throw new NotFoundError('Ticket no encontrado')
+  assertCanRead(ticket, scope, userId)
+  return getTicketNote({
+    ticket: { ...ticket, area: ticketAreaLabel(ticket.creador_roles) },
+    canManage: scope.canManage
+  })
 }
 
 export async function listComments ({ roles = [], userId = null, ticketId }) {
@@ -141,6 +154,10 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   // El efimero del slash command se pierde al cerrar Slack y su response_url
   // caduca a los 30 minutos: el seguimiento vive en un DM propio.
   if (slackUserId) void abrirSeguimiento(ticket, slackUserId)
+
+  // Nota IA (resumen, datos que faltan, borrador de respuesta) en segundo
+  // plano: el modelo local tarda ~30 s y el ticket ya quedo creado.
+  void startTicketNote({ ...ticket, area: ticketAreaLabel(ticket.creador_roles) })
 
   return withSla(ticket)
 }

@@ -25,6 +25,8 @@ export default async function ticketsRoutes (fastify) {
   fastify.post('/list', { schema: listSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.listHandler)
   fastify.post('/detail', { schema: detailSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.detailHandler)
   fastify.post('/comments', { schema: commentsSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentsHandler)
+  // Nota IA: 'listo' desde la tabla, o 'generando' y el front vuelve a consultar.
+  fastify.post('/ai-note', { schema: detailSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.aiNoteHandler)
 
   // Multipart: sin schema.body (AJV con removeAdditional lo vaciaria). Validan
   // tickets.entity y tickets.files.

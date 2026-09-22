@@ -1,4 +1,6 @@
 import * as usecases from './dashboard.usecases.js'
+import { getDailyPlan, regenerableAreas, startDailyPlanGeneration } from './daily-plan/daily-plan.usecases.js'
+import { ForbiddenError } from '../../shared/errors.js'
 
 export async function adminSummaryHandler (req, reply) {
   const data = await usecases.adminSummary()
@@ -72,4 +74,22 @@ export async function teamSummaryHandler (req, reply) {
     viewAs: req.body?.view_as
   })
   return reply.send({ ok: true, data })
+}
+
+export async function dailyPlanHandler (req, reply) {
+  const data = await getDailyPlan({
+    roles: req.user?.roles || [],
+    userId: req.user?.id,
+    viewAs: req.body?.view_as
+  })
+  return reply.send({ ok: true, data })
+}
+
+// Arranca en segundo plano y responde al toque: generar tarda minutos (modelo
+// local en CPU). El front consulta /daily-plan hasta que `generando` sea false.
+export async function dailyPlanRegenerateHandler (req, reply) {
+  const areas = regenerableAreas({ roles: req.user?.roles || [], viewAs: req.body?.view_as })
+  if (!areas.length) throw new ForbiddenError('Solo el líder del área puede regenerar el plan del día')
+  const data = startDailyPlanGeneration({ areas })
+  return reply.code(202).send({ ok: true, data: { ...data, areas } })
 }

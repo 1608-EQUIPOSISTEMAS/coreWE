@@ -1,5 +1,7 @@
 // Reglas puras del dominio edition. Sin BD, Odoo, Slack ni red.
 
+import { resolveOllamaUrl, aiAuditorAllowedHosts } from '../../shared/utils/ai-hosts.js'
+
 // =====================================================================
 // RUBRICA DE AUDITORIA DE AULA — dos versiones conviviendo
 // =====================================================================
@@ -354,23 +356,10 @@ export function computeGradeTotals (item, sessionsTotal = 0) {
 // Observaciones IA (Ollama local via tunel SSH)
 // =====================================================================
 
-// Resuelve y valida la URL del Ollama local contra la misma allowlist del
-// auditor IA (loopback + AI_AUDITOR_ALLOWED_HOSTS). Lanza si el host no esta
-// permitido. Se invoca en la primera llamada, no en import-time.
-export function resolveOllamaUrl (env = process.env) {
-  const raw = env.OLLAMA_URL || 'http://127.0.0.1:11434'
-  const allowed = aiAuditorAllowedHosts(env)
-  let hostname
-  try {
-    hostname = new URL(raw).hostname
-  } catch (err) {
-    throw new Error(`OLLAMA_URL invalida: ${err.message}`)
-  }
-  if (!allowed.has(hostname)) {
-    throw new Error(`OLLAMA_URL host no permitido: ${hostname}. Agregalo a AI_AUDITOR_ALLOWED_HOSTS.`)
-  }
-  return raw
-}
+// resolveOllamaUrl y aiAuditorAllowedHosts viven en shared/utils/ai-hosts.js
+// (los usa tambien el adaptador shared/adapters/llm); se reexportan para no
+// romper a quien los importa desde aqui.
+export { resolveOllamaUrl, aiAuditorAllowedHosts }
 
 // Observacion fija para alumnos sin ninguna nota: no pasa por el modelo.
 export const OBS_SIN_NOTAS =
@@ -499,16 +488,6 @@ export function parseReportRecommendations (text) {
     }))
     .filter((r) => r.titulo && r.detalle)
     .slice(0, 3)
-}
-
-// Hosts permitidos para el sidecar de IA. Loopback siempre + los declarados en
-// AI_AUDITOR_ALLOWED_HOSTS. Funcion para diferir la lectura del env al primer
-// uso (no en import-time) y evitar que un host invalido tumbe el arranque.
-export function aiAuditorAllowedHosts (env = process.env) {
-  return new Set([
-    '127.0.0.1', 'localhost', '::1',
-    ...(env.AI_AUDITOR_ALLOWED_HOSTS || '').split(',').map(s => s.trim()).filter(Boolean)
-  ])
 }
 
 // Logica anti-SSRF: solo se acepta una URL cuyo host este en la allowlist.
