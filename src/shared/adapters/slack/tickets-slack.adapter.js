@@ -7,10 +7,13 @@
 //   SLACK_BOT_TOKEN       Web API: users.info (identidad del slash command) y
 //                         chat.postMessage (hilo de seguimiento por DM).
 //   SLACK_SIGNING_SECRET   verificacion de firma del slash command.
+//   FRONTEND_PUBLIC_URL    base del ERP (ej. https://app.we-educacion.com) para
+//                         armar el link "Ver detalle" del DM de apertura.
 //
-// Las tres son OPCIONALES. Sin webhook no salen notificaciones; sin bot token
-// no hay /ticket ni hilo. Nada de eso rompe el modulo: se sigue trabajando
-// desde la web igual que siempre.
+// Las cuatro son OPCIONALES. Sin webhook no salen notificaciones; sin bot
+// token no hay /ticket ni hilo; sin FRONTEND_PUBLIC_URL el DM de apertura sale
+// sin el link. Nada de eso rompe el modulo: se sigue trabajando desde la web
+// igual que siempre.
 
 const TIMEOUT_MS = 5000
 
@@ -338,24 +341,27 @@ async function enviarResponseUrl (responseUrl, payload) {
 //
 // Los tickets creados desde la web no tienen hilo y aca no pasa nada.
 
+// Mensaje de apertura MINIMO a proposito: el detalle completo (problematica,
+// prioridad, asignado) ya salio por notificarTicketCreado() al canal del
+// area. Este DM es solo la confirmacion y la raiz del hilo donde se van a
+// colgar los avances (tomado, comentado, resuelto); repetir la problematica
+// aca era el bug que hacia parecer que "se seguia mandando por DM".
 export function construirMensajeDeApertura (ticket) {
   const emoji = EMOJI_PRIORIDAD[ticket.priority] ?? ':white_circle:'
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `🆕 Ticket #${codigo(ticket.ticket_id)} creado`, emoji: true } },
-    { type: 'section', text: { type: 'mrkdwn', text: `*${ticket.title}*` } },
-    { type: 'divider' },
     {
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${ticket.priority}` },
         { type: 'mrkdwn', text: `*Asignado a:*\n${ticket.asignado ?? 'sin asignar'}` }
       ]
-    },
-    { type: 'section', text: { type: 'mrkdwn', text: `*📝 Problemática:*\n${truncar(String(ticket.problem ?? ''))}` } }
+    }
   ]
 
-  if (ticket.link) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*🔗 Referencia:*\n${ticket.link}` } })
+  const urlDetalle = enlaceAlTicket(ticket.ticket_id)
+  if (urlDetalle) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*🔗 Ver detalle:*\n${urlDetalle}` } })
   }
 
   blocks.push({
@@ -363,7 +369,14 @@ export function construirMensajeDeApertura (ticket) {
     elements: [{ type: 'mrkdwn', text: 'Te voy avisando por acá cómo avanza: cada novedad queda en el hilo de este mensaje.' }]
   })
 
-  return { text: `Ticket #${codigo(ticket.ticket_id)} creado: ${ticket.title}`, blocks }
+  return { text: `Ticket #${codigo(ticket.ticket_id)} creado`, blocks }
+}
+
+/** Link al detalle en el ERP. Sin FRONTEND_PUBLIC_URL configurado, se omite el bloque. */
+function enlaceAlTicket (ticketId) {
+  const base = process.env.FRONTEND_PUBLIC_URL
+  if (!base) return null
+  return `${base.replace(/\/+$/, '')}/tickets/${ticketId}`
 }
 
 /** Abre el DM y devuelve el mensaje raiz, o null si no se pudo. */
