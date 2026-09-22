@@ -82,5 +82,41 @@ curso/alumno en un error de matrícula; detecta un ticket vago) y no confunde
 consultas con ventas. Dónde no: sigue inventando metas ("contactar 30 de 151")
 y a veces plazos ("inician en 14 días" cuando eran 4).
 
-Recomendación: 14B para lo que corre de madrugada (plan del día: ~45 min en vez
-de ~15, nadie espera) y 7B para lo que se pide en pantalla (resumen de lead).
+Decisión (22-sep-2026): quedarnos con **un solo modelo, el 14B**. Para eso
+ninguna función puede depender de que el modelo responda rápido, así que las dos
+que quedaban esperando en pantalla pasaron a segundo plano (ver abajo).
+
+## Todo en segundo plano (requisito para usar solo el 14B)
+
+Antes, Académica tenía dos funciones que corrían **mientras la persona esperaba**,
+con un tope de 30-45 s por llamada: las observaciones de notas y las
+recomendaciones del Reporte Académico. Con el 14B (≈3x más lento) reventaban.
+
+Ahora usan `shared/adapters/llm/ai-jobs.js`: la pantalla arranca el trabajo,
+recibe un `job_id` y consulta el avance ("Generando 12 de 16…") hasta que está
+listo. Endpoints nuevos (los sincrónicos siguen existiendo por compatibilidad
+durante el despliegue):
+
+- `POST /api/edition/classroomgradesobservations/start` `{ edition_id, enrollment_ids?, force? }` → 202 con el job.
+- `POST /api/edition/reportrecommendations/start` `{ snapshot, force? }` → 202 con el job.
+- `POST /api/edition/aijobstatus` `{ job_id }` → `generando` (con progreso) | `listo` (con data) | `error` | `no_encontrado`.
+
+Detalles: el trabajo vive en memoria 30 min; si el backend se reinicia a mitad,
+la pantalla dice que se reintente. Un aula ya generada se **reutiliza** mientras
+nadie guarde notas (la clave lleva la huella de las notas); "Regenerar" de un
+alumno siempre pide texto nuevo. Timeout por llamada: `OLLAMA_TIMEOUT_MS`
+(default 5 min, antes 30 s).
+
+Medido con el 14B: aula de 15 alumnos + resumen en **12.7 min** (con avance
+visible), recomendaciones en **93 s**. Con el tope viejo de 3 min, las dos
+fallaban.
+
+## Pasar a solo 14B (cuando se despliegue)
+
+1. Desplegar esta rama (backend y frontend juntos: el frontend usa los endpoints nuevos).
+2. `OLLAMA_MODEL=qwen2.5:14b-instruct` en `backend/.env` y reiniciar el backend.
+3. Comprobar Académica (observaciones y recomendaciones) y el plan del día.
+4. Recién ahí `ollama rm qwen2.5:7b-instruct` (libera 4.7 GB).
+
+El plan del día de madrugada pasa de ~15 a ~45 min (arranca 6:30, listo ~7:15).
+El resumen de lead en pantalla pasa de ~1 a ~2.5 min, ya en segundo plano.

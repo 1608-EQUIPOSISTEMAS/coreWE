@@ -21,7 +21,10 @@ describe('wiring IA local (sin BD)', () => {
     ['/api/dashboard/daily-plan', {}],
     ['/api/dashboard/daily-plan/regenerate', {}],
     ['/api/comercial/leadsummary', { id: 1 }],
-    ['/api/tickets/ai-note', { ticket_id: 1 }]
+    ['/api/tickets/ai-note', { ticket_id: 1 }],
+    ['/api/edition/classroomgradesobservations/start', { edition_id: 1 }],
+    ['/api/edition/reportrecommendations/start', { snapshot: {} }],
+    ['/api/edition/aijobstatus', { job_id: 'x' }]
   ])('%s sin token responde 401', async (url, payload) => {
     const res = await app.inject({ method: 'POST', url, payload })
     expect(res.statusCode).toBe(401)
@@ -64,6 +67,27 @@ describe('wiring IA local (sin BD)', () => {
       url: '/api/tickets/ai-note',
       headers: { authorization: `Bearer ${token(['ADMIN'])}` },
       payload: {}
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('estado de un trabajo IA inexistente = no_encontrado (sin BD ni IA)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/aijobstatus',
+      headers: { authorization: `Bearer ${token(['ACADEMICA'])}` },
+      payload: { job_id: 'no-existe' }
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toEqual({ job_id: 'no-existe', estado: 'no_encontrado' })
+  })
+
+  it('arrancar observaciones exige edition_id entero (400)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/edition/classroomgradesobservations/start',
+      headers: { authorization: `Bearer ${token(['ACADEMICA'])}` },
+      payload: { edition_id: 'abc' }
     })
     expect(res.statusCode).toBe(400)
   })
