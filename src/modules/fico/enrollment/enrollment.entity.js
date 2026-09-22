@@ -299,10 +299,11 @@ export function buildCourseChangeInscription ({
   }
 }
 
-// Diferencia de monto del cambio de curso: total nuevo - total viejo (neto de
-// descuento del origen).
-export function courseChangeAmountDifference (oldTotal, oldDiscount, newTotal) {
-  const oldAmount = Number(oldTotal || 0) - Number(oldDiscount || 0)
+// Diferencia de monto del cambio de curso: total nuevo - total viejo.
+// enrollments.total_amount YA es el neto (lista - descuento): restarle
+// discount_amount otra vez lo deja negativo en toda venta con descuento > 50%.
+export function courseChangeAmountDifference (oldTotal, newTotal) {
+  const oldAmount = Number(oldTotal || 0)
   return { oldAmount, amountDifference: Number(newTotal || 0) - oldAmount }
 }
 

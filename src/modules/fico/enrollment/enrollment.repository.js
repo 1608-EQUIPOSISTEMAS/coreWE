@@ -505,6 +505,13 @@ export class EnrollmentRepository {
         return
       }
       await client.query('DELETE FROM payment_installments WHERE enrollment_id = $1', [newEid])
+      // Un destino de CC nace "contado"; con cuotas heredadas tiene que decir el
+      // plan del origen o la hoja FICO lo cuenta como pagado. En la RP es no-op.
+      await client.query(`
+        UPDATE enrollments d SET cat_payment_plan = o.cat_payment_plan
+        FROM enrollments o
+        WHERE d.enrollment_id = $1 AND o.enrollment_id = $2
+      `, [newEid, oldEnrollmentId])
       for (const p of plan) {
         const res = await client.query(`
           UPDATE payment_installments

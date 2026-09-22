@@ -7,7 +7,6 @@ import {
   ReprogramacionError,
   assertPuedeAceptar,
   assertPuedeProponer,
-  netoDeLaVenta,
   resolveDestKind
 } from '../reprogramacion.entity.js'
 
@@ -128,14 +127,3 @@ describe('assertPuedeProponer', () => {
   })
 })
 
-describe('netoDeLaVenta', () => {
-  // El alumno no paga la diferencia por una edicion que cancelamos nosotros:
-  // el destino se cobra al mismo neto que ya pago.
-  it('descuenta el descuento del total', () => {
-    expect(netoDeLaVenta({ total_amount: '1700.00', discount_amount: '200.00' })).toBe(1500)
-  })
-
-  it('tolera nulos', () => {
-    expect(netoDeLaVenta({})).toBe(0)
-  })
-})

@@ -97,13 +97,6 @@ export function assertPuedeAceptar (caso) {
   }
 }
 
-// El alumno no paga por una edicion que cancelamos nosotros: el destino se cobra
-// al mismo neto que ya pago. Si el programa nuevo vale mas, la diferencia es una
-// decision comercial aparte, fuera de este flujo.
-export function netoDeLaVenta ({ total_amount, discount_amount }) {
-  return Number(total_amount || 0) - Number(discount_amount || 0)
-}
-
 export function buildJustificacion ({ edicionesCaidas = [], destino }) {
   const caidas = edicionesCaidas.filter(Boolean).join(', ') || 'edicion cancelada'
   return `Reubicacion por cancelacion de ${caidas}. Destino aprobado por FICO: ${destino || 's/d'}.`
