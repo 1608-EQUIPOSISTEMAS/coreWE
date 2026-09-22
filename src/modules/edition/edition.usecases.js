@@ -1,4 +1,6 @@
 import { editionRepository } from './edition.repository.js'
+import { ollamaChatMessages } from '../../shared/adapters/llm/ollama.adapter.js'
+import { startJob, getJob } from '../../shared/adapters/llm/ai-jobs.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import odooClient from '../../config/odooClient.js'
 import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js'
@@ -931,31 +933,25 @@ export async function classroomGradesSave ({ edition_id, items = [], user_id = n
   return { ok: true, data: saved }
 }
 
-// Llama al Ollama local (OpenAI-compatible) y devuelve el texto. El modelo
-// corre detras de un tunel SSH en loopback; timeout corto porque un 7B
-// responde en segundos o no va a responder.
-async function ollamaChat (baseUrl, model, system, user, timeoutMs = 30000) {
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      max_tokens: 220,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ]
-    }),
-    signal: AbortSignal.timeout(timeoutMs)
-  })
-  if (!res.ok) {
-    throw new Error(`Ollama respondio ${res.status}`)
-  }
-  const data = await res.json()
-  const text = data?.choices?.[0]?.message?.content
-  if (!text || !String(text).trim()) throw new Error('Ollama devolvio respuesta vacia')
-  return String(text).trim()
+// Llama al Ollama local via el adaptador compartido: misma fila en serie que
+// el plan del dia, el resumen de leads y los tickets, y el modelo de
+// OLLAMA_MODEL. baseUrl/model se conservan en la firma por compatibilidad con
+// los llamadores; la URL ya se valido con resolveOllamaUrl y el adaptador la
+// vuelve a resolver del mismo env.
+//
+// Timeout: OLLAMA_TIMEOUT_MS (default 5 min). Antes era 30-45 s porque un 7B
+// responde en segundos; con el 14B en CPU una respuesta larga (recomendaciones)
+// o la primera tras cargar el modelo (9 GB desde disco) pasa los 3 min. Ya no
+// importa que tarde: la pantalla usa los trabajos en segundo plano (ai-jobs).
+function ollamaTimeoutMs () {
+  return Number(process.env.OLLAMA_TIMEOUT_MS) || 300000
+}
+
+async function ollamaChat (_baseUrl, _model, system, user, timeoutMs = ollamaTimeoutMs()) {
+  return ollamaChatMessages([
+    { role: 'system', content: system },
+    { role: 'user', content: user }
+  ], { maxTokens: 220, temperature: 0.3, timeoutMs: Math.max(timeoutMs, ollamaTimeoutMs()) })
 }
 
 // "Tiene notas registradas" = existe al menos una celda escrita (un 0 tecleado
@@ -972,7 +968,7 @@ function hasRegisteredGrades (item) {
 // modelo local. NO persiste nada: el frontend coloca los textos en el draft y
 // se guardan con el flujo normal (el humano siempre revisa antes).
 // enrollment_ids opcional: regenerar solo esos alumnos (sin resumen de aula).
-export async function classroomGradesObservations ({ edition_id, enrollment_ids = null } = {}) {
+export async function classroomGradesObservations ({ edition_id, enrollment_ids = null } = {}, { progreso = () => {} } = {}) {
   const eid = Number(edition_id)
   if (!Number.isFinite(eid)) {
     return { ok: false, message: 'edition_id invalido' }
@@ -1002,12 +998,15 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
     return { ok: false, message: 'Sin alumnos para generar observaciones' }
   }
 
-  // Concurrencia limitada: un 7B local atiende pocas requests a la vez y el
-  // tunel agrega latencia; 4 en paralelo equilibra tiempo total y estabilidad.
+  // Los workers solo mantienen la fila del adaptador llena (el modelo atiende
+  // de a uno); 4 evita que un alumno sin notas deje la fila vacia un turno.
   const CONCURRENCY = 4
   const items = []
   const errors = []
   let cursor = 0
+  let hechos = 0
+  const total = targets.length + (wanted ? 0 : 1) // +1: resumen del aula
+  progreso(0, total)
   async function worker () {
     while (cursor < targets.length) {
       const s = targets[cursor++]
@@ -1016,6 +1015,7 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
       const totals = computeGradeTotals(item, sessionsTotal)
       if (!hasRegisteredGrades(item)) {
         items.push({ enrollment_id: s.enrollment_id, observation: OBS_SIN_NOTAS })
+        progreso(++hechos, total)
         continue
       }
       try {
@@ -1025,6 +1025,7 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
       } catch (err) {
         errors.push({ enrollment_id: s.enrollment_id, message: err.message })
       }
+      progreso(++hechos, total)
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker))
@@ -1068,6 +1069,7 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
       // El resumen es secundario: si falla, igual devolvemos las observaciones.
       console.warn('[gradesObservations] resumen de aula fallo:', err.message)
     }
+    progreso(total, total)
   }
 
   return { ok: true, data: { items, aula_summary: aulaSummary, errors } }
@@ -1108,7 +1110,7 @@ export async function reportRecommendations ({ snapshot } = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
     let text
     try {
-      text = await ollamaChat(baseUrl, model, system, user, 45000)
+      text = await ollamaChat(baseUrl, model, system, user)
     } catch (err) {
       // Error de red/timeout con el servicio ya verificado: reintentar aqui
       // solo duplica la espera. Salimos y que el frontend use su respaldo.
@@ -1123,6 +1125,41 @@ export async function reportRecommendations ({ snapshot } = {}) {
     lastError = `respuesta con ${items.length} recomendaciones validas (se esperaban 3)`
   }
   return { ok: false, message: `IA local no disponible (${lastError}). Verifica el tunel a Ollama.` }
+}
+
+// ── Trabajos en segundo plano (ai-jobs) ──────────────────────────────────
+// Misma logica que classroomGradesObservations / reportRecommendations, pero
+// la request vuelve al instante con un job_id y la pantalla consulta el avance
+// con aiJobStatus. Es lo que permite un modelo lento (14B) sin timeouts.
+
+// La clave lleva la huella de las notas guardadas (cuantas filas y la ultima
+// modificacion): si el coordinador sale de la pantalla y vuelve, "Generar"
+// recoge el resultado ya hecho en vez de repetir ~10 min de modelo; si
+// alguien guardo notas entre medio, la huella cambia y se genera de nuevo.
+export async function startGradesObservations ({ edition_id, enrollment_ids = null, force = false } = {}) {
+  const eid = Number(edition_id)
+  if (!Number.isFinite(eid)) return { ok: false, message: 'edition_id invalido' }
+  const ids = Array.isArray(enrollment_ids) && enrollment_ids.length ? [...enrollment_ids].map(Number).sort((a, b) => a - b) : null
+  const grades = await repo.classroomGradesGet(eid)
+  const ultima = grades.reduce((max, g) => (g.updated_at && new Date(g.updated_at) > max ? new Date(g.updated_at) : max), new Date(0))
+  const huella = `${grades.length}@${ultima.toISOString()}`
+  const job = startJob(
+    { tipo: 'observaciones', clave: `obs:${eid}:${ids ? ids.join(',') : 'aula'}:${huella}`, force },
+    ({ progreso }) => classroomGradesObservations({ edition_id: eid, enrollment_ids: ids }, { progreso })
+  )
+  return { ok: true, data: job }
+}
+
+export function startReportRecommendations ({ snapshot = {}, force = false } = {}) {
+  const job = startJob(
+    { tipo: 'recomendaciones', clave: `rec:${JSON.stringify(snapshot)}`, force },
+    () => reportRecommendations({ snapshot })
+  )
+  return { ok: true, data: job }
+}
+
+export function aiJobStatus ({ job_id: jobId } = {}) {
+  return { ok: true, data: getJob(String(jobId ?? '')) }
 }
 
 // Proxy del analisis IA: reenvia transcript + imagen al sidecar FastAPI y

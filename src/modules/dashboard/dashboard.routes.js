@@ -12,7 +12,8 @@ import {
   availableWeeksSchema,
   ventasCanalSchema,
   detailSalesSchema,
-  teamSummarySchema
+  teamSummarySchema,
+  dailyPlanSchema
 } from './dashboard.schemas.js'
 import * as ctrl from './dashboard.controller.js'
 
@@ -23,6 +24,11 @@ export default async function dashboardRoutes (fastify) {
   // Sin gate de rol a proposito: todo usuario autenticado tiene panel. Que ve
   // (su area o solo lo suyo) lo decide teamScopeFor con los roles del token.
   fastify.post('/team-summary', { schema: teamSummarySchema }, ctrl.teamSummaryHandler)
+  // Plan del dia con IA: se genera de madrugada (services/daily-plan.cron.js) y
+  // aqui solo se lee. Que plan ve cada quien lo decide getDailyPlan con los
+  // roles del token; regenerar lo puede solo el lider de esa area (o ADMIN).
+  fastify.post('/daily-plan', { schema: dailyPlanSchema }, ctrl.dailyPlanHandler)
+  fastify.post('/daily-plan/regenerate', { schema: dailyPlanSchema }, ctrl.dailyPlanRegenerateHandler)
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
   fastify.post('/program-goals/save', { schema: programGoalsSaveSchema }, ctrl.programGoalsSaveHandler)

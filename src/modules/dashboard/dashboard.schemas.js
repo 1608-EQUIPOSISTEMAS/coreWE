@@ -196,3 +196,6 @@ export const teamSummarySchema = {
     properties: { view_as: { type: 'string', enum: Object.keys(AREA_OF_LEADER) } }
   }
 }
+
+// Mismo view_as que el panel de equipo: solo lo respeta para ADMIN.
+export const dailyPlanSchema = teamSummarySchema

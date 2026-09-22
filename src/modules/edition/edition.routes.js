@@ -37,6 +37,9 @@ import {
   editionTreeUpdateSchema,
   bulkUpdateWhatsappSchema,
   a5PendingEnrollmentsSchema,
+  classroomGradesObservationsStartSchema,
+  reportRecommendationsStartSchema,
+  aiJobStatusSchema,
   a5CancelAndHandOffSchema,
   schedulePdfSchema
 } from './edition.schemas.js'
@@ -152,6 +155,13 @@ export default async function editionRoutes (fastify) {
     config: { timeout: 180000 }
   }, ctrl.classroomGradesObservationsHandler)
 
+  // Version en segundo plano (la que usa la pantalla): responde al instante
+  // con un job_id; el avance se consulta en /aijobstatus. La sincrona de arriba
+  // queda por compatibilidad mientras se despliega el frontend nuevo.
+  fastify.post('/classroomgradesobservations/start', {
+    schema: classroomGradesObservationsStartSchema
+  }, ctrl.classroomGradesObservationsStartHandler)
+
   // Seguimiento B2B: alumnos B2B en aulas EN VIVO + asistencia manual propia
   // (tabla b2b_attendance, independiente de la Lista de Notas). La nota final
   // viaja de solo lectura desde classroom_student_grades.
@@ -173,6 +183,13 @@ export default async function editionRoutes (fastify) {
     schema: reportRecommendationsSchema,
     config: { timeout: 150000 }
   }, ctrl.reportRecommendationsHandler)
+
+  fastify.post('/reportrecommendations/start', {
+    schema: reportRecommendationsStartSchema
+  }, ctrl.reportRecommendationsStartHandler)
+
+  // Estado de un trabajo IA: generando (con progreso), listo (con data) o error.
+  fastify.post('/aijobstatus', { schema: aiJobStatusSchema }, ctrl.aiJobStatusHandler)
 
   // Multipart: transcript_text + syllabus_image + edition_id + session_number.
   // Sin schema porque @fastify/multipart parsea manualmente; validamos en el
