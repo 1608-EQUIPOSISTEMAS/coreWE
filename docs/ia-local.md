@@ -65,3 +65,22 @@ resumen pedido a esa hora espera su turno (la pantalla lo dice: "en fila").
 - `POST /api/dashboard/daily-plan/regenerate` `{ view_as? }` → 202; solo líder del área o ADMIN.
 - `POST /api/comercial/leadsummary` `{ id }` → `listo | generando | error | sin_intentos | apagado`.
 - `POST /api/tickets/ai-note` `{ ticket_id }` → `listo | generando | error | sin_nota | apagado`.
+
+## Comparación 7B vs 14B (22-sep-2026, 23 prompts reales, 6 hilos)
+
+| | 7B (`qwen2.5:7b-instruct`) | 14B (`qwen2.5:14b-instruct`) |
+|---|---|---|
+| Tiempo medio por respuesta | 26 s | 80 s (≈3x) |
+| Velocidad | 5.2 tok/s | 2.7 tok/s |
+| RAM / disco | 5 GB / 4.7 GB | 10 GB / 9 GB |
+| Respuestas válidas (pasan el parser) | 23/23 | 23/23 |
+| Cifras inventadas | 2 ("130 consultas vendidas", "6.6%") | 1 (meta "20 de 110" inventada) |
+
+Dónde gana el 14B: borradores de WhatsApp (el 7B escribió "confirmar que
+recibimos su pago" a alguien que aún no paga), tickets (pide el dato correcto:
+curso/alumno en un error de matrícula; detecta un ticket vago) y no confunde
+consultas con ventas. Dónde no: sigue inventando metas ("contactar 30 de 151")
+y a veces plazos ("inician en 14 días" cuando eran 4).
+
+Recomendación: 14B para lo que corre de madrugada (plan del día: ~45 min en vez
+de ~15, nadie espera) y 7B para lo que se pide en pantalla (resumen de lead).

@@ -219,7 +219,7 @@ const WHATSAPP_SYSTEM = `Eres asesor comercial de WE Educación Ejecutiva (Perú
 Escribes mensajes de WhatsApp para retomar el contacto con un interesado.
 Reglas:
 - Máximo 3 oraciones, tono cordial y profesional, en español de Perú, tratando de "usted".
-- Saluda por el primer nombre. No firmes el mensaje.
+- Saluda por el primer nombre si se conoce; si el nombre es "(no registrado)", saluda sin nombre. No firmes el mensaje.
 - NUNCA menciones precios, montos, descuentos, fechas, horarios ni vacantes: no los conoces.
 - No inventes datos del curso. Si no hay nombre de programa, di "el programa que consultó".
 - Termina con una pregunta corta que invite a responder.
@@ -245,7 +245,9 @@ const WHATSAPP_EJEMPLO = {
 
 export function buildWhatsappMessages (planLead) {
   const user = [
-    `Nombre: ${primerNombre(planLead.nombre)}`,
+    // 8 de cada 10 consultas recientes llegan sin nombre (ni en leads ni en
+    // persons): se dice explicitamente para que el modelo no salude "Hola ,".
+    `Nombre: ${/\p{L}/u.test(primerNombre(planLead.nombre)) ? primerNombre(planLead.nombre) : '(no registrado)'}`,
     `Programa: ${planLead.programa || '(sin programa registrado)'}`,
     `Objetivo: ${WHATSAPP_OBJETIVO[planLead.tipo] ?? WHATSAPP_OBJETIVO.interes}`
   ].join('\n')
@@ -315,7 +317,10 @@ export function cleanModelText (text) {
 // Salvaguarda: un borrador que cite montos o porcentajes se descarta. El prompt
 // lo prohibe, pero un 7B a veces igual inventa un precio.
 export function mentionsMoney (text) {
-  return /(S\/|US\$|\$|soles|d[oó]lares|\d+\s*%)/i.test(String(text ?? ''))
+  // "SAP S/4 HANA" es un nombre de programa, no soles: sin esto se descartaba
+  // todo borrador de un curso SAP.
+  const t = String(text ?? '').replace(/S\/4\s?HANA/gi, '')
+  return /(S\/|US\$|\$|soles|d[oó]lares|\d+\s*%)/i.test(t)
 }
 
 // ── Utilidades ───────────────────────────────────────────────────────────

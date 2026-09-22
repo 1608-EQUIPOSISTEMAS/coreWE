@@ -155,3 +155,16 @@ describe('cleanModelText (parrafos)', () => {
     expect(cleanModelText('Primera oración.\n\nSegunda oración.')).toBe('Primera oración. Segunda oración.')
   })
 })
+
+describe('borrador de WhatsApp: casos reales', () => {
+  it('SAP S/4 HANA no cuenta como monto; S/ 500 sí', () => {
+    expect(mentionsMoney('Sobre el programa SAP S/4 HANA IN, ¿tiene dudas?')).toBe(false)
+    expect(mentionsMoney('SAP S/4HANA cuesta S/ 500')).toBe(true)
+  })
+
+  it('lead sin nombre: se le dice al modelo que no lo hay', () => {
+    const msgs = buildWhatsappMessages({ nombre: '-', programa: 'POWER BI', tipo: 'pago' })
+    expect(msgs.at(-1).content).toContain('Nombre: (no registrado)')
+    expect(buildWhatsappMessages({ nombre: 'ANA TORRES', tipo: 'pago' }).at(-1).content).toContain('Nombre: Ana')
+  })
+})
