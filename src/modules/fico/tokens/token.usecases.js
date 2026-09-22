@@ -9,7 +9,9 @@ import {
   inscriptionFullName,
   resolveCreateState,
   isInstallmentInscription,
-  assertGroupable
+  assertGroupable,
+  assertLeadBelongsToStudent,
+  studentOfInscription
 } from './token.entity.js'
 import { toTokenDto, toTokenListDto, toStatsDto } from './token.dto.js'
 
@@ -36,6 +38,11 @@ export async function getStats () {
 }
 
 export async function createToken (input) {
+  if (input.leadId) {
+    const leadStudents = await repo.findLeadStudents({ leadId: input.leadId })
+    assertLeadBelongsToStudent(leadStudents, studentOfInscription(input.inscriptionData))
+  }
+
   const { status, requestedBy, createdBy } = resolveCreateState(input)
 
   const created = await repo.insert({ ...input, status, requestedBy, createdBy })
@@ -155,6 +162,9 @@ export async function confirmToken ({ tokenId, userId }) {
   let enrollmentId = token.enrollment_id
 
   if (!enrollmentId && token.lead_id) {
+    const leadStudents = await repo.findLeadStudents({ leadId: token.lead_id, excludeTokenId: tokenId })
+    assertLeadBelongsToStudent(leadStudents, studentOfInscription(token.inscription_data))
+
     enrollmentId = await repo.findEnrollmentIdByLead(token.lead_id)
 
     if (!enrollmentId) {

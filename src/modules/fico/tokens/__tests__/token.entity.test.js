@@ -5,6 +5,8 @@ import {
   isInstallmentInscription,
   inscriptionFullName,
   assertGroupable,
+  assertLeadBelongsToStudent,
+  studentOfInscription,
   MAX_TOKENS_PER_GROUP,
   MAX_GROUP_AMOUNT
 } from '../token.entity.js'
@@ -119,5 +121,27 @@ describe('assertGroupable (contribucion)', () => {
 
   it(`rechaza un total mayor a ${MAX_GROUP_AMOUNT}`, () => {
     expect(() => assertGroupable(pair({ amount: 2000 }, { amount: 2000 }), 7)).toThrow(DomainError)
+  })
+})
+
+describe('assertLeadBelongsToStudent', () => {
+  const jose = { document: '46652090', email: 'joselu.aa22@gmail.com', name: 'JOSE LUIS ALCEDO' }
+  const kelly = studentOfInscription({ inscription: { document: '45896749', email: 'kelly.carnero@gmail.com', full_name: 'KELLY', last_name: 'CARNERO' } })
+
+  it('lead sin alumnos: pasa', () => {
+    expect(() => assertLeadBelongsToStudent([], kelly)).not.toThrow()
+  })
+  it('otro documento en el lead: bloquea y nombra al dueno (caso tokens 819/820)', () => {
+    expect(() => assertLeadBelongsToStudent([jose], kelly)).toThrow(/JOSE LUIS ALCEDO/)
+  })
+  it('mismo DNI con o sin cero inicial: es el mismo alumno', () => {
+    expect(() => assertLeadBelongsToStudent([{ document: '3893811' }], { document: '03893811' })).not.toThrow()
+  })
+  it('sin documento decide el correo, sin distinguir mayusculas', () => {
+    expect(() => assertLeadBelongsToStudent([{ email: 'A@x.com' }], { email: 'a@x.com ' })).not.toThrow()
+    expect(() => assertLeadBelongsToStudent([{ email: 'a@x.com' }], { email: 'b@x.com' })).toThrow(DomainError)
+  })
+  it('sin documento ni correo no hay con que decidir: pasa', () => {
+    expect(() => assertLeadBelongsToStudent([jose], {})).not.toThrow()
   })
 })

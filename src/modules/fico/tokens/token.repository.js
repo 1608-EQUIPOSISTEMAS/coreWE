@@ -308,6 +308,29 @@ export class TokenRepository {
     return rows[0]?.enrollment_id || null
   }
 
+  // Alumnos que ya cuelgan del lead: los de sus otros tokens y el dueno de la
+  // inscripcion que el lead ya tenga.
+  async findLeadStudents ({ leadId, excludeTokenId = null }) {
+    const { rows } = await this.db.query(`
+      SELECT pt.inscription_data->'inscription'->>'document' AS document,
+             pt.inscription_data->'inscription'->>'email'    AS email,
+             concat_ws(' ', pt.inscription_data->'inscription'->>'full_name',
+                            pt.inscription_data->'inscription'->>'last_name',
+                            pt.inscription_data->'inscription'->>'mother_last_name') AS name
+        FROM payment_tokens pt
+       WHERE pt.lead_id = $1 AND pt.token_id IS DISTINCT FROM $2
+      UNION ALL
+      SELECT p.document_number, l.origin_email,
+             concat_ws(' ', p.first_name, p.last_name, p.mother_last_name)
+        FROM leads l
+        JOIN enrollments e ON e.enrollment_id = l.enrollment_id
+        JOIN customers c ON c.customer_id = e.customer_id
+        JOIN persons p ON p.person_id = c.person_id
+       WHERE l.lead_id = $1
+    `, [leadId, excludeTokenId])
+    return rows
+  }
+
   async findCatalogIdByAlias (alias) {
     const { rows } = await this.db.query('SELECT catalog_id FROM catalog WHERE alias = $1 LIMIT 1', [alias])
     return rows[0]?.catalog_id || null
