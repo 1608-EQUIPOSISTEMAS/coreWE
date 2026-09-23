@@ -76,6 +76,55 @@ export function sumarMinutos (desde, minutos) {
   return new Date(asDate(desde).getTime() + minutos * 60 * 1000)
 }
 
+// Horario habil de soporte (criterios-prioridad.md): lunes a viernes, 09:00 a
+// 18:00, hora de Lima. Peru no tiene horario de verano: UTC-5 fijo todo el ano.
+export const HORARIO_HABIL = { offsetMinutos: -5 * 60, desde: 9 * 60, hasta: 18 * 60 }
+
+const MIN_MS = 60 * 1000
+const DIA_MIN = 24 * 60
+
+/**
+ * Suma minutos HABILES: el plazo solo corre dentro del horario de soporte. Un
+ * ticket que entra fuera de horario empieza a contar en la proxima apertura
+ * (viernes 17:50 + 30 min -> lunes 09:20).
+ *
+ * Se trabaja en "hora local como si fuera UTC" (desplazando el offset) para
+ * poder usar getUTCDay/getUTCHours sin depender de la zona del servidor.
+ */
+export function sumarMinutosHabiles (desde, minutos, horario = HORARIO_HABIL) {
+  const { offsetMinutos, desde: abre, hasta: cierra } = horario
+  let local = asDate(desde).getTime() + offsetMinutos * MIN_MS
+  let restantes = Math.max(0, Math.round(minutos))
+
+  // Tope de seguridad: un plazo mal escrito no puede colgar el proceso.
+  for (let vueltas = 0; vueltas < 3700; vueltas++) {
+    const d = new Date(local)
+    const inicioDia = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+    const minutoDelDia = (local - inicioDia) / MIN_MS
+    const diaSemana = d.getUTCDay() // 0 domingo, 6 sabado
+
+    // Fin de semana o despues del cierre: saltar a la apertura del proximo dia.
+    if (diaSemana === 0 || diaSemana === 6 || minutoDelDia >= cierra) {
+      local = inicioDia + (DIA_MIN + abre) * MIN_MS
+      continue
+    }
+    // Antes de la apertura: esperar a que abra.
+    if (minutoDelDia < abre) {
+      local = inicioDia + abre * MIN_MS
+      continue
+    }
+
+    const disponibles = cierra - minutoDelDia
+    if (restantes <= disponibles) {
+      local += restantes * MIN_MS
+      return new Date(local - offsetMinutos * MIN_MS)
+    }
+    restantes -= disponibles
+    local = inicioDia + (DIA_MIN + abre) * MIN_MS
+  }
+  throw new Error(`Plazo habil fuera de rango: ${minutos} minutos`)
+}
+
 /** Un ticket esta en riesgo si cualquiera de sus dos relojes lo esta. */
 export function estadosEnRiesgo (sla) {
   const estados = [sla.respuesta.estado, sla.resolucion.estado]

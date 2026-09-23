@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   ticketScopeFor, canRead, assertCanRead, assertCanManage, nextStatus, pickAgent,
-  assertReassignable, validateTicketInput, validateComment, validateSlaPolicy,
+  assertReassignable, validateTicketInput, validateComment,
   computeDueDates, formatTicketCode, withSla, applyFilter, buildKpis,
-  canChangeStatusOf
+  canChangeStatusOf, canReopenOf, reopenByReporter
 } from '../tickets.entity.js'
 
 const AHORA = new Date('2026-01-01T12:00:00Z')
@@ -119,6 +119,26 @@ describe('canChangeStatusOf', () => {
 
   it('quien no gestiona nunca puede', () => {
     expect(canChangeStatusOf({ status: 'ABIERTO', assigned_to_id: null }, gerencia, 9)).toBe(false)
+  })
+})
+
+describe('reabrir desde quien reporto', () => {
+  const cerrado = (o = {}) => ticket({ status: 'CERRADO', first_response_at: AHORA, resolved_at: AHORA, ...o })
+
+  it('quien reporto puede reabrir su ticket resuelto', () => {
+    expect(canReopenOf(cerrado(), 10)).toBe(true)
+    expect(reopenByReporter(cerrado(), 10))
+      .toEqual({ status: 'EN_PROGRESO', first_response_at: AHORA, resolved_at: null })
+  })
+
+  it('otro usuario no puede, aunque sea el agente asignado', () => {
+    expect(canReopenOf(cerrado(), 99)).toBe(false)
+    expect(() => reopenByReporter(cerrado(), 99)).toThrow(/Solo quien reportó/)
+  })
+
+  it('no se reabre un ticket que no esta resuelto', () => {
+    expect(canReopenOf(ticket({ status: 'EN_PROGRESO' }), 10)).toBe(false)
+    expect(() => reopenByReporter(ticket({ status: 'EN_PROGRESO' }), 10)).toThrow(/resuelto/)
   })
 })
 
@@ -278,35 +298,13 @@ describe('validateComment', () => {
   })
 })
 
-describe('validateSlaPolicy', () => {
-  const base = { prioridad: 'ALTA', minutosPrimeraRespuesta: 60, minutosResolucion: 480 }
-
-  it('acepta una politica valida', () => {
-    expect(validateSlaPolicy(base)).toEqual(base)
-  })
-
-  it('rechaza fuera del rango 1..43200', () => {
-    expect(() => validateSlaPolicy({ ...base, minutosPrimeraRespuesta: 0 })).toThrow(/minutos/i)
-    expect(() => validateSlaPolicy({ ...base, minutosResolucion: 43201 })).toThrow(/minutos/i)
-    expect(() => validateSlaPolicy({ ...base, minutosPrimeraRespuesta: 1.5 })).toThrow(/minutos/i)
-  })
-
-  it('rechaza prometer resolver antes de responder', () => {
-    expect(() => validateSlaPolicy({ ...base, minutosPrimeraRespuesta: 500, minutosResolucion: 100 }))
-      .toThrow(/resolución/i)
-  })
-
-  it('rechaza una prioridad desconocida', () => {
-    expect(() => validateSlaPolicy({ ...base, prioridad: 'URGENTE' })).toThrow(/prioridad/i)
-  })
-})
-
 describe('computeDueDates', () => {
-  it('congela los dos plazos desde el instante de creacion', () => {
-    const inicio = new Date('2026-01-01T00:00:00Z')
+  it('congela los dos plazos en horario habil desde el instante de creacion', () => {
+    // Jueves 10:00 Lima (15:00Z): +1 h habil y +8 h habiles (cierra justo a las 18:00).
+    const inicio = new Date('2026-01-01T15:00:00Z')
     const due = computeDueDates({ first_response_minutes: 60, resolution_minutes: 480 }, inicio)
-    expect(due.first_response_due_at.toISOString()).toBe('2026-01-01T01:00:00.000Z')
-    expect(due.resolution_due_at.toISOString()).toBe('2026-01-01T08:00:00.000Z')
+    expect(due.first_response_due_at.toISOString()).toBe('2026-01-01T16:00:00.000Z')
+    expect(due.resolution_due_at.toISOString()).toBe('2026-01-01T23:00:00.000Z')
   })
 
   it('sin politica no inventa plazos', () => {

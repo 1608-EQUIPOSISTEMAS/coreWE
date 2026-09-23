@@ -1,9 +1,10 @@
 import { ticketsRepository } from './tickets.repository.js'
-import { clasificarPrioridad } from './tickets.priority.js'
+import { clasificarPrioridad, plazosSla } from './tickets.priority.js'
 import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
   nextStatus, pickAgent, assertReassignable, isTakeable, canChangeStatusOf,
-  validateTicketInput, validateComment, validateSlaPolicy,
+  canReopenOf, reopenByReporter,
+  validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
   ESTADOS_ACTIVOS
 } from './tickets.entity.js'
@@ -66,7 +67,9 @@ async function conDetalle (ticket, scope, userId, ahora = new Date()) {
     canManage: scope.canManage,
     // Mover el estado exige ser el agente asignado (o tomar uno sin dueño),
     // no solo ser ADMIN.
-    canChangeStatus: canChangeStatusOf(ticket, scope, userId)
+    canChangeStatus: canChangeStatusOf(ticket, scope, userId),
+    // Quien reporto puede reabrir lo suyo sin ser ADMIN.
+    canReopen: canReopenOf(ticket, userId)
   }
 }
 
@@ -80,6 +83,15 @@ export async function ticketAiNote ({ roles = [], userId = null, ticketId }) {
     ticket: { ...ticket, area: ticketAreaLabel(ticket.creador_roles) },
     canManage: scope.canManage
   })
+}
+
+// Pestaña "Actividad": mismo permiso de lectura que el detalle.
+export async function ticketActivity ({ roles = [], userId = null, ticketId }) {
+  const scope = ticketScopeFor({ roles, userId })
+  const ticket = await repo.detail(ticketId)
+  if (!ticket) throw new NotFoundError('Ticket no encontrado')
+  assertCanRead(ticket, scope, userId)
+  return repo.activity(ticketId)
 }
 
 export async function listComments ({ roles = [], userId = null, ticketId }) {
@@ -110,8 +122,8 @@ export async function downloadAttachment ({ roles = [], userId = null, attachmen
 
 /**
  * Alta de ticket. Mismo camino para la web y para el DM al bot de Slack:
- * validar, clasificar la prioridad, congelar los plazos con la politica
- * vigente y dejarlo SIN asignar unos minutos (ver AUTOASSIGN_ESPERA_MINUTOS):
+ * validar, clasificar la prioridad, congelar los plazos (tabla de SLA de
+ * criterios-prioridad.md, en horario habil) y dejarlo SIN asignar unos minutos (ver AUTOASSIGN_ESPERA_MINUTOS):
  * nace abierto y sin dueño a proposito, para que un admin lo pueda tomar a
  * mano dentro de la ventana de gracia antes de que el reparto automatico entre
  * a jugar (tickets-autoassign.cron.js).
@@ -125,8 +137,7 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   // registration_date explicito (y no el default de la BD) para que ambos
   // relojes cuenten desde exactamente el mismo instante que queda en la fila.
   const registrationDate = new Date()
-  const policy = await repo.slaPolicy(priority)
-  const vencimientos = computeDueDates(policy, registrationDate)
+  const vencimientos = computeDueDates(plazosSla(priority), registrationDate)
 
   // No se asigna aca: solo se comprueba que exista AL MENOS un agente, para no
   // dejar el ticket huerfano para siempre si el sistema no tiene a quien
@@ -235,6 +246,23 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   return { ...(await conDetalle(actualizado, scope, userId, ahora)), avisoSlack }
 }
 
+/**
+ * Reabrir desde quien reporto ("el problema sigue"). No pasa por
+ * assertCanManage: el permiso es ser el creador, no ser ADMIN. El ticket vuelve
+ * a EN_PROGRESO con el mismo agente, que se entera por el aviso de Slack.
+ */
+export async function reopenTicket ({ roles = [], userId = null, ticketId }) {
+  const scope = ticketScopeFor({ roles, userId })
+  const ticket = await repo.detail(ticketId)
+  if (!ticket) throw new NotFoundError('Ticket no encontrado')
+
+  await repo.updateStatus(ticketId, reopenByReporter(ticket, userId))
+
+  const actualizado = await repo.detail(ticketId)
+  void slack.notificarTicketReabierto(actualizado)
+  return conDetalle(actualizado, scope, userId)
+}
+
 export async function listAssignees ({ roles = [] }) {
   assertCanManage(ticketScopeFor({ roles }))
   return repo.assignables()
@@ -287,21 +315,6 @@ export async function addComment ({ roles = [], userId = null, ticketId, cuerpo,
   }
 
   return repo.comments(ticketId)
-}
-
-// ── Politicas de SLA ───────────────────────────────────────────────────────
-
-export async function slaPolicies ({ roles = [] }) {
-  assertCanManage(ticketScopeFor({ roles }))
-  return repo.slaPolicies()
-}
-
-export async function saveSlaPolicy ({ roles = [], userId = null, prioridad, minutosPrimeraRespuesta, minutosResolucion }) {
-  assertCanManage(ticketScopeFor({ roles, userId }))
-  const datos = validateSlaPolicy({ prioridad, minutosPrimeraRespuesta, minutosResolucion })
-  const guardada = await repo.saveSlaPolicy(datos, userId)
-  if (!guardada) throw new NotFoundError('No existe una política para esa prioridad')
-  return guardada
 }
 
 // ── Reparto automatico diferido (lo llama tickets-autoassign.cron.js) ──────

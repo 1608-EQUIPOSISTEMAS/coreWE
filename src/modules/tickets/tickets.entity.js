@@ -1,5 +1,5 @@
 import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
-import { calcularSla, sumarMinutos, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
+import { calcularSla, sumarMinutosHabiles, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
 import { DomainError, ForbiddenError } from '../../shared/errors.js'
 
 // Reglas puras del dominio tickets. Sin BD, sin disco y sin Slack: todo entra
@@ -23,8 +23,6 @@ const PROBLEMA_MIN = 10
 const PROBLEMA_MAX = 2000
 const LINK_MAX = 2048
 export const COMENTARIO_MAX = 2000
-export const SLA_MINUTOS_MIN = 1
-export const SLA_MINUTOS_MAX = 43200
 
 /** El numero visible del ticket. El id ES el correlativo; esto solo lo viste. */
 export function formatTicketCode (ticketId) {
@@ -115,6 +113,26 @@ export function isTakeable (ticket) {
 export function canChangeStatusOf (ticket, scope, userId) {
   if (!scope.canManage || !ticket) return false
   return ticket.assigned_to_id === userId || isTakeable(ticket)
+}
+
+// ¿Puede quien REPORTO reabrir su propio ticket? Si el problema sigue, no
+// depende de que el agente lea un comentario: lo reabre y el ticket vuelve a
+// la cola de quien lo atendia. Solo su ticket y solo si esta CERRADO.
+export function canReopenOf (ticket, userId) {
+  return Boolean(ticket) && ticket.status === 'CERRADO' && ticket.created_by_id === userId
+}
+
+// Campos a actualizar al reabrir desde quien reporto. Mismo efecto que el
+// reabrir del agente en nextStatus: la resolucion anterior deja de valer y la
+// primera respuesta se conserva.
+export function reopenByReporter (ticket, userId) {
+  if (!ticket || ticket.created_by_id !== userId) {
+    throw new ForbiddenError('Solo quien reportó el ticket puede reabrirlo')
+  }
+  if (ticket.status !== 'CERRADO') {
+    throw new DomainError('Solo se puede reabrir un ticket resuelto')
+  }
+  return { status: 'EN_PROGRESO', first_response_at: ticket.first_response_at, resolved_at: null }
 }
 
 // ── Transiciones ───────────────────────────────────────────────────────────
@@ -251,34 +269,17 @@ export function validateComment (cuerpo) {
   return c
 }
 
-export function validateSlaPolicy ({ prioridad, minutosPrimeraRespuesta, minutosResolucion } = {}) {
-  if (!['ALTA', 'MEDIA', 'BAJA'].includes(prioridad)) {
-    throw new DomainError('Prioridad desconocida')
-  }
-  const respuesta = Number(minutosPrimeraRespuesta)
-  const resolucion = Number(minutosResolucion)
-  const enRango = n => Number.isInteger(n) && n >= SLA_MINUTOS_MIN && n <= SLA_MINUTOS_MAX
-
-  if (!enRango(respuesta) || !enRango(resolucion)) {
-    throw new DomainError(`Los plazos deben ser minutos enteros entre ${SLA_MINUTOS_MIN} y ${SLA_MINUTOS_MAX}`)
-  }
-  // Prometer resolver antes de responder no significa nada.
-  if (resolucion < respuesta) {
-    throw new DomainError('El plazo de resolución no puede ser menor que el de primera respuesta')
-  }
-  return { prioridad, minutosPrimeraRespuesta: respuesta, minutosResolucion: resolucion }
-}
-
 /**
- * Congela los vencimientos con la politica vigente. Se pasa createdAt explicito
+ * Congela los vencimientos con los plazos de criterios-prioridad.md (minutos
+ * HABILES: solo corren lun-vie 09:00-18:00 Lima). Se pasa createdAt explicito
  * (y no se deja el default de la BD) para que ambos relojes cuenten desde
  * exactamente el mismo instante que queda guardado en la fila.
  */
 export function computeDueDates (policy, createdAt) {
   if (!policy) return { first_response_due_at: null, resolution_due_at: null }
   return {
-    first_response_due_at: sumarMinutos(createdAt, policy.first_response_minutes),
-    resolution_due_at: sumarMinutos(createdAt, policy.resolution_minutes)
+    first_response_due_at: sumarMinutosHabiles(createdAt, policy.first_response_minutes),
+    resolution_due_at: sumarMinutosHabiles(createdAt, policy.resolution_minutes)
   }
 }
 

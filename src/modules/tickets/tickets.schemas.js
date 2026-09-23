@@ -56,6 +56,18 @@ export const commentsSchema = {
   response: ok({ type: 'array' })
 }
 
+export const activitySchema = {
+  tags: TAG,
+  summary: 'Actividad de un ticket (bitacora + comentarios, en orden cronologico)',
+  body: {
+    type: 'object',
+    required: ['ticket_id'],
+    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
+    additionalProperties: false
+  },
+  response: ok({ type: 'array' })
+}
+
 export const statusSchema = {
   tags: TAG,
   summary: 'Avanzar el estado de un ticket (solo el agente asignado)',
@@ -68,6 +80,18 @@ export const statusSchema = {
       estado: { type: 'string', enum: ['EN_PROGRESO', 'CERRADO'] },
       user_id: { type: 'integer' }
     },
+    additionalProperties: false
+  },
+  response: ok()
+}
+
+export const reopenSchema = {
+  tags: TAG,
+  summary: 'Reabrir un ticket resuelto (solo quien lo reporto)',
+  body: {
+    type: 'object',
+    required: ['ticket_id'],
+    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
     additionalProperties: false
   },
   response: ok()
@@ -96,31 +120,6 @@ export const reassignSchema = {
   response: ok()
 }
 
-export const slaPoliciesSchema = {
-  tags: TAG,
-  summary: 'Politicas de SLA vigentes',
-  body: { type: 'object', properties: { user_id: { type: 'integer' } }, additionalProperties: false },
-  response: ok({ type: 'array' })
-}
-
-export const slaPolicySaveSchema = {
-  tags: TAG,
-  summary: 'Guardar los plazos de una prioridad',
-  body: {
-    type: 'object',
-    required: ['prioridad', 'minutos_primera_respuesta', 'minutos_resolucion'],
-    properties: {
-      prioridad: { type: 'string', enum: ['ALTA', 'MEDIA', 'BAJA'] },
-      // El rango tambien esta en el CHECK de la tabla y en la entity: aca solo
-      // para que un disparate ni siquiera llegue al caso de uso.
-      minutos_primera_respuesta: { type: 'integer', minimum: 1, maximum: 43200 },
-      minutos_resolucion: { type: 'integer', minimum: 1, maximum: 43200 },
-      user_id: { type: 'integer' }
-    },
-    additionalProperties: false
-  },
-  response: ok()
-}
 
 export const attachmentSchema = {
   tags: TAG,

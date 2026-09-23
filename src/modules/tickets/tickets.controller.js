@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import * as usecases from './tickets.usecases.js'
 import { readMultipart, attachmentPath } from './tickets.files.js'
-import { toTicketDto, toCommentDto, toSlaPolicyDto, toAssigneeDto } from './tickets.dto.js'
+import { toTicketDto, toCommentDto, toAssigneeDto, toActivityDto } from './tickets.dto.js'
 
 // Unico lugar que sabe de HTTP. Traduce request -> caso de uso y resultado -> reply.
 //
@@ -44,6 +44,11 @@ export async function statusHandler (req, reply) {
   return reply.code(200).send({ ok: true, data: toTicketDto(data) })
 }
 
+export async function reopenHandler (req, reply) {
+  const data = await usecases.reopenTicket({ ...quien(req), ticketId: req.body.ticket_id })
+  return reply.code(200).send({ ok: true, message: 'Ticket reabierto', data: toTicketDto(data) })
+}
+
 export async function assigneesHandler (req, reply) {
   const data = await usecases.listAssignees(quien(req))
   return reply.code(200).send({ ok: true, data: data.map(toAssigneeDto) })
@@ -63,6 +68,11 @@ export async function commentsHandler (req, reply) {
   return reply.code(200).send({ ok: true, data: data.map(toCommentDto) })
 }
 
+export async function activityHandler (req, reply) {
+  const data = await usecases.ticketActivity({ ...quien(req), ticketId: req.body.ticket_id })
+  return reply.code(200).send({ ok: true, data: data.map(toActivityDto) })
+}
+
 export async function commentCreateHandler (req, reply) {
   const { campos, archivos } = await readMultipart(req)
   const data = await usecases.addComment({
@@ -72,21 +82,6 @@ export async function commentCreateHandler (req, reply) {
     archivos
   })
   return reply.code(201).send({ ok: true, data: data.map(toCommentDto) })
-}
-
-export async function slaPoliciesHandler (req, reply) {
-  const data = await usecases.slaPolicies(quien(req))
-  return reply.code(200).send({ ok: true, data: data.map(toSlaPolicyDto) })
-}
-
-export async function slaPolicySaveHandler (req, reply) {
-  const data = await usecases.saveSlaPolicy({
-    ...quien(req),
-    prioridad: req.body.prioridad,
-    minutosPrimeraRespuesta: req.body.minutos_primera_respuesta,
-    minutosResolucion: req.body.minutos_resolucion
-  })
-  return reply.code(200).send({ ok: true, message: 'Política actualizada', data })
 }
 
 // Descarga: el adjunto se sirve por endpoint autenticado y no por @fastify/static

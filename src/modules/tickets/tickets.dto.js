@@ -34,6 +34,7 @@ export function toTicketDto (t) {
     // canManage solo en el detalle; canChangeStatus tambien por fila del listado.
     ...(t.canManage !== undefined ? { canManage: t.canManage } : {}),
     ...(t.canChangeStatus !== undefined ? { canChangeStatus: t.canChangeStatus } : {}),
+    ...(t.canReopen !== undefined ? { canReopen: t.canReopen } : {}),
     // Solo al resolver: si la confirmacion le llego por Slack a quien reporto.
     ...(t.avisoSlack !== undefined && t.avisoSlack !== null ? { avisoSlack: t.avisoSlack } : {})
   }
@@ -58,13 +59,16 @@ export function toCommentDto (c) {
   }
 }
 
-export function toSlaPolicyDto (p) {
+/** Un renglon de la pestaña "Actividad". actor null = lo hizo el sistema. */
+export function toActivityDto (e) {
   return {
-    prioridad: p.priority,
-    minutosPrimeraRespuesta: p.first_response_minutes,
-    minutosResolucion: p.resolution_minutes,
-    actualizadoEn: p.modification_date,
-    actualizadoPor: p.actualizado_por ?? null
+    id: e.id,
+    tipo: e.tipo,
+    fecha: e.fecha,
+    actor: e.actor ?? null,
+    deUsuario: e.de_usuario ?? null,
+    aUsuario: e.a_usuario ?? null,
+    detalle: e.detalle ?? null
   }
 }
 

@@ -1,7 +1,7 @@
 import { authenticate, ADMIN_ONLY, ALL_TICKETS_INTERNO } from '../../shared/http/auth.middleware.js'
 import {
-  listSchema, detailSchema, commentsSchema, statusSchema, assigneesSchema,
-  reassignSchema, slaPoliciesSchema, slaPolicySaveSchema, attachmentSchema
+  listSchema, detailSchema, commentsSchema, activitySchema, statusSchema, reopenSchema, assigneesSchema,
+  reassignSchema, attachmentSchema
 } from './tickets.schemas.js'
 import * as ctrl from './tickets.controller.js'
 import { registrarParserSlack, verificarFirmaSlack } from './slack/slack.verify.js'
@@ -24,6 +24,7 @@ export default async function ticketsRoutes (fastify) {
   fastify.post('/list', { schema: listSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.listHandler)
   fastify.post('/detail', { schema: detailSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.detailHandler)
   fastify.post('/comments', { schema: commentsSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentsHandler)
+  fastify.post('/activity', { schema: activitySchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.activityHandler)
   // Nota IA: 'listo' desde la tabla, o 'generando' y el front vuelve a consultar.
   fastify.post('/ai-note', { schema: detailSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.aiNoteHandler)
 
@@ -31,6 +32,9 @@ export default async function ticketsRoutes (fastify) {
   // tickets.entity y tickets.files.
   fastify.post('/create', { config: LIMITE_SUBIDA, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.createHandler)
   fastify.post('/comment', { config: LIMITE_SUBIDA, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentCreateHandler)
+  // Reabrir desde quien reporto: no es gestion (no va con ADMIN_ONLY). Que sea
+  // SU ticket lo comprueba reopenByReporter.
+  fastify.post('/reopen', { schema: reopenSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.reopenHandler)
 
   // Los adjuntos no se sirven como estaticos: pasan por aca para heredar el
   // control de acceso del ticket al que pertenecen.
@@ -45,8 +49,6 @@ export default async function ticketsRoutes (fastify) {
   fastify.post('/status', { schema: statusSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.statusHandler)
   fastify.post('/assignees', { schema: assigneesSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.assigneesHandler)
   fastify.post('/reassign', { schema: reassignSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.reassignHandler)
-  fastify.post('/sla/policies', { schema: slaPoliciesSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.slaPoliciesHandler)
-  fastify.post('/sla/policy-save', { schema: slaPolicySaveSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.slaPolicySaveHandler)
 
   // ── Slack ────────────────────────────────────────────────────────────────
   //

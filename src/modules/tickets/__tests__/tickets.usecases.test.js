@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ORQUESTACION (que se congelen los plazos, que no se escale dos veces, que un
 // aviso no se selle si Slack rechazo), no el SQL ni la red.
 const repo = {
-  slaPolicy: vi.fn(),
   agentCandidates: vi.fn(),
   create: vi.fn(),
   detail: vi.fn(),
@@ -71,21 +70,30 @@ beforeEach(() => {
 })
 
 describe('createTicket', () => {
-  it('congela los plazos con la politica vigente al crear', async () => {
-    repo.slaPolicy.mockResolvedValue({ first_response_minutes: 60, resolution_minutes: 480 })
-    repo.agentCandidates.mockResolvedValue([agente(7)])
-    repo.create.mockResolvedValue(1)
+  it('congela los plazos del .md (ALTA = P1) en horario habil al crear', async () => {
+    // Jueves 10:00 Lima: ALTA = 15 min de respuesta y 4 h habiles de resolucion.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T15:00:00Z'))
+    try {
+      repo.agentCandidates.mockResolvedValue([agente(7)])
+      repo.create.mockResolvedValue(1)
 
-    await createTicket({ userId: 10, ...VALIDO })
+      await createTicket({
+        userId: 10,
+        titulo: 'Matrícula no se registró',
+        problema: 'La inscripción del alumno no quedó guardada en el sistema'
+      })
 
-    const [fila] = repo.create.mock.calls[0]
-    const inicio = fila.registration_date.getTime()
-    expect(fila.first_response_due_at.getTime() - inicio).toBe(60 * 60_000)
-    expect(fila.resolution_due_at.getTime() - inicio).toBe(480 * 60_000)
+      const [fila] = repo.create.mock.calls[0]
+      expect(fila.priority).toBe('ALTA')
+      expect(fila.first_response_due_at.toISOString()).toBe('2026-01-01T15:15:00.000Z')
+      expect(fila.resolution_due_at.toISOString()).toBe('2026-01-01T19:00:00.000Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('clasifica la prioridad sola: quien reporta no la manda', async () => {
-    repo.slaPolicy.mockResolvedValue({ first_response_minutes: 60, resolution_minutes: 480 })
     repo.agentCandidates.mockResolvedValue([agente(7)])
     repo.create.mockResolvedValue(1)
 
@@ -96,7 +104,6 @@ describe('createTicket', () => {
 
   it('sin agentes responde 503, no 500', async () => {
     repo.agentCandidates.mockResolvedValue([])
-    repo.slaPolicy.mockResolvedValue(null)
 
     await expect(createTicket({ userId: 10, ...VALIDO })).rejects.toMatchObject({ statusCode: 503 })
     expect(repo.create).not.toHaveBeenCalled()
@@ -107,18 +114,7 @@ describe('createTicket', () => {
     expect(repo.agentCandidates).not.toHaveBeenCalled()
   })
 
-  it('sin politica en la tabla el ticket igual se crea, sin plazos', async () => {
-    repo.slaPolicy.mockResolvedValue(null)
-    repo.agentCandidates.mockResolvedValue([agente(7)])
-    repo.create.mockResolvedValue(1)
-
-    await createTicket({ userId: 10, ...VALIDO })
-
-    expect(repo.create.mock.calls[0][0].first_response_due_at).toBeNull()
-  })
-
   it('nace SIN asignar y avisa por Slack que espera asignacion manual', async () => {
-    repo.slaPolicy.mockResolvedValue({ first_response_minutes: 60, resolution_minutes: 480 })
     repo.agentCandidates.mockResolvedValue([agente(7)])
     repo.create.mockResolvedValue(1)
 
@@ -296,7 +292,6 @@ describe('createTicketFromSlack', () => {
   it('con match crea el ticket a nombre de esa persona y abre el hilo', async () => {
     slack.obtenerEmailDeUsuarioSlack.mockResolvedValue('ana@we.edu.pe')
     repo.findActiveUserByEmail.mockResolvedValue({ user_id: 55, name: 'Ana' })
-    repo.slaPolicy.mockResolvedValue({ first_response_minutes: 60, resolution_minutes: 480 })
     repo.agentCandidates.mockResolvedValue([agente(7)])
     repo.create.mockResolvedValue(1)
     slack.abrirHiloDeTicket.mockResolvedValue({ canal: 'D123', ts: '1.2' })
