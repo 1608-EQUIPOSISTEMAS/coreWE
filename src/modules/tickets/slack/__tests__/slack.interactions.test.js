@@ -60,7 +60,8 @@ describe('interactionsHandler', () => {
       slackUserId: 'U1',
       titulo: BORRADOR.titulo,
       problema: BORRADOR.problema,
-      link: 'https://erp.test/r'
+      link: 'https://erp.test/r',
+      archivosSlack: []
     })
     expect(ultimoTexto()).toMatch(/#00042/)
   })

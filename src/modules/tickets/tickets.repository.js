@@ -25,6 +25,7 @@ const TICKET_SELECT = `
   t.*,
   cu.name  AS creador,
   cu.alias AS creador_alias,
+  cu.email AS creador_email,
   au.name  AS asignado,
   au.alias AS asignado_alias,
   COALESCE((SELECT array_agg(DISTINCT r.alias)
@@ -191,6 +192,18 @@ export class TicketsRepository {
       UPDATE public.tickets
          SET assigned_to_id = $2, modification_date = now()
        WHERE ticket_id = $1`, [ticketId, nuevoAsignadoId])
+  }
+
+  /**
+   * Asigna un ABIERTO sin dueño a quien lo toma. El WHERE es el candado: si dos
+   * agentes lo toman a la vez, solo uno actualiza la fila. Devuelve si lo logro.
+   */
+  async claim (ticketId, userId) {
+    const { rowCount } = await this.db.query(`
+      UPDATE public.tickets
+         SET assigned_to_id = $2, modification_date = now()
+       WHERE ticket_id = $1 AND status = 'ABIERTO' AND assigned_to_id IS NULL`, [ticketId, userId])
+    return rowCount > 0
   }
 
   async saveSlackThread (ticketId, { channelId, messageTs }) {
@@ -383,7 +396,7 @@ export class TicketsRepository {
       [ticketId, ahora])
   }
 
-  // ── Identidad (slash command de Slack) ───────────────────────────────────
+  // ── Identidad (bot de Slack por DM) ──────────────────────────────────────
 
   async findActiveUserByEmail (email) {
     const { rows } = await this.db.query(`

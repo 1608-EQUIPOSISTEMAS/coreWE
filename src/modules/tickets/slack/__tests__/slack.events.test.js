@@ -48,6 +48,31 @@ describe('esDmDePersona', () => {
     expect(esDmDePersona(evento({ subtype: 'message_changed' }))).toBe(false)
   })
 
+  it('acepta un DM con imágenes adjuntas (file_share)', () => {
+    const files = [{ id: 'F1', name: 'captura.png', mimetype: 'image/png', size: 1000 }]
+    expect(esDmDePersona(evento({ subtype: 'file_share', files }))).toBe(true)
+    expect(esDmDePersona(evento({ subtype: 'file_share', files, text: '' }))).toBe(true)
+  })
+
+  it('las imágenes viajan al borrador para adjuntarse al ticket', async () => {
+    const files = [
+      { id: 'F1', name: 'captura.png', mimetype: 'image/png', size: 1000 },
+      { id: 'F2', name: 'video.mp4', mimetype: 'video/mp4', size: 1000 }
+    ]
+    eventsHandler({ body: callback(evento({ subtype: 'file_share', files })), headers: {} }, replyDoble())
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    const boton = postearMensaje.mock.calls.at(-1)[1].blocks.find(b => b.type === 'actions').elements[0]
+    expect(JSON.parse(boton.value).archivos).toEqual(['F1'])
+  })
+
+  it('solo imágenes, sin descripción: pide que cuente qué pasó', async () => {
+    const files = [{ id: 'F1', name: 'captura.png', mimetype: 'image/png', size: 1000 }]
+    eventsHandler({ body: callback(evento({ subtype: 'file_share', files, text: '' })), headers: {} }, replyDoble())
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(ultimoTexto()).toMatch(/qué pasó/)
+    expect(interpretarMensaje).not.toHaveBeenCalled()
+  })
+
   it('rechaza las respuestas dentro del hilo de un ticket', () => {
     expect(esDmDePersona(evento({ thread_ts: '0.9' }))).toBe(false)
   })

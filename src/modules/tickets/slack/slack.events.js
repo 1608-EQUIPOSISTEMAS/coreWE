@@ -3,16 +3,18 @@ import { formatTicketCode } from '../tickets.entity.js'
 import { postearMensaje } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
 import { limpiarTextoSlack, recortar } from './slack.text.js'
 import { interpretarMensaje } from './slack.ai.js'
-import { bloquesDeBorrador, bloquesDeTextoPlano } from './slack.blocks.js'
+import { bloquesDeBorrador, bloquesDeTextoPlano, MAX_ARCHIVOS } from './slack.blocks.js'
+import { MIME_PERMITIDOS, MAX_BYTES } from '../tickets.files.js'
 
 // Events API: el bot escucha `message.im`, o sea los DM que le escriben.
 //
-// Reemplaza a /Crearticket como via principal. Ya no hay formato que aprender
+// Es la unica via de alta desde Slack. No hay formato que aprender
 // ni separadores que respetar: se escribe el problema como se le contaria a un
 // companero, la IA lo lee, y el bot devuelve un borrador con dos botones.
 //
-// Scopes que necesita la app en Slack: im:history, im:read, chat:write y
-// users:read.email. Y en "Event Subscriptions", la suscripcion a message.im.
+// Scopes que necesita la app en Slack: im:history, im:read, chat:write,
+// users:read.email y files:read (imagenes adjuntas). Y en "Event
+// Subscriptions", la suscripcion a message.im.
 
 // Tope de la columna problem en la entity. Se recorta aca para que el borrador
 // muestre exactamente lo que se va a guardar, y no prometa un texto que la
@@ -27,6 +29,10 @@ const RESPUESTA_OTRO =
 const RESPUESTA_CORTO =
   '🤔 Con eso no me alcanza para abrir un ticket.\n' +
   'Cuéntame qué pasó, dónde te pasó y qué esperabas que ocurriera.'
+
+const RESPUESTA_SOLO_ARCHIVOS =
+  '🖼️ Recibí tus archivos, pero me falta saber qué pasó.\n' +
+  'Envíame en un solo mensaje la descripción del problema junto con las imágenes y te armo el ticket.'
 
 const RESPUESTA_SIN_ACTIVOS =
   '📭 No tienes tickets activos ahora mismo.\n' +
@@ -74,10 +80,22 @@ export function yaProcesado (eventId) {
 export function esDmDePersona (evento) {
   if (!evento || evento.type !== 'message') return false
   if (evento.channel_type !== 'im') return false
-  if (evento.bot_id || evento.subtype) return false // ediciones, borrados y bots
+  if (evento.bot_id) return false
+  // Ediciones, borrados y bots traen subtype; un mensaje con imagenes adjuntas
+  // llega como file_share y SI es de una persona (antes se descartaba, y por eso
+  // un DM con capturas nunca ofrecia crear el ticket).
+  if (evento.subtype && evento.subtype !== 'file_share') return false
   if (evento.thread_ts && evento.thread_ts !== evento.ts) return false // hilo de un ticket
   if (!evento.user || !evento.channel) return false
-  return Boolean(String(evento.text ?? '').trim())
+  return Boolean(String(evento.text ?? '').trim()) || archivosDelEvento(evento).length > 0
+}
+
+/** Los adjuntos del DM que el ticket acepta (mismos tipos y peso que la web). */
+export function archivosDelEvento (evento) {
+  return (evento?.files ?? [])
+    .filter(f => f?.id && MIME_PERMITIDOS.includes(f.mimetype) && (!f.size || f.size <= MAX_BYTES))
+    .slice(0, MAX_ARCHIVOS)
+    .map(f => ({ id: f.id, nombre: f.name ?? f.title ?? 'archivo' }))
 }
 
 export function eventsHandler (req, reply) {
@@ -108,6 +126,13 @@ export function eventsHandler (req, reply) {
 async function procesarDm (evento) {
   const canal = evento.channel
   const { texto, enlaces } = limpiarTextoSlack(evento.text)
+  const archivos = archivosDelEvento(evento)
+
+  // Solo imagenes, sin contar que paso: no hay ticket que armar todavia.
+  if (archivos.length && texto.length < PROBLEMA_MIN) {
+    await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_SOLO_ARCHIVOS))
+    return
+  }
 
   try {
     const { intencion, titulo, ticketRef } = await interpretarMensaje(texto)
@@ -131,7 +156,8 @@ async function procesarDm (evento) {
     await postearMensaje(canal, bloquesDeBorrador({
       titulo,
       problema: recortar(texto, PROBLEMA_MAX),
-      enlaces
+      enlaces,
+      archivos
     }))
   } catch (err) {
     await postearMensaje(canal, bloquesDeTextoPlano(mensajeDeError(err, '[tickets-slack] DM')))
@@ -174,7 +200,7 @@ async function textoDeAvance (slackUserId, ticketRef) {
 /**
  * Un DomainError trae un mensaje escrito para leerse (no hay cuenta en el ERP,
  * no hay agentes...); cualquier otra cosa se enmascara y se queda en el log.
- * Mismo criterio que el slash command.
+ * Mismo criterio que los botones del borrador.
  */
 export function mensajeDeError (err, etiqueta) {
   if (err?.expose) return `❌ ${err.message}`

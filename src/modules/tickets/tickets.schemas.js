@@ -3,8 +3,8 @@
 // Las dos rutas multipart (/create y /comment) NO llevan schema.body a
 // proposito: AJV con removeAdditional vaciaria el body del multipart. Su
 // validacion vive entera en tickets.entity (validateTicketInput,
-// validateComment) y tickets.files, que ademas las comparte el slash command de
-// Slack, que tampoco pasa por AJV.
+// validateComment) y tickets.files, que ademas las comparte el bot de Slack por
+// DM, que tampoco pasa por AJV.
 
 const TAG = ['Tickets']
 

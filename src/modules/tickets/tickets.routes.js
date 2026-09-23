@@ -5,7 +5,6 @@ import {
 } from './tickets.schemas.js'
 import * as ctrl from './tickets.controller.js'
 import { registrarParserSlack, verificarFirmaSlack } from './slack/slack.verify.js'
-import { slashCommandHandler } from './slack/slack.command.js'
 import { eventsHandler } from './slack/slack.events.js'
 import { interactionsHandler } from './slack/slack.interactions.js'
 
@@ -73,15 +72,8 @@ export default async function ticketsRoutes (fastify) {
         schema: { tags: ['Tickets'], summary: 'Botones del borrador de ticket (lo llama Slack, no el ERP)' },
         preHandler: [verificarFirmaSlack]
       }, interactionsHandler)
-
-      // Via anterior, con formato `Titulo - Problema - link`. Se mantiene
-      // mientras la gente se acostumbra al DM; no estorba a nadie.
-      slack.post('/commands', {
-        schema: { tags: ['Tickets'], summary: 'Slash command /ticket (lo llama Slack, no el ERP)' },
-        preHandler: [verificarFirmaSlack]
-      }, slashCommandHandler)
     }, { prefix: '/slack' })
   } else {
-    fastify.log?.warn?.('[tickets] SLACK_SIGNING_SECRET o SLACK_BOT_TOKEN sin configurar: /ticket deshabilitado')
+    fastify.log?.warn?.('[tickets] SLACK_SIGNING_SECRET o SLACK_BOT_TOKEN sin configurar: bot de tickets por DM deshabilitado')
   }
 }

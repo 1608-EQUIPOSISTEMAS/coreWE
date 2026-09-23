@@ -30,8 +30,26 @@ describe('leerBorrador', () => {
     expect(leerBorrador(bloquesDeBorrador(BORRADOR).blocks)).toEqual({
       titulo: BORRADOR.titulo,
       problema: BORRADOR.problema,
-      link: 'https://erp.test/reportes'
+      link: 'https://erp.test/reportes',
+      archivos: []
     })
+  })
+
+  it('conserva todos los enlaces, uno por línea', () => {
+    const enlaces = ['https://a.test/1', 'https://b.test/2']
+    expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, enlaces }).blocks).link)
+      .toBe('https://a.test/1\nhttps://b.test/2')
+  })
+
+  it('desenvuelve el enlace si Slack lo devuelve como entidad', () => {
+    const bloques = bloquesDeBorrador(BORRADOR).blocks
+    bloques.find(b => b.block_id === 'tk_enlace').text.text = '*Enlace:*\n<https://erp.test/reportes?x=1|reporte>'
+    expect(leerBorrador(bloques).link).toBe('https://erp.test/reportes?x=1')
+  })
+
+  it('los ids de los adjuntos viajan en el botón Crear', () => {
+    const archivos = [{ id: 'F1', nombre: 'captura.png' }, { id: 'F2', nombre: 'otra.jpg' }]
+    expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, archivos }).blocks).archivos).toEqual(['F1', 'F2'])
   })
 
   it('sobrevive a un problema con saltos de línea', () => {

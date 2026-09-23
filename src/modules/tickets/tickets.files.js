@@ -114,6 +114,30 @@ export async function readMultipart (req, { maxFiles = MAX_FILES } = {}) {
   return { campos, archivos }
 }
 
+/**
+ * Mismas validaciones que readMultipart para un archivo que no llego por
+ * multipart (las imagenes de un DM de Slack). Lo escribe y devuelve la fila.
+ */
+export async function guardarAdjunto (buffer, mimeType, nombre) {
+  if (!MIME_PERMITIDOS.includes(mimeType)) {
+    throw new DomainError('Solo se permiten imágenes PNG, JPG, WEBP o archivos PDF')
+  }
+  if (!buffer?.length) throw new DomainError('Uno de los archivos llegó vacío')
+  if (buffer.length > MAX_BYTES) throw new DomainError('Cada archivo debe pesar como máximo 5 MB')
+  if (!firmaValida(buffer, mimeType)) {
+    throw new DomainError(`El archivo "${nombre}" no es realmente un ${mimeType}`)
+  }
+
+  const storedName = `${randomUUID()}${EXT_POR_MIME[mimeType]}`
+  await escribir(buffer, storedName)
+  return {
+    original_name: String(nombre ?? 'archivo').slice(0, 255),
+    stored_name: storedName,
+    mime_type: mimeType,
+    size_bytes: buffer.length
+  }
+}
+
 /** Best-effort: si el archivo ya no esta, no hay nada que arreglar. */
 export async function removeAttachments (storedNames = []) {
   await Promise.all(storedNames.map(name =>

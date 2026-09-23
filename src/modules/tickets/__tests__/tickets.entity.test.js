@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   ticketScopeFor, canRead, assertCanRead, assertCanManage, nextStatus, pickAgent,
   assertReassignable, validateTicketInput, validateComment, validateSlaPolicy,
-  computeDueDates, formatTicketCode, withSla, applyFilter, buildKpis
+  computeDueDates, formatTicketCode, withSla, applyFilter, buildKpis,
+  canChangeStatusOf
 } from '../tickets.entity.js'
 
 const AHORA = new Date('2026-01-01T12:00:00Z')
@@ -97,6 +98,27 @@ describe('canRead', () => {
 describe('assertCanManage', () => {
   it('rechaza a quien no gestiona', () => {
     expect(() => assertCanManage(ticketScopeFor({ roles: ['GERENCIA'] }))).toThrow(/administrador/i)
+  })
+})
+
+describe('canChangeStatusOf', () => {
+  const admin = ticketScopeFor({ roles: ['ADMIN'], userId: 9 })
+  const gerencia = ticketScopeFor({ roles: ['GERENCIA'], userId: 9 })
+
+  it('el agente asignado puede moverlo', () => {
+    expect(canChangeStatusOf({ status: 'EN_PROGRESO', assigned_to_id: 9 }, admin, 9)).toBe(true)
+  })
+
+  it('un ABIERTO sin dueño lo puede tomar cualquier agente', () => {
+    expect(canChangeStatusOf({ status: 'ABIERTO', assigned_to_id: null }, admin, 9)).toBe(true)
+  })
+
+  it('no puede mover el ticket de otro agente', () => {
+    expect(canChangeStatusOf({ status: 'ABIERTO', assigned_to_id: 3 }, admin, 9)).toBe(false)
+  })
+
+  it('quien no gestiona nunca puede', () => {
+    expect(canChangeStatusOf({ status: 'ABIERTO', assigned_to_id: null }, gerencia, 9)).toBe(false)
   })
 })
 
@@ -228,10 +250,19 @@ describe('validateTicketInput', () => {
     expect(validateTicketInput({ ...valido, link: 'https://erp.test/x' }).link).toBe('https://erp.test/x')
   })
 
-  it('rechaza javascript: y otros esquemas', () => {
-    expect(() => validateTicketInput({ ...valido, link: 'javascript:alert(1)' })).toThrow(/http/i)
-    expect(() => validateTicketInput({ ...valido, link: 'ftp://x.test' })).toThrow(/http/i)
-    expect(() => validateTicketInput({ ...valido, link: 'no es una url' })).toThrow(/válida/i)
+  it('no valida el formato de URL: se guarda lo que mandan', () => {
+    expect(validateTicketInput({ ...valido, link: 'docs.google.com/x' }).link).toBe('docs.google.com/x')
+  })
+
+  it('acepta varios enlaces y los guarda uno por linea, sin repetidos', () => {
+    expect(validateTicketInput({ ...valido, link: 'https://a.test\nhttps://b.test https://a.test' }).link)
+      .toBe('https://a.test\nhttps://b.test')
+    expect(validateTicketInput({ ...valido, link: ['https://a.test', 'https://b.test'] }).link)
+      .toBe('https://a.test\nhttps://b.test')
+  })
+
+  it('quita el envoltorio que agrega Slack', () => {
+    expect(validateTicketInput({ ...valido, link: '<https://a.test/x?y=1|Reporte>' }).link).toBe('https://a.test/x?y=1')
   })
 
   it('rechaza un link mas largo que el limite de la columna', () => {

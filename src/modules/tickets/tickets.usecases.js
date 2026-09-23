@@ -2,14 +2,14 @@ import { ticketsRepository } from './tickets.repository.js'
 import { clasificarPrioridad } from './tickets.priority.js'
 import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
-  nextStatus, pickAgent, assertReassignable,
+  nextStatus, pickAgent, assertReassignable, isTakeable, canChangeStatusOf,
   validateTicketInput, validateComment, validateSlaPolicy,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
   ESTADOS_ACTIVOS
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
-import { removeAttachments } from './tickets.files.js'
+import { removeAttachments, guardarAdjunto, MAX_FILES, MAX_BYTES } from './tickets.files.js'
 import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
 import { startTicketNote, getTicketNote } from './ai-note/ticket-ai.usecases.js'
 
@@ -30,7 +30,11 @@ export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS'
   const scope = ticketScopeFor({ roles, userId })
   const ahora = new Date()
 
-  const rows = (await repo.list(scope, { busqueda, orden })).map(r => withSla(r, ahora))
+  const rows = (await repo.list(scope, { busqueda, orden })).map(r => ({
+    ...withSla(r, ahora),
+    // Por fila: la bandeja ofrece "Tomar" sin entrar al detalle.
+    canChangeStatus: canChangeStatusOf(r, scope, userId)
+  }))
 
   return {
     // El frontend no deriva permisos de localStorage: los recibe de aca, que es
@@ -46,14 +50,23 @@ export async function ticketDetail ({ roles = [], userId = null, ticketId }) {
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
   assertCanRead(ticket, scope, userId)
+  return conDetalle(ticket, scope, userId)
+}
 
+/**
+ * El ticket tal como lo pinta la pagina de detalle. Lo devuelven TAMBIEN las
+ * mutaciones (estado, reasignacion): si respondieran solo la fila, el front
+ * perderia los permisos y los adjuntos y habria que recargar para verlos.
+ */
+async function conDetalle (ticket, scope, userId, ahora = new Date()) {
   return {
-    ...withSla(ticket),
+    ...withSla(ticket, ahora),
     // El listado solo necesita cuantos hay; el detalle, cuales son.
-    adjuntosLista: await repo.attachmentsOf(ticketId),
+    adjuntosLista: await repo.attachmentsOf(ticket.ticket_id),
     canManage: scope.canManage,
-    // Mover el estado exige ser el agente asignado, no solo ser ADMIN.
-    canChangeStatus: scope.canManage && ticket.assigned_to_id === userId
+    // Mover el estado exige ser el agente asignado (o tomar uno sin dueño),
+    // no solo ser ADMIN.
+    canChangeStatus: canChangeStatusOf(ticket, scope, userId)
   }
 }
 
@@ -96,7 +109,7 @@ export async function downloadAttachment ({ roles = [], userId = null, attachmen
 // ── Creacion ───────────────────────────────────────────────────────────────
 
 /**
- * Alta de ticket. Mismo camino para la web y para el slash command de Slack:
+ * Alta de ticket. Mismo camino para la web y para el DM al bot de Slack:
  * validar, clasificar la prioridad, congelar los plazos con la politica
  * vigente y dejarlo SIN asignar unos minutos (ver AUTOASSIGN_ESPERA_MINUTOS):
  * nace abierto y sin dueño a proposito, para que un admin lo pueda tomar a
@@ -151,8 +164,8 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   // ("andate corriendo a tomarlo"), no el resumen completo de arriba.
   void slack.notificarEsperandoAsignacion(ticket, AUTOASSIGN_ESPERA_MINUTOS)
 
-  // El efimero del slash command se pierde al cerrar Slack y su response_url
-  // caduca a los 30 minutos: el seguimiento vive en un DM propio.
+  // El borrador del DM se reemplaza al crear: se confirma con un mensaje propio
+  // y se guarda el canal del DM, donde llegan los avances como mensajes nuevos.
   if (slackUserId) void abrirSeguimiento(ticket, slackUserId)
 
   // Nota IA (resumen, datos que faltan, borrador de respuesta) en segundo
@@ -186,25 +199,40 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
 
   // Se lee ANTES del update: despues de guardar el estado previo ya no esta.
   const reabriendo = ticket.status === 'CERRADO' && estado === 'EN_PROGRESO'
+  // Tomar un ABIERTO sin dueño lo asigna a quien lo toma (antes habia que
+  // reasignarselo a uno mismo desde el detalle y recien ahi tomarlo).
+  const reclamando = estado === 'EN_PROGRESO' && isTakeable(ticket)
 
   const ahora = new Date()
-  const cambios = nextStatus(ticket, userId, estado, ahora)
+  // nextStatus valida con el dueño que va a quedar, antes de tocar nada.
+  const cambios = nextStatus(reclamando ? { ...ticket, assigned_to_id: userId } : ticket, userId, estado, ahora)
+
+  if (reclamando && !(await repo.claim(ticketId, userId))) {
+    throw new DomainError('Otro agente acaba de tomar este ticket', { statusCode: 409, code: 'TICKET_YA_TOMADO' })
+  }
   await repo.updateStatus(ticketId, cambios)
 
   const actualizado = await repo.detail(ticketId)
   const agente = actualizado.asignado ?? 'Soporte'
+  let avisoSlack = null
 
   if (reabriendo) {
     void slack.notificarTicketReabierto(actualizado)
   } else if (estado === 'CERRADO') {
     // Unico punto por el que un ticket llega a CERRADO: lo garantiza nextStatus.
     void slack.notificarTicketCerrado(actualizado)
-    void slack.avisarTicketResuelto(actualizado, agente)
+    // Se espera (timeout de 5 s del adaptador) para decirle al agente si la
+    // confirmacion le llego a quien reporto; un fallo no deshace el cierre.
+    try {
+      avisoSlack = Boolean(await slack.avisarTicketResuelto(actualizado, agente))
+    } catch {
+      avisoSlack = false
+    }
   } else {
     void slack.avisarTicketTomado(actualizado, agente)
   }
 
-  return withSla(actualizado, ahora)
+  return { ...(await conDetalle(actualizado, scope, userId, ahora)), avisoSlack }
 }
 
 export async function listAssignees ({ roles = [] }) {
@@ -213,7 +241,7 @@ export async function listAssignees ({ roles = [] }) {
 }
 
 export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsignadoId }) {
-  assertCanManage(ticketScopeFor({ roles, userId }))
+  const scope = assertCanManage(ticketScopeFor({ roles, userId }))
 
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
@@ -229,7 +257,7 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
   // misma noticia (el ticket cambio de dueno), sin importar quien lo movio.
   void slack.notificarTicketEscalado(actualizado, anterior, 'Reasignación manual')
 
-  return withSla(actualizado)
+  return conDetalle(actualizado, scope, userId)
 }
 
 // ── Comentarios ────────────────────────────────────────────────────────────
@@ -247,7 +275,7 @@ export async function addComment ({ roles = [], userId = null, ticketId, cuerpo,
     const texto = validateComment(cuerpo)
     await repo.createComment(ticketId, userId, texto, archivos)
 
-    // Los comentarios del propio solicitante no se replican en su hilo: ya los
+    // Los comentarios del propio solicitante no se replican en su DM: ya los
     // escribio el.
     if (ticket.created_by_id !== userId) {
       const autor = scope.canManage ? (ticket.asignado ?? 'Soporte') : 'Soporte'
@@ -390,16 +418,38 @@ async function barrerAlertas (ahora) {
   return enviadas
 }
 
-// ── Slash command de Slack ─────────────────────────────────────────────────
+// ── Bot de Slack por DM ────────────────────────────────────────────────────
 
 /**
- * Crea un ticket en nombre de quien escribio /ticket. La identidad se resuelve
+ * Crea un ticket en nombre de quien le escribio al bot (boton "Crear ticket"
+ * del borrador). La identidad se resuelve
  * por email: Slack -> users.info -> public.users. Si no hay match, quien
  * pregunta se entera por que, no con un error generico.
  */
-export async function createTicketFromSlack ({ slackUserId, titulo, problema, link }) {
+export async function createTicketFromSlack ({ slackUserId, titulo, problema, link, archivosSlack = [] }) {
   const usuario = await resolverUsuarioDeSlack(slackUserId)
-  return createTicket({ userId: usuario.user_id, titulo, problema, link, archivos: [], slackUserId })
+  const archivos = await bajarArchivosDeSlack(archivosSlack)
+  // createTicket ya borra del disco los adjuntos si el alta falla.
+  return createTicket({ userId: usuario.user_id, titulo, problema, link, archivos, slackUserId })
+}
+
+/**
+ * Las imagenes del DM, bajadas de Slack y validadas igual que las de la web.
+ * Una que no se pueda bajar o no pase la validacion se omite: perder una
+ * captura es mejor que no crear el ticket.
+ */
+async function bajarArchivosDeSlack (fileIds = []) {
+  const archivos = []
+  for (const id of fileIds.slice(0, MAX_FILES)) {
+    const bajado = await slack.descargarArchivoSlack(id, MAX_BYTES)
+    if (!bajado) continue
+    try {
+      archivos.push(await guardarAdjunto(bajado.buffer, bajado.mimeType, bajado.nombre))
+    } catch (err) {
+      console.warn(`[tickets] adjunto de Slack ${id} descartado: ${err.message}`)
+    }
+  }
+  return archivos
 }
 
 /**

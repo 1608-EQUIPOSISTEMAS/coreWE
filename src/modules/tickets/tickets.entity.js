@@ -104,6 +104,19 @@ export function assertCanManage (scope) {
   return scope
 }
 
+// Un ABIERTO sin dueño lo puede tomar cualquier agente (es la ventana de gracia
+// antes del reparto automatico): tomarlo lo asigna a quien lo tomo.
+export function isTakeable (ticket) {
+  return ticket?.status === 'ABIERTO' && ticket.assigned_to_id == null
+}
+
+// ¿Puede ESTE usuario mover el estado de ESTE ticket? Mismo criterio que
+// nextStatus, calculado para que el front decida que botones mostrar.
+export function canChangeStatusOf (ticket, scope, userId) {
+  if (!scope.canManage || !ticket) return false
+  return ticket.assigned_to_id === userId || isTakeable(ticket)
+}
+
 // ── Transiciones ───────────────────────────────────────────────────────────
 //
 // Devuelve los campos a actualizar, no toca la BD. Sella los relojes: al tomar
@@ -188,12 +201,10 @@ export function assertReassignable (ticket, destino, nuevoAsignadoId) {
 //
 // Vive aca y no en un schema de Fastify porque las rutas que crean ticket y
 // comentario son multipart: declararles schema.body haria que AJV vaciara el
-// body. Ademas la comparte el slash command de Slack, que no pasa por AJV.
+// body. Ademas la comparte el bot de Slack por DM, que no pasa por AJV.
 export function validateTicketInput ({ titulo, problema, link } = {}) {
   const t = String(titulo ?? '').trim()
   const p = String(problema ?? '').trim()
-  const l = String(link ?? '').trim()
-
   if (t.length < TITULO_MIN || t.length > TITULO_MAX) {
     throw new DomainError(`El título debe tener entre ${TITULO_MIN} y ${TITULO_MAX} caracteres`)
   }
@@ -201,23 +212,35 @@ export function validateTicketInput ({ titulo, problema, link } = {}) {
     throw new DomainError(`La problemática debe tener entre ${PROBLEMA_MIN} y ${PROBLEMA_MAX} caracteres`)
   }
 
-  return { titulo: t, problema: p, link: l ? validateLink(l) : null }
+  return { titulo: t, problema: p, link: normalizarEnlaces(link) }
 }
 
-// Solo http(s). Sin esto un `javascript:` guardado aca se vuelve XSS el dia que
-// alguien lo pinte en un <a href>.
-function validateLink (link) {
-  if (link.length > LINK_MAX) throw new DomainError('El enlace es demasiado largo')
-  let url
-  try {
-    url = new URL(link)
-  } catch {
-    throw new DomainError('El enlace no es una URL válida')
+/**
+ * Uno o varios enlaces de referencia, guardados en la misma columna separados
+ * por salto de linea. NO se valida que sean URLs: rechazar un enlace que el
+ * usuario sabe que funciona (el caso de Slack, que devuelve `<url|etiqueta>`)
+ * costaba mas que lo que protegia. El XSS se evita al pintar: el front solo
+ * arma <a href> con http(s) (hrefSeguro) y el resto lo muestra como texto.
+ *
+ * Acepta texto (separado por espacios o saltos) o un arreglo. Quita el
+ * envoltorio de Slack (`<url>`, `<url|etiqueta>`) y los repetidos.
+ */
+export function normalizarEnlaces (entrada) {
+  const crudos = Array.isArray(entrada) ? entrada : String(entrada ?? '').split(/\s+/)
+  const enlaces = []
+  for (const crudo of crudos) {
+    const e = String(crudo ?? '').trim().replace(/^<([^<>|]+)(?:\|[^<>]*)?>$/, '$1').trim()
+    if (e && !enlaces.includes(e)) enlaces.push(e)
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new DomainError('El enlace debe empezar con http:// o https://')
-  }
-  return link
+  if (!enlaces.length) return null
+  const unidos = enlaces.join('\n')
+  if (unidos.length > LINK_MAX) throw new DomainError('Los enlaces son demasiado largos')
+  return unidos
+}
+
+/** Inverso de normalizarEnlaces: la columna como lista. */
+export function separarEnlaces (link) {
+  return String(link ?? '').split('\n').map(e => e.trim()).filter(Boolean)
 }
 
 export function validateComment (cuerpo) {
