@@ -284,6 +284,9 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
   // Mismo aviso que el escalamiento automatico: para quien lo lee en Slack es la
   // misma noticia (el ticket cambio de dueno), sin importar quien lo movio.
   void slack.notificarTicketEscalado(actualizado, anterior, 'Reasignación manual')
+  void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', {
+    primeraAsignacion: !ticket.assigned_to_id,
+  })
 
   return conDetalle(actualizado, scope, userId)
 }
@@ -346,6 +349,7 @@ export async function runAutoAssignSweep (ahora = new Date()) {
     // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
     // noticia (el ticket tiene dueño), sin importar por que camino llego.
     void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
+    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', { primeraAsignacion: true })
   }
   return asignados
 }
@@ -403,6 +407,7 @@ async function barrerEscalamientos (ahora) {
 
     const actualizado = await repo.detail(ticket.ticket_id)
     void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')
+    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte')
   }
   return escalados
 }

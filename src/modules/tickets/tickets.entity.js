@@ -314,6 +314,9 @@ export function buildKpis (tickets = [], userId = null) {
     total: tickets.length,
     misAsignados: tickets.filter(t => t.assigned_to_id === userId && ESTADOS_ACTIVOS.includes(t.status)).length,
     sinAsignar: tickets.filter(t => !t.assigned_to_id).length,
+    // Sin chip: los que todavia puede repartir tickets-autoassign (mismo
+    // criterio que unassignedOlderThan). El front refresca mientras sea > 0.
+    porAsignar: tickets.filter(t => !t.assigned_to_id && t.status === 'ABIERTO').length,
     // Mismo criterio que applyFilter('POR_VENCER'): por vencer y no vencido, para
     // que un ticket no cuente en los dos chips a la vez.
     porVencer: tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido).length,

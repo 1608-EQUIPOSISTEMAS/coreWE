@@ -26,6 +26,7 @@ const slack = {
   notificarSlaIncumplido: vi.fn(),
   avisarTicketTomado: vi.fn(),
   avisarTicketResuelto: vi.fn(),
+  avisarTicketReasignado: vi.fn(),
   buscarUsuarioSlackPorEmail: vi.fn(),
   descargarArchivoSlack: vi.fn(),
   avisarComentarioNuevo: vi.fn(),
@@ -136,6 +137,8 @@ describe('runAutoAssignSweep', () => {
     expect(asignados).toBe(1)
     expect(repo.reassign).toHaveBeenCalledWith(1, 7)
     expect(slack.notificarTicketEscalado).toHaveBeenCalled()
+    // A quien reporto se le dice "asignado", no "reasignado": no tenia dueño.
+    expect(slack.avisarTicketReasignado).toHaveBeenCalledWith(expect.anything(), expect.any(String), { primeraAsignacion: true })
   })
 
   it('sin agentes disponibles no rompe: se reintenta en la proxima corrida', async () => {
@@ -170,6 +173,7 @@ describe('runSlaSweep · escalamiento', () => {
     expect(escalados).toBe(1)
     // Se lo pasa a OTRO agente, no al que ya lo tenia.
     expect(repo.applyEscalation).toHaveBeenCalledWith(1, 42, 99, AHORA)
+    expect(slack.avisarTicketReasignado).toHaveBeenCalledTimes(1)
   })
 
   it('no escala si el reloj todavia tiene margen', async () => {

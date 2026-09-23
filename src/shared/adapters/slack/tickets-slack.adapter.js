@@ -443,17 +443,38 @@ export async function buscarUsuarioSlackPorEmail (email) {
   }
 }
 
+/**
+ * Mensaje directo a quien reporto. Va al DM del ticket si nacio en Slack; si
+ * nacio en la web no hay DM guardado, asi que se le escribe buscandolo por su
+ * email. Devuelve si llego.
+ */
+async function avisarAlSolicitante (ticket, texto, blocks) {
+  if (ticket.slack_channel_id) {
+    return Boolean(await avisarEnDm(ticket, texto, blocks))
+  }
+  const slackUserId = await buscarUsuarioSlackPorEmail(ticket.creador_email)
+  if (!slackUserId) return false
+  return Boolean(await postearMensaje(slackUserId, { text: texto, blocks }))
+}
+
 /** Primera senal de vida que espera el solicitante: alguien tomo el ticket. */
 export function avisarTicketTomado (ticket, agente) {
-  const texto = `👀 *${agente}* está trabajando en tu ticket #${codigo(ticket.ticket_id)}.`
-  return avisarEnDm(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
+  const texto = `👀 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" está siendo revisado por *${agente}*.`
+  return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
 }
 
 /**
- * Confirmacion de cierre para quien reporto. Va al DM del ticket si nacio en
- * Slack; si nacio en la web no hay DM guardado, asi que se le escribe
- * buscandolo por su email. Devuelve si llego.
+ * El ticket cambio de dueño (a mano, por el reparto automatico o por SLA).
+ * `primeraAsignacion` distingue "asignado" de "reasignado": un ticket sin dueño
+ * no se reasigna.
  */
+export function avisarTicketReasignado (ticket, agente, { primeraAsignacion = false } = {}) {
+  const accion = primeraAsignacion ? 'fue asignado a' : 'fue reasignado a'
+  const texto = `🔄 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" ${accion} *${agente}*, quien lo revisará.`
+  return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
+}
+
+/** Confirmacion de cierre para quien reporto. Devuelve si llego. */
 export async function avisarTicketResuelto (ticket, agente) {
   const texto = `✅ Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" fue resuelto por *${agente}*.`
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: texto } }]
@@ -466,12 +487,7 @@ export async function avisarTicketResuelto (ticket, agente) {
     }]
   })
 
-  if (ticket.slack_channel_id) {
-    return Boolean(await avisarEnDm(ticket, texto, blocks))
-  }
-  const slackUserId = await buscarUsuarioSlackPorEmail(ticket.creador_email)
-  if (!slackUserId) return false
-  return Boolean(await postearMensaje(slackUserId, { text: texto, blocks }))
+  return avisarAlSolicitante(ticket, texto, blocks)
 }
 
 /** Replica en el DM lo que escribieron en el ticket. */

@@ -346,6 +346,13 @@ describe('applyFilter y buildKpis', () => {
   })
 
   it('los KPIs cuentan sobre el total, no sobre lo filtrado', () => {
-    expect(buildKpis(todos, 99)).toEqual({ total: 3, misAsignados: 2, sinAsignar: 1, porVencer: 0, vencidos: 1 })
+    expect(buildKpis(todos, 99)).toEqual({ total: 3, misAsignados: 2, sinAsignar: 1, porAsignar: 1, porVencer: 0, vencidos: 1 })
+  })
+
+  it('porAsignar deja fuera a los huerfanos que ya no estan abiertos', () => {
+    const cerrado = withSla(ticket({ ticket_id: 4, assigned_to_id: null, status: 'CERRADO' }), AHORA)
+    const kpis = buildKpis([...todos, cerrado], 99)
+    expect(kpis.sinAsignar).toBe(2)
+    expect(kpis.porAsignar).toBe(1)
   })
 })
