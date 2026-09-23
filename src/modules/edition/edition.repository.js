@@ -936,6 +936,9 @@ export class EditionRepository {
             AND COALESCE(e_sold.notes, '') NOT ILIKE '%desde inscripcion #%'
             AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
                              WHERE ccx.enrollment_destination_id = e_sold.enrollment_id)) AS is_beca,
+           -- Etiqueta "Certificar" del panel FICO: el becado pago su certificado.
+           -- El pago adicional marca la VENTA (padre si es paquete), no el hijo.
+           (ccert_sold.alias = 'we_certificate_status_paid') AS sold_certificate_paid,
            COALESCE(e_sold.agent_origin, e.agent_origin) AS agent_origin,
            -- Codigo del asesor (ej. AE30): misma cascada que la columna AGENTE
            -- del panel FICO: quien solicito el token de pago > asesor de la venta.
@@ -992,6 +995,7 @@ export class EditionRepository {
  LEFT JOIN public."catalog" ccert  ON ccert.catalog_id  = e.cat_certificate_status
  LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
  LEFT JOIN public."catalog" cts_sold ON cts_sold.catalog_id = e_sold.cat_type_status
+ LEFT JOIN public."catalog" ccert_sold ON ccert_sold.catalog_id = e_sold.cat_certificate_status
  -- segmento de la edicion de la venta: un padre A5 (diploma cancelado) deja a
  -- sus modulos varados, fuera de esta aula (ver WHERE).
  LEFT JOIN public.program_editions pe_sold ON pe_sold.edition_num_id = e_sold.program_edition_id

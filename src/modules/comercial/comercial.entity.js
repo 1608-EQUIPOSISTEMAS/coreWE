@@ -50,6 +50,7 @@ export function buildFilterPayload (payload = {}) {
     owner_user_ids,
     status_lead_ids,
     last_follow_ids,
+    last_attempt_type_ids,
     interest_level_ids,
     channel_ids,
     query_ids,
@@ -79,6 +80,7 @@ export function buildFilterPayload (payload = {}) {
   const mom = splitNullSentinel(moment_ids)
   const intLvl = splitNullSentinel(interest_level_ids)
   const chan = splitNullSentinel(channel_ids)
+  const lat = splitNullSentinel(last_attempt_type_ids)
 
   return {
     current_user_id: user_id,
@@ -135,6 +137,9 @@ export function buildFilterPayload (payload = {}) {
 
     last_follow_ids: lf.ids,
     include_null_follow: lf.includeNull,
+
+    last_attempt_type_ids: lat.ids,
+    include_null_attempt_type: lat.includeNull,
 
     moment_ids: mom.ids,
     include_null_moment: mom.includeNull,

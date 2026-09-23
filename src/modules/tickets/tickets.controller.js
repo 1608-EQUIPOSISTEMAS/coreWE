@@ -115,3 +115,8 @@ async function enviarAdjunto (req, reply, kind) {
     .header('Content-Disposition', `inline; filename="${encodeURIComponent(nombre)}"`)
     .send(createReadStream(ruta))
 }
+
+export async function aiNoteHandler (req, reply) {
+  const data = await usecases.ticketAiNote({ ...quien(req), ticketId: req.body.ticket_id })
+  return reply.send({ ok: true, data })
+}

@@ -1,4 +1,5 @@
 import { ForbiddenError } from '../../shared/errors.js'
+import { AREA_OF_LEADER } from '../../shared/organigrama.js'
 
 // Reglas puras de la Auditoría del sistema. Sin I/O: todo lo de aquí se testea
 // sin BD ni HTTP.
@@ -41,55 +42,18 @@ export const SYSTEM_ACTIONS = [
 
 export const AUDITED_ACTIONS = ['INSERT', 'UPDATE', 'DELETE', 'LOGIN', ...SYSTEM_ACTIONS]
 
+// El organigrama (AREA_OF_LEADER, AREA_LABEL, areaLabelOf, roleLabelOf) vivia
+// aca, pero lo usan tambien Dashboard y Tickets y no es de ninguno de los tres:
+// ahora es shared/organigrama. Se reexporta porque la Auditoria es su consumidor
+// historico y media docena de archivos de este modulo lo importan por este
+// nombre; quien venga de fuera lo toma de shared, no de aca.
+export { AREA_LABEL, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
+export { AREA_OF_LEADER }
+
 // Cada líder audita a su propia área: LIDER_COMERCIAL ve lo que hicieron los
 // usuarios COMERCIAL (y los demás líderes comerciales, para que un equipo con
 // dos jefes se vea completo). El resto de roles no entra a la vista.
 //
-// Se exporta porque es el organigrama del ERP, no un detalle de la Auditoría:
-// el panel de equipo (dashboard.entity) decide con esta misma tabla a quién ve
-// cada líder. Duplicarla allá significaría que un cambio de organigrama tenga
-// que recordarse en dos archivos.
-export const AREA_OF_LEADER = {
-  LIDER_COMERCIAL: ['COMERCIAL', 'LIDER_COMERCIAL'],
-  LIDER_FICO: ['FICO', 'LIDER_FICO'],
-  LIDER_ACADEMICA: ['ACADEMICA', 'LIDER_ACADEMICA'],
-  LIDER_PRODUCTO: ['PRODUCTO', 'LIDER_PRODUCTO'],
-  LIDER_FUNDACION: ['FUNDACION', 'LIDER_FUNDACION'],
-  LIDER_B2B: ['B2B', 'LIDER_B2B']
-}
-
-// Nombre legible de cada area del organigrama. Vive junto a AREA_OF_LEADER por
-// la misma razon: es el mismo mapa (rol -> area), no un detalle de quien lo usa.
-// Dashboard lo usa para el nombre del area en el panel de lider; Tickets, para
-// mostrar de que area es cada ticket.
-export const AREA_LABEL = {
-  COMERCIAL: 'Comercial',
-  FICO: 'FICO',
-  ACADEMICA: 'Académica',
-  PRODUCTO: 'Producto',
-  FUNDACION: 'Fundación',
-  B2B: 'B2B'
-}
-
-// A que area pertenece un conjunto de roles (los de un lider o los de quien
-// creo un ticket). find(Boolean) y no un Set: si alguien tiene mas de un rol de
-// area, se queda con el primero que matchea, no con "varias areas" a la vez.
-export function areaLabelOf (roles = [], fallback = null) {
-  return (roles || []).map(r => AREA_LABEL[r.replace(/^LIDER_/, '')]).find(Boolean) ?? fallback
-}
-
-// Nombre legible de UN rol puntual (a diferencia de areaLabelOf, que colapsa
-// un lider y su base en la misma area). LIDER_COMERCIAL -> "Líder Comercial",
-// COMERCIAL -> "Comercial", ADMIN -> "Administrador".
-export function roleLabelOf (role) {
-  if (!role) return null
-  if (role === 'ADMIN') return 'Administrador'
-  const esLider = role.startsWith('LIDER_')
-  const base = esLider ? role.slice('LIDER_'.length) : role
-  const nombreBase = AREA_LABEL[base] ?? base
-  return esLider ? `Líder ${nombreBase}` : nombreBase
-}
-
 // Devuelve los alias de rol cuyos movimientos puede ver quien consulta.
 // null = sin filtro (ADMIN lo ve todo). Lanza 403 a cualquier otro rol.
 export function auditableRolesFor (roles = []) {

@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER } from '../audit/audit.entity.js'
+import { AREA_OF_LEADER } from '../../shared/organigrama.js'
 
 // JSON schemas de validacion (Fastify/AJV) del dominio dashboard.
 // Movidos verbatim desde las rutas legacy durante la migracion.
@@ -196,3 +196,6 @@ export const teamSummarySchema = {
     properties: { view_as: { type: 'string', enum: Object.keys(AREA_OF_LEADER) } }
   }
 }
+
+// Mismo view_as que el panel de equipo: solo lo respeta para ADMIN.
+export const dailyPlanSchema = teamSummarySchema

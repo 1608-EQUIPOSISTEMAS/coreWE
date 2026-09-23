@@ -233,10 +233,16 @@ describe('buildCourseChangeInscription', () => {
 })
 
 describe('courseChangeAmountDifference', () => {
-  it('neto = total - descuento; diferencia = nuevo - viejo', () => {
-    const r = courseChangeAmountDifference(1000, 200, 1200)
+  it('total_amount ya es neto: diferencia = nuevo - viejo', () => {
+    const r = courseChangeAmountDifference(800, 1200)
     expect(r.oldAmount).toBe(800)
     expect(r.amountDifference).toBe(400)
+  })
+
+  // Venta #16360: lista 970, descuento 535, total 435. Restar el descuento
+  // otra vez daba -100 y la BD rechazaba el destino.
+  it('no resta el descuento dos veces', () => {
+    expect(courseChangeAmountDifference(435, 435).oldAmount).toBe(435)
   })
 })
 

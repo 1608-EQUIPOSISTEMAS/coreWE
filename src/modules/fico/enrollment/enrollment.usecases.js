@@ -421,7 +421,7 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   // marcado con un cambio que nunca ocurrio.
   await repo.setCourseChangedStatus(enrollmentId)
 
-  const { oldAmount } = courseChangeAmountDifference(old.total_amount, old.discount_amount, totalAmount)
+  const { oldAmount } = courseChangeAmountDifference(old.total_amount, totalAmount)
 
   if (newEid) {
     await repo.finalizeCourseChange({
@@ -499,6 +499,17 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   }
 
   return { result: 1, message: 'Cambio de curso realizado', new_enrollment_id: newEid }
+}
+
+// Lleva al destino lo que el alumno todavia debe del origen, con sus fechas tal
+// cual (FICO ya las ajusto antes de aceptar). Es el mismo traslado del RP, para
+// el CC que no cobra de nuevo: sin esto la cuota pendiente quedaba colgada en el
+// origen marcado CC y el destino se veia como beca pagada.
+export async function movePendingInstallments ({ fromEnrollmentId, toEnrollmentId }) {
+  const pendingRows = await repo.getReprogramPendingInstallments(fromEnrollmentId)
+  const plan = buildReprogramPlan({ pendingRows })
+  await repo.transferInstallmentsForReprogram({ oldEnrollmentId: fromEnrollmentId, newEid: toEnrollmentId, plan })
+  return plan
 }
 
 // --- Snapshot / observar / reenviar -------------------------------------

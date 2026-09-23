@@ -18,6 +18,9 @@ export default async function comercialRoutes (fastify) {
   fastify.post('/leadregister', { schema: leadRegisterSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadRegisterHandler)
   fastify.post('/leadupdate', { schema: leadUpdateSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadUpdateHandler)
   fastify.post('/leadget', { schema: leadGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadGetHandler)
+  // Resumen IA del historial de contacto (mismo alcance que /leadget). Responde
+  // al instante: 'listo' desde la tabla o 'generando' y el front vuelve a consultar.
+  fastify.post('/leadsummary', { schema: leadGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadSummaryHandler)
   fastify.post('/leadlist', { schema: leadListSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadListHandler)
   fastify.get('/sellerphones', { preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.sellerPhonesHandler)
   fastify.post('/leadstats', { schema: leadStatsSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadStatsHandler)

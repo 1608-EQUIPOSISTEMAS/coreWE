@@ -1,3 +1,4 @@
+import { getLeadSummary } from './lead-summary/lead-summary.usecases.js'
 import * as usecases from './comercial.usecases.js'
 
 export async function leadRegisterHandler (req, reply) {
@@ -16,6 +17,11 @@ export async function leadUpdateHandler (req, reply) {
 export async function leadGetHandler (req, reply) {
   const { data } = await usecases.leadGet(req.body)
   return reply.code(201).send({ ok: true, data })
+}
+
+export async function leadSummaryHandler (req, reply) {
+  const data = await getLeadSummary({ leadId: req.body.id })
+  return reply.send({ ok: true, data })
 }
 
 export async function leadListHandler (req, reply) {

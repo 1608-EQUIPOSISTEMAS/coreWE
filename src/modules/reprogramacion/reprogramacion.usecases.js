@@ -8,12 +8,11 @@ import {
   assertPuedeProponer,
   buildJustificacion,
   cierraSinDestino,
-  netoDeLaVenta,
   resolveDestKind
 } from './reprogramacion.entity.js'
 // El movimiento real lo hacen los casos de uso de FICO, que ya saben mover el
 // ERP, tocar Odoo y mandar el correo. Aca solo se decide CUAL de los tres corre.
-import { courseChange, reprogramEdition, retireEnrollment } from '../fico/enrollment/enrollment.usecases.js'
+import { courseChange, movePendingInstallments, reprogramEdition, retireEnrollment } from '../fico/enrollment/enrollment.usecases.js'
 
 const repo = reprogramacionRepository
 
@@ -127,17 +126,20 @@ async function ejecutarVeredicto ({ caso, venta, enrollmentId, userId }) {
     })
   }
 
-  return courseChange({
+  // La edicion la cancelamos nosotros: el destino no cobra nada nuevo (pago
+  // cero) y hereda las cuotas que el alumno aun debe, igual que una RP. Cobrar
+  // "el neto" registraba como pagado al contado lo que todavia se debia.
+  const resultado = await courseChange({
     enrollmentId,
     newProgramVersionId: caso.dest_program_version_id,
     newEditionId: caso.dest_edition_id,
-    // Mismo neto que ya pago: la edicion la cancelamos nosotros, el alumno
-    // no debe pagar la diferencia dentro de este flujo.
-    totalAmount: netoDeLaVenta(venta),
+    totalAmount: 0,
     justificacion,
     userId,
     cat_currency: venta.cat_currency
   })
+  await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: resultado.new_enrollment_id })
+  return resultado
 }
 
 // El RP delega Odoo y correo a un job con reintentos; el CC los corre inline y

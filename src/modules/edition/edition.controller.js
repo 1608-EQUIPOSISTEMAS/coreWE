@@ -118,6 +118,21 @@ export async function reportRecommendationsHandler (req, reply) {
   return reply.code(result.ok ? 200 : 502).send(result)
 }
 
+// Trabajos IA en segundo plano: responden al instante (202) con el job.
+export async function classroomGradesObservationsStartHandler (req, reply) {
+  const result = await usecases.startGradesObservations(req.body)
+  return reply.code(result.ok ? 202 : 400).send(result)
+}
+
+export async function reportRecommendationsStartHandler (req, reply) {
+  const result = usecases.startReportRecommendations(req.body)
+  return reply.code(202).send(result)
+}
+
+export async function aiJobStatusHandler (req, reply) {
+  return reply.send(usecases.aiJobStatus(req.body))
+}
+
 export async function academicReportHandler (req, reply) {
   const data = await usecases.academicReport(req.body || {})
   return reply.code(200).send({ ok: true, data })

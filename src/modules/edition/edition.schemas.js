@@ -855,3 +855,28 @@ export const b2bAttendanceSaveSchema = {
     }
   }
 }
+
+// Trabajos IA en segundo plano: mismo body que la version sincrona + force
+// (Regenerar descarta el resultado anterior).
+export const classroomGradesObservationsStartSchema = {
+  body: {
+    ...classroomGradesObservationsSchema.body,
+    properties: { ...classroomGradesObservationsSchema.body.properties, force: { type: 'boolean' } }
+  }
+}
+
+export const reportRecommendationsStartSchema = {
+  body: {
+    ...reportRecommendationsSchema.body,
+    properties: { ...reportRecommendationsSchema.body.properties, force: { type: 'boolean' } }
+  }
+}
+
+export const aiJobStatusSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['job_id'],
+    properties: { job_id: { type: 'string', maxLength: 64 } }
+  }
+}

@@ -13,6 +13,7 @@ shared/
   adapters/ implementaciones de los ports (slack/, jobs/)
   utils/    helpers puros reutilizables
   errors.js DomainError / NotFoundError / ForbiddenError -> mapean a HTTP
+  organigrama.js  que area es cada rol y como se llama (Auditoria, Dashboard, Tickets)
 ```
 
 ## Reglas de capa (se forzaran con eslint-plugin-boundaries en Fase 4)

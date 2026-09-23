@@ -98,3 +98,41 @@ export function assertGroupable (tokens, userId) {
 
   return { total, currency, count: tokens.length }
 }
+
+// Un lead es UN alumno. confirmToken reusa la inscripcion que el lead ya tiene,
+// asi que dos tokens de personas distintas sobre el mismo lead terminan en la
+// misma inscripcion y la segunda persona nunca se inscribe (tokens 819/820,
+// 22/09/26: Kelly quedo pegada a la inscripcion de Jose).
+// Mismo criterio que fn_person_resolve: documento normalizado y, si falta,
+// correo. Sin ninguno de los dos no hay con que decidir y se deja pasar.
+function studentKey ({ document, email }) {
+  const doc = String(document ?? '').trim().toUpperCase()
+  return {
+    doc: /^\d+$/.test(doc) ? doc.padStart(8, '0') : doc || null,
+    email: String(email ?? '').trim().toLowerCase() || null
+  }
+}
+
+function isSameStudent (a, b) {
+  const ka = studentKey(a)
+  const kb = studentKey(b)
+  if (ka.doc && kb.doc) return ka.doc === kb.doc
+  if (ka.email && kb.email) return ka.email === kb.email
+  return true
+}
+
+export function studentOfInscription (inscriptionData) {
+  const insc = inscriptionData?.inscription || {}
+  return { document: insc.document, email: insc.email, name: inscriptionFullName(inscriptionData) }
+}
+
+// @param {Array<{document, email, name}>} leadStudents  alumnos que ya cuelgan del lead
+// @param {{document, email}} student                    alumno del token nuevo
+export function assertLeadBelongsToStudent (leadStudents, student) {
+  const other = leadStudents.find(s => !isSameStudent(s, student))
+  if (other) {
+    throw new DomainError(
+      `Este lead ya pertenece a ${other.name || 'otro alumno'}. Cada alumno necesita su propio lead: registra uno nuevo para ${student.name || 'este alumno'} y genera el token desde ahi.`
+    )
+  }
+}

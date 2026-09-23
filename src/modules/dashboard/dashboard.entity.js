@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER, areaLabelOf } from '../audit/audit.entity.js'
+import { AREA_OF_LEADER, areaLabelOf } from '../../shared/organigrama.js'
 
 // Reglas puras del dominio dashboard. Sin BD, Odoo ni Slack.
 // Transformaciones de filas crudas de las vistas a DTO de salida y armado de
