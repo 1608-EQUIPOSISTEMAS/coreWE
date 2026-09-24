@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluarReloj, calcularSla, sumarMinutos, UMBRAL_POR_VENCER } from '../sla/sla-clock.js'
+import { evaluarReloj, calcularSla, sumarMinutos, sumarMinutosHabiles, UMBRAL_POR_VENCER } from '../sla/sla-clock.js'
 
 // Portado de sla.calculo.test.ts del sistema origen. El instante de referencia
 // entra por parametro, asi que las fronteras se prueban sin reloj real.
@@ -81,5 +81,37 @@ describe('sumarMinutos', () => {
     // Viernes 18:00 + 480 min = sabado 02:00, no el lunes.
     const viernes = new Date('2026-01-02T18:00:00Z')
     expect(sumarMinutos(viernes, 480).toISOString()).toBe('2026-01-03T02:00:00.000Z')
+  })
+})
+
+// Horario habil: lun-vie 09:00-18:00 Lima (UTC-5). 2026-01-01 es jueves.
+describe('sumarMinutosHabiles', () => {
+  const iso = d => d.toISOString()
+
+  it('dentro del horario suma directo', () => {
+    // Jueves 10:00 Lima + 60 = 11:00 Lima.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-01T15:00:00Z'), 60))).toBe('2026-01-01T16:00:00.000Z')
+  })
+
+  it('lo que no alcanza el viernes sigue el lunes', () => {
+    // Viernes 17:50 Lima + 30 = 10 min el viernes + 20 el lunes -> lunes 09:20.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-02T22:50:00Z'), 30))).toBe('2026-01-05T14:20:00.000Z')
+  })
+
+  it('un ticket del fin de semana empieza a contar el lunes a las 09:00', () => {
+    // Sabado 10:00 Lima + 15 = lunes 09:15.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-03T15:00:00Z'), 15))).toBe('2026-01-05T14:15:00.000Z')
+  })
+
+  it('antes de abrir espera la apertura; despues de cerrar, la del dia siguiente', () => {
+    // Jueves 07:00 Lima + 60 = 10:00.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-01T12:00:00Z'), 60))).toBe('2026-01-01T15:00:00.000Z')
+    // Jueves 20:00 Lima + 15 = viernes 09:15.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-02T01:00:00Z'), 15))).toBe('2026-01-02T14:15:00.000Z')
+  })
+
+  it('un dia habil (540 min) cae a la misma hora del dia habil siguiente', () => {
+    // Jueves 10:00 Lima + 1 dia habil = viernes 10:00.
+    expect(iso(sumarMinutosHabiles(new Date('2026-01-01T15:00:00Z'), 540))).toBe('2026-01-02T15:00:00.000Z')
   })
 })

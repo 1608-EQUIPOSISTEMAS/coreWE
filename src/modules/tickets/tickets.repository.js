@@ -25,6 +25,7 @@ const TICKET_SELECT = `
   t.*,
   cu.name  AS creador,
   cu.alias AS creador_alias,
+  cu.email AS creador_email,
   au.name  AS asignado,
   au.alias AS asignado_alias,
   COALESCE((SELECT array_agg(DISTINCT r.alias)
@@ -193,6 +194,18 @@ export class TicketsRepository {
        WHERE ticket_id = $1`, [ticketId, nuevoAsignadoId])
   }
 
+  /**
+   * Asigna un ABIERTO sin dueño a quien lo toma. El WHERE es el candado: si dos
+   * agentes lo toman a la vez, solo uno actualiza la fila. Devuelve si lo logro.
+   */
+  async claim (ticketId, userId) {
+    const { rowCount } = await this.db.query(`
+      UPDATE public.tickets
+         SET assigned_to_id = $2, modification_date = now()
+       WHERE ticket_id = $1 AND status = 'ABIERTO' AND assigned_to_id IS NULL`, [ticketId, userId])
+    return rowCount > 0
+  }
+
   async saveSlackThread (ticketId, { channelId, messageTs }) {
     await this.db.query(`
       UPDATE public.tickets
@@ -242,6 +255,63 @@ export class TicketsRepository {
     })
   }
 
+  // ── Actividad ────────────────────────────────────────────────────────────
+
+  /**
+   * Linea de tiempo del ticket, derivada de lo que ya guarda el sistema: las
+   * marcas de la fila (creacion, toma, resolucion, escalamiento, alertas del
+   * SLA) + los comentarios. Sin tabla propia: es una lectura, no un registro.
+   *
+   * Tomar y resolver exigen ser el agente asignado (nextStatus), por eso el
+   * actor de esas marcas es el asignado. ASIGNADO solo se infiere mientras el
+   * ticket sigue ABIERTO y no escalado: ahi la ultima modificacion de la fila
+   * es, por fuerza, la asignacion (manual o del reparto automatico).
+   */
+  async activity (ticketId) {
+    const { rows } = await this.db.query(`
+      WITH t AS (
+        SELECT t.*, cu.name AS creador, au.name AS asignado, eu.name AS escalado_desde
+          FROM public.tickets t
+          JOIN public.users cu ON cu.user_id = t.created_by_id
+          LEFT JOIN public.users au ON au.user_id = t.assigned_to_id
+          LEFT JOIN public.users eu ON eu.user_id = t.escalated_from_id
+         WHERE t.ticket_id = $1
+      )
+      SELECT * FROM (
+        SELECT 'creado' AS id, 'CREADO' AS tipo, registration_date AS fecha,
+               creador AS actor, NULL AS de_usuario, NULL AS a_usuario, NULL AS detalle
+          FROM t
+        UNION ALL
+        SELECT 'asignado', 'ASIGNADO', modification_date, NULL, NULL, asignado, NULL
+          FROM t
+         WHERE status = 'ABIERTO' AND assigned_to_id IS NOT NULL
+           AND escalated_at IS NULL AND modification_date IS NOT NULL
+        UNION ALL
+        SELECT 'escalado', 'ESCALADO', escalated_at, NULL, escalado_desde, asignado, NULL
+          FROM t WHERE escalated_at IS NOT NULL
+        UNION ALL
+        SELECT 'alerta-respuesta', 'ALERTA_SLA', response_alert_sent_at, NULL, NULL, NULL, 'respuesta'
+          FROM t WHERE response_alert_sent_at IS NOT NULL
+        UNION ALL
+        SELECT 'alerta-resolucion', 'ALERTA_SLA', resolution_alert_sent_at, NULL, NULL, NULL, 'resolucion'
+          FROM t WHERE resolution_alert_sent_at IS NOT NULL
+        UNION ALL
+        SELECT 'tomado', 'TOMADO', first_response_at, asignado, NULL, NULL, NULL
+          FROM t WHERE first_response_at IS NOT NULL
+        UNION ALL
+        SELECT 'resuelto', 'RESUELTO', resolved_at, asignado, NULL, NULL, NULL
+          FROM t WHERE resolved_at IS NOT NULL
+        UNION ALL
+        SELECT 'c' || c.ticket_comment_id, 'COMENTARIO', c.registration_date,
+               u.name, NULL, NULL, left(c.body, 160)
+          FROM public.ticket_comments c
+          JOIN public.users u ON u.user_id = c.author_id
+         WHERE c.ticket_id = $1 AND c.active = 'Y'
+      ) x
+      ORDER BY x.fecha, x.id`, [ticketId])
+    return rows
+  }
+
   // ── Adjuntos ─────────────────────────────────────────────────────────────
   //
   // Devuelven el adjunto junto al ticket dueno para que el caso de uso pueda
@@ -273,38 +343,6 @@ export class TicketsRepository {
         JOIN public.ticket_comments c ON c.ticket_comment_id = a.ticket_comment_id
         JOIN public.tickets t ON t.ticket_id = c.ticket_id
        WHERE a.ticket_comment_attachment_id = $1 AND a.active = 'Y'`, [attachmentId])
-    return rows[0] ?? null
-  }
-
-  // ── Politicas de SLA ─────────────────────────────────────────────────────
-
-  async slaPolicies () {
-    const { rows } = await this.db.query(`
-      SELECT p.priority, p.first_response_minutes, p.resolution_minutes,
-             p.modification_date, u.name AS actualizado_por
-        FROM public.ticket_sla_policies p
-        LEFT JOIN public.users u ON u.user_id = p.updated_by_id
-       ORDER BY CASE p.priority WHEN 'ALTA' THEN 1 WHEN 'MEDIA' THEN 2 ELSE 3 END`)
-    return rows
-  }
-
-  async slaPolicy (priority) {
-    const { rows } = await this.db.query(
-      'SELECT priority, first_response_minutes, resolution_minutes FROM public.ticket_sla_policies WHERE priority = $1',
-      [priority])
-    return rows[0] ?? null
-  }
-
-  async saveSlaPolicy ({ prioridad, minutosPrimeraRespuesta, minutosResolucion }, userId) {
-    const { rows } = await this.db.query(`
-      UPDATE public.ticket_sla_policies
-         SET first_response_minutes = $2,
-             resolution_minutes     = $3,
-             updated_by_id          = $4,
-             modification_date      = now()
-       WHERE priority = $1
-       RETURNING priority, first_response_minutes, resolution_minutes`,
-    [prioridad, minutosPrimeraRespuesta, minutosResolucion, userId])
     return rows[0] ?? null
   }
 
@@ -383,7 +421,7 @@ export class TicketsRepository {
       [ticketId, ahora])
   }
 
-  // ── Identidad (slash command de Slack) ───────────────────────────────────
+  // ── Identidad (bot de Slack por DM) ──────────────────────────────────────
 
   async findActiveUserByEmail (email) {
     const { rows } = await this.db.query(`

@@ -1,5 +1,5 @@
 import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
-import { calcularSla, sumarMinutos, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
+import { calcularSla, sumarMinutosHabiles, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
 import { DomainError, ForbiddenError } from '../../shared/errors.js'
 
 // Reglas puras del dominio tickets. Sin BD, sin disco y sin Slack: todo entra
@@ -23,8 +23,6 @@ const PROBLEMA_MIN = 10
 const PROBLEMA_MAX = 2000
 const LINK_MAX = 2048
 export const COMENTARIO_MAX = 2000
-export const SLA_MINUTOS_MIN = 1
-export const SLA_MINUTOS_MAX = 43200
 
 /** El numero visible del ticket. El id ES el correlativo; esto solo lo viste. */
 export function formatTicketCode (ticketId) {
@@ -102,6 +100,39 @@ export const assertCanComment = assertCanRead
 export function assertCanManage (scope) {
   if (!scope.canManage) throw new ForbiddenError('Solo un administrador puede gestionar tickets')
   return scope
+}
+
+// Un ABIERTO sin dueño lo puede tomar cualquier agente (es la ventana de gracia
+// antes del reparto automatico): tomarlo lo asigna a quien lo tomo.
+export function isTakeable (ticket) {
+  return ticket?.status === 'ABIERTO' && ticket.assigned_to_id == null
+}
+
+// ¿Puede ESTE usuario mover el estado de ESTE ticket? Mismo criterio que
+// nextStatus, calculado para que el front decida que botones mostrar.
+export function canChangeStatusOf (ticket, scope, userId) {
+  if (!scope.canManage || !ticket) return false
+  return ticket.assigned_to_id === userId || isTakeable(ticket)
+}
+
+// ¿Puede quien REPORTO reabrir su propio ticket? Si el problema sigue, no
+// depende de que el agente lea un comentario: lo reabre y el ticket vuelve a
+// la cola de quien lo atendia. Solo su ticket y solo si esta CERRADO.
+export function canReopenOf (ticket, userId) {
+  return Boolean(ticket) && ticket.status === 'CERRADO' && ticket.created_by_id === userId
+}
+
+// Campos a actualizar al reabrir desde quien reporto. Mismo efecto que el
+// reabrir del agente en nextStatus: la resolucion anterior deja de valer y la
+// primera respuesta se conserva.
+export function reopenByReporter (ticket, userId) {
+  if (!ticket || ticket.created_by_id !== userId) {
+    throw new ForbiddenError('Solo quien reportó el ticket puede reabrirlo')
+  }
+  if (ticket.status !== 'CERRADO') {
+    throw new DomainError('Solo se puede reabrir un ticket resuelto')
+  }
+  return { status: 'EN_PROGRESO', first_response_at: ticket.first_response_at, resolved_at: null }
 }
 
 // ── Transiciones ───────────────────────────────────────────────────────────
@@ -188,12 +219,10 @@ export function assertReassignable (ticket, destino, nuevoAsignadoId) {
 //
 // Vive aca y no en un schema de Fastify porque las rutas que crean ticket y
 // comentario son multipart: declararles schema.body haria que AJV vaciara el
-// body. Ademas la comparte el slash command de Slack, que no pasa por AJV.
+// body. Ademas la comparte el bot de Slack por DM, que no pasa por AJV.
 export function validateTicketInput ({ titulo, problema, link } = {}) {
   const t = String(titulo ?? '').trim()
   const p = String(problema ?? '').trim()
-  const l = String(link ?? '').trim()
-
   if (t.length < TITULO_MIN || t.length > TITULO_MAX) {
     throw new DomainError(`El título debe tener entre ${TITULO_MIN} y ${TITULO_MAX} caracteres`)
   }
@@ -201,23 +230,35 @@ export function validateTicketInput ({ titulo, problema, link } = {}) {
     throw new DomainError(`La problemática debe tener entre ${PROBLEMA_MIN} y ${PROBLEMA_MAX} caracteres`)
   }
 
-  return { titulo: t, problema: p, link: l ? validateLink(l) : null }
+  return { titulo: t, problema: p, link: normalizarEnlaces(link) }
 }
 
-// Solo http(s). Sin esto un `javascript:` guardado aca se vuelve XSS el dia que
-// alguien lo pinte en un <a href>.
-function validateLink (link) {
-  if (link.length > LINK_MAX) throw new DomainError('El enlace es demasiado largo')
-  let url
-  try {
-    url = new URL(link)
-  } catch {
-    throw new DomainError('El enlace no es una URL válida')
+/**
+ * Uno o varios enlaces de referencia, guardados en la misma columna separados
+ * por salto de linea. NO se valida que sean URLs: rechazar un enlace que el
+ * usuario sabe que funciona (el caso de Slack, que devuelve `<url|etiqueta>`)
+ * costaba mas que lo que protegia. El XSS se evita al pintar: el front solo
+ * arma <a href> con http(s) (hrefSeguro) y el resto lo muestra como texto.
+ *
+ * Acepta texto (separado por espacios o saltos) o un arreglo. Quita el
+ * envoltorio de Slack (`<url>`, `<url|etiqueta>`) y los repetidos.
+ */
+export function normalizarEnlaces (entrada) {
+  const crudos = Array.isArray(entrada) ? entrada : String(entrada ?? '').split(/\s+/)
+  const enlaces = []
+  for (const crudo of crudos) {
+    const e = String(crudo ?? '').trim().replace(/^<([^<>|]+)(?:\|[^<>]*)?>$/, '$1').trim()
+    if (e && !enlaces.includes(e)) enlaces.push(e)
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new DomainError('El enlace debe empezar con http:// o https://')
-  }
-  return link
+  if (!enlaces.length) return null
+  const unidos = enlaces.join('\n')
+  if (unidos.length > LINK_MAX) throw new DomainError('Los enlaces son demasiado largos')
+  return unidos
+}
+
+/** Inverso de normalizarEnlaces: la columna como lista. */
+export function separarEnlaces (link) {
+  return String(link ?? '').split('\n').map(e => e.trim()).filter(Boolean)
 }
 
 export function validateComment (cuerpo) {
@@ -228,34 +269,17 @@ export function validateComment (cuerpo) {
   return c
 }
 
-export function validateSlaPolicy ({ prioridad, minutosPrimeraRespuesta, minutosResolucion } = {}) {
-  if (!['ALTA', 'MEDIA', 'BAJA'].includes(prioridad)) {
-    throw new DomainError('Prioridad desconocida')
-  }
-  const respuesta = Number(minutosPrimeraRespuesta)
-  const resolucion = Number(minutosResolucion)
-  const enRango = n => Number.isInteger(n) && n >= SLA_MINUTOS_MIN && n <= SLA_MINUTOS_MAX
-
-  if (!enRango(respuesta) || !enRango(resolucion)) {
-    throw new DomainError(`Los plazos deben ser minutos enteros entre ${SLA_MINUTOS_MIN} y ${SLA_MINUTOS_MAX}`)
-  }
-  // Prometer resolver antes de responder no significa nada.
-  if (resolucion < respuesta) {
-    throw new DomainError('El plazo de resolución no puede ser menor que el de primera respuesta')
-  }
-  return { prioridad, minutosPrimeraRespuesta: respuesta, minutosResolucion: resolucion }
-}
-
 /**
- * Congela los vencimientos con la politica vigente. Se pasa createdAt explicito
+ * Congela los vencimientos con los plazos de criterios-prioridad.md (minutos
+ * HABILES: solo corren lun-vie 09:00-18:00 Lima). Se pasa createdAt explicito
  * (y no se deja el default de la BD) para que ambos relojes cuenten desde
  * exactamente el mismo instante que queda guardado en la fila.
  */
 export function computeDueDates (policy, createdAt) {
   if (!policy) return { first_response_due_at: null, resolution_due_at: null }
   return {
-    first_response_due_at: sumarMinutos(createdAt, policy.first_response_minutes),
-    resolution_due_at: sumarMinutos(createdAt, policy.resolution_minutes)
+    first_response_due_at: sumarMinutosHabiles(createdAt, policy.first_response_minutes),
+    resolution_due_at: sumarMinutosHabiles(createdAt, policy.resolution_minutes)
   }
 }
 
@@ -290,6 +314,9 @@ export function buildKpis (tickets = [], userId = null) {
     total: tickets.length,
     misAsignados: tickets.filter(t => t.assigned_to_id === userId && ESTADOS_ACTIVOS.includes(t.status)).length,
     sinAsignar: tickets.filter(t => !t.assigned_to_id).length,
+    // Sin chip: los que todavia puede repartir tickets-autoassign (mismo
+    // criterio que unassignedOlderThan). El front refresca mientras sea > 0.
+    porAsignar: tickets.filter(t => !t.assigned_to_id && t.status === 'ABIERTO').length,
     // Mismo criterio que applyFilter('POR_VENCER'): por vencer y no vencido, para
     // que un ticket no cuente en los dos chips a la vez.
     porVencer: tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido).length,

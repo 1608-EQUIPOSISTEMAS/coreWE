@@ -5,8 +5,8 @@ import { ACCION_CREAR, ACCION_DESCARTAR, leerBorrador } from './slack.blocks.js'
 import { yaProcesado, mensajeDeError } from './slack.events.js'
 
 // Los dos botones del borrador. Slack manda estas interacciones como
-// x-www-form-urlencoded con un unico campo `payload` que trae el JSON: el mismo
-// parser del slash command sirve, y la firma se verifica igual.
+// x-www-form-urlencoded con un unico campo `payload` que trae el JSON (parser de
+// slack.verify.js), y la firma se verifica igual que en los eventos.
 //
 // En la consola de Slack se configura en "Interactivity & Shortcuts" apuntando
 // a esta ruta.
@@ -60,11 +60,12 @@ async function resolver (accion, payload) {
       slackUserId: payload.user?.id,
       titulo: borrador.titulo,
       problema: borrador.problema,
-      link: borrador.link
+      link: borrador.link,
+      archivosSlack: borrador.archivos
     })
-    // El detalle completo llega aparte: createTicket abre el hilo de
-    // seguimiento en este mismo DM. Aca solo se cierra el borrador con la
-    // confirmacion minima; la info completa la ve el area en su canal.
+    // La confirmacion con prioridad y enlace llega aparte: createTicket la
+    // publica en este mismo DM, donde despues van llegando los avances. Aca
+    // solo se cierra el borrador con el numero.
     await reemplazarMensaje(responseUrl,
       `✅ Tu ticket fue creado correctamente. Número: *#${formatTicketCode(ticket.ticket_id)}*.`)
   } catch (err) {

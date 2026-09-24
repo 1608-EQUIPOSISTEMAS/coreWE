@@ -4,14 +4,15 @@
 //
 //   SLACK_WEBHOOK_URL     incoming webhook -> el canal de tickets. El canal esta
 //                         codificado dentro de la URL, no hace falta variable.
-//   SLACK_BOT_TOKEN       Web API: users.info (identidad del slash command) y
-//                         chat.postMessage (hilo de seguimiento por DM).
-//   SLACK_SIGNING_SECRET   verificacion de firma del slash command.
+//   SLACK_BOT_TOKEN       Web API: users.info (identidad de quien escribe al
+//                         bot), chat.postMessage (seguimiento por DM)
+//                         y files.info (imagenes adjuntas).
+//   SLACK_SIGNING_SECRET   verificacion de firma de eventos y botones.
 //   FRONTEND_PUBLIC_URL    base del ERP (ej. https://app.we-educacion.com) para
 //                         armar el link "Ver detalle" del DM de apertura.
 //
 // Las cuatro son OPCIONALES. Sin webhook no salen notificaciones; sin bot
-// token no hay /ticket ni hilo; sin FRONTEND_PUBLIC_URL el DM de apertura sale
+// token no hay bot por DM ni seguimiento; sin FRONTEND_PUBLIC_URL el DM de apertura sale
 // sin el link. Nada de eso rompe el modulo: se sigue trabajando desde la web
 // igual que siempre.
 
@@ -77,9 +78,11 @@ async function enviarWebhook (payload, referencia) {
 
 // ── Payloads ───────────────────────────────────────────────────────────────
 
+// Los avisos al canal NO llevan quien reporto ni la problematica: el canal lo
+// lee toda el area y ese detalle se ve en el ERP, con el permiso de lectura
+// del ticket.
 function payloadCreado (t) {
   const emoji = EMOJI_PRIORIDAD[t.priority] ?? ':white_circle:'
-  const problema = String(t.problem ?? '').trim()
 
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `🆕 Ticket #${codigo(t.ticket_id)} creado`, emoji: true } },
@@ -91,19 +94,14 @@ function payloadCreado (t) {
         { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
         { type: 'mrkdwn', text: `*Área:*\n${t.area ?? 'Sin área'}` },
         { type: 'mrkdwn', text: `*Asignado a:*\n${t.asignado ?? 'sin asignar'}` },
-        { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` },
         { type: 'mrkdwn', text: `*Fecha:*\n${fechaPe(t.registration_date)}` }
       ]
     }
   ]
 
-  if (problema) {
-    blocks.push({ type: 'divider' },
-      { type: 'section', text: { type: 'mrkdwn', text: `*📝 Problemática:*\n${truncar(problema)}` } })
-  }
-  if (t.link) {
-    blocks.push({ type: 'divider' },
-      { type: 'section', text: { type: 'mrkdwn', text: `*🔗 Referencia:*\n${t.link}` } })
+  const urlDetalle = enlaceAlTicket(t.ticket_id)
+  if (urlDetalle) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*🔗 Ver detalle:*\n${urlDetalle}` } })
   }
 
   // `text` es el fallback de las notificaciones push y de los clientes sin Block Kit.
@@ -132,8 +130,7 @@ function payloadReabierto (t) {
         type: 'section',
         fields: [
           { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
-          { type: 'mrkdwn', text: `*A cargo de:*\n${t.asignado ?? 'sin asignar'}` },
-          { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` }
+          { type: 'mrkdwn', text: `*A cargo de:*\n${t.asignado ?? 'sin asignar'}` }
         ]
       }
     ]
@@ -153,7 +150,6 @@ function payloadCerrado (t) {
         fields: [
           { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
           { type: 'mrkdwn', text: `*Resuelto por:*\n${t.asignado ?? 'sin asignar'}` },
-          { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` },
           { type: 'mrkdwn', text: `*Fecha de cierre:*\n${fechaPe(t.resolved_at ?? Date.now())}` }
         ]
       }
@@ -175,8 +171,7 @@ function payloadSla (t, reloj, venceEn) {
           { type: 'mrkdwn', text: `*Plazo vencido:*\n${ETIQUETA_RELOJ[reloj]}` },
           { type: 'mrkdwn', text: `*Venció el:*\n${fechaPe(venceEn)}` },
           { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
-          { type: 'mrkdwn', text: `*Responsable:*\n${t.asignado ?? 'sin asignar'}` },
-          { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` }
+          { type: 'mrkdwn', text: `*Responsable:*\n${t.asignado ?? 'sin asignar'}` }
         ]
       }
     ]
@@ -197,8 +192,7 @@ function payloadEscalado (t, agenteAnterior, motivo) {
           { type: 'mrkdwn', text: `*Asignado a:*\n${t.asignado ?? 'sin asignar'}` },
           { type: 'mrkdwn', text: `*Antes lo tenía:*\n${agenteAnterior}` },
           { type: 'mrkdwn', text: `*Motivo:*\n${motivo}` },
-          { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
-          { type: 'mrkdwn', text: `*Reportado por:*\n${t.creador ?? 'desconocido'}` }
+          { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` }
         ]
       }
     ]
@@ -236,7 +230,7 @@ export function notificarTicketEscalado (ticket, agenteAnterior, motivo) {
 // ── Web API ────────────────────────────────────────────────────────────────
 
 /**
- * Email de quien ejecuto el slash command. El payload del comando solo trae
+ * Email de quien le escribio al bot. El payload del evento solo trae
  * user_id (y user_name, que es el username de Slack, no el email), asi que hay
  * que pedirselo a la Web API con el scope users:read.email.
  */
@@ -255,6 +249,44 @@ export async function obtenerEmailDeUsuarioSlack (slackUserId) {
     return datos.user?.profile?.email ?? null
   } catch (err) {
     console.error('[tickets-slack] users.info: fallo de red', err.message)
+    return null
+  }
+}
+
+/**
+ * Baja un archivo que alguien adjunto en un DM al bot (scope files:read).
+ * files.info da la URL privada, que solo se puede leer con el token del bot.
+ * Nunca lanza: null si no se pudo, y quien llama decide si sigue sin el.
+ */
+export async function descargarArchivoSlack (fileId, maxBytes) {
+  if (!slackBotConfigurado() || !fileId) return null
+  const auth = { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
+  try {
+    const res = await fetch(`https://slack.com/api/files.info?file=${encodeURIComponent(fileId)}`, {
+      headers: auth,
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+    const datos = await res.json()
+    if (!datos.ok) {
+      console.error(`[tickets-slack] files.info fallo: ${datos.error}`)
+      return null
+    }
+    const archivo = datos.file ?? {}
+    const url = archivo.url_private_download ?? archivo.url_private
+    if (!url || (maxBytes && archivo.size > maxBytes)) return null
+
+    const bajada = await fetch(url, { headers: auth, signal: AbortSignal.timeout(TIMEOUT_MS * 3) })
+    if (!bajada.ok) {
+      console.error(`[tickets-slack] descarga de ${fileId}: HTTP ${bajada.status}`)
+      return null
+    }
+    return {
+      buffer: Buffer.from(await bajada.arrayBuffer()),
+      nombre: archivo.name ?? archivo.title ?? 'archivo',
+      mimeType: archivo.mimetype
+    }
+  } catch (err) {
+    console.error(`[tickets-slack] descarga de ${fileId}: fallo de red`, err.message)
     return null
   }
 }
@@ -296,15 +328,6 @@ export async function postearMensaje (destino, payload, hilo = null) {
 }
 
 /**
- * El slash command ya recibio su ACK dentro de los 3 s que exige Slack; el
- * resultado real se entrega despues posteando a esta URL de un solo uso que
- * Slack manda en cada invocacion.
- */
-export async function responderResponseUrl (responseUrl, texto) {
-  return enviarResponseUrl(responseUrl, { response_type: 'ephemeral', text: texto })
-}
-
-/**
  * Reemplaza el mensaje al que le pulsaron un boton, dejandolo sin botones.
  *
  * `blocks: []` va explicito: si solo se manda `text`, Slack conserva los bloques
@@ -332,20 +355,21 @@ async function enviarResponseUrl (responseUrl, payload) {
   }
 }
 
-// ── Hilo de seguimiento por DM ─────────────────────────────────────────────
+// ── Seguimiento por DM ─────────────────────────────────────────────────────
 //
-// Cuando alguien crea un ticket con /ticket, el bot le manda un DM con el
-// detalle y guarda ese mensaje en la fila. A partir de ahi cada avance (lo
-// toman, lo comentan, lo resuelven) se cuelga como respuesta del mismo mensaje:
-// el solicitante ve todo el recorrido en un hilo, sin entrar a la web.
+// Cuando alguien crea un ticket escribiendole al bot por DM, el bot le confirma
+// la apertura y guarda el canal del DM en la fila. A partir de ahi cada avance
+// (lo toman, lo comentan, lo resuelven) llega como un mensaje NUEVO en ese
+// mismo chat, no como respuesta en un hilo: dentro del hilo las novedades
+// quedaban escondidas y habia que abrirlo para enterarse.
 //
-// Los tickets creados desde la web no tienen hilo y aca no pasa nada.
+// Cada aviso nombra el #ticket, asi que con varios tickets abiertos igual se
+// sabe de cual es. Los tickets creados desde la web no tienen DM guardado; ahi
+// solo llega el cierre (avisarTicketResuelto lo busca por email).
 
-// Mensaje de apertura MINIMO a proposito: el detalle completo (problematica,
-// prioridad, asignado) ya salio por notificarTicketCreado() al canal del
-// area. Este DM es solo la confirmacion y la raiz del hilo donde se van a
-// colgar los avances (tomado, comentado, resuelto); repetir la problematica
-// aca era el bug que hacia parecer que "se seguia mandando por DM".
+// Mensaje de apertura MINIMO a proposito: quien lo escribe ya sabe que conto,
+// y el detalle completo vive en el ERP; repetir la problematica aca era el bug
+// que hacia parecer que "se seguia mandando por DM".
 export function construirMensajeDeApertura (ticket) {
   const emoji = EMOJI_PRIORIDAD[ticket.priority] ?? ':white_circle:'
   const blocks = [
@@ -366,7 +390,7 @@ export function construirMensajeDeApertura (ticket) {
 
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: 'Te voy avisando por acá cómo avanza: cada novedad queda en el hilo de este mensaje.' }]
+    elements: [{ type: 'mrkdwn', text: 'Te voy avisando por acá cómo avanza.' }]
   })
 
   return { text: `Ticket #${codigo(ticket.ticket_id)} creado`, blocks }
@@ -379,36 +403,97 @@ function enlaceAlTicket (ticketId) {
   return `${base.replace(/\/+$/, '')}/tickets/${ticketId}`
 }
 
-/** Abre el DM y devuelve el mensaje raiz, o null si no se pudo. */
+/**
+ * Confirma la apertura por DM y devuelve { canal, ts } de ese mensaje (el
+ * canal D... es lo que se guarda para seguir escribiendo), o null.
+ */
 export function abrirHiloDeTicket (ticket, slackUserId) {
   return postearMensaje(slackUserId, construirMensajeDeApertura(ticket))
 }
 
-/** Publica una novedad en el hilo. Sin hilo guardado, no hace nada. */
-export async function avisarEnHilo (ticket, texto, blocks) {
-  if (!ticket?.slack_channel_id || !ticket?.slack_message_ts) return
-  await postearMensaje(ticket.slack_channel_id, { text: texto, blocks },
-    { canal: ticket.slack_channel_id, ts: ticket.slack_message_ts })
+/**
+ * Publica una novedad como mensaje nuevo en el DM del ticket (sin thread_ts).
+ * Sin DM guardado, no hace nada.
+ */
+export async function avisarEnDm (ticket, texto, blocks) {
+  if (!ticket?.slack_channel_id) return null
+  return postearMensaje(ticket.slack_channel_id, { text: texto, blocks })
+}
+
+/**
+ * El user_id de Slack de una cuenta del ERP, cruzando por email (el ERP no
+ * guarda el mapeo). Scope users:read.email. Nunca lanza: null si no hay match.
+ */
+export async function buscarUsuarioSlackPorEmail (email) {
+  if (!slackBotConfigurado() || !email) return null
+  try {
+    const res = await fetch(`https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`, {
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+    const datos = await res.json()
+    if (!datos.ok) {
+      console.error(`[tickets-slack] users.lookupByEmail fallo: ${datos.error}`)
+      return null
+    }
+    return datos.user?.id ?? null
+  } catch (err) {
+    console.error('[tickets-slack] users.lookupByEmail: fallo de red', err.message)
+    return null
+  }
+}
+
+/**
+ * Mensaje directo a quien reporto. Va al DM del ticket si nacio en Slack; si
+ * nacio en la web no hay DM guardado, asi que se le escribe buscandolo por su
+ * email. Devuelve si llego.
+ */
+async function avisarAlSolicitante (ticket, texto, blocks) {
+  if (ticket.slack_channel_id) {
+    return Boolean(await avisarEnDm(ticket, texto, blocks))
+  }
+  const slackUserId = await buscarUsuarioSlackPorEmail(ticket.creador_email)
+  if (!slackUserId) return false
+  return Boolean(await postearMensaje(slackUserId, { text: texto, blocks }))
 }
 
 /** Primera senal de vida que espera el solicitante: alguien tomo el ticket. */
 export function avisarTicketTomado (ticket, agente) {
-  const texto = `👀 *${agente}* está trabajando en tu ticket #${codigo(ticket.ticket_id)}.`
-  return avisarEnHilo(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
+  const texto = `👀 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" está siendo revisado por *${agente}*.`
+  return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
 }
 
-export function avisarTicketResuelto (ticket, agente) {
-  const texto = `✅ Tu ticket #${codigo(ticket.ticket_id)} fue resuelto por *${agente}*.`
-  return avisarEnHilo(ticket, texto, [
-    { type: 'section', text: { type: 'mrkdwn', text: texto } },
-    { type: 'context', elements: [{ type: 'mrkdwn', text: 'Si el problema sigue, crea un ticket nuevo con `/ticket`.' }] }
-  ])
+/**
+ * El ticket cambio de dueño (a mano, por el reparto automatico o por SLA).
+ * `primeraAsignacion` distingue "asignado" de "reasignado": un ticket sin dueño
+ * no se reasigna.
+ */
+export function avisarTicketReasignado (ticket, agente, { primeraAsignacion = false } = {}) {
+  const accion = primeraAsignacion ? 'fue asignado a' : 'fue reasignado a'
+  const texto = `🔄 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" ${accion} *${agente}*, quien lo revisará.`
+  return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
 }
 
-/** Replica en el hilo lo que escribieron en el ticket. */
+/** Confirmacion de cierre para quien reporto. Devuelve si llego. */
+export async function avisarTicketResuelto (ticket, agente) {
+  const texto = `✅ Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" fue resuelto por *${agente}*.`
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: texto } }]
+  const urlDetalle = enlaceAlTicket(ticket.ticket_id)
+  blocks.push({
+    type: 'context',
+    elements: [{
+      type: 'mrkdwn',
+      text: `Si el problema sigue, abre nuevamente el ticket desde el sistema ERP${urlDetalle ? `: ${urlDetalle}` : '.'}`
+    }]
+  })
+
+  return avisarAlSolicitante(ticket, texto, blocks)
+}
+
+/** Replica en el DM lo que escribieron en el ticket. */
 export function avisarComentarioNuevo (ticket, autor, cuerpo) {
   const encabezado = `💬 *${autor}* comentó en tu ticket #${codigo(ticket.ticket_id)}:`
-  return avisarEnHilo(ticket, `${encabezado} ${cuerpo}`, [
+  return avisarEnDm(ticket, `${encabezado} ${cuerpo}`, [
     { type: 'section', text: { type: 'mrkdwn', text: encabezado } },
     { type: 'section', text: { type: 'mrkdwn', text: `>${truncar(cuerpo).replace(/\n/g, '\n>')}` } }
   ])

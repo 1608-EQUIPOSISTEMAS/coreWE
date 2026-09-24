@@ -527,7 +527,4 @@ El cuadro de Sistemas WE también etiqueta cada ticket con un **tipo** y una **c
 Como regla práctica: una **Consulta** casi siempre es BAJA; una **Queja de flujo** es BAJA salvo que describa una falla; un **Incidente** sobre dinero, ventas o el sistema caído es ALTA; y una **Solicitud** operativa sobre un alumno o un curso es MEDIA.
 
 Ojo con la palabra **consulta**: en el vocabulario comercial de la casa una "consulta" también es un lead ("Esp. Python: 191 consultas entre asesores"). Por eso no es palabra clave por sí sola — solo cuentan las formas en que abre una pregunta (`consulta si`, `consulta como`, `consulta quien`).
-
-## Cuando hay duda
-
-Si el ticket no calza claramente en ninguna categoría, o mezcla varios temas en partes iguales, queda como **MEDIA** por defecto.
+fice

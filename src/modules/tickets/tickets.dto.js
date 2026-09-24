@@ -1,4 +1,4 @@
-import { ticketRoleLabel } from './tickets.entity.js'
+import { ticketRoleLabel, separarEnlaces } from './tickets.entity.js'
 
 // La BD habla snake_case; el frontend, camelCase. Este es el unico lugar que
 // traduce, para que ni el repositorio invente alias ni el .vue lea columnas.
@@ -14,6 +14,8 @@ export function toTicketDto (t) {
     titulo: t.title,
     problema: t.problem,
     link: t.link,
+    // La columna guarda uno o varios, uno por linea.
+    enlaces: separarEnlaces(t.link),
     prioridad: t.priority,
     estado: t.status,
     creadoPor: persona(t.creador, t.creador_alias),
@@ -29,9 +31,12 @@ export function toTicketDto (t) {
     escaladoEn: t.escalated_at,
     sla: toSlaDto(t.sla),
     riesgo: t.riesgo ?? { vencido: false, porVencer: false },
-    // Solo presentes en el detalle.
+    // canManage solo en el detalle; canChangeStatus tambien por fila del listado.
     ...(t.canManage !== undefined ? { canManage: t.canManage } : {}),
-    ...(t.canChangeStatus !== undefined ? { canChangeStatus: t.canChangeStatus } : {})
+    ...(t.canChangeStatus !== undefined ? { canChangeStatus: t.canChangeStatus } : {}),
+    ...(t.canReopen !== undefined ? { canReopen: t.canReopen } : {}),
+    // Solo al resolver: si la confirmacion le llego por Slack a quien reporto.
+    ...(t.avisoSlack !== undefined && t.avisoSlack !== null ? { avisoSlack: t.avisoSlack } : {})
   }
 }
 
@@ -54,13 +59,16 @@ export function toCommentDto (c) {
   }
 }
 
-export function toSlaPolicyDto (p) {
+/** Un renglon de la pestaña "Actividad". actor null = lo hizo el sistema. */
+export function toActivityDto (e) {
   return {
-    prioridad: p.priority,
-    minutosPrimeraRespuesta: p.first_response_minutes,
-    minutosResolucion: p.resolution_minutes,
-    actualizadoEn: p.modification_date,
-    actualizadoPor: p.actualizado_por ?? null
+    id: e.id,
+    tipo: e.tipo,
+    fecha: e.fecha,
+    actor: e.actor ?? null,
+    deUsuario: e.de_usuario ?? null,
+    aUsuario: e.a_usuario ?? null,
+    detalle: e.detalle ?? null
   }
 }
 

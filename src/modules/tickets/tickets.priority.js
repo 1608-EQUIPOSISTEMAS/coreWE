@@ -95,10 +95,65 @@ export function parsearCriterios (markdown) {
   return criterios
 }
 
+// Un dia habil = la jornada de soporte (09:00-18:00): los plazos del markdown
+// se cuentan dentro de ese horario (ver sumarMinutosHabiles).
+export const MINUTOS_POR_DIA_HABIL = 9 * 60
+
+const UNIDAD_MINUTOS = { minuto: 1, hora: 60, dia: MINUTOS_POR_DIA_HABIL }
+
+/** "15 minutos", "4 horas hábiles", "1 día hábil" -> minutos habiles, o null. */
+export function duracionEnMinutos (texto) {
+  const m = /(\d+(?:[.,]\d+)?)\s*(minuto|hora|dia)/.exec(normalizar(texto))
+  if (!m) return null
+  return Math.round(Number(m[1].replace(',', '.')) * UNIDAD_MINUTOS[m[2]])
+}
+
+/**
+ * Lee la tabla de SLA del markdown:
+ *
+ *   | Prioridad | SLA respuesta | SLA resolución | Equivale en este archivo a |
+ *   | P1        | 15 minutos    | 4 horas hábiles | **ALTA** |
+ *
+ * Varias filas pueden caer en la misma prioridad (P1 y P2 son ALTA): manda la
+ * PRIMERA, que es la mas exigente. Asi el plazo de ALTA es el de P1.
+ */
+export function parsearPlazos (markdown) {
+  const plazos = new Map()
+  for (const linea of String(markdown ?? '').split(/\r?\n/)) {
+    const celdas = linea.split('|').map(c => c.trim())
+    // ['', 'P1', '15 minutos', '4 horas hábiles', '**ALTA**', '']
+    if (celdas.length < 5 || !/^P\d+$/i.test(celdas[1])) continue
+    const prioridad = /\b(ALTA|MEDIA|BAJA)\b/.exec(celdas[4])?.[1]
+    if (!prioridad || plazos.has(prioridad)) continue
+
+    const respuesta = duracionEnMinutos(celdas[2])
+    const resolucion = duracionEnMinutos(celdas[3])
+    if (!respuesta || !resolucion) continue
+    plazos.set(prioridad, { first_response_minutes: respuesta, resolution_minutes: resolucion })
+  }
+  return plazos
+}
+
 // Los criterios se leen una sola vez al arrancar: no cambian en caliente y asi
 // no se toca el disco en cada ticket creado.
 const HERE = dirname(fileURLToPath(import.meta.url))
-const CRITERIOS = parsearCriterios(readFileSync(join(HERE, 'criterios-prioridad.md'), 'utf-8'))
+const MARKDOWN = readFileSync(join(HERE, 'criterios-prioridad.md'), 'utf-8')
+const CRITERIOS = parsearCriterios(MARKDOWN)
+const PLAZOS = parsearPlazos(MARKDOWN)
+
+for (const prioridad of PRIORIDADES) {
+  if (!PLAZOS.has(prioridad)) {
+    console.warn(`[tickets] criterios-prioridad.md no trae el SLA de ${prioridad}: sus tickets naceran sin plazo`)
+  }
+}
+
+/**
+ * Plazos (minutos habiles) de una prioridad, segun la tabla de SLA de
+ * criterios-prioridad.md. Es la unica fuente: ya no hay politicas en la BD.
+ */
+export function plazosSla (prioridad, plazos = PLAZOS) {
+  return plazos.get(prioridad) ?? null
+}
 
 for (const [prioridad, palabras] of CRITERIOS) {
   if (palabras.length === 0) {

@@ -1,5 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { clasificarPrioridad, parsearCriterios } from '../tickets.priority.js'
+import { clasificarPrioridad, parsearCriterios, parsearPlazos, duracionEnMinutos, plazosSla } from '../tickets.priority.js'
+
+// La tabla de SLA del markdown es la unica fuente de plazos: si alguien la
+// reescribe con otro formato, esto tiene que romperse antes que produccion.
+describe('plazosSla con el criterios-prioridad.md real', () => {
+  it('ALTA usa P1 (la primera fila), no P2', () => {
+    expect(plazosSla('ALTA')).toEqual({ first_response_minutes: 15, resolution_minutes: 240 })
+  })
+
+  it('MEDIA y BAJA en minutos habiles (dia habil = 9 h)', () => {
+    expect(plazosSla('MEDIA')).toEqual({ first_response_minutes: 60, resolution_minutes: 3 * 540 })
+    expect(plazosSla('BAJA')).toEqual({ first_response_minutes: 240, resolution_minutes: 5 * 540 })
+  })
+})
+
+describe('parsearPlazos', () => {
+  it('ignora filas que no son de la tabla de SLA', () => {
+    const md = '| Urgencia | Crítico |\n| **Crítica** | P1 |\n| P3 | 1 hora | 2 días hábiles | **MEDIA** |'
+    expect([...parsearPlazos(md).keys()]).toEqual(['MEDIA'])
+  })
+})
+
+describe('duracionEnMinutos', () => {
+  it('entiende minutos, horas y dias habiles, con o sin tilde', () => {
+    expect(duracionEnMinutos('15 minutos')).toBe(15)
+    expect(duracionEnMinutos('4 horas hábiles')).toBe(240)
+    expect(duracionEnMinutos('1 día hábil')).toBe(540)
+    expect(duracionEnMinutos('3 dias habiles')).toBe(1620)
+    expect(duracionEnMinutos('pronto')).toBeNull()
+  })
+})
 
 // Portado de prioridad.test.ts. La mayoria corre contra el markdown real
 // (criterios-prioridad.md), que es el que va a produccion; los casos de parseo
