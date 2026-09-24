@@ -72,7 +72,11 @@ export const goalStandardsRepository = {
   //     estándar, igual que cuando el plan vivía en el Sheet.
   // versionIds en null = todas: es el "recalcular" que alcanza a las ediciones
   // creadas después del último cambio de parámetros.
-  async apply ({ versionIds = null, userId }) {
+  //
+  // `desde` corre el corte hacia adelante y nunca hacia atrás (se toma el MAYOR
+  // de los dos). Lo usa la carga inicial, que arranca en octubre porque ene-sep
+  // son los objetivos que cargó Producto; la pantalla lo omite y aplica desde hoy.
+  async apply ({ versionIds = null, userId, desde = null }) {
     const sql = `
       WITH objetivo AS (
         SELECT pe.edition_num_id, s.channel_goals,
@@ -83,7 +87,7 @@ export const goalStandardsRepository = {
             ON s.program_version_id = pe.program_version_id
            AND s.season = ${TEMPORADA_DE_LA_EDICION}
          WHERE pe.active IN ('Y', '1')
-           AND pe.start_date >= CURRENT_DATE
+           AND pe.start_date >= GREATEST(CURRENT_DATE, COALESCE($3::date, CURRENT_DATE))
            AND ($1::int[] IS NULL OR pe.program_version_id = ANY($1::int[]))
       )
       INSERT INTO public.program_edition_goals
@@ -98,7 +102,7 @@ export const goalStandardsRepository = {
         user_modification_id = EXCLUDED.user_registration_id,
         modification_date = now()
       WHERE program_edition_goals.goal_source <> 'GERENCIA'`
-    const { rowCount } = await this.db.query(sql, [versionIds, userId])
+    const { rowCount } = await this.db.query(sql, [versionIds, userId, desde])
     return { applied: rowCount }
   }
 }

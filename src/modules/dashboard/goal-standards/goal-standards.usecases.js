@@ -42,6 +42,6 @@ export async function saveGoalStandards ({ standards = [], season = 'NORMAL', us
 
 // Recalcular todo: alcanza a las ediciones creadas DESPUÉS del último cambio de
 // parámetros, que nacieron sin objetivo porque nadie volvió a tocar la pantalla.
-export async function applyGoalStandards ({ userId }) {
-  return repo.apply({ versionIds: null, userId })
+export async function applyGoalStandards ({ userId, desde = null }) {
+  return repo.apply({ versionIds: null, userId, desde })
 }

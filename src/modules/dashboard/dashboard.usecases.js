@@ -132,13 +132,12 @@ export async function dashboardList (payload = {}) {
 
 export async function programGoalsList (payload = {}) {
   const { year = 2026, month_num = 1 } = payload
-  const [rows, editableDesde] = await Promise.all([
-    repo.programGoals({ year, month_num }),
-    // La fecha la calcula Postgres y viaja al front para que pinte el candado
-    // con el mismo corte que el backend aplica. Calcularla dos veces es la forma
-    // segura de que la pantalla y la regla se contradigan.
-    repo.editionWindowStart()
-  ])
+  const rows = await repo.programGoals({ year, month_num })
+  // La fecha la calcula Postgres y viaja al front para que pinte el candado con
+  // el mismo corte que el backend aplica; calcularla dos veces es la forma segura
+  // de que la pantalla y la regla se contradigan. Sin ventana viaja en null y la
+  // pantalla deja de mostrar candados sola.
+  const editableDesde = DIAS_DE_VENTANA === null ? null : await repo.editionWindowStart(DIAS_DE_VENTANA)
   return { ...toProgramGoalsDto(rows), editable_desde: editableDesde }
 }
 
@@ -149,17 +148,22 @@ export async function gerenciaFunnelList (payload = {}) {
 }
 
 // Ventana de edicion: Gerencia y el lider comercial solo pueden mover el
-// objetivo de una edicion que empiece de HOY + 40 DIAS en adelante. Lo que
-// arranca antes ya se esta vendiendo, y cambiarle la meta es correr la vara con
-// el partido empezado. ADMIN queda fuera de la regla para poder corregir un error.
+// objetivo de una edicion que empiece de HOY + N DIAS en adelante, porque lo que
+// arranca antes ya se esta vendiendo. ADMIN queda fuera para corregir un error.
+//
+// **Hoy esta SUSPENDIDA** (null = sin ventana), por decision del usuario del
+// 24/09/2026: los dos roles editan cualquier mes mientras se carga el ano. Para
+// reactivarla basta poner aqui los dias; el resto del camino sigue montado.
+// El lider comercial conserva su OTRA restriccion: solo las ventas de sus canales.
+const DIAS_DE_VENTANA = null
 const SIN_VENTANA = 'ADMIN'
 const puedeSaltarLaVentana = (roles = []) => roles.includes(SIN_VENTANA)
 
 async function exigirVentanaDeEdicion (editionIds, roles) {
-  if (puedeSaltarLaVentana(roles)) return
-  const fuera = await repo.editionsOutsideWindow(editionIds)
+  if (DIAS_DE_VENTANA === null || puedeSaltarLaVentana(roles)) return
+  const fuera = await repo.editionsOutsideWindow(editionIds, DIAS_DE_VENTANA)
   if (!fuera.length) return
-  const desde = await repo.editionWindowStart()
+  const desde = await repo.editionWindowStart(DIAS_DE_VENTANA)
   const detalle = fuera.map((e) => `${e.programa} ${e.codigo} (${e.inicio})`).join(', ')
   throw new ForbiddenError(
     `Solo se pueden editar ediciones que empiecen desde el ${desde}. Fuera de plazo: ${detalle}`)

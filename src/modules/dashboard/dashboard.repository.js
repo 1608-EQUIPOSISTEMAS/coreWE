@@ -232,21 +232,22 @@ export class DashboardRepository {
   // Ediciones del lote que arrancan ANTES de la ventana de edicion. La fecha la
   // calcula Postgres y no JS para que el candado de la pantalla y el del
   // servidor salgan del mismo reloj: dos calculos es la forma de que discrepen.
-  async editionsOutsideWindow (editionIds) {
+  async editionsOutsideWindow (editionIds, dias) {
     const sql = `
       SELECT pe.edition_num_id, pv.abbreviation AS programa, pe.global_code AS codigo,
              pe.start_date::text AS inicio
         FROM public.program_editions pe
         JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
        WHERE pe.edition_num_id = ANY($1::int[])
-         AND pe.start_date < (CURRENT_DATE + INTERVAL '40 days')
+         AND pe.start_date < (CURRENT_DATE + ($2 || ' days')::interval)
        ORDER BY pe.start_date`
-    const { rows } = await this.db.query(sql, [editionIds])
+    const { rows } = await this.db.query(sql, [editionIds, dias])
     return rows
   }
 
-  async editionWindowStart () {
-    const { rows } = await this.db.query(`SELECT (CURRENT_DATE + INTERVAL '40 days')::date::text AS desde`)
+  async editionWindowStart (dias) {
+    const { rows } = await this.db.query(
+      `SELECT (CURRENT_DATE + ($1 || ' days')::interval)::date::text AS desde`, [dias])
     return rows[0].desde
   }
 
