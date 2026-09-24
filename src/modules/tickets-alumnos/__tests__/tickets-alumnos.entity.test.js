@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  ACCION,
   AREA,
   ESTADO,
   TicketError,
@@ -7,37 +8,39 @@ import {
   areasDelUsuario,
   assertPuedeFirmar,
   avanzar,
+  planDeEjecucion,
   rechazar,
-  siguienteArea
+  turnoDe
 } from '../tickets-alumnos.entity.js'
 
-const abierto = (tipo, extra = {}) => ({ tipo, status: ESTADO.ABIERTA, area_actual: areaInicial(tipo), ...extra })
+const ticket = (tipo, extra = {}) => ({ tipo, status: ESTADO.ABIERTA, area_actual: null, monto: 50, datos: {}, ...extra })
 
-describe('ruteo por tipo de tramite', () => {
-  it('los cinco tramites con pago arrancan en Academica', () => {
-    for (const tipo of ['REPROGRAMACION', 'CAMBIO_CURSO', 'COMPRA_GRABACIONES', 'CERTIFICADOS', 'REASIGNACION_CURSO']) {
-      expect(areaInicial(tipo)).toBe(AREA.ACADEMICA)
-      expect(siguienteArea(tipo, AREA.ACADEMICA)).toBe(AREA.FICO)
+describe('turnoDe', () => {
+  it('todo lo que se abre sin pagar arranca en Academica', () => {
+    for (const tipo of ['REPROGRAMACION', 'CAMBIO_CURSO', 'FLEXIBILIDAD_HORARIA', 'REASIGNACION_CURSO', 'CERTIFICADOS']) {
+      expect(turnoDe(ticket(tipo))).toBe(AREA.ACADEMICA)
     }
   })
 
-  it('el alquiler de usuario SAP es solo de Finanzas', () => {
-    expect(areaInicial('ALQUILER_SAP')).toBe(AREA.FICO)
-    expect(siguienteArea('ALQUILER_SAP', AREA.FICO)).toBeNull()
+  it('el SAP gratis va directo a FICO: no hay nada que aprobar', () => {
+    expect(turnoDe(ticket('ALQUILER_SAP', { monto: 0 }))).toBe(AREA.FICO)
   })
 
-  it('la flexibilidad horaria es solo de Academica', () => {
-    expect(areaInicial('FLEXIBILIDAD_HORARIA')).toBe(AREA.ACADEMICA)
-    expect(siguienteArea('FLEXIBILIDAD_HORARIA', AREA.ACADEMICA)).toBeNull()
+  it('un pago registrado siempre es de FICO', () => {
+    expect(turnoDe(ticket('COMPRA_GRABACIONES', { status: ESTADO.PAGO_REGISTRADO }))).toBe(AREA.FICO)
+  })
+
+  it('mientras espera el voucher no le toca a ninguna area', () => {
+    expect(turnoDe(ticket('REPROGRAMACION', { status: ESTADO.PENDIENTE_PAGO }))).toBeNull()
+  })
+
+  it('respeta el area de un ticket EN_PROCESO del flujo anterior', () => {
+    expect(turnoDe(ticket('CERTIFICADOS', { status: ESTADO.EN_PROCESO, area_actual: AREA.FICO }))).toBe(AREA.FICO)
   })
 
   // Un ticket sin dueno no aparece en ninguna bandeja y se pierde en silencio.
   it('un tipo desconocido cae en Academica en vez de quedarse sin dueno', () => {
     expect(areaInicial('TRAMITE_QUE_NO_EXISTE')).toBe(AREA.ACADEMICA)
-  })
-
-  it('CAMBIO_FLEX sigue ruteando: quedaron tickets abiertos que hay que cerrar', () => {
-    expect(areaInicial('CAMBIO_FLEX')).toBe(AREA.ACADEMICA)
   })
 })
 
@@ -60,15 +63,10 @@ describe('areasDelUsuario', () => {
 describe('assertPuedeFirmar', () => {
   // La guarda que justifica el modulo: las dos areas VEN la misma bandeja, asi
   // que ver no puede implicar firmar.
-  it('Academica no puede firmar el paso de pago que le toca a FICO', () => {
-    const enFico = { tipo: 'CERTIFICADOS', status: ESTADO.EN_PROCESO, area_actual: AREA.FICO }
-    expect(() => assertPuedeFirmar(enFico, [AREA.ACADEMICA])).toThrow(/FICO/)
-  })
-
-  it('el error de turno es 403, no 400: es permiso, no dato malo', () => {
-    const enFico = { tipo: 'CERTIFICADOS', status: ESTADO.EN_PROCESO, area_actual: AREA.FICO }
+  it('Academica no puede validar el voucher que le toca a FICO, y es 403', () => {
+    const pagado = ticket('CERTIFICADOS', { status: ESTADO.PAGO_REGISTRADO })
     try {
-      assertPuedeFirmar(enFico, [AREA.ACADEMICA])
+      assertPuedeFirmar(pagado, [AREA.ACADEMICA])
       throw new Error('deberia haber lanzado')
     } catch (err) {
       expect(err).toBeInstanceOf(TicketError)
@@ -76,55 +74,83 @@ describe('assertPuedeFirmar', () => {
     }
   })
 
-  it('FICO si firma cuando es su turno', () => {
-    const enFico = { tipo: 'CERTIFICADOS', status: ESTADO.EN_PROCESO, area_actual: AREA.FICO }
-    expect(() => assertPuedeFirmar(enFico, [AREA.FICO])).not.toThrow()
+  it('nadie firma mientras el alumno no adjunte el voucher', () => {
+    const esperando = ticket('REPROGRAMACION', { status: ESTADO.PENDIENTE_PAGO })
+    expect(() => assertPuedeFirmar(esperando, [AREA.ACADEMICA, AREA.FICO])).toThrow(/voucher/)
   })
 
-  it('no se firma dos veces un tramite ya resuelto', () => {
-    const resuelto = { tipo: 'CERTIFICADOS', status: ESTADO.RESUELTA, area_actual: null }
-    expect(() => assertPuedeFirmar(resuelto, [AREA.ACADEMICA, AREA.FICO])).toThrow(/cerrado/i)
+  it('un tramite cerrado no se vuelve a firmar, tampoco un pago rechazado', () => {
+    expect(() => assertPuedeFirmar(ticket('REPROGRAMACION', { status: ESTADO.RESUELTA }), [AREA.FICO])).toThrow(/cerrado/)
+    expect(() => assertPuedeFirmar(ticket('REPROGRAMACION', { status: ESTADO.PAGO_RECHAZADO }), [AREA.FICO])).toThrow(/cerrado/)
   })
 
-  it('un tramite rechazado tampoco se reabre firmandolo', () => {
-    const rechazado = { tipo: 'CERTIFICADOS', status: ESTADO.RECHAZADA, area_actual: null }
-    expect(() => assertPuedeFirmar(rechazado, [AREA.ACADEMICA])).toThrow(/cerrado/i)
-  })
-
-  it('un ticket inexistente falla explicito', () => {
-    expect(() => assertPuedeFirmar(null, [AREA.ACADEMICA])).toThrow(TicketError)
-  })
-
-  // Los tickets que Nexus creo antes de este modulo no tienen area_actual.
-  it('sin area_actual usa el primer paso del tipo', () => {
-    const viejo = { tipo: 'ALQUILER_SAP', status: ESTADO.ABIERTA, area_actual: null }
-    expect(() => assertPuedeFirmar(viejo, [AREA.ACADEMICA])).toThrow(/FICO/)
-    expect(() => assertPuedeFirmar(viejo, [AREA.FICO])).not.toThrow()
+  it('no acepta un ticket inexistente', () => {
+    expect(() => assertPuedeFirmar(null, [AREA.ACADEMICA])).toThrow(/no existe/)
   })
 })
 
 describe('avanzar', () => {
-  it('la firma de Academica lo manda a FICO, no lo resuelve', () => {
-    expect(avanzar(abierto('REPROGRAMACION'))).toEqual({
-      status: ESTADO.EN_PROCESO,
-      area_actual: AREA.FICO
-    })
+  it('Academica aprueba y el alumno queda debiendo el pago', () => {
+    expect(avanzar(ticket('REPROGRAMACION'))).toEqual({ status: ESTADO.PENDIENTE_PAGO, area_actual: null, monto: 50 })
   })
 
-  it('la firma de FICO cierra el tramite de dos pasos', () => {
-    const enFico = { tipo: 'REPROGRAMACION', status: ESTADO.EN_PROCESO, area_actual: AREA.FICO }
-    expect(avanzar(enFico)).toEqual({ status: ESTADO.RESUELTA, area_actual: null })
+  it('Academica puede fijar el monto que la lista de precios no tenia', () => {
+    expect(avanzar(ticket('REPROGRAMACION', { monto: null }), { monto: 80 })).toMatchObject({ status: ESTADO.PENDIENTE_PAGO, monto: 80 })
   })
 
-  it('un tramite de un solo paso se resuelve con la primera firma', () => {
-    expect(avanzar(abierto('ALQUILER_SAP'))).toEqual({ status: ESTADO.RESUELTA, area_actual: null })
-    expect(avanzar(abierto('FLEXIBILIDAD_HORARIA'))).toEqual({ status: ESTADO.RESUELTA, area_actual: null })
+  it('la reasignacion espera el pago acordado aunque no tenga monto', () => {
+    expect(avanzar(ticket('REASIGNACION_CURSO', { monto: null }))).toMatchObject({ status: ESTADO.PENDIENTE_PAGO, monto: null })
+  })
+
+  it('lo gratis se resuelve con la firma de Academica', () => {
+    expect(avanzar(ticket('FLEXIBILIDAD_HORARIA', { monto: 0 })).status).toBe(ESTADO.RESUELTA)
+    expect(avanzar(ticket('CAMBIO_CURSO', { monto: 0 })).status).toBe(ESTADO.RESUELTA)
+  })
+
+  it('el certificado fisico se resuelve en Academica: se coordina, no se cobra por el portal', () => {
+    expect(avanzar(ticket('CERTIFICADOS', { monto: null, datos: { variante: 'FISICO' } })).status).toBe(ESTADO.RESUELTA)
+  })
+
+  it('FICO valida el voucher y el tramite queda resuelto', () => {
+    expect(avanzar(ticket('COMPRA_GRABACIONES', { status: ESTADO.PAGO_REGISTRADO })).status).toBe(ESTADO.RESUELTA)
   })
 })
 
 describe('rechazar', () => {
-  // Si Academica dice que no, no tiene sentido que FICO revise el pago.
-  it('cierra el tramite sin pasarlo al area siguiente', () => {
-    expect(rechazar()).toEqual({ status: ESTADO.RECHAZADA, area_actual: null })
+  it('rechazar en Academica rechaza la solicitud', () => {
+    expect(rechazar(ticket('REPROGRAMACION'))).toEqual({ status: ESTADO.RECHAZADA, area_actual: null })
+  })
+
+  it('rechazar el voucher deja el pago rechazado, no la solicitud', () => {
+    expect(rechazar(ticket('REPROGRAMACION', { status: ESTADO.PAGO_REGISTRADO })).status).toBe(ESTADO.PAGO_RECHAZADO)
+  })
+})
+
+describe('planDeEjecucion', () => {
+  it('reprograma el curso suelto a la edicion elegida', () => {
+    const t = ticket('REPROGRAMACION', { enrollment_id: 500, datos: { alcance: 'MODULO', destEditionId: 900 } })
+    expect(planDeEjecucion(t)).toEqual({ accion: ACCION.REPROGRAMAR, enrollmentId: 500, destEditionId: 900 })
+  })
+
+  it('reprograma la venta del diplomado cuando se pide el programa entero', () => {
+    const t = ticket('REPROGRAMACION', {
+      enrollment_id: 501, parent_enrollment_id: 400, datos: { alcance: 'PROGRAMA', parentEnrollmentId: 400, destEditionId: 950 }
+    })
+    expect(planDeEjecucion(t)).toEqual({ accion: ACCION.REPROGRAMAR, enrollmentId: 400, destEditionId: 950 })
+  })
+
+  // reprogramEdition sobre un hijo SEG lo desprenderia del paquete.
+  it('deja a mano el modulo suelto de un diplomado', () => {
+    const t = ticket('REPROGRAMACION', { enrollment_id: 501, parent_enrollment_id: 400, datos: { alcance: 'MODULO', destEditionId: 900 } })
+    expect(planDeEjecucion(t).accion).toBe(ACCION.MANUAL)
+  })
+
+  it('cambia de curso hacia la version y edicion elegidas', () => {
+    const t = ticket('CAMBIO_CURSO', { enrollment_id: 500, datos: { destEditionId: 77, destProgramVersionId: 12 } })
+    expect(planDeEjecucion(t)).toEqual({ accion: ACCION.CAMBIAR_CURSO, enrollmentId: 500, destEditionId: 77, destProgramVersionId: 12 })
+  })
+
+  it('no mueve nada en los tramites que no cambian la matricula', () => {
+    expect(planDeEjecucion(ticket('CERTIFICADOS'))).toBeNull()
   })
 })

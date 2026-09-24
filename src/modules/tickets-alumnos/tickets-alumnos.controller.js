@@ -21,6 +21,7 @@ export async function firmarHandler (req, reply) {
   const data = await usecases.firmarTramite({
     solicitudId: num(req.body.solicitud_id),
     respuesta: req.body.respuesta,
+    monto: req.body.monto ?? null,
     roles: areasDe(req),
     userId: req.user?.id
   })
@@ -35,4 +36,13 @@ export async function rechazarHandler (req, reply) {
     userId: req.user?.id
   })
   return reply.code(200).send({ ok: true, message: 'Tramite rechazado', data })
+}
+
+export async function archivoHandler (req, reply) {
+  const data = await usecases.urlDeAdjunto({
+    solicitudId: num(req.body.solicitud_id),
+    cual: req.body.cual,
+    roles: areasDe(req)
+  })
+  return reply.code(200).send({ ok: true, data })
 }

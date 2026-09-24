@@ -5,6 +5,7 @@ import {
   SALIDA,
   cierraSinDestino,
   ReprogramacionError,
+  assertCasoAbierto,
   assertPuedeAceptar,
   assertPuedeProponer,
   resolveDestKind
@@ -127,3 +128,15 @@ describe('assertPuedeProponer', () => {
   })
 })
 
+
+describe('assertCasoAbierto', () => {
+  it('un caso ya reubicado no se vuelve a contactar ni rechazar', () => {
+    expect(() => assertCasoAbierto({ status: ESTADO.ACEPTADO })).toThrow(/ya fue reubicado/i)
+  })
+  it('los demas estados siguen abiertos', () => {
+    for (const status of [ESTADO.PROPUESTO, ESTADO.CONTACTADO, ESTADO.RECHAZADO]) {
+      expect(() => assertCasoAbierto({ status })).not.toThrow()
+    }
+    expect(() => assertCasoAbierto(null)).not.toThrow()
+  })
+})

@@ -19,6 +19,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
+  courseChangeInheritsDebt,
   selectChildrenToRetireOnCourseChange,
   MEMBERSHIP_ACTIVATION_WINDOW_MONTHS
 } from './enrollment.entity.js'
@@ -429,6 +430,12 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
       totalAmount, oldAmount, justificacion, userId,
       cat_method_payment, cat_business_entity, bank_account_id, transaction_code
     })
+
+    // Antes de Odoo y del correo: los dos leen las cuotas del destino. Con el
+    // traslado despues, el alumno recibia la confirmacion sin su cuota (#19388).
+    if (courseChangeInheritsDebt(totalAmount)) {
+      await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: newEid })
+    }
 
     // Destino paquete/especializacion: crear sus hijos SEG (uno por aula de la
     // estructura), igual que la venta directa y el modelo RP. Sin esto el

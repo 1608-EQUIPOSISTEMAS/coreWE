@@ -307,6 +307,13 @@ export function courseChangeAmountDifference (oldTotal, newTotal) {
   return { oldAmount, amountDifference: Number(newTotal || 0) - oldAmount }
 }
 
+// Un CC pago cero no cobra de nuevo: lo que el alumno aun debe del origen viaja
+// al destino (modelo RP). Si no, la cuota queda colgada en el origen marcado CC
+// y el destino se ve como beca pagada (casos #16353 y #14712, set/2026).
+export function courseChangeInheritsDebt (newTotal) {
+  return Number(newTotal || 0) === 0
+}
+
 // Modulos del paquete ORIGEN que hay que retirar tras un cambio de curso: los
 // que TODAVIA NO EMPIEZAN. El alumno ya no los va a llevar (se fue a otro
 // programa), pero los que ya arrancaron se quedan: se sento en esa aula y tanto

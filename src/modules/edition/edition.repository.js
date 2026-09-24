@@ -1111,8 +1111,14 @@ export class EditionRepository {
        -- el alumno quedo VARADO; su caso vive en el modulo Reprogramaciones hasta
        -- que academica le asigne destino, no asiste a esta aula. Solo aplica al
        -- hijo: si la edicion A5 es la propia, se esta viendo su lista y ahi si van.
+       -- El destino de un CC tambien cuelga del origen, pero no es hijo: se movio
+       -- JUSTAMENTE porque el origen cayo en A5 (misma guarda que el contador del
+       -- cronograma; sin ella los reubicados #19276/#19288/#19388 no salian aqui).
        AND (e.parent_enrollment_id IS NULL
-            OR seg_sold.alias IS NULL OR seg_sold.alias <> 'we_segment_a5')
+            OR seg_sold.alias IS NULL OR seg_sold.alias <> 'we_segment_a5'
+            OR EXISTS (SELECT 1 FROM public.course_changes ccd
+                        WHERE ccd.enrollment_destination_id = e.enrollment_id
+                          AND ccd.enrollment_origin_id = e.parent_enrollment_id))
        -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y hijos:
        -- asisten sus hijos, no el). Misma regla que classroomMetricsList.
        AND NOT EXISTS (

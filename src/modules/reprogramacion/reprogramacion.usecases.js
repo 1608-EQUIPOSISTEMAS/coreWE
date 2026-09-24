@@ -4,6 +4,7 @@ import {
   KIND,
   ORIGEN,
   ReprogramacionError,
+  assertCasoAbierto,
   assertPuedeAceptar,
   assertPuedeProponer,
   buildJustificacion,
@@ -12,7 +13,7 @@ import {
 } from './reprogramacion.entity.js'
 // El movimiento real lo hacen los casos de uso de FICO, que ya saben mover el
 // ERP, tocar Odoo y mandar el correo. Aca solo se decide CUAL de los tres corre.
-import { courseChange, movePendingInstallments, reprogramEdition, retireEnrollment } from '../fico/enrollment/enrollment.usecases.js'
+import { courseChange, reprogramEdition, retireEnrollment } from '../fico/enrollment/enrollment.usecases.js'
 
 const repo = reprogramacionRepository
 
@@ -54,12 +55,14 @@ export async function proposeDestination ({ enrollmentId, destProgramVersionId, 
 }
 
 export async function markContacted ({ enrollmentId, notes, userId }) {
+  assertCasoAbierto(await repo.getCase(enrollmentId))
   const caso = await repo.markContacted({ enrollmentId, notes, userId })
   if (!caso) throw new ReprogramacionError('El caso no existe: primero hay que elegir el destino')
   return caso
 }
 
 export async function rejectCase ({ enrollmentId, notes, userId }) {
+  assertCasoAbierto(await repo.getCase(enrollmentId))
   const caso = await repo.saveVerdict({ enrollmentId, status: ESTADO.RECHAZADO, notes, userId })
   if (!caso) throw new ReprogramacionError('El caso no existe')
   return caso
@@ -127,9 +130,9 @@ async function ejecutarVeredicto ({ caso, venta, enrollmentId, userId }) {
   }
 
   // La edicion la cancelamos nosotros: el destino no cobra nada nuevo (pago
-  // cero) y hereda las cuotas que el alumno aun debe, igual que una RP. Cobrar
-  // "el neto" registraba como pagado al contado lo que todavia se debia.
-  const resultado = await courseChange({
+  // cero) y courseChange le hereda las cuotas que el alumno aun debe, igual que
+  // una RP. Cobrar "el neto" registraba como pagado al contado lo que se debia.
+  return courseChange({
     enrollmentId,
     newProgramVersionId: caso.dest_program_version_id,
     newEditionId: caso.dest_edition_id,
@@ -138,8 +141,6 @@ async function ejecutarVeredicto ({ caso, venta, enrollmentId, userId }) {
     userId,
     cat_currency: venta.cat_currency
   })
-  await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: resultado.new_enrollment_id })
-  return resultado
 }
 
 // El RP delega Odoo y correo a un job con reintentos; el CC los corre inline y

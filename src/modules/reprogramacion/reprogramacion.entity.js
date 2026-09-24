@@ -83,6 +83,15 @@ export function assertPuedeProponer (caso) {
   }
 }
 
+// Un caso ejecutado ya movio al alumno en el ERP, Odoo y el correo: volver a
+// contactarlo o rechazarlo solo reescribe el estado y lo saca de "Reubicados"
+// sin deshacer nada (le paso a #14712, #16353 y #16360 el 24/09/2026).
+export function assertCasoAbierto (caso) {
+  if (estadoDelCaso(caso) === ESTADO.ACEPTADO) {
+    throw new ReprogramacionError('El caso ya se ejecuto: el alumno ya fue reubicado')
+  }
+}
+
 // FICO solo firma lo que ya tiene destino elegido y alumno contactado: el
 // veredicto es la confirmacion de una conversacion, no el primer paso.
 export function assertPuedeAceptar (caso) {

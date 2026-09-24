@@ -8,9 +8,11 @@ import * as ctrl from './token.controller.js'
 // FUNDACION/LIDER_FUNDACION y B2B entran aqui porque /fundacion/leads y
 // /b2b/leads montan el mismo formulario que comercial (useLeadForm) y su boton
 // INSCRIPCION TOKEN pega a estos endpoints. Sin ellos el asesor veia
-// "Acceso denegado" (403) al Crear Token.
-const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B']
-const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B']
+// "Acceso denegado" (403) al Crear Token. LIDER_B2B va aparte de B2B porque los
+// roles viajan congelados en el JWT: a quien le suman B2B despues del login
+// sigue entrando solo como LIDER_B2B hasta que vuelva a iniciar sesion.
+const VIEW_ROLES = ['ADMIN', 'GERENCIA', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B', 'LIDER_B2B']
+const CREATE_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL', 'COMERCIAL', 'FUNDACION', 'LIDER_FUNDACION', 'B2B', 'LIDER_B2B']
 const LINK_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO', 'LIDER_COMERCIAL']
 const CONFIRM_ROLES = ['ADMIN', 'FICO', 'LIDER_FICO']
 

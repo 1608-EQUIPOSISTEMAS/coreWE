@@ -31,7 +31,24 @@ export const firmaSchema = {
       solicitud_id: { type: ['integer', 'string'] },
       // Lo que el alumno lee en su portal: Nexus muestra `respuesta` como la
       // respuesta de coordinacion.
-      respuesta: { type: ['string', 'null'], maxLength: 2000 }
+      respuesta: { type: ['string', 'null'], maxLength: 2000 },
+      // Solo cuenta en la firma de Academica: fija el gasto administrativo que
+      // Nexus dejo "por confirmar" porque el curso no esta en la lista de precios.
+      monto: { type: ['number', 'null'], minimum: 0, maximum: 10000 }
+    }
+  }
+}
+
+export const archivoSchema = {
+  tags: [TAG],
+  description: 'URL temporal (10 min) del voucher o la evidencia que adjunto el alumno.',
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['solicitud_id', 'cual'],
+    properties: {
+      solicitud_id: { type: ['integer', 'string'] },
+      cual: { type: 'string', enum: ['voucher', 'evidencia'] }
     }
   }
 }

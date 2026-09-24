@@ -18,6 +18,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
+  courseChangeInheritsDebt,
   selectChildrenToRetireOnCourseChange,
   PAID_INSTALLMENT_CAT_IDS
 } from '../enrollment.entity.js'
@@ -454,5 +455,16 @@ describe('resolveWebMatchLead (match WEB)', () => {
   it('rechaza la consulta de otro asesor', () => {
     expect(() => resolveWebMatchLead({ newOrigin: 'WEB', newAgentId: 2, leadId: 501, candidates: candidatos }))
       .toThrow(/pertenece a otro asesor/)
+  })
+})
+
+describe('courseChangeInheritsDebt', () => {
+  it('pago cero hereda las cuotas pendientes del origen', () => {
+    expect(courseChangeInheritsDebt(0)).toBe(true)
+    expect(courseChangeInheritsDebt('0.00')).toBe(true)
+    expect(courseChangeInheritsDebt(null)).toBe(true)
+  })
+  it('un CC que cobra de nuevo no arrastra la deuda', () => {
+    expect(courseChangeInheritsDebt(435)).toBe(false)
   })
 })
