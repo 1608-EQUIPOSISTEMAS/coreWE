@@ -170,44 +170,36 @@ async function exigirVentanaDeEdicion (editionIds, roles) {
 }
 
 // Gerencia y ADMIN mueven cualquier cifra. El lider comercial tambien edita
-// DIRECTO (ya no pide aprobacion), pero solo las VENTAS de sus dos canales.
+// DIRECTO, pero solo las VENTAS de sus dos canales.
 const EDITAN_TODO = ['ADMIN', 'GERENCIA']
 const CANALES_DEL_LIDER = ['COMERCIAL', 'OTROS']
 const editaTodo = (roles = []) => roles.some((rol) => EDITAN_TODO.includes(rol))
 
-// El OBJ es la suma de sus canales, nunca un campo aparte: en el plan las dos
-// cifras se declaraban por separado y llegaron a contradecirse.
-const sumaDeCanales = (canales) => Object.values(canales).reduce((t, c) => ({
-  target_vacants: t.target_vacants + (Number(c?.ventas) || 0),
-  target_leads: t.target_leads + (Number(c?.consultas) || 0)
-}), { target_vacants: 0, target_leads: 0 })
-
-// Reconstruye cada meta desde lo GUARDADO y le aplica unicamente las ventas de
-// los canales del lider. Se hace aca y no solo en la pantalla porque un payload
-// armado a mano llegaria igual a la BD y moveria canales ajenos.
-async function soloVentasDelLider (goals) {
-  const guardadas = await repo.currentGoals(goals.map((g) => g.edition_num_id))
-  return goals.map((g) => {
-    const actual = guardadas.get(g.edition_num_id)
-    const canales = { ...(actual?.channel_goals ?? {}) }
-    for (const canal of CANALES_DEL_LIDER) {
-      const pedido = g.channel_goals?.[canal]?.ventas
-      canales[canal] = { ...canales[canal], ventas: Number(pedido ?? canales[canal]?.ventas ?? 0) }
-    }
-    return {
-      edition_num_id: g.edition_num_id,
-      channel_goals: canales,
-      // El objetivo de ingresos no sale del plan ni lo toca esta pantalla:
-      // mandarlo en 0 lo borraria.
-      target_revenue: actual?.revenue_goal ?? 0,
-      ...sumaDeCanales(canales)
-    }
-  })
+// Recorta el envio a lo que el lider puede tocar. Se hace aca y no solo en la
+// pantalla porque un payload armado a mano llegaria igual a la BD y moveria
+// canales ajenos.
+function soloLoSuyo (cambios = {}) {
+  const permitido = {}
+  for (const canal of CANALES_DEL_LIDER) {
+    const ventas = cambios[canal]?.ventas
+    if (ventas !== undefined) permitido[canal] = { ventas }
+  }
+  return permitido
 }
 
+// Solo viajan los canales que cambiaron y la BD los fusiona con lo guardado: asi
+// dos personas pueden editar la misma edicion a la vez sin perder el trabajo de
+// la otra (ver saveProgramGoals en el repositorio).
 export async function saveProgramGoals ({ goals = [], userId, roles }) {
   await exigirVentanaDeEdicion(goals.map((g) => g.edition_num_id), roles)
-  const aGuardar = editaTodo(roles) ? goals : await soloVentasDelLider(goals)
+  const aGuardar = editaTodo(roles)
+    ? goals.filter((g) => Object.keys(g.channel_goals ?? {}).length)
+    : goals
+      .map((g) => ({ ...g, channel_goals: soloLoSuyo(g.channel_goals) }))
+      .filter((g) => Object.keys(g.channel_goals).length)
+  // Sin nada que escribir no se abre transaccion: un guardado vacio marcaria las
+  // ediciones como 'GERENCIA' sin que nadie haya cambiado un numero.
+  if (!aGuardar.length) return { saved: 0 }
   return repo.saveProgramGoals({ goals: aGuardar, userId })
 }
 

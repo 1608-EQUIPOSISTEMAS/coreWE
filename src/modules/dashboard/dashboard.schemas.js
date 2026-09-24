@@ -95,18 +95,22 @@ export const programGoalsSaveSchema = {
           additionalProperties: false,
           properties: {
             edition_num_id: { type: 'integer' },
-            target_vacants: { type: ['integer', 'null'], default: 0 },
-            target_revenue: { type: ['number', 'null'], default: 0 },
-            // Sin default: omitirlos debe dejar las metas de canal como están.
-            target_leads: { type: ['integer', 'null'] },
+            target_revenue: { type: ['number', 'null'] },
+            // SOLO lo que cambió: { COMERCIAL: { ventas: 3 } }. El servidor lo
+            // fusiona con lo guardado, así que dos personas pueden editar la
+            // misma edición a la vez sin pisarse.
+            //
+            // OJO: aquí NO puede haber `default: 0`. AJV rellena lo que falta, y
+            // con un default un envío de solo `ventas` llegaría con `consultas: 0`
+            // y borraría la cifra de la otra persona: justo lo que se arregla.
             channel_goals: {
-              type: ['object', 'null'],
+              type: 'object',
               additionalProperties: {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
-                  consultas: { type: 'integer', default: 0 },
-                  ventas: { type: 'integer', default: 0 }
+                  consultas: { type: 'integer', minimum: 0 },
+                  ventas: { type: 'integer', minimum: 0 }
                 }
               }
             }

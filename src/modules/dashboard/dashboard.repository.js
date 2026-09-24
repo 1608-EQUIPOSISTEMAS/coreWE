@@ -195,38 +195,69 @@ export class DashboardRepository {
     return rows
   }
 
-  // Upsert masivo de metas por edición (UNIQUE en edition_num_id).
+  // Guarda SOLO los canales que cambiaron, fusionandolos con lo que hay en la BD.
+  //
+  // Antes se escribia el jsonb completo que mandaba la pantalla y eso perdia
+  // trabajo: si dos personas abren el mismo mes y una toca Mkt y la otra Com de
+  // la misma edicion, la segunda en guardar pisaba el cambio de la primera con
+  // su copia vieja (paso el 24/09/2026). Con la fusion, cada una escribe solo su
+  // celda y las dos sobreviven.
+  //
+  // La fusion va DENTRO del `DO UPDATE` y no en un SELECT previo: ahi Postgres ya
+  // tiene la fila bloqueada y `program_edition_goals.channel_goals` es el valor
+  // vigente. Leerlo antes y escribir despues deja una ventana entre las dos
+  // sentencias por la que se cuela exactamente el problema que se quiere arreglar.
+  //
+  // `||` sobre jsonb es superficial, asi que la union se hace en DOS niveles:
+  // canal por canal (jsonb_object_agg sobre la union de claves) y, dentro de cada
+  // canal, metrica por metrica (el `||` de los dos objetos).
   async saveProgramGoals ({ goals, userId }) {
-    const sql = `
-      INSERT INTO public.program_edition_goals
-        (edition_num_id, vacant_goal, revenue_goal, lead_goal, channel_goals, user_registration_id, goal_source)
-      SELECT *, 'GERENCIA' FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[], $5::jsonb[], $6::int[])
-      -- goal_source = 'GERENCIA': el objetivo base lo carga el Plan 2027
-      -- (scripts/objetivos-del-plan-2027.mjs) y es el estandar. En cuanto una
-      -- persona lo ajusta desde Gerencia, ESE valor manda y una recarga del plan
-      -- ya no lo pisa. Sin la marca, la siguiente corrida borraria el ajuste.
-      --
-      -- El COALESCE se queda porque quien llame sin lead_goal ni channel_goals
-      -- no debe borrarlos: null = "no me lo mandaron", no "ponlo en cero".
-      ON CONFLICT (edition_num_id) DO UPDATE SET
-        vacant_goal = EXCLUDED.vacant_goal,
-        revenue_goal = EXCLUDED.revenue_goal,
-        lead_goal = COALESCE(EXCLUDED.lead_goal, program_edition_goals.lead_goal),
-        channel_goals = COALESCE(EXCLUDED.channel_goals, program_edition_goals.channel_goals),
-        goal_source = 'GERENCIA',
-        user_modification_id = EXCLUDED.user_registration_id,
-        modification_date = now()
-    `
-    const params = [
-      goals.map(g => g.edition_num_id),
-      goals.map(g => g.target_vacants ?? 0),
-      goals.map(g => g.target_revenue ?? 0),
-      goals.map(g => g.target_leads ?? null),
-      goals.map(g => (g.channel_goals ? JSON.stringify(g.channel_goals) : null)),
-      goals.map(() => userId)
-    ]
-    const { rowCount } = await this.db.query(sql, params)
-    return { saved: rowCount }
+    const client = await this.db.connect()
+    try {
+      await client.query('BEGIN')
+      const ids = goals.map((g) => g.edition_num_id)
+      await client.query(`
+        INSERT INTO public.program_edition_goals
+          (edition_num_id, vacant_goal, lead_goal, revenue_goal, channel_goals, goal_source, user_registration_id)
+        SELECT id, 0, 0, revenue, cambios, 'GERENCIA', $4
+          FROM unnest($1::int[], $2::jsonb[], $3::numeric[]) AS t(id, cambios, revenue)
+        -- goal_source = 'GERENCIA': el objetivo base lo pone el estandar de
+        -- Gerencia > Parametros. En cuanto una persona lo ajusta a mano, ESE valor
+        -- manda y una recarga del estandar ya no lo pisa.
+        ON CONFLICT (edition_num_id) DO UPDATE SET
+          channel_goals = (
+            SELECT COALESCE(jsonb_object_agg(claves.k,
+                     COALESCE(program_edition_goals.channel_goals -> claves.k, '{}'::jsonb)
+                     || COALESCE(excluded.channel_goals -> claves.k, '{}'::jsonb)), '{}'::jsonb)
+              FROM (SELECT jsonb_object_keys(COALESCE(program_edition_goals.channel_goals, '{}'::jsonb)) AS k
+                    UNION
+                    SELECT jsonb_object_keys(excluded.channel_goals)) AS claves
+          ),
+          -- null = "no me lo mandaron", no "ponlo en cero": el objetivo de
+          -- ingresos no sale de esta pantalla y borrarlo seria un efecto colateral.
+          revenue_goal = COALESCE(excluded.revenue_goal, program_edition_goals.revenue_goal),
+          goal_source = 'GERENCIA',
+          user_modification_id = excluded.user_registration_id,
+          modification_date = now()`,
+      [ids, goals.map((g) => JSON.stringify(g.channel_goals ?? {})),
+        goals.map((g) => g.target_revenue ?? null), userId])
+
+      // El OBJ es la suma de sus canales y va en su propia sentencia: no se puede
+      // sumar en el mismo UPDATE el jsonb que ese UPDATE esta armando.
+      const { rowCount } = await client.query(`
+        UPDATE public.program_edition_goals SET
+          vacant_goal = (SELECT COALESCE(SUM((v ->> 'ventas')::int), 0) FROM jsonb_each(channel_goals) AS c(k, v)),
+          lead_goal   = (SELECT COALESCE(SUM((v ->> 'consultas')::int), 0) FROM jsonb_each(channel_goals) AS c(k, v))
+        WHERE edition_num_id = ANY($1::int[])`, [ids])
+
+      await client.query('COMMIT')
+      return { saved: rowCount }
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {})
+      throw err
+    } finally {
+      client.release()
+    }
   }
 
   // Ediciones del lote que arrancan ANTES de la ventana de edicion. La fecha la
@@ -272,17 +303,6 @@ export class DashboardRepository {
        LIMIT $3`
     const { rows } = await this.db.query(sql, [year, month_num, limit])
     return rows
-  }
-
-  // Lo que hay guardado hoy para esas ediciones. Lo usa el guardado del lider
-  // comercial, que solo puede pisar DOS numeros: el resto se reconstruye desde
-  // aqui en vez de confiar en el payload.
-  async currentGoals (editionIds) {
-    const { rows } = await this.db.query(
-      `SELECT edition_num_id, revenue_goal, COALESCE(channel_goals, '{}'::jsonb) AS channel_goals
-         FROM public.program_edition_goals
-        WHERE edition_num_id = ANY($1::int[])`, [editionIds])
-    return new Map(rows.map((r) => [r.edition_num_id, r]))
   }
 
   async registerTarget (target) {
