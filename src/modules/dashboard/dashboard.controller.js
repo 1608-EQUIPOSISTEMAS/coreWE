@@ -1,4 +1,5 @@
 import * as usecases from './dashboard.usecases.js'
+import * as standards from './goal-standards/goal-standards.usecases.js'
 import { getDailyPlan, regenerableAreas, startDailyPlanGeneration } from './daily-plan/daily-plan.usecases.js'
 import { ForbiddenError } from '../../shared/errors.js'
 
@@ -23,7 +24,30 @@ export async function gerenciaFunnelHandler (req, reply) {
 }
 
 export async function programGoalsSaveHandler (req, reply) {
-  const data = await usecases.saveProgramGoals({ goals: req.body.goals, userId: req.user.id })
+  // Los roles viajan por dos reglas que vivien en el usecase: la ventana de
+  // edicion (ADMIN la saltea) y cuanto puede tocar cada rol (el lider comercial,
+  // solo las ventas de sus canales).
+  const data = await usecases.saveProgramGoals({ goals: req.body.goals, userId: req.user.id, roles: req.user.roles })
+  return reply.send({ ok: true, data })
+}
+
+export async function goalHistoryHandler (req, reply) {
+  const data = await usecases.goalHistoryList(req.body)
+  return reply.send({ ok: true, data })
+}
+
+export async function goalStandardsHandler (req, reply) {
+  const data = await standards.goalStandardsList(req.body)
+  return reply.send({ ok: true, data })
+}
+
+export async function goalStandardsSaveHandler (req, reply) {
+  const data = await standards.saveGoalStandards({ ...req.body, userId: req.user.id })
+  return reply.send({ ok: true, data })
+}
+
+export async function goalStandardsApplyHandler (req, reply) {
+  const data = await standards.applyGoalStandards({ userId: req.user.id })
   return reply.send({ ok: true, data })
 }
 

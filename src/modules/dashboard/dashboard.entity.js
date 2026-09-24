@@ -80,13 +80,31 @@ export function mapProgramGoalRow (r) {
     categoria: r.categoria,
     linea: r.linea,
     programa: r.programa,
+    // La abreviatura es el nombre con el que Planeamiento escribe sus hojas y el
+    // que cruza contra el Plan 2027; program_name es el largo de catalogo.
+    programa_abrev: r.programa_abrev || r.programa,
     tipo: r.tipo,
     inicio: r.fecha_inicio,
     codigo: r.codigo_edicion,
     meta_monto: Number(r.meta_monto || 0),
     meta_vacantes: Number(r.meta_vacantes || 0),
+    meta_consultas: Number(r.meta_consultas || 0),
+    // Reparto del objetivo por canal, con los nombres del embudo de Gerencia:
+    // { MARKETING: { ventas, consultas }, ... }. Ventas se reparte en los cuatro
+    // canales y consultas en tres: la consulta WEB no existe como canal propio.
+    metas_canal: parseJsonbObject(r.metas_canal),
+    // 'PLAN' = el objetivo lo puso el Plan 2027; 'GERENCIA' = lo ajusto una
+    // persona y ya no se recarga desde el plan; null = la edicion no tiene
+    // objetivo cargado (el plan no la alcanza), que no es tenerlo en cero.
+    origen_meta: r.origen_meta || null,
     venta_monto: Number(r.venta_monto || 0),
     venta_cantidad: Number(r.venta_cantidad || 0),
+    // Consultas que de verdad entraron, contra las que el objetivo pide.
+    consultas_reales: Number(r.consultas_reales || 0),
+    // Quien dejo el objetivo como esta. Solo interesa cuando origen_meta es
+    // 'GERENCIA': si lo puso el parametro, el autor es el sistema.
+    editado_por: r.editado_por || null,
+    editado_en: r.editado_en || null,
     logro_monto_pct: Number(r.porcentaje_logro_monto || 0),
     logro_vacantes_pct: Number(r.porcentaje_logro_vacantes || 0),
     breakdown_asesores: r.breakdown_asesores || [],

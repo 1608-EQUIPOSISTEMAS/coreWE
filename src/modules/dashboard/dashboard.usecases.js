@@ -1,10 +1,12 @@
 import { dashboardRepository } from './dashboard.repository.js'
+import { ForbiddenError } from '../../shared/errors.js'
 import { aggregateVentasCanal, teamScopeFor } from './dashboard.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
 import { areaResults, myTicketReports, orgTicketReports } from './results/results.usecases.js'
 import {
   toDashboardDto,
   toProgramGoalsDto,
+  toGoalHistoryDto,
   toGerenciaFunnelDto,
   toLiderDto,
   toContactabilityDto,
@@ -130,8 +132,14 @@ export async function dashboardList (payload = {}) {
 
 export async function programGoalsList (payload = {}) {
   const { year = 2026, month_num = 1 } = payload
-  const rows = await repo.programGoals({ year, month_num })
-  return toProgramGoalsDto(rows)
+  const [rows, editableDesde] = await Promise.all([
+    repo.programGoals({ year, month_num }),
+    // La fecha la calcula Postgres y viaja al front para que pinte el candado
+    // con el mismo corte que el backend aplica. Calcularla dos veces es la forma
+    // segura de que la pantalla y la regla se contradigan.
+    repo.editionWindowStart()
+  ])
+  return { ...toProgramGoalsDto(rows), editable_desde: editableDesde }
 }
 
 export async function gerenciaFunnelList (payload = {}) {
@@ -140,8 +148,69 @@ export async function gerenciaFunnelList (payload = {}) {
   return toGerenciaFunnelDto(rows)
 }
 
-export async function saveProgramGoals ({ goals = [], userId }) {
-  return repo.saveProgramGoals({ goals, userId })
+// Ventana de edicion: Gerencia y el lider comercial solo pueden mover el
+// objetivo de una edicion que empiece de HOY + 40 DIAS en adelante. Lo que
+// arranca antes ya se esta vendiendo, y cambiarle la meta es correr la vara con
+// el partido empezado. ADMIN queda fuera de la regla para poder corregir un error.
+const SIN_VENTANA = 'ADMIN'
+const puedeSaltarLaVentana = (roles = []) => roles.includes(SIN_VENTANA)
+
+async function exigirVentanaDeEdicion (editionIds, roles) {
+  if (puedeSaltarLaVentana(roles)) return
+  const fuera = await repo.editionsOutsideWindow(editionIds)
+  if (!fuera.length) return
+  const desde = await repo.editionWindowStart()
+  const detalle = fuera.map((e) => `${e.programa} ${e.codigo} (${e.inicio})`).join(', ')
+  throw new ForbiddenError(
+    `Solo se pueden editar ediciones que empiecen desde el ${desde}. Fuera de plazo: ${detalle}`)
+}
+
+// Gerencia y ADMIN mueven cualquier cifra. El lider comercial tambien edita
+// DIRECTO (ya no pide aprobacion), pero solo las VENTAS de sus dos canales.
+const EDITAN_TODO = ['ADMIN', 'GERENCIA']
+const CANALES_DEL_LIDER = ['COMERCIAL', 'OTROS']
+const editaTodo = (roles = []) => roles.some((rol) => EDITAN_TODO.includes(rol))
+
+// El OBJ es la suma de sus canales, nunca un campo aparte: en el plan las dos
+// cifras se declaraban por separado y llegaron a contradecirse.
+const sumaDeCanales = (canales) => Object.values(canales).reduce((t, c) => ({
+  target_vacants: t.target_vacants + (Number(c?.ventas) || 0),
+  target_leads: t.target_leads + (Number(c?.consultas) || 0)
+}), { target_vacants: 0, target_leads: 0 })
+
+// Reconstruye cada meta desde lo GUARDADO y le aplica unicamente las ventas de
+// los canales del lider. Se hace aca y no solo en la pantalla porque un payload
+// armado a mano llegaria igual a la BD y moveria canales ajenos.
+async function soloVentasDelLider (goals) {
+  const guardadas = await repo.currentGoals(goals.map((g) => g.edition_num_id))
+  return goals.map((g) => {
+    const actual = guardadas.get(g.edition_num_id)
+    const canales = { ...(actual?.channel_goals ?? {}) }
+    for (const canal of CANALES_DEL_LIDER) {
+      const pedido = g.channel_goals?.[canal]?.ventas
+      canales[canal] = { ...canales[canal], ventas: Number(pedido ?? canales[canal]?.ventas ?? 0) }
+    }
+    return {
+      edition_num_id: g.edition_num_id,
+      channel_goals: canales,
+      // El objetivo de ingresos no sale del plan ni lo toca esta pantalla:
+      // mandarlo en 0 lo borraria.
+      target_revenue: actual?.revenue_goal ?? 0,
+      ...sumaDeCanales(canales)
+    }
+  })
+}
+
+export async function saveProgramGoals ({ goals = [], userId, roles }) {
+  await exigirVentanaDeEdicion(goals.map((g) => g.edition_num_id), roles)
+  const aGuardar = editaTodo(roles) ? goals : await soloVentasDelLider(goals)
+  return repo.saveProgramGoals({ goals: aGuardar, userId })
+}
+
+export async function goalHistoryList (payload = {}) {
+  const { year = 2026, month_num = 1 } = payload
+  const rows = await repo.goalHistory({ year, month_num })
+  return { items: rows.map(toGoalHistoryDto) }
 }
 
 export async function leadsPerEdition (payload = {}) {

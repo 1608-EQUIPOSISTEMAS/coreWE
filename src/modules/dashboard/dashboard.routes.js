@@ -3,6 +3,10 @@ import {
   dashboardListSchema,
   programGoalsSchema,
   programGoalsSaveSchema,
+  goalHistorySchema,
+  goalStandardsSchema,
+  goalStandardsSaveSchema,
+  goalStandardsApplySchema,
   gerenciaFunnelSchema,
   leadsPerEditionSchema,
   targetRegisterSchema,
@@ -30,8 +34,18 @@ export default async function dashboardRoutes (fastify) {
   fastify.post('/daily-plan', { schema: dailyPlanSchema }, ctrl.dailyPlanHandler)
   fastify.post('/daily-plan/regenerate', { schema: dailyPlanSchema }, ctrl.dailyPlanRegenerateHandler)
   fastify.post('/dashboardlist', { schema: dashboardListSchema }, ctrl.dashboardListHandler)
+  // Lo ve tambien LIDER_COMERCIAL: ve el modulo entero, aunque solo edite lo suyo.
   fastify.post('/program-goals', { schema: programGoalsSchema }, ctrl.programGoalsHandler)
-  fastify.post('/program-goals/save', { schema: programGoalsSaveSchema }, ctrl.programGoalsSaveHandler)
+  // El lider comercial guarda por la MISMA ruta que Gerencia: el usecase le
+  // recorta el cambio a las ventas de sus canales. Dejarlo fuera del gate seria
+  // fiarse de que la pantalla no mande de mas.
+  fastify.post('/program-goals/save', { schema: programGoalsSaveSchema, preHandler: hasRole(['ADMIN', 'GERENCIA', 'LIDER_COMERCIAL']) }, ctrl.programGoalsSaveHandler)
+  fastify.post('/goal-history', { schema: goalHistorySchema }, ctrl.goalHistoryHandler)
+  // Gerencia > Parametros: el estandar por programa. Guardar YA lo baja a las
+  // ediciones futuras, asi que es la misma potestad que editar el objetivo.
+  fastify.post('/goal-standards', { schema: goalStandardsSchema, preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.goalStandardsHandler)
+  fastify.post('/goal-standards/save', { schema: goalStandardsSaveSchema, preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.goalStandardsSaveHandler)
+  fastify.post('/goal-standards/apply', { schema: goalStandardsApplySchema, preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.goalStandardsApplyHandler)
   fastify.post('/gerencia-funnel', { schema: gerenciaFunnelSchema, preHandler: hasRole(['ADMIN', 'GERENCIA']) }, ctrl.gerenciaFunnelHandler)
   fastify.post('/leads-per-edition', { schema: leadsPerEditionSchema }, ctrl.leadsPerEditionHandler)
   fastify.post('/dashboardtargetregister', { schema: targetRegisterSchema }, ctrl.targetRegisterHandler)

@@ -18,6 +18,23 @@ export const toProgramGoalsDto = (rows) => {
   return { total: items.length, items }
 }
 
+// Una linea del historial del objetivo, tal como la dejo el trigger. Un ALTA no
+// tiene "antes": esos campos van en null a proposito, no por falta de dato, y la
+// pantalla muestra solo el valor nuevo en vez de un "0 -> 12" que mentiria.
+export const toGoalHistoryDto = (r) => ({
+  fecha: r.fecha,
+  edition_id: r.edition_num_id,
+  programa: r.programa,
+  codigo: r.codigo,
+  inicio: r.fecha_inicio,
+  ventas_antes: r.ventas_antes === null ? null : Number(r.ventas_antes),
+  ventas_despues: r.ventas_despues === null ? null : Number(r.ventas_despues),
+  consultas_antes: r.consultas_antes === null ? null : Number(r.consultas_antes),
+  consultas_despues: r.consultas_despues === null ? null : Number(r.consultas_despues),
+  origen: r.origen,
+  autor: r.autor
+})
+
 // Reporte de Gerencia: filas por edicion + la matriz de canales del mes ya
 // agregada. Se suma aca y no en el front porque los tres niveles del reporte
 // (cabecera, matriz, tabla) leen exactamente los mismos numeros.

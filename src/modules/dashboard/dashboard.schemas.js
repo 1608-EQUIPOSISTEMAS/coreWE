@@ -28,6 +28,58 @@ export const programGoalsSchema = {
   }
 }
 
+export const goalHistorySchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      year: { type: 'integer', default: 2026 },
+      month_num: { type: 'integer', default: 1 }
+    }
+  }
+}
+
+// Gerencia > Parametros: el estandar por programa, que es de donde sale el
+// objetivo de cada edicion futura.
+export const goalStandardsSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      season: { type: 'string', enum: ['ALTA', 'NORMAL'], default: 'NORMAL' }
+    }
+  }
+}
+
+export const goalStandardsSaveSchema = {
+  body: {
+    type: 'object',
+    required: ['standards'],
+    additionalProperties: false,
+    properties: {
+      season: { type: 'string', enum: ['ALTA', 'NORMAL'], default: 'NORMAL' },
+      standards: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          required: ['program_version_id'],
+          additionalProperties: false,
+          properties: {
+            program_version_id: { type: 'integer' },
+            lado: { type: 'string', enum: ['APERTURA', 'SEGUIMIENTO'] },
+            // { MARKETING: { ventas, consultas }, ... }. No se enumeran los
+            // canales: agregar uno no puede exigir tocar el schema.
+            canales: { type: 'object' }
+          }
+        }
+      }
+    }
+  }
+}
+
+export const goalStandardsApplySchema = { body: { type: 'object', additionalProperties: false, properties: {} } }
+
 export const programGoalsSaveSchema = {
   body: {
     type: 'object',

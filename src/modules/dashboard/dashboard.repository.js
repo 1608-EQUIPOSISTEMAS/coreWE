@@ -199,16 +199,21 @@ export class DashboardRepository {
   async saveProgramGoals ({ goals, userId }) {
     const sql = `
       INSERT INTO public.program_edition_goals
-        (edition_num_id, vacant_goal, revenue_goal, lead_goal, channel_goals, user_registration_id)
-      SELECT * FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[], $5::jsonb[], $6::int[])
-      -- Producto->Cronograma llama a este mismo upsert sin mandar lead_goal ni
-      -- channel_goals: sin el COALESCE, guardar desde ahi borraria las metas de
-      -- canal que Gerencia cargo. null = "no me lo mandaron", no "ponlo en cero".
+        (edition_num_id, vacant_goal, revenue_goal, lead_goal, channel_goals, user_registration_id, goal_source)
+      SELECT *, 'GERENCIA' FROM unnest($1::int[], $2::int[], $3::numeric[], $4::int[], $5::jsonb[], $6::int[])
+      -- goal_source = 'GERENCIA': el objetivo base lo carga el Plan 2027
+      -- (scripts/objetivos-del-plan-2027.mjs) y es el estandar. En cuanto una
+      -- persona lo ajusta desde Gerencia, ESE valor manda y una recarga del plan
+      -- ya no lo pisa. Sin la marca, la siguiente corrida borraria el ajuste.
+      --
+      -- El COALESCE se queda porque quien llame sin lead_goal ni channel_goals
+      -- no debe borrarlos: null = "no me lo mandaron", no "ponlo en cero".
       ON CONFLICT (edition_num_id) DO UPDATE SET
         vacant_goal = EXCLUDED.vacant_goal,
         revenue_goal = EXCLUDED.revenue_goal,
         lead_goal = COALESCE(EXCLUDED.lead_goal, program_edition_goals.lead_goal),
         channel_goals = COALESCE(EXCLUDED.channel_goals, program_edition_goals.channel_goals),
+        goal_source = 'GERENCIA',
         user_modification_id = EXCLUDED.user_registration_id,
         modification_date = now()
     `
@@ -222,6 +227,61 @@ export class DashboardRepository {
     ]
     const { rowCount } = await this.db.query(sql, params)
     return { saved: rowCount }
+  }
+
+  // Ediciones del lote que arrancan ANTES de la ventana de edicion. La fecha la
+  // calcula Postgres y no JS para que el candado de la pantalla y el del
+  // servidor salgan del mismo reloj: dos calculos es la forma de que discrepen.
+  async editionsOutsideWindow (editionIds) {
+    const sql = `
+      SELECT pe.edition_num_id, pv.abbreviation AS programa, pe.global_code AS codigo,
+             pe.start_date::text AS inicio
+        FROM public.program_editions pe
+        JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+       WHERE pe.edition_num_id = ANY($1::int[])
+         AND pe.start_date < (CURRENT_DATE + INTERVAL '40 days')
+       ORDER BY pe.start_date`
+    const { rows } = await this.db.query(sql, [editionIds])
+    return rows
+  }
+
+  async editionWindowStart () {
+    const { rows } = await this.db.query(`SELECT (CURRENT_DATE + INTERVAL '40 days')::date::text AS desde`)
+    return rows[0].desde
+  }
+
+  // Historial de todo cambio del objetivo. Lo llena un TRIGGER sobre
+  // program_edition_goals: al objetivo le escriben el cargador del plan, Gerencia
+  // y el lider comercial, y el trigger los cubre a todos sin que cada camino se
+  // acuerde de registrar.
+  async goalHistory ({ year, month_num, limit = 200 }) {
+    const sql = `
+      SELECT h.changed_at AS fecha, h.edition_num_id,
+             pv.abbreviation AS programa, pe.global_code AS codigo, pe.start_date AS fecha_inicio,
+             h.vacant_goal_antes AS ventas_antes, h.vacant_goal_despues AS ventas_despues,
+             h.lead_goal_antes AS consultas_antes, h.lead_goal_despues AS consultas_despues,
+             h.goal_source AS origen, COALESCE(u.alias, u.name) AS autor
+        FROM public.program_edition_goal_history h
+        JOIN public.program_editions pe ON pe.edition_num_id = h.edition_num_id
+        JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+        LEFT JOIN public.users u ON u.user_id = h.user_id
+       WHERE EXTRACT(year FROM pe.start_date) = $1
+         AND EXTRACT(month FROM pe.start_date) = $2
+       ORDER BY h.changed_at DESC
+       LIMIT $3`
+    const { rows } = await this.db.query(sql, [year, month_num, limit])
+    return rows
+  }
+
+  // Lo que hay guardado hoy para esas ediciones. Lo usa el guardado del lider
+  // comercial, que solo puede pisar DOS numeros: el resto se reconstruye desde
+  // aqui en vez de confiar en el payload.
+  async currentGoals (editionIds) {
+    const { rows } = await this.db.query(
+      `SELECT edition_num_id, revenue_goal, COALESCE(channel_goals, '{}'::jsonb) AS channel_goals
+         FROM public.program_edition_goals
+        WHERE edition_num_id = ANY($1::int[])`, [editionIds])
+    return new Map(rows.map((r) => [r.edition_num_id, r]))
   }
 
   async registerTarget (target) {
