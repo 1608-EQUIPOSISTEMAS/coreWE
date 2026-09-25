@@ -52,11 +52,13 @@ export async function commitFile (entity, buffer, userId, jobId) {
 }
 
 export async function validateUrl (entity, url) {
-  return validateWorkbook(getImporter(entity), await loadGoogleSheet(url))
+  const def = getImporter(entity)
+  return validateWorkbook(def, await loadGoogleSheet(url, def.companionTabs))
 }
 
 export async function commitUrl (entity, url, userId, jobId) {
-  return commitWorkbook(getImporter(entity), await loadGoogleSheet(url), userId, jobId)
+  const def = getImporter(entity)
+  return commitWorkbook(def, await loadGoogleSheet(url, def.companionTabs), userId, jobId)
 }
 
 // --- Nucleo comun (a partir de un workbook) --------------------------------

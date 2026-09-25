@@ -73,7 +73,9 @@ setImporterPorts({
   // Cuentas bancarias y monedas, para resolver "ENTIDAD FINANCIERA" y "TIPO DE
   // MONEDA" de la hoja FICO.
   listBankAccounts: () => enrollmentRepository.bankAccountList(),
-  listCurrencies: () => enrollmentRepository.currencyList()
+  listCurrencies: () => enrollmentRepository.currencyList(),
+  // Cuotas cobradas de la hoja FICO: pagadas + fila en payments.
+  applyInstallmentPayments: (args) => enrollmentRepository.applyImportedInstallmentPayments(args)
 })
 
 // Construye y configura la instancia Fastify sin arrancarla. Permite levantar

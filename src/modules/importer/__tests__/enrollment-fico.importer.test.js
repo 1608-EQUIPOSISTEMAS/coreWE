@@ -387,8 +387,8 @@ describe('enrollment-fico ingest — total y cronograma', () => {
     ]))
     expect(rows[0].raw.total_amount).toBe(610) // 610 + 43 seria cobrarle el regalo
     expect(rows[0].raw._installments).toEqual([
-      { installment_number: 1, amount: 209, due_date: '19/3/2026' },
-      { installment_number: 2, amount: 201, due_date: '5/4/2026' }
+      { installment_number: 1, amount: 209, due_date: '19/3/2026', paid: true },
+      { installment_number: 2, amount: 201, due_date: '5/4/2026', paid: true }
     ])
   })
 
@@ -399,7 +399,7 @@ describe('enrollment-fico ingest — total y cronograma', () => {
     const { total_amount: total, down_payment: inicial, _installments: plan } = rows[0].raw
     expect(total).toBe(717)
     expect(plan).toEqual([
-      { installment_number: 1, amount: 233, due_date: '30/4/2026' },
+      { installment_number: 1, amount: 233, due_date: '30/4/2026', paid: true },
       { installment_number: 2, amount: 234, due_date: '23/5/2026' }
     ])
     // El SP exige que el plan cierre contra el saldo a financiar.
@@ -485,9 +485,9 @@ describe('enrollment-fico ingest — saldo que no entra en ninguna cuota', () =>
     const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
     expect(raw.total_amount).toBe(963)
     expect(raw._installments).toEqual([
-      { installment_number: 1, amount: 254, due_date: '10/1/2026' },
-      { installment_number: 2, amount: 254, due_date: '17/1/2026' },
-      { installment_number: 3, amount: 254, due_date: '17/2/2026' },
+      { installment_number: 1, amount: 254, due_date: '10/1/2026', paid: true },
+      { installment_number: 2, amount: 254, due_date: '17/1/2026', paid: true },
+      { installment_number: 3, amount: 254, due_date: '17/2/2026', paid: true },
       { installment_number: 4, amount: 51, due_date: '17/2/2026' } // el resto, aparte
     ])
     expect(raw.down_payment + raw._installments.reduce((s, i) => s + i.amount, 0)).toBe(963)
@@ -501,5 +501,209 @@ describe('enrollment-fico ingest — saldo que no entra en ninguna cuota', () =>
     const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
     expect(raw._installments).toEqual([])
     expect(raw.payment_way).toBe('contado')
+  })
+})
+
+// --- Pestaña "2. Cuota INS - N": detalle de pago de las cuotas cobradas -------
+// Forma real (hoja EXCEL, 2026-09-25): sin DNI, un bloque por cuota
+// FCn | Cn | MEDIO DE PAGO | ENTIDAD EMPRESA | ENTIDAD FINANCIERA | N° OPERACION.
+function hojaFicoConCuotas (filasIns, filasCuota) {
+  const wb = new ExcelJS.Workbook()
+  const ins = wb.addWorksheet('1. INS - N')
+  ins.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'CORREO', 'ED', 'COD', 'INICIAL',
+    'FC1', 'C1', 'FC2', 'C2', 'SALDO', 'INGRESO', 'MEDIO DE PAGO', 'ENTIDAD EMPRESA', 'ENTIDAD FINANCIERA'])
+  for (const f of filasIns) ins.addRow(f)
+  const cu = wb.addWorksheet('2. Cuota INS - N')
+  cu.addRow(['', '', '', '', '', 'CUOTA 1', '', '', '', '', '', 'CUOTA 2'])
+  cu.addRow(['Nª', 'COD', 'ED', 'NOMBRES Y \nAPELLIDOS', 'CORREO',
+    'FC1', 'C1', 'MEDIO DE\nPAGO', 'ENTIDAD\nEMPRESA', 'ENTIDAD\nFINANCIERA', 'N° \nOPERACIÓN',
+    'FC2', 'C2', 'MEDIO DE\nPAGO', 'ENTIDAD\nEMPRESA', 'ENTIDAD\nFINANCIERA', 'N° \nOPERACIÓN',
+    'F.PAGO C1', 'C1'])
+  for (const f of filasCuota) cu.addRow(f)
+  return wb
+}
+
+describe('enrollment-fico ingest — pestaña "Cuota INS - N"', () => {
+  it('enlaza por COD+ED+correo y adjunta el detalle de pago a cada cuota cobrada', () => {
+    const wb = hojaFicoConCuotas(
+      [['111', 'AVILA QUISPE WENDY', 'wendy@x.com', 'E72', 'EX-CZ-06', 80, '5/2/2026', 60, '5/3/2026', '', 50, 140]],
+      [[9, 'EX-CZ-06', 'E72', 'AVILA QUISPE WENDY', 'WENDY@x.com',
+        '5/2/2026', '60,00', 'Transferencia', 'World Enterprise C.', 'BCP', '4035648',
+        '', '0,00', '', '', '', '', 46059, '60,00']]
+    )
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installment_errors).toEqual([])
+    expect(raw._installments[0]).toMatchObject({
+      installment_number: 1,
+      paid: true,
+      payment: { amount: 60, payment_date: '5/2/2026', payment_medium: 'Transferencia', business_entity: 'World Enterprise C.', financial_entity: 'BCP', transaction_code: '4035648' }
+    })
+    expect(raw._installments[1].paid).toBeUndefined() // cuota 2 = pendiente (del saldo)
+  })
+
+  it('encabezado en DOS filas (hoja ESP): alumno arriba, bloques FCn abajo; "F6" = FC6', () => {
+    const wb = new ExcelJS.Workbook()
+    const ins = wb.addWorksheet('1. INS - N')
+    ins.addRow(['DNI', 'NOMBRES Y APELLIDOS', 'CORREO', 'ED', 'COD', 'INICIAL', 'FC1', 'C1', 'FC6', 'C6', 'SALDO', 'INGRESO'])
+    ins.addRow(['111', 'ZUÑIGA RONALD', 'ronald@x.com', 'E0', 'PC-DZ-04', 300, '29/10/2025', 217, '1/3/2026', 100, 0, 617])
+    const cu = wb.addWorksheet('2. Cuota INS - N')
+    cu.addRow(['Nª', 'COD', 'ED', 'NOMBRES Y APELLIDOS', 'CORREO', 'CUOTA 1', '', '', '', '', '', 'CUOTA 6'])
+    cu.addRow(['', '', '', '', '', 'FC1', 'C1', 'MEDIO DE PAGO', 'ENTIDAD EMPRESA', 'ENTIDAD FINANCIERA', 'N° OPERACIÓN',
+      'F6', 'C6', 'MEDIO DE PAGO', 'ENTIDAD EMPRESA', 'ENTIDAD FINANCIERA', 'N° OPERACIÓN'])
+    cu.addRow([3, 'PC-DZ-04', 'E0', 'ZUÑIGA RONALD', 'ronald@x.com', '29/10/2025', '217.00', 'Transferencia', 'WE Educación', 'BBVA', '',
+      '1/3/2026', 'S/. 100.0', 'YAPE', 'WE Educación', 'BCP', '999'])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installment_errors).toEqual([])
+    expect(raw._installments[0].payment).toMatchObject({ amount: 217, financial_entity: 'BBVA' })
+    expect(raw._installments[1].payment).toMatchObject({ amount: 100, payment_medium: 'YAPE', transaction_code: '999' })
+  })
+
+  it('mismo alumno dos veces en el mismo curso+ED -> desempata por montos de las cuotas cobradas', () => {
+    const wb = hojaFicoConCuotas(
+      [['111', 'MEZA LOLI', 'meza@x.com', 'E0', 'EX-EZ-03', 200, '1/1/2026', 180, '1/2/2026', 130, 0, 510],
+        ['111', 'MEZA LOLI', 'meza@x.com', 'E0', 'EX-EZ-03', 0, '1/3/2026', 198, '1/4/2026', 186, 0, 384]],
+      [[1, 'EX-EZ-03', 'E0', 'MEZA LOLI', 'meza@x.com', '1/3/2026', '198', 'YAPE', '', 'BCP', '', '1/4/2026', '186', 'YAPE', '', 'BCP', ''],
+        [2, 'EX-EZ-03', 'E0', 'MEZA LOLI', 'meza@x.com', '1/1/2026', '180', 'Depósito', '', 'BCP', '', '1/2/2026', '130', 'Depósito', '', 'BCP', '']]
+    )
+    const [a, b] = enrollmentFicoImporter.ingest(wb).rows
+    expect(a.raw._installments[0].payment.payment_medium).toBe('Depósito')
+    expect(b.raw._installments[0].payment.payment_medium).toBe('YAPE')
+  })
+
+  it('sin correo enlaza por nombre', () => {
+    const wb = hojaFicoConCuotas(
+      [['222', 'TINCO CESPEDES CLAUDIA', '', 'E72', 'EX-CZ-06', 100, '6/2/2026', 100, '', '', 0, 200]],
+      [[12, 'EX-CZ-06', 'E72', 'TINCO CESPEDES CLAUDIA', '', '6/2/2026', '100,00', '', '', 'Mercado Pago', '']]
+    )
+    expect(enrollmentFicoImporter.ingest(wb).rows[0].raw._installments[0].payment.financial_entity).toBe('Mercado Pago')
+  })
+
+  it('montos distintos entre pestañas -> error en la fila (no adivina cual vale)', () => {
+    const wb = hojaFicoConCuotas(
+      [['333', 'X X', 'x@x.com', 'E72', 'EX-CZ-06', 80, '5/2/2026', 60, '', '', 0, 140]],
+      [[1, 'EX-CZ-06', 'E72', 'X X', 'x@x.com', '5/2/2026', '70,00', 'YAPE', '', '', '']]
+    )
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installment_errors[0]).toMatch(/Cuota 1/)
+    expect(raw._installments[0].payment).toBeUndefined()
+  })
+
+  it('cuota cobrada solo en "Cuota INS - N" -> error', () => {
+    const wb = hojaFicoConCuotas(
+      [['444', 'Y Y', 'y@x.com', 'E72', 'EX-CZ-06', 140, '', '', '', '', 0, 140]],
+      [[1, 'EX-CZ-06', 'E72', 'Y Y', 'y@x.com', '', '', '', '', '', '', '9/3/2026', '50,00', 'YAPE', '', '', '']]
+    )
+    expect(enrollmentFicoImporter.ingest(wb).rows[0].raw._installment_errors[0]).toMatch(/Cuota 2.*"INS - N" no/)
+  })
+
+  it('sin pestaña de cuotas: igual marca las cobradas (sin detalle)', () => {
+    const { raw } = enrollmentFicoImporter.ingest(hojaFico([
+      ['555', 'Z Z', 'E31', 'IA-CZ-03', '', 100, '1/2/2026', 50, '', '', 0, 150]
+    ])).rows[0]
+    expect(raw._installments[0]).toEqual({ installment_number: 1, amount: 50, due_date: '1/2/2026', paid: true })
+    expect(raw._installment_errors).toEqual([])
+  })
+})
+
+describe('enrollment-fico resolveRow — pagos de cuotas cobradas', () => {
+  const ctxPagos = {
+    ...ctx,
+    catalog: {
+      ...ctx.catalog,
+      we_payment_medium: [
+        { alias: 'we_payment_medium_transfer', description: 'Transferencia', catalogo_id: 3203 },
+        { alias: 'we_payment_medium_yape', description: 'YAPE', catalogo_id: 3205 },
+        { alias: 'we_payment_medium_mercadolibre', description: 'Mercado Pago', catalogo_id: 3256 }
+      ]
+    }
+  }
+  const base = { full_name: 'X Y', course_code: 'IA-CZ-03', edition: 'E31', currency: 'PEN' }
+
+  it('con detalle: medio + cuenta (empresa "World Enterprise C." = WEC) + operacion', async () => {
+    const { data, errors } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [
+      { installment_number: 1, amount: 60, due_date: '5/2/2026', paid: true,
+        payment: { amount: 60, payment_date: '5/2/2026', payment_medium: 'Transferencia', business_entity: 'World Enterprise C.', financial_entity: 'BCP', transaction_code: '4035648' } },
+      { installment_number: 2, amount: 50, due_date: '5/3/2026' }
+    ] }, ctxPagos, [])
+    expect(errors).toEqual([])
+    expect(data.installment_payments).toEqual([
+      { installment_number: 1, amount: 60, payment_date: '2026-02-05', cat_payment_medium: 3203, bank_account_id: 1, transaction_code: '4035648' }
+    ])
+  })
+
+  it('Mercado Pago en ENTIDAD FINANCIERA con MEDIO vacio -> medio Mercado Pago, sin cuenta', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [
+      { installment_number: 1, amount: 100, due_date: '6/2/2026', paid: true,
+        payment: { amount: 100, payment_date: '6/2/2026', payment_medium: '', business_entity: '', financial_entity: 'Mercado Pago', transaction_code: '' } }
+    ] }, ctxPagos, [])
+    expect(data.installment_payments[0]).toMatchObject({ cat_payment_medium: 3256, bank_account_id: null, transaction_code: null })
+  })
+
+  it('sin detalle: usa medio/empresa/banco de la fila', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base,
+      payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP',
+      _installments: [{ installment_number: 1, amount: 50, due_date: '1/2/2026', paid: true }] }, ctxPagos, [])
+    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2026-02-01', cat_payment_medium: 3205, bank_account_id: 6 })
+  })
+
+  it('ENTIDAD FINANCIERA "Detracción" -> cuenta BN de la empresa', async () => {
+    const ctxBN = { ...ctxPagos, bankAccounts: [...ctx.bankAccounts, { account_id: 11, business_entity_catalog_id: 3213, bank_name: 'BN', currency: 'PEN' }] }
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [
+      { installment_number: 1, amount: 101, due_date: '26/2/2026', paid: true,
+        payment: { amount: 101, payment_date: '26/2/2026', payment_medium: 'Depósito', business_entity: 'WE Educación', financial_entity: 'Detracción', transaction_code: '' } }
+    ] }, ctxBN, [])
+    expect(data.installment_payments[0].bank_account_id).toBe(11)
+  })
+
+  it('detalle con fecha pero bloque en blanco -> medio/cuenta de la fila, fecha del detalle', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base,
+      payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP',
+      _installments: [{ installment_number: 1, amount: 275, due_date: '1/1/2026', paid: true,
+        payment: { amount: 275, payment_date: '31/10/2025', payment_medium: '', business_entity: '', financial_entity: '', transaction_code: '' } }] }, ctxPagos, [])
+    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2025-10-31', cat_payment_medium: 3205, bank_account_id: 6 })
+  })
+
+  it('errores de la pestaña de cuotas invalidan la fila', async () => {
+    const { errors } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [], _installment_errors: ['Cuota 1: x'] }, ctxPagos, [])
+    expect(errors).toContain('Cuota 1: x')
+  })
+})
+
+describe('enrollment-fico commitRow — cuotas cobradas', () => {
+  const pagos = [{ installment_number: 1, amount: 60, payment_date: '2026-02-05' }]
+
+  it('alta nueva -> aplica los pagos sobre la inscripcion creada', async () => {
+    let args = null
+    setImporterPorts({
+      registerEnrollment: async () => ({ result: 1, enrollment_id: 77 }),
+      applyInstallmentPayments: async (a) => { args = a; return { applied: [1], already: [], skipped: [] } }
+    })
+    const out = await enrollmentFicoImporter.commitRow(
+      { program_version_id: 42, installment_payments: pagos, payment_date: '2026-01-20' }, { userId: 3 })
+    expect(args).toEqual({ enrollmentId: 77, payments: pagos, initialPaymentDate: '2026-01-20', userId: 3 })
+    expect(out.ok).toBe(true)
+    expect(out.message).toMatch(/1 cuota\(s\) pagada\(s\)/)
+  })
+
+  it('duplicado -> completa las cuotas de la inscripcion existente', async () => {
+    let args = null
+    setImporterPorts({
+      registerEnrollment: async () => ({ result: 2, duplicate_info: { enrollment_id: 555 } }),
+      updateEnrollmentAgent: async () => {},
+      applyInstallmentPayments: async (a) => { args = a; return { applied: [1], already: [], skipped: [] } }
+    })
+    const out = await enrollmentFicoImporter.commitRow({ program_version_id: 42, installment_payments: pagos }, { userId: 3 })
+    expect(args.enrollmentId).toBe(555)
+    expect(out.duplicate).toBe(true)
+  })
+
+  it('cuota que no se pudo registrar -> fila incompleta con ADVERTENCIA', async () => {
+    setImporterPorts({
+      registerEnrollment: async () => ({ result: 1, enrollment_id: 77 }),
+      applyInstallmentPayments: async () => ({ applied: [], already: [], skipped: [{ n: 1, reason: 'no existe en la inscripcion' }] })
+    })
+    const out = await enrollmentFicoImporter.commitRow({ program_version_id: 42, installment_payments: pagos }, { userId: 3 })
+    expect(out.ok).toBe(false)
+    expect(out.message).toMatch(/ADVERTENCIA.*cuota 1 \(no existe/)
   })
 })
