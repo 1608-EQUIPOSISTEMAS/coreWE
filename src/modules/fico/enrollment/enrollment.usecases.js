@@ -262,7 +262,7 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
 
   // Marcar RP recien cuando el destino existe y ya tiene las cuotas: si algo
   // de lo anterior falla, el origen queda intacto.
-  await repo.setReprogrammedStatus(enrollmentId)
+  await repo.setReprogrammedStatus(enrollmentId, userId)
 
   // Hijos SEG del origen -> R (retirados). El followup del destino creara los suyos.
   const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
@@ -270,7 +270,7 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
   if (retId) {
     const children = await repo.getActiveChildren(enrollmentId, retId)
     for (const child of children) {
-      await repo.retireChild(child.enrollment_id, retId)
+      await repo.retireChild(child.enrollment_id, retId, userId)
       await repo.logAudit({
         enrollmentId: child.enrollment_id,
         action: 'retired',
@@ -367,7 +367,7 @@ async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId,
   })
   const retirados = []
   for (const child of porRetirar) {
-    await repo.retireChild(child.enrollment_id, retId)
+    await repo.retireChild(child.enrollment_id, retId, userId)
     await repo.logAudit({
       enrollmentId: child.enrollment_id,
       action: 'retired',
@@ -420,7 +420,7 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   // Marcar el origen como "cambio de curso" recien cuando la inscripcion
   // destino ya existe: si registerDirect falla, el origen no debe quedar
   // marcado con un cambio que nunca ocurrio.
-  await repo.setCourseChangedStatus(enrollmentId)
+  await repo.setCourseChangedStatus(enrollmentId, userId)
 
   const { oldAmount } = courseChangeAmountDifference(old.total_amount, totalAmount)
 
@@ -760,12 +760,12 @@ export async function retireEnrollment ({ enrollmentId, reason, hasRefund, refun
   const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
   if (!retId) throw new DomainError('Catalogo de estado Retirado no encontrado')
 
-  const cancelledInstallments = await repo.retireParent(enrollmentId, retId)
+  const cancelledInstallments = await repo.retireParent(enrollmentId, retId, userId)
   const childEnrollments = await repo.getActiveChildren(enrollmentId, retId)
 
   const retiredChildren = []
   for (const child of childEnrollments) {
-    await repo.retireChild(child.enrollment_id, retId)
+    await repo.retireChild(child.enrollment_id, retId, userId)
     await repo.logAudit({
       enrollmentId: child.enrollment_id,
       action: 'retired',

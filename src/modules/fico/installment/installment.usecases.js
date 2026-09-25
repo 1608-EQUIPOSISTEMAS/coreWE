@@ -55,6 +55,16 @@ export async function confirmInstallment ({ installmentId, enrollmentId, catCurr
     detraction: detraction ? { ...detraction, amount: detractionAmount } : null
   })
 
+  // Fuera de la tx a proposito: el cobro ya es valido aunque el lead no se alinee
+  // (el trigger de leads congelados lo tumbo antes, ver fix-pay-date-desync).
+  // Va como 'YYYY-MM-DD': un Date lo serializa pg en hora local y ::date lo
+  // corre un dia en Lima.
+  try {
+    await repo.syncServiceOrderLeadPayDate({ enrollmentId, installmentId, payDateIso: paidAt.toISOString().slice(0, 10), userId })
+  } catch (e) {
+    console.error('[confirmInstallment] No se pudo sincronizar leads.pay_date:', e.message)
+  }
+
   await repo.logAudit({
     enrollmentId,
     action: 'approved',

@@ -104,6 +104,23 @@ export class InstallmentRepository {
     })
   }
 
+  // F.PAGO (listado FICO y Sheets) prefiere leads.pay_date sobre payments. Una
+  // Orden de Servicio nace sin pago con la fecha de registro en el lead, y la
+  // cuota 1 es su primer cobro real: sin esto el Sheet se queda con la fecha de
+  // registro. SOLO OS: el resto de ventas ya fijo su F.PAGO al registrarse y
+  // cobrar una cuota no debe moverla. Y solo el primer pago manda.
+  async syncServiceOrderLeadPayDate ({ enrollmentId, installmentId, payDateIso, userId }) {
+    await this.db.query(`
+      UPDATE leads l SET pay_date = $3::date, user_modification_id = $4
+        FROM enrollments e
+        JOIN catalog c ON c.catalog_id = e.cat_b2b_doctype AND c.alias = $5
+       WHERE e.enrollment_id = $1 AND l.enrollment_id = e.enrollment_id
+         AND NOT EXISTS (SELECT 1 FROM payments p
+                          WHERE p.enrollment_id = $1 AND p.active = 'Y'
+                            AND p.installment_id IS DISTINCT FROM $2)
+    `, [enrollmentId, installmentId, payDateIso, userId, ALIAS.B2B_DOCTYPE_SERVICE_ORDER])
+  }
+
   // Pago adicional (certificado de becado): fila en payments SIN cuota asociada
   // (installment_id NULL, tipo we_payment_type_certificate) para no tocar el
   // PAID_AMOUNT del listado (que suma solo payment_installments pagadas), y

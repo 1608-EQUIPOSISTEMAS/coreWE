@@ -459,13 +459,23 @@ export class EnrollmentRepository {
     return rows
   }
 
-  async setReprogrammedStatus (enrollmentId) {
+  // El trigger fn_audit_changes atribuye el cambio a user_modification_id y,
+  // si viene vacio, a user_registration_id: sin esta columna un RP/CC/retiro
+  // quedaba en audit_logs a nombre de quien REGISTRO la venta (RP de ELFI
+  // sobre la 18176 figuraba como RAFI, 25/09/26).
+  async setTypeStatus (enrollmentId, catId, userId) {
+    await this.db.query(
+      `UPDATE enrollments
+          SET cat_type_status = $1, user_modification_id = $3, modification_date = NOW()
+        WHERE enrollment_id = $2`,
+      [catId, enrollmentId, userId]
+    )
+  }
+
+  async setReprogrammedStatus (enrollmentId, userId) {
     const rpCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_REPROGRAMMED)
     if (rpCatId) {
-      await this.db.query(
-        'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
-        [rpCatId, enrollmentId]
-      )
+      await this.setTypeStatus(enrollmentId, rpCatId, userId)
     } else {
       console.warn('[reprogramEdition] No se encontro catalogo RP')
     }
@@ -592,13 +602,10 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
-  async setCourseChangedStatus (enrollmentId) {
+  async setCourseChangedStatus (enrollmentId, userId) {
     const ccCatId = await getCatalogIdByAlias(ALIAS.ENROLLMENT_STATUS_COURSE_CHANGED)
     if (ccCatId) {
-      await this.db.query(
-        'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
-        [ccCatId, enrollmentId]
-      )
+      await this.setTypeStatus(enrollmentId, ccCatId, userId)
     }
   }
 
@@ -974,11 +981,8 @@ export class EnrollmentRepository {
     return rows?.[0] || null
   }
 
-  async retireParent (enrollmentId, retId) {
-    await this.db.query(
-      'UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2',
-      [retId, enrollmentId]
-    )
+  async retireParent (enrollmentId, retId, userId) {
+    await this.setTypeStatus(enrollmentId, retId, userId)
     const { rows: cancelledInstallments } = await this.db.query(`
       UPDATE payment_installments SET cat_status = 4456
       WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)
@@ -1002,8 +1006,8 @@ export class EnrollmentRepository {
     return rows
   }
 
-  async retireChild (childEnrollmentId, retId) {
-    await this.db.query('UPDATE enrollments SET cat_type_status = $1 WHERE enrollment_id = $2', [retId, childEnrollmentId])
+  async retireChild (childEnrollmentId, retId, userId) {
+    await this.setTypeStatus(childEnrollmentId, retId, userId)
     await this.db.query(`DELETE FROM payment_installments WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)`, [childEnrollmentId])
   }
 
