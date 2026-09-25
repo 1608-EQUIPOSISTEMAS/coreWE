@@ -35,6 +35,22 @@ export async function listNotifications ({ user_id, page, size, is_read }) {
   return toListDto(rows)
 }
 
+/**
+ * Aviso liviano para todas las pantallas abiertas (ej. { tipo_evento:
+ * 'tickets_actualizados', ticket_id }). Solo dice QUE cambio, nunca el
+ * contenido: cada cliente vuelve a pedir los datos con sus propios permisos.
+ * Va por NOTIFY para llegar a todas las replicas; si la BD falla, al menos se
+ * reparte en esta.
+ */
+export async function publishBroadcast (evento) {
+  try {
+    await repo.notify({ ...evento, broadcast: true })
+  } catch (err) {
+    console.error('[NOTIFY] broadcast por pg_notify fallo, solo local:', err.message)
+    repo.broadcast(buildSseEventData(evento))
+  }
+}
+
 // Empuja a los asesores indicados el evento de recarga de restricciones via SSE.
 export async function pushRestrictionsUpdate (userIds) {
   if (!Array.isArray(userIds) || userIds.length === 0) {

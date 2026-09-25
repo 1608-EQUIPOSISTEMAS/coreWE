@@ -43,12 +43,19 @@ import { getCatalog } from './modules/catalog/catalog.usecases.js'
 import { listProgramVersions } from './modules/program/program.usecases.js'
 import { setIntegrationPorts } from './modules/comercial/comercial.usecases.js'
 import { sendEnrollmentWebToSlack, syncEnrollmentToSheet } from './modules/integration/integration.usecases.js'
+import { setTicketsPorts } from './modules/tickets/tickets.usecases.js'
+import { publishBroadcast } from './modules/notification/notification.usecases.js'
 
 // Composition root: cablea los efectos cross-modulo que un modulo no puede
 // resolver por si mismo. comercial dispara notificaciones de integration
 // (Slack/Sheets) tras una inscripcion; aqui se satisface ese contrato sin que
 // comercial dependa de los internals de integration (regla de aislamiento Fase 4).
 setIntegrationPorts({ sendEnrollmentWebToSlack, syncEnrollmentToSheet })
+
+// tickets avisa por el canal SSE de notification que un ticket cambio (alta
+// por DM de Slack, reparto del cron, estado, comentario...) para que la
+// bandeja y el detalle abiertos se refresquen sin recargar la pagina.
+setTicketsPorts({ publicarCambio: publishBroadcast })
 
 // El modulo de importacion masiva (Administracion) registra inscripciones y
 // resuelve nombres->IDs leyendo catalogos/programas de otros modulos. Aqui se
