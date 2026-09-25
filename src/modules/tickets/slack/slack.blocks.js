@@ -1,4 +1,4 @@
-import { escaparSlack, desescaparSlack } from './slack.text.js'
+import { escaparSlack, desescaparSlack, limpiarTextoSlack } from './slack.text.js'
 
 // Bloques del borrador que el bot propone por DM, y su lectura inversa.
 //
@@ -27,12 +27,29 @@ export const MAX_ARCHIVOS = 4
 
 const campo = (etiqueta, valor) => `*${etiqueta}:*\n${escaparSlack(valor)}`
 
-/** Lee el valor de un `campo()`: todo lo que sigue al primer salto de linea. */
-function leerCampo (bloques, blockId) {
+/** El valor crudo (aun en mrkdwn) de un `campo()`: lo que sigue al primer salto de linea. */
+function leerCampoCrudo (bloques, blockId) {
   const texto = bloques?.find(b => b.block_id === blockId)?.text?.text
   if (typeof texto !== 'string') return null
   const salto = texto.indexOf('\n')
-  return salto === -1 ? null : desescaparSlack(texto.slice(salto + 1)).trim()
+  return salto === -1 ? null : texto.slice(salto + 1)
+}
+
+function leerCampo (bloques, blockId) {
+  const crudo = leerCampoCrudo(bloques, blockId)
+  return crudo === null ? null : desescaparSlack(crudo).trim()
+}
+
+/**
+ * La problematica, sin enlaces. Al devolver el mensaje, Slack puede haber
+ * autoenlazado (`<http://x|x>`) algo con forma de URL que quedo en el texto:
+ * se limpia con el mismo criterio que el DM. Esos autoenlaces NO se suman a la
+ * columna: son lo que Slack adivino del texto (a veces una URL recortada y
+ * rota); los enlaces reales ya viajan en su propio bloque.
+ */
+function leerProblema (bloques) {
+  const crudo = leerCampoCrudo(bloques, BLOQUE_PROBLEMA)
+  return crudo === null ? null : (limpiarTextoSlack(crudo).texto || null)
 }
 
 /**
@@ -131,7 +148,7 @@ export function bloquesDeBorrador ({ titulo, problema, enlaces = [], archivos = 
  */
 export function leerBorrador (bloques) {
   const titulo = leerCampo(bloques, BLOQUE_TITULO)
-  const problema = leerCampo(bloques, BLOQUE_PROBLEMA)
+  const problema = leerProblema(bloques)
   if (!titulo || !problema) return null
   return { titulo, problema, link: leerEnlaces(bloques), archivos: leerArchivos(bloques) }
 }
