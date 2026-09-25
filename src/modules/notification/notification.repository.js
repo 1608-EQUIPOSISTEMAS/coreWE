@@ -3,6 +3,8 @@ import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { parseNotificationPayload, buildSseEventData } from './notification.entity.js'
 
+const CANAL = 'canal_crm_notificaciones'
+
 // Persistencia y canal en tiempo real del dominio notification.
 // Reune el acceso a la tabla notifications, el SP de listado paginado y el
 // broker SSE (registro de clientes conectados + escucha de NOTIFY de Postgres).
@@ -78,6 +80,24 @@ export class NotificationRepository {
     return true
   }
 
+  // Empuja a TODAS las conexiones vivas de esta replica. Devuelve cuantas.
+  broadcast (eventData) {
+    let enviados = 0
+    for (const clients of this.sseClients.values()) {
+      for (const reply of clients) {
+        reply.raw.write(eventData)
+        enviados++
+      }
+    }
+    return enviados
+  }
+
+  // Publica por NOTIFY para que lo reciban todas las replicas (cada una lo
+  // reparte a sus propias conexiones desde startPgListener).
+  async notify (payload) {
+    await this.db.query('SELECT pg_notify($1, $2)', [CANAL, JSON.stringify(payload)])
+  }
+
   // Inicia el listener de canal_crm_notificaciones una sola vez. Reenvia cada
   // NOTIFY al cliente SSE correspondiente y reconecta con backoff exponencial y
   // jitter, acotado por maxReconnectAttempts.
@@ -93,7 +113,7 @@ export class NotificationRepository {
 
     try {
       await client.connect()
-      await client.query('LISTEN canal_crm_notificaciones')
+      await client.query(`LISTEN ${CANAL}`)
       this.reconnectAttempts = 0
       console.log('[NOTIFY] Escuchando canal_crm_notificaciones...')
     } catch (err) {
@@ -107,6 +127,12 @@ export class NotificationRepository {
       console.log('[NOTIFY] ► Mensaje recibido desde pg:', msg.payload)
       try {
         const payload = parseNotificationPayload(msg.payload)
+        // Aviso para todos (ej. "cambio algo en tickets"): no lleva asesor_id.
+        if (payload.broadcast) {
+          const { broadcast, asesor_id: _, ...evento } = payload
+          this.broadcast(buildSseEventData(evento))
+          return
+        }
         const asesor_id = payload.asesor_id
 
         console.log('[NOTIFY] asesor_id:', asesor_id, '| clientes activos:', [...this.sseClients.keys()])

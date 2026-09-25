@@ -35,8 +35,31 @@ export function googleSheetCsvUrl (url) {
 
 // Descarga el CSV de un Google Sheet (por su URL normal) y lo carga como
 // workbook. La hoja debe ser publica o compartida "cualquiera con el enlace".
-export async function loadGoogleSheet (url) {
+//
+// companionTabs: regex de nombres de pestaña que el importador necesita ADEMAS
+// de la del link (ej. la hoja FICO lee "2. Cuota INS - N" para el detalle de
+// pago de cada cuota). El export CSV trae una sola pestaña por gid, asi que se
+// descubren los gid por nombre y se baja cada una como otra worksheet del
+// mismo workbook (worksheet.name = nombre de la pestaña). Best-effort: si no se
+// pueden listar las pestañas, se sigue solo con la del link.
+export async function loadGoogleSheet (url, companionTabs = []) {
   const csvUrl = googleSheetCsvUrl(url)
+  const wb = new ExcelJS.Workbook()
+  await wb.csv.read(Readable.from(await fetchSheetCsv(csvUrl)), { sheetName: 'principal' })
+
+  if (companionTabs.length) {
+    const mainGid = /[?&]gid=(\d+)/.exec(csvUrl)[1]
+    const tabs = await listGoogleSheetTabs(csvUrl).catch(() => [])
+    for (const tab of tabs) {
+      if (tab.gid === mainGid || !companionTabs.some(re => re.test(tab.name))) continue
+      const tabCsvUrl = csvUrl.replace(/gid=\d+/, `gid=${tab.gid}`)
+      await wb.csv.read(Readable.from(await fetchSheetCsv(tabCsvUrl)), { sheetName: tab.name })
+    }
+  }
+  return wb
+}
+
+async function fetchSheetCsv (csvUrl) {
   let res
   try {
     res = await fetch(csvUrl, { redirect: 'follow', signal: AbortSignal.timeout(30000) })
@@ -51,6 +74,25 @@ export async function loadGoogleSheet (url) {
     // Google devuelve HTML (pagina de login) cuando la hoja es privada.
     throw new DomainError('La hoja no es accesible por enlace (Google pidio inicio de sesion). Compartela como "cualquiera con el enlace" o sube el archivo.')
   }
-  const buffer = Buffer.from(await res.arrayBuffer())
-  return loadWorkbook(buffer, 'csv')
+  return Buffer.from(await res.arrayBuffer())
+}
+
+// Lista las pestañas [{ name, gid }] de un Google Sheet publico. El export CSV
+// no expone nombres, pero la vista /htmlview los trae embebidos en su script
+// como {name: "1. INS - N", ..., gid: "578000626"}.
+export async function listGoogleSheetTabs (csvUrl) {
+  const htmlUrl = csvUrl.replace(/\/export\?.*$/, '/htmlview')
+  const res = await fetch(htmlUrl, { redirect: 'follow', signal: AbortSignal.timeout(30000) })
+  if (!res.ok) return []
+  return parseSheetTabs(await res.text())
+}
+
+export function parseSheetTabs (html) {
+  const tabs = []
+  const re = /\{name: "((?:[^"\\]|\\.)*)",[^}]*?gid: "(\d+)"/g
+  let m
+  while ((m = re.exec(html)) !== null) {
+    tabs.push({ name: JSON.parse(`"${m[1]}"`), gid: m[2] })
+  }
+  return tabs
 }

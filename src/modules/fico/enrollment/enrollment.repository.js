@@ -446,6 +446,83 @@ export class EnrollmentRepository {
       [enrollmentId, sellerAgentId ?? null, agentOrigin ?? null])
   }
 
+  // Importacion hoja FICO: registra como PAGADAS las cuotas que la hoja trae
+  // cobradas, cada una con su fila en payments (tipo cuota, pendiente de
+  // liquidacion), y alinea la fecha de la reserva (cuota 0) con F. PAGO: el SP de
+  // alta crea todo el plan pendiente y sella la cuota 0 con la fecha de importacion.
+  // Idempotente: salta cuotas ya pagadas o con pago activo, asi un re-import
+  // completa inscripciones importadas antes sin duplicar pagos. Solo toca
+  // inscripciones de importacion masiva: las del flujo normal cobran en la app.
+  async applyImportedInstallmentPayments ({ enrollmentId, payments = [], initialPaymentDate = null, userId }) {
+    const out = { applied: [], already: [], skipped: [] }
+    await withTransaction(async client => {
+      const { rows: enr } = await client.query(
+        'SELECT notes FROM enrollments WHERE enrollment_id = $1 FOR UPDATE', [enrollmentId])
+      if (!String(enr[0]?.notes || '').includes('masiva FICO')) {
+        out.notImported = true
+        return
+      }
+
+      const { rows: insts } = await client.query(`
+        SELECT pi.installment_id, pi.installment_number, pi.amount,
+               COALESCE(cs.alias IN ('we_inst_paid', 'we_payment_status_paid'), false) AS paid,
+               EXISTS (SELECT 1 FROM payments p
+                        WHERE p.installment_id = pi.installment_id AND p.active = 'Y') AS has_payment
+          FROM payment_installments pi
+          LEFT JOIN catalog cs ON cs.catalog_id = pi.cat_status
+         WHERE pi.enrollment_id = $1`, [enrollmentId])
+      const byNumber = new Map(insts.map(i => [Number(i.installment_number), i]))
+
+      let initialDateFixed = false
+      const reserva = byNumber.get(0)
+      if (initialPaymentDate && reserva) {
+        const { rowCount } = await client.query(
+          `UPDATE payment_installments SET due_date = $2::date
+            WHERE installment_id = $1 AND due_date IS DISTINCT FROM $2::date`,
+          [reserva.installment_id, initialPaymentDate])
+        initialDateFixed = rowCount > 0
+      }
+
+      for (const p of payments) {
+        const n = Number(p.installment_number)
+        const inst = byNumber.get(n)
+        if (!inst) { out.skipped.push({ n, reason: 'no existe en la inscripcion' }); continue }
+        if (inst.paid || inst.has_payment) { out.already.push(n); continue }
+        if (Math.abs(Number(inst.amount) - Number(p.amount)) > 0.01) {
+          out.skipped.push({ n, reason: `monto en sistema ${inst.amount} y en la hoja ${p.amount}` })
+          continue
+        }
+        await client.query(`
+          UPDATE payment_installments
+             SET cat_status = (SELECT catalog_id FROM catalog WHERE alias = 'we_inst_paid'),
+                 notes = $2
+           WHERE installment_id = $1`,
+        [inst.installment_id, `Cuota ${n} - Pagada (importacion hoja FICO)`])
+        await client.query(`
+          INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
+            cat_method_payment, cat_payment_type, cat_settlement_status,
+            settled_in_account_id, active, user_registration_id, registration_date)
+          VALUES ($1, $2, $3, COALESCE($4::date, NOW()), $5, $6,
+            (SELECT catalog_id FROM catalog WHERE alias = 'we_payment_type_single'),
+            (SELECT catalog_id FROM catalog WHERE alias = 'we_settlement_status_pending'),
+            $7, 'Y', $8, NOW())`,
+        [enrollmentId, inst.installment_id, p.amount, p.payment_date || null, p.transaction_code || null,
+          p.cat_payment_medium || null, p.bank_account_id || null, userId])
+        out.applied.push(n)
+      }
+
+      if (out.applied.length || initialDateFixed) {
+        await client.query(`
+          INSERT INTO enrollment_audit_log (enrollment_id, action, performed_by, justificacion, changes)
+          VALUES ($1, 'payment_registered', $2, $3, $4)`,
+        [enrollmentId, userId,
+          'Importacion hoja FICO: cuotas cobradas segun la pestaña "Cuota INS - N".',
+          JSON.stringify({ cuotas_pagadas: out.applied, fecha_reserva: initialDateFixed ? initialPaymentDate : null })])
+      }
+    })
+    return out
+  }
+
   // Versiones de los programas-membresia (WE BLACK/GOLD/PLAT/PLUS) con su
   // abreviatura. La importacion masiva la usa para, ante una fila con columna J
   // (tier), crear la inscripcion de membresia que marca a la persona como miembro.

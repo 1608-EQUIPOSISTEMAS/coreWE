@@ -36,7 +36,12 @@ export const importerPorts = {
   listBankAccounts: null,
   // () -> [{ catalog_id, alias }] de monedas (SOLES/DOLARES). Necesario porque el
   // grupo we_currency esta inactivo y no llega en getCatalog.
-  listCurrencies: null
+  listCurrencies: null,
+  // ({ enrollmentId, payments: [{ installment_number, amount, payment_date,
+  // cat_payment_medium, bank_account_id, transaction_code }], initialPaymentDate,
+  // userId }) -> { applied: [n], already: [n], skipped: [{ n, reason }], notImported? }.
+  // Marca pagadas las cuotas cobradas segun la hoja FICO (idempotente).
+  applyInstallmentPayments: null
 }
 
 export function setImporterPorts (ports = {}) {

@@ -25,6 +25,22 @@ const repo = ticketsRepository
 // dueño) antes de que el cron lo reparta solo. 2 a 3 min de margen real.
 const AUTOASSIGN_ESPERA_MINUTOS = Number(process.env.TICKETS_AUTOASSIGN_MINUTOS ?? 3)
 
+// Puertos que cablea buildApp.js. `publicarCambio` avisa en tiempo real (SSE)
+// a las pantallas abiertas que un ticket cambio, para que se refresquen solas:
+// sin esto, un ticket creado por DM de Slack o repartido por el cron solo
+// aparecia al recargar la pagina.
+const _ports = {
+  publicarCambio: async () => {}
+}
+export function setTicketsPorts (ports) { Object.assign(_ports, ports) }
+
+// Best-effort: el aviso no puede voltear algo ya guardado en la BD.
+function avisarCambio (ticketId) {
+  Promise.resolve()
+    .then(() => _ports.publicarCambio({ tipo_evento: 'tickets_actualizados', ticket_id: ticketId }))
+    .catch(err => console.error('[tickets] aviso en vivo fallo:', err.message))
+}
+
 // ── Lectura ────────────────────────────────────────────────────────────────
 
 export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS', busqueda = '', orden = 'sla' } = {}) {
@@ -167,6 +183,7 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
   }
 
   const ticket = await repo.detail(ticketId)
+  avisarCambio(ticketId)
   // El area no viaja en la fila: se calcula aca (mismo dato que ya trae
   // creador_roles) para que el adaptador de Slack no tenga que conocer el
   // organigrama del ERP.
@@ -224,6 +241,7 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   await repo.updateStatus(ticketId, cambios)
 
   const actualizado = await repo.detail(ticketId)
+  avisarCambio(ticketId)
   const agente = actualizado.asignado ?? 'Soporte'
   let avisoSlack = null
 
@@ -259,6 +277,7 @@ export async function reopenTicket ({ roles = [], userId = null, ticketId }) {
   await repo.updateStatus(ticketId, reopenByReporter(ticket, userId))
 
   const actualizado = await repo.detail(ticketId)
+  avisarCambio(ticketId)
   void slack.notificarTicketReabierto(actualizado)
   return conDetalle(actualizado, scope, userId)
 }
@@ -281,6 +300,7 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
   await repo.reassign(ticketId, nuevoAsignadoId)
 
   const actualizado = await repo.detail(ticketId)
+  avisarCambio(ticketId)
   // Mismo aviso que el escalamiento automatico: para quien lo lee en Slack es la
   // misma noticia (el ticket cambio de dueno), sin importar quien lo movio.
   void slack.notificarTicketEscalado(actualizado, anterior, 'Reasignación manual')
@@ -305,6 +325,7 @@ export async function addComment ({ roles = [], userId = null, ticketId, cuerpo,
     assertCanComment(ticket, scope, userId)
     const texto = validateComment(cuerpo)
     await repo.createComment(ticketId, userId, texto, archivos)
+    avisarCambio(ticketId)
 
     // Los comentarios del propio solicitante no se replican en su DM: ya los
     // escribio el.
@@ -344,6 +365,7 @@ export async function runAutoAssignSweep (ahora = new Date()) {
 
     await repo.reassign(ticket.ticket_id, nuevo)
     asignados++
+    avisarCambio(ticket.ticket_id)
 
     const actualizado = await repo.detail(ticket.ticket_id)
     // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
@@ -404,6 +426,7 @@ async function barrerEscalamientos (ahora) {
     const anterior = (await repo.detail(ticket.ticket_id))?.asignado ?? 'sin asignar'
     await repo.applyEscalation(ticket.ticket_id, nuevo, ticket.assigned_to_id, ahora)
     escalados++
+    avisarCambio(ticket.ticket_id)
 
     const actualizado = await repo.detail(ticket.ticket_id)
     void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')

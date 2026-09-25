@@ -47,6 +47,15 @@ describe('leerBorrador', () => {
     expect(leerBorrador(bloques).link).toBe('https://erp.test/reportes?x=1')
   })
 
+  it('si Slack autoenlaza algo del texto, la problemática llega sin la URL y no suma enlaces rotos', () => {
+    const bloques = bloquesDeBorrador(BORRADOR).blocks
+    bloques.find(b => b.block_id === 'tk_problema').text.text =
+      '*Problemática:*\nVentas desincronizadas <http://docs.google.com/spreadsheets/d/1sOV|docs.google.com/spreadsheets/d/1sOV>'
+    const leido = leerBorrador(bloques)
+    expect(leido.problema).toBe('Ventas desincronizadas')
+    expect(leido.link).toBe('https://erp.test/reportes')
+  })
+
   it('los ids de los adjuntos viajan en el botón Crear', () => {
     const archivos = [{ id: 'F1', nombre: 'captura.png' }, { id: 'F2', nombre: 'otra.jpg' }]
     expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, archivos }).blocks).archivos).toEqual(['F1', 'F2'])
