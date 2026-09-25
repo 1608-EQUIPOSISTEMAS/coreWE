@@ -11,10 +11,6 @@ import {
   leadsPerEditionSchema,
   targetRegisterSchema,
   detailLeadsSchema,
-  contactabilitySchema,
-  liderSchema,
-  availableWeeksSchema,
-  ventasCanalSchema,
   detailSalesSchema,
   teamSummarySchema,
   dailyPlanSchema
@@ -50,9 +46,5 @@ export default async function dashboardRoutes (fastify) {
   fastify.post('/leads-per-edition', { schema: leadsPerEditionSchema }, ctrl.leadsPerEditionHandler)
   fastify.post('/dashboardtargetregister', { schema: targetRegisterSchema }, ctrl.targetRegisterHandler)
   fastify.post('/detailleads', { schema: detailLeadsSchema }, ctrl.detailLeadsHandler)
-  fastify.post('/contactability', { schema: contactabilitySchema }, ctrl.contactabilityHandler)
-  fastify.post('/lider', { schema: liderSchema }, ctrl.liderHandler)
-  fastify.post('/available-weeks', { schema: availableWeeksSchema }, ctrl.availableWeeksHandler)
-  fastify.post('/ventas-canal', { schema: ventasCanalSchema }, ctrl.ventasCanalHandler)
   fastify.post('/detailsales', { schema: detailSalesSchema }, ctrl.detailSalesHandler)
 }

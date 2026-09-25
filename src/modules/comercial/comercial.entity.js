@@ -152,40 +152,6 @@ export function buildFilterPayload (payload = {}) {
   }
 }
 
-// Variante de filtros para sp_comercial_lead_stats. Mismo dominio que el listado
-// pero sin pay_date ni soporte de centinela NULL: solo arrays simples.
-export function buildStatsFilterPayload (payload = {}) {
-  const {
-    q, from_date, to_date, updated_from, updated_to,
-    edition_start_from, edition_start_to, active, program_text,
-    web, b2b,
-    owner_user_ids, status_lead_ids, last_follow_ids, interest_level_ids,
-    channel_ids, query_ids, type_program_ids, model_modality_ids,
-    moment_ids, membership_moment_ids, strategy_ids, word_ids, program_version_ids
-  } = payload
-
-  const activeParam = normalizeActive(active)
-
-  return {
-    q, from_date, to_date, updated_from, updated_to,
-    edition_start_from, edition_start_to, active: activeParam, program_text,
-    web, b2b,
-    owner_user_ids: owner_user_ids || [],
-    status_lead_ids: status_lead_ids || [],
-    last_follow_ids: last_follow_ids || [],
-    interest_level_ids: interest_level_ids || [],
-    channel_ids: channel_ids || [],
-    query_ids: query_ids || [],
-    type_program_ids: type_program_ids || [],
-    model_modality_ids: model_modality_ids || [],
-    moment_ids: moment_ids || [],
-    membership_moment_ids: membership_moment_ids || [],
-    program_version_ids: program_version_ids || [],
-    strategy_ids: strategy_ids || [],
-    word_ids: word_ids || []
-  }
-}
-
 // Reemplaza caracteres no seguros del nombre de archivo para persistirlo en disco.
 export function sanitizeFilename (filename) {
   return String(filename).replace(/[^a-zA-Z0-9.]/g, '_')

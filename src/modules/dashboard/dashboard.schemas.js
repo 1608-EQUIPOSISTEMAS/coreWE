@@ -184,50 +184,6 @@ export const detailLeadsSchema = {
   }
 }
 
-export const contactabilitySchema = {
-  body: {
-    type: 'object',
-    properties: {
-      year: { type: 'integer', default: 2026 },
-      month: { type: 'integer', default: 1 },
-      advisor: { type: ['string', 'integer'], default: 'all' }
-    }
-  }
-}
-
-export const liderSchema = {
-  body: {
-    type: 'object',
-    properties: {
-      year: { type: 'integer', default: 2026 },
-      month: { type: 'integer', default: 1 },
-      advisor: { type: ['string', 'integer'], default: 'all' }
-    }
-  }
-}
-
-export const availableWeeksSchema = {
-  body: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      year: { type: ['integer', 'null'], default: 2026 },
-      modality: { type: ['string', 'null'], default: 'NO_ONLINE' }
-    }
-  }
-}
-
-export const ventasCanalSchema = {
-  body: {
-    type: 'object',
-    properties: {
-      year: { type: 'integer', default: 2026 },
-      month_num: { type: 'integer', default: 1 },
-      advisor: { type: ['string', 'integer'], default: 'all' }
-    }
-  }
-}
-
 export const detailSalesSchema = {
   body: {
     type: 'object',

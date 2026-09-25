@@ -3,7 +3,6 @@ import {
   splitNullSentinel,
   normalizeActive,
   buildFilterPayload,
-  buildStatsFilterPayload,
   sanitizeFilename,
   buildUniqueFilename,
   detectChannelAlias,
@@ -74,20 +73,6 @@ describe('buildFilterPayload', () => {
     const f = buildFilterPayload({ last_attempt_type_ids: [-1, 5094] })
     expect(f.last_attempt_type_ids).toEqual([5094])
     expect(f.include_null_attempt_type).toBe(true)
-  })
-})
-
-describe('buildStatsFilterPayload', () => {
-  it('no incluye campos de pay_date', () => {
-    const f = buildStatsFilterPayload({ pay_date_from: '2026-01-01' })
-    expect(f).not.toHaveProperty('pay_date_from')
-    expect(f).not.toHaveProperty('pay_date_to')
-  })
-  it('normaliza active y rellena arrays', () => {
-    const f = buildStatsFilterPayload({ active: false })
-    expect(f.active).toBe('N')
-    expect(f.owner_user_ids).toEqual([])
-    expect(f.word_ids).toEqual([])
   })
 })
 

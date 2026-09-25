@@ -334,13 +334,6 @@ export const leadListSchema = {
   }
 }
 
-export const leadStatsSchema = {
-  body: {
-    type: 'object',
-    additionalProperties: true
-  }
-}
-
 export const searchPhoneGetSchema = {
   body: {
     type: 'object',

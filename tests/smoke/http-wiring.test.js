@@ -207,7 +207,8 @@ describe('modulos montados en buildApp', () => {
     ['tickets-alumnos', '/api/tickets-alumnos'],
     ['tickets', '/api/tickets'],
     ['scheduleplan', '/api/scheduleplan'],
-    ['audit', '/api/audit']
+    ['audit', '/api/audit'],
+    ['plancomercial', '/api/plan-comercial']
   ])(
     'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
       const noMontadas = []

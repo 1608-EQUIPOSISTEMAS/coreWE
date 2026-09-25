@@ -1,8 +1,7 @@
 import { AREA_OF_LEADER, areaLabelOf } from '../../shared/organigrama.js'
 
 // Reglas puras del dominio dashboard. Sin BD, Odoo ni Slack.
-// Transformaciones de filas crudas de las vistas a DTO de salida y armado de
-// etiquetas de semana. Todo determinista a partir de su entrada.
+// Transformaciones de filas crudas de las vistas a DTO de salida. Todo determinista a partir de su entrada.
 
 // Mapa numero de mes (string '01'..'12') a abreviatura en espanol.
 export const MONTHS_ES = {
@@ -14,27 +13,6 @@ export const MONTHS_ES = {
 // Parsea un campo JSONB que puede llegar como string o como valor ya hidratado.
 export function parseJsonbField (val) {
   return typeof val === 'string' ? JSON.parse(val) : (val || [])
-}
-
-// Etiqueta de la semana: 'SEM N · DD Mmm al DD Mmm'. El indice es base 0.
-export function formatWeekLabel (row, idx) {
-  const start = new Date(row.date_start)
-  const end = new Date(row.date_end)
-  const dStart = start.getUTCDate()
-  const dEnd = end.getUTCDate()
-  const mStart = MONTHS_ES[String(start.getUTCMonth() + 1).padStart(2, '0')]
-  const mEnd = MONTHS_ES[String(end.getUTCMonth() + 1).padStart(2, '0')]
-  const rango = mStart !== mEnd
-    ? `${dStart} ${mStart} al ${dEnd} ${mEnd}`
-    : `${dStart} al ${dEnd} ${mEnd}`
-
-  return {
-    value: row.period_label,
-    month: row.month_period,
-    label: `SEM ${idx + 1} · ${rango}`,
-    date_start: row.date_start,
-    date_end: row.date_end
-  }
 }
 
 // Fila de v_dashboard_comercial a DTO comercial.
@@ -169,105 +147,6 @@ export function mapGerenciaFunnelRow (r) {
 // Igual que parseJsonbField pero el vacio es objeto, no array.
 function parseJsonbObject (val) {
   return typeof val === 'string' ? JSON.parse(val) : (val || {})
-}
-
-// Fila de v_dashboard_lider a DTO de liderazgo.
-export function mapLiderRow (r) {
-  return {
-    anio: r.anio,
-    mes_num: r.mes_num,
-    mes_nombre: r.mes_nombre,
-    cod_asesor: r.cod_asesor,
-    asesor_nombre: r.asesor_nombre,
-    asesor_alias: r.asesor_alias,
-    total_leads: Number(r.total_leads || 0),
-    total_intentos: Number(r.total_intentos || 0),
-    total_atendidas: Number(r.total_atendidas || 0),
-    total_sin_atencion: Number(r.total_sin_atencion || 0),
-    total_pendientes: Number(r.total_pendientes || 0),
-    pct_atendidas: Number(r.pct_atendidas || 0),
-    pct_sin_atencion: Number(r.pct_sin_atencion || 0),
-    pct_pendientes: Number(r.pct_pendientes || 0),
-    json_origin_stats: parseJsonbField(r.json_origin_stats),
-    json_reschedule_stats: parseJsonbField(r.json_reschedule_stats),
-    json_pending_tasks: parseJsonbField(r.json_pending_tasks)
-  }
-}
-
-// Fila de v_dashboard_contactability a DTO de contactabilidad.
-export function mapContactabilityRow (r) {
-  return {
-    anio: r.anio,
-    mes_num: r.mes_num,
-    mes_nombre: r.mes_nombre,
-    cod_asesor: r.cod_asesor,
-    asesor_nombre: r.asesor_nombre,
-    asesor_alias: r.asesor_alias,
-    total_leads_gestionados: Number(r.total_leads_gestionados || 0),
-    total_intentos: Number(r.total_intentos || 0),
-    total_contactados: Number(r.total_contactados || 0),
-    tasa_contactabilidad: Number(r.tasa_contactabilidad || 0),
-    total_ventas: Number(r.total_ventas || 0),
-    tasa_conversion: Number(r.tasa_conversion || 0),
-    ingresos_recuperados: Number(r.ingresos_recuperados || 0),
-    tiempo_prom_minutos: Number(r.tiempo_prom_minutos || 0),
-    chart_tendencia_horaria: parseJsonbField(r.chart_tendencia_horaria),
-    chart_curva_persistencia: parseJsonbField(r.chart_curva_persistencia),
-    chart_objeciones: parseJsonbField(r.chart_objeciones),
-    json_pending_tasks: parseJsonbField(r.json_pending_tasks)
-  }
-}
-
-// Estructura inicial de canales por tipo de cliente.
-const CANAL_DEFAULTS = {
-  lk: { c: 0, v: 0 }, ig: { c: 0, v: 0 }, fb: { c: 0, v: 0 }, other: { c: 0, v: 0 },
-  web: { c: 0, v: 0 }, bot: { c: 0, v: 0 }, cot: { c: 0, v: 0 }, com: { c: 0, v: 0 }
-}
-const TIPOS = ['NEW', 'LDS', 'CWE', 'MEMBERS']
-
-// Agrega filas de v_dashboard_ventas_canal por semana, sumando los canales de
-// multiples asesores en una sola estructura semanal.
-export function aggregateVentasCanal (rows) {
-  const semanasMap = {}
-
-  rows.forEach(r => {
-    const key = r.semana_mes
-    if (!semanasMap[key]) {
-      semanasMap[key] = {
-        title: r.semana_label,
-        fecha_desde: r.fecha_desde,
-        fecha_hasta: r.fecha_hasta,
-        rowsMap: {}
-      }
-
-      TIPOS.forEach(t => {
-        semanasMap[key].rowsMap[t] = {
-          type: t,
-          channels: structuredClone(CANAL_DEFAULTS)
-        }
-      })
-    }
-
-    const rowsData = Array.isArray(r.rows_data) ? r.rows_data : []
-
-    rowsData.forEach(rd => {
-      const tipo = rd.type
-
-      Object.entries(rd.channels || {}).forEach(([ch, val]) => {
-        if (semanasMap[key].rowsMap[tipo].channels[ch]) {
-          semanasMap[key].rowsMap[tipo].channels[ch].c += Number(val.c || 0)
-          semanasMap[key].rowsMap[tipo].channels[ch].v += Number(val.v || 0)
-        }
-      })
-    })
-  })
-
-  const weeklyData = Object.values(semanasMap).map(sem => ({
-    title: sem.title,
-    rows: TIPOS.map(tipo => sem.rowsMap[tipo])
-  }))
-
-  return { total: weeklyData.length, weeklyData }
 }
 
 // ── Panel de equipo (líder) y panel propio (colaborador) ──────────────────

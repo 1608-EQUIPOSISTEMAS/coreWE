@@ -2,10 +2,7 @@
 import {
   mapDashboardRow,
   mapProgramGoalRow,
-  mapGerenciaFunnelRow,
-  mapLiderRow,
-  mapContactabilityRow,
-  formatWeekLabel
+  mapGerenciaFunnelRow
 } from './dashboard.entity.js'
 
 export const toDashboardDto = (rows) => {
@@ -77,18 +74,6 @@ export const toGerenciaFunnelDto = (rows) => {
     }
   }
 }
-
-export const toLiderDto = (rows) => {
-  const items = rows.map(mapLiderRow)
-  return { total: items.length, items }
-}
-
-export const toContactabilityDto = (rows) => {
-  const items = rows.map(mapContactabilityRow)
-  return { total: items.length, items }
-}
-
-export const toAvailableWeeksDto = (rows) => rows.map((r, idx) => formatWeekLabel(r, idx))
 
 // Los detalles devuelven filas crudas de las vistas (SELECT *), igual que el legacy.
 export const toDetailLeadsDto = (rows) => rows

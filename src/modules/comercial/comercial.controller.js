@@ -34,11 +34,6 @@ export async function sellerPhonesHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
-export async function leadStatsHandler (req, reply) {
-  const data = await usecases.leadStats(req.body)
-  return reply.code(200).send(data)
-}
-
 export async function enrollmentGetHandler (req, reply) {
   const { enrollment_id } = req.body
   const data = await usecases.enrollmentGet(enrollment_id)

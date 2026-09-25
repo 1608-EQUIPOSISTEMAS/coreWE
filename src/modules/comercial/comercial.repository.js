@@ -61,12 +61,6 @@ export class ComercialRepository {
     )
   }
 
-  async leadStats (filters) {
-    const query = `CALL public.sp_comercial_lead_stats($1, $2)`
-    const res = await this.db.query(query, [JSON.stringify(filters), null])
-    return res.rows[0].p_stats
-  }
-
   // Listado distinto de celulares de origen para alimentar el filtro de la columna
   // Cel. Origen del DataTable. Trae todos los celulares historicos con su owner.
   async sellerPhones () {

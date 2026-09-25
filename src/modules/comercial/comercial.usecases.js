@@ -8,7 +8,6 @@ import { refreshEnrollmentMv } from '../../services/fico-mv-refresh.cron.js'
 import { buildValidationRows } from '../fico/validation/validation.entity.js'
 import {
   buildFilterPayload,
-  buildStatsFilterPayload,
   buildUniqueFilename,
   detectChannelAlias,
   normalizeActiveProgramVersion,
@@ -56,11 +55,6 @@ export async function leadList (payload = {}) {
     size: Number(size),
     items: rows
   }
-}
-
-export async function leadStats (payload = {}) {
-  const filters = buildStatsFilterPayload(payload)
-  return repo.leadStats(filters)
 }
 
 // Distinto de celulares de origen con su owner para alimentar el filtro de

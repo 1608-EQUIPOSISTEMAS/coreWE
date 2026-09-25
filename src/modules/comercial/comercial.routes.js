@@ -8,7 +8,6 @@ import {
   restrictionsListSchema,
   restrictionsUpdateSchema,
   leadListSchema,
-  leadStatsSchema,
   searchPhoneGetSchema,
   searchContactSchema
 } from './comercial.schemas.js'
@@ -23,7 +22,6 @@ export default async function comercialRoutes (fastify) {
   fastify.post('/leadsummary', { schema: leadGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadSummaryHandler)
   fastify.post('/leadlist', { schema: leadListSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadListHandler)
   fastify.get('/sellerphones', { preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.sellerPhonesHandler)
-  fastify.post('/leadstats', { schema: leadStatsSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.leadStatsHandler)
   fastify.post('/enrollmentget', { schema: enrollmentGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.enrollmentGetHandler)
   fastify.post('/enrollmentregister', { schema: enrollmentRegisterSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.enrollmentRegisterHandler)
   fastify.post('/enrollment/upload', { preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.enrollmentUploadHandler)

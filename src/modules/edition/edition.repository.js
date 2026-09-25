@@ -666,6 +666,12 @@ export class EditionRepository {
         -- A) bucket COMERCIAL (donde se registra la venta/seguimiento). NULL = no
         --    cuenta comercial: 1er curso de paquete (su venta vive en el padre).
         CASE
+          -- Decision manual de GERENCIA: esta inscripcion cuenta como VENTA en
+          -- su aula aunque la cascada diga otra cosa (caso 25/09/26: tres CC de
+          -- POWER BI PRESENCIAL E12-26 -> E1-26 que gerencia pidio contar como
+          -- venta). La beca sigue mandando: si no, el alumno sale del AULA por
+          -- is_beca_leaf y suma en VENTAS => la fila descuadra.
+          WHEN e.counts_as_sale AND NOT bec.is_beca THEN 'VENTAS'
           -- destino de cambio de curso o de reprogramacion (RP) => seguimiento en
           -- su aula nueva. El destino RP nace con total 0 (la venta vive en el
           -- origen) y se identifica por la nota que escribe reprogramEdition.
@@ -974,6 +980,8 @@ export class EditionRepository {
                 AND pmv.is_membership = true
                 AND UPPER(TRIM(pmv.program_name)) <> 'MEMBRESIA PLUS'
            )                                            AS member_benefits,
+           -- venta por decision de gerencia (ver comm_bucket del cronograma).
+           e.counts_as_sale,
            -- Promo LAPTOP: el descuento vive en el enrollment vendido (padre si
            -- es hijo de paquete). Mismo criterio que la etiqueta del panel FICO.
            EXISTS (

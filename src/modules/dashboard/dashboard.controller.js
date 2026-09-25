@@ -66,26 +66,6 @@ export async function detailLeadsHandler (req, reply) {
   return reply.send({ ok: true, data, page, size })
 }
 
-export async function contactabilityHandler (req, reply) {
-  const data = await usecases.contactabilityList(req.body)
-  return reply.send({ ok: true, data })
-}
-
-export async function liderHandler (req, reply) {
-  const data = await usecases.liderList(req.body)
-  return reply.send({ ok: true, data })
-}
-
-export async function availableWeeksHandler (req, reply) {
-  const data = await usecases.availableWeeks(req.body)
-  return reply.send({ ok: true, data })
-}
-
-export async function ventasCanalHandler (req, reply) {
-  const data = await usecases.ventasCanalList(req.body)
-  return reply.send({ ok: true, data })
-}
-
 export async function detailSalesHandler (req, reply) {
   const { data, page, size } = await usecases.detailSales(req.body)
   return reply.send({ ok: true, data, page, size })

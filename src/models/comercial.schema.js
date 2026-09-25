@@ -331,13 +331,6 @@ payment_channel_ids: { type: ['array', 'null'], items: { type: 'integer' } },
   }
 }
 
-export const leadStatsSchema = {
-  body: {
-    type: 'object',
-    additionalProperties: true
-  }
-}
-
 export const searchPhoneGetSchema = {
   body: {
     type: 'object',

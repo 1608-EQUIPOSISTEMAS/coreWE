@@ -1,6 +1,6 @@
 import { dashboardRepository } from './dashboard.repository.js'
 import { ForbiddenError } from '../../shared/errors.js'
-import { aggregateVentasCanal, teamScopeFor } from './dashboard.entity.js'
+import { teamScopeFor } from './dashboard.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
 import { areaResults, myTicketReports, orgTicketReports } from './results/results.usecases.js'
 import {
@@ -8,9 +8,6 @@ import {
   toProgramGoalsDto,
   toGoalHistoryDto,
   toGerenciaFunnelDto,
-  toLiderDto,
-  toContactabilityDto,
-  toAvailableWeeksDto,
   toDetailLeadsDto,
   toDetailSalesDto
 } from './dashboard.dto.js'
@@ -216,30 +213,6 @@ export async function leadsPerEdition (payload = {}) {
 
 export async function dashboardTargetRegister ({ target = {} } = {}) {
   return repo.registerTarget(target)
-}
-
-export async function liderList (payload = {}) {
-  const { year = 2026, month = 1, advisor = 'all' } = payload
-  const rows = await repo.lider({ year, month, advisor })
-  return toLiderDto(rows)
-}
-
-export async function contactabilityList (payload = {}) {
-  const { year = 2026, month = 1, advisor = 'all' } = payload
-  const rows = await repo.contactability({ year, month, advisor })
-  return toContactabilityDto(rows)
-}
-
-export async function ventasCanalList (payload = {}) {
-  const { year = 2026, month_num = 1, advisor = 'all' } = payload
-  const rows = await repo.ventasCanal({ year, month_num, advisor })
-  return aggregateVentasCanal(rows)
-}
-
-export async function availableWeeks (payload = {}) {
-  const { year = 2026, modality = 'NO_ONLINE' } = payload
-  const rows = await repo.availableWeeks({ year, modality })
-  return toAvailableWeeksDto(rows)
 }
 
 export async function detailLeads (payload = {}) {
