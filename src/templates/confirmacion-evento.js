@@ -18,7 +18,7 @@ import { capitalizeName, formatCurrency, formatDayMonth } from './confirmacion-i
 
 // Escapa el texto libre que carga Producto y respeta sus saltos de linea.
 // Va directo al HTML de un correo, asi que no puede confiarse en el contenido.
-function escapeMultiline (text) {
+export function escapeMultiline (text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -30,7 +30,7 @@ function escapeMultiline (text) {
 // Boton de tabla con el navy de marca. Mismo look que "MEDIOS DE PAGO" de la
 // plantilla de curso; se usa tabla y no <button> porque Outlook no estila botones.
 // Devuelve '' si no hay link: nunca debe emitirse un <a href=""> muerto.
-function buildButton (href, label, background = 'rgb(5,36,103)') {
+export function buildButton (href, label, background = 'rgb(5,36,103)') {
   if (!href) return ''
   // Producto carga los links a mano y suele pegarlos sin esquema
   // ('bit.ly/PROYECVIP'). Sin http:// el cliente de correo lo resuelve como
@@ -50,7 +50,7 @@ function buildButton (href, label, background = 'rgb(5,36,103)') {
 // diferencia de la plantilla de curso que las pone en columnas: un evento tiene
 // una o dos cuotas y el formato vertical se lee mejor en el celular.
 // Devuelve '' al contado: el render no pasa cuotas en ese caso.
-function buildInstallmentsTable (installments, currencySymbol) {
+export function buildInstallmentsTable (installments, currencySymbol) {
   if (!installments || installments.length === 0) return ''
 
   const rows = installments.map(i => `

@@ -1,6 +1,7 @@
 import { buildConfirmacionHTML } from '../../../templates/confirmacion-inscripcion.js'
 import { buildConfirmacionOnlineHTML } from '../../../templates/confirmacion-online.js'
 import { buildConfirmacionEventoHTML } from '../../../templates/confirmacion-evento.js'
+import { buildConfirmacionFeriaLaboralHTML } from '../../../templates/confirmacion-feria-laboral.js'
 import { isSinglePayment } from './email-confirmation.entity.js'
 
 // Unico punto donde se decide QUE plantilla de confirmacion se renderiza.
@@ -21,6 +22,12 @@ const VIP_TICKET_ALIAS = 'we_event_category_vip'
 // los bloques que hablan de plata y de formularios.
 const SPEAKER_TICKET_ALIAS = 'we_event_category_ponente'
 const SEATED_TICKET_ALIASES = [VIP_TICKET_ALIAS, SPEAKER_TICKET_ALIAS]
+
+// La Feria Laboral es un evento con correo propio. No hay tipo ni flag en la BD
+// que la distinga de un congreso, asi que se reconoce por el nombre: cubre la
+// VIII y las siguientes sin tocar codigo.
+const JOB_FAIR_NAME = /FERIA\s+LABORAL/i
+const isJobFair = (data) => JOB_FAIR_NAME.test(data.program_name || '')
 
 // Un enrollment es de evento si tiene categoria de entrada asignada O si el
 // tipo de programa es evento.
@@ -82,6 +89,23 @@ export function renderConfirmationEmail ({
 
   // Precedencia: evento gana sobre online. Un congreso VIRTUAL no debe caer en
   // la plantilla online/SAP, que habla de campus y credenciales.
+  if (isEvent && isJobFair(data)) {
+    return {
+      kind: 'evento',
+      html: buildConfirmacionFeriaLaboralHTML({
+        studentName,
+        eventName: data.program_name,
+        categoryLabel: data.event_category_label || '',
+        sessionDetail: resolveSessionDetail(data, isVirtualTicket),
+        bannerUrl: bannerUrl || data.banner_link || '',
+        isVip: data.event_category_alias === VIP_TICKET_ALIAS,
+        whatsappLink: data.event_whatsapp_link || data.whatsapp_link || '',
+        installments: isSinglePayment(data.payment_plan_alias) ? [] : instRows,
+        currencySymbol: data.currency_symbol || 'S/.'
+      })
+    }
+  }
+
   if (isEvent) {
     return {
       kind: 'evento',

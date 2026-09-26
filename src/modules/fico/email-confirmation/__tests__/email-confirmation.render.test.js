@@ -148,3 +148,52 @@ describe('renderConfirmationEmail — correo del ponente', () => {
     expect(html).toContain('https://forms.gle/CERT')
   })
 })
+
+// La Feria Laboral no usa el correo de congreso: sin RECUERDA ni formularios, y
+// la entrada VIP suma sus beneficios en Consideraciones. Si esto se cae, el
+// asistente recibe los botones de certificado y tarjeta que la feria no tiene.
+describe('renderConfirmationEmail — correo de la Feria Laboral', () => {
+  const render = (data) => renderConfirmationEmail({
+    data, firstName: 'Ana', lastName: 'Perez', odooEmail: 'ana@we.pe',
+    isNew: true, frequency: '', schedule: '', instRows: [], sapCredentials: null,
+    isOnline: false, isParentProgram: false
+  }).html
+
+  const feria = {
+    program_name: 'VIII FERIA LABORAL VIRTUAL',
+    cat_event_category: 5070,
+    event_category_alias: 'we_event_category_general',
+    event_category_label: 'GENERAL',
+    session_detail_virtual: 'Día 1: Jueves, 29 de Octubre de 4:00 PM. a 8:30 PM.\nDía 2: Viernes, 30 de Octubre',
+    event_whatsapp_link: 'bit.ly/GrupoFeriaLab',
+    certificate_form_link: 'https://forms.gle/CERT',
+    currency_symbol: 'S/.'
+  }
+
+  it('GENERAL: agradece la participacion, resalta los dias y lleva el grupo de WhatsApp', () => {
+    const html = render(feria)
+    expect(html).toContain('Gracias por participar en la VIII FERIA LABORAL VIRTUAL')
+    expect(html).toContain('ENTRADA GENERAL')
+    expect(html).toContain('<b>Día 1:</b> Jueves')
+    expect(html).toContain('https://bit.ly/GrupoFeriaLab')
+    expect(html).not.toContain('beneficios de la modalidad VIP')
+  })
+
+  it('no hereda RECUERDA ni el formulario de certificado del congreso', () => {
+    const html = render(feria)
+    expect(html).not.toContain('RECUERDA')
+    expect(html).not.toContain('https://forms.gle/CERT')
+  })
+
+  it('VIP: suma beneficios y certificado a las consideraciones', () => {
+    const html = render({ ...feria, event_category_alias: 'we_event_category_vip', event_category_label: 'VIP', event_whatsapp_link: null })
+    expect(html).toContain('ENTRADA VIP')
+    expect(html).toContain('Los beneficios de la modalidad VIP se aplicarán post evento.')
+    expect(html).toContain('Los certificados de participación se enviarán al correo de registro.')
+    expect(html).not.toContain('WHATSAPP')
+  })
+
+  it('un congreso sigue con su plantilla', () => {
+    expect(render({ ...feria, program_name: 'V CONGRESO DE DIRECCIÓN' })).toContain('RECUERDA')
+  })
+})
