@@ -19,6 +19,20 @@ describe('limpiarTextoSlack', () => {
     expect(enlaces).toEqual(['https://a.test'])
   })
 
+  it('un link enriquecido cuya etiqueta es la URL (recortada) no deja la URL en el texto', () => {
+    const url = 'https://docs.google.com/spreadsheets/d/1sOVtZeAt2_NDilpdWA2qP5RPsBQlck7J036AQI5HYqI/edit?gid=471740064#gid=471740064'
+    const { texto, enlaces } = limpiarTextoSlack(
+      `Google sheets, ventas desincronizadas <${url}|docs.google.com/spreadsheets/d/1sOVtZeAt2_N.../edit?gid=471740064#gid=471740064>`
+    )
+    expect(texto).toBe('Google sheets, ventas desincronizadas')
+    expect(enlaces).toEqual([url])
+  })
+
+  it('una etiqueta que es un nombre de archivo o una frase se conserva', () => {
+    expect(limpiarTextoSlack('mira <https://a.test/f|reporte.pdf>').texto).toBe('mira reporte.pdf')
+    expect(limpiarTextoSlack('mira <https://a.test/f|el sheet de ventas>').texto).toBe('mira el sheet de ventas')
+  })
+
   it('las menciones quedan legibles, no como <@U123>', () => {
     expect(limpiarTextoSlack('avisale a <@U123|ana>').texto).toBe('avisale a @ana')
     expect(limpiarTextoSlack('avisale a <@U123>').texto).toBe('avisale a @alguien')

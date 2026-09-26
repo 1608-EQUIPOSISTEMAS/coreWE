@@ -38,7 +38,12 @@ const slack = {
 vi.mock('../tickets.repository.js', () => ({ ticketsRepository: repo }))
 vi.mock('../../../shared/adapters/slack/tickets-slack.adapter.js', () => slack)
 
-const { createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack } = await import('../tickets.usecases.js')
+const { createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack, setTicketsPorts } = await import('../tickets.usecases.js')
+
+const publicarCambio = vi.fn().mockResolvedValue(undefined)
+setTicketsPorts({ publicarCambio })
+// El aviso en vivo sale fuera del await (best-effort): se deja correr la cola.
+const flush = () => new Promise(r => setTimeout(r, 0))
 
 const AHORA = new Date('2026-03-15T12:00:00Z')
 const hace = h => new Date(AHORA.getTime() - h * 3600_000)
@@ -125,6 +130,27 @@ describe('createTicket', () => {
     expect(repo.create.mock.calls[0][0].assigned_to_id).toBeNull()
     expect(slack.notificarEsperandoAsignacion).toHaveBeenCalled()
   })
+
+  it('avisa en vivo que hay un ticket nuevo (sin datos, solo el id)', async () => {
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+    repo.create.mockResolvedValue(1)
+
+    await createTicket({ userId: 10, ...VALIDO })
+    await flush()
+
+    expect(publicarCambio).toHaveBeenCalledWith({ tipo_evento: 'tickets_actualizados', ticket_id: 1 })
+  })
+
+  it('si el aviso en vivo falla, el ticket se crea igual', async () => {
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+    repo.create.mockResolvedValue(1)
+    publicarCambio.mockRejectedValueOnce(new Error('pg caido'))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(createTicket({ userId: 10, ...VALIDO })).resolves.toBeTruthy()
+    await flush()
+    errorLog.mockRestore()
+  })
 })
 
 describe('runAutoAssignSweep', () => {
@@ -139,6 +165,8 @@ describe('runAutoAssignSweep', () => {
     expect(slack.notificarTicketEscalado).toHaveBeenCalled()
     // A quien reporto se le dice "asignado", no "reasignado": no tenia dueño.
     expect(slack.avisarTicketReasignado).toHaveBeenCalledWith(expect.anything(), expect.any(String), { primeraAsignacion: true })
+    await flush()
+    expect(publicarCambio).toHaveBeenCalledWith({ tipo_evento: 'tickets_actualizados', ticket_id: 1 })
   })
 
   it('sin agentes disponibles no rompe: se reintenta en la proxima corrida', async () => {

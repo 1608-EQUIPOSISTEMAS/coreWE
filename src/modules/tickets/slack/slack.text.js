@@ -10,6 +10,18 @@ const ENTIDAD = /<([^<>|]+)(?:\|([^<>]*))?>/g
 
 const HTML_ENTIDADES = { '&amp;': '&', '&lt;': '<', '&gt;': '>' }
 
+// Una sola "palabra" con forma de dominio (con o sin protocolo y ruta).
+const PARECE_URL = /^(https?:\/\/)?(www\.)?[\w-]+((?:\.[\w-]+)+)([/?#:]\S*)?$/i
+
+// Para no confundir un nombre de archivo ("reporte.pdf") con un dominio, hace
+// falta alguna pista mas: protocolo, www, una ruta o un host con dos puntos.
+function pareceUrl (texto) {
+  const m = PARECE_URL.exec(String(texto ?? '').trim())
+  if (!m) return false
+  const [, protocolo, www, dominio, ruta] = m
+  return Boolean(protocolo || www || ruta || dominio.split('.').length > 2)
+}
+
 /** Slack escapa estos tres, y solo estos tres. */
 function desescapar (texto) {
   return texto.replace(/&(amp|lt|gt);/g, m => HTML_ENTIDADES[m])
@@ -37,7 +49,11 @@ export function limpiarTextoSlack (crudo = '') {
     if (/^https?:\/\//i.test(destino)) {
       const url = desescapar(destino)
       if (!enlaces.includes(url)) enlaces.push(url)
-      return etiqueta ? desescapar(etiqueta) : ''
+      // Una etiqueta que es la propia URL (o una version recortada, como la
+      // que deja pegar un link enriquecido: "docs.google.com/…/edit?gid=…") no
+      // aporta nada al texto: el enlace ya viaja aparte.
+      const visible = etiqueta ? desescapar(etiqueta) : ''
+      return pareceUrl(visible) ? '' : visible
     }
 
     // Cualquier otra cosa entre <> no es una entidad de Slack: se deja tal cual.

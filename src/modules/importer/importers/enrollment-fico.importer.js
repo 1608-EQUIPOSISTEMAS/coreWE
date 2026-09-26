@@ -7,8 +7,9 @@ import { cellText, normText, buildHeaderIndex, findCol } from '../importer.xlsx.
 // ENCABEZADO (tolerante a las variantes entre tipos de programa) y reconstruye
 // la inscripcion + el cronograma de cuotas (formato ancho FCn/Cn).
 //
-// FASE 1: inscripcion + cronograma (cuotas pendientes). La pestaña "Cuota INS-N"
-// con el detalle de pagos por cuota es FASE 2.
+// Las cuotas con monto en Cn son las COBRADAS: la pestaña "2. Cuota INS - N" trae
+// el detalle de pago de cada una (medio, empresa, banco, N° operacion) y commitRow
+// las registra como pagadas con su fila en payments (ver applyInstallmentPayments).
 
 // --- Alias de encabezado (las 4 hojas comparten el nucleo; difieren en N de
 // cursos/cuotas y algun renombre). El emparejado es por estos alias. ---------
@@ -77,6 +78,12 @@ function ingest (wb) {
     cn[n] = findCol(idx, ['c' + n])
   }
 
+  // Detalle de pago por cuota (pestaña "Cuota INS-N"). null = el workbook no la
+  // trae (CSV de una sola pestaña): las cuotas cobradas se registran igual, con
+  // el medio/cuenta de la fila.
+  const cuotaWs = findInstallmentSheet(wb, ws)
+  const detailIndex = cuotaWs ? indexInstallmentDetail(cuotaWs) : null
+
   const rows = []
   ws.eachRow((row, rowNumber) => {
     if (rowNumber <= headerRow) return
@@ -114,7 +121,7 @@ function ingest (wb) {
     let repartido = 0
     for (const c of crudas) {
       if (c.amount > 0) {
-        installments.push({ installment_number: c.n, amount: c.amount, due_date: c.dueDate })
+        installments.push({ installment_number: c.n, amount: c.amount, due_date: c.dueDate, paid: true })
         continue
       }
       if (!c.dueDate || saldo <= 0) continue
@@ -134,6 +141,30 @@ function ingest (wb) {
     if (installments.length > 0 && falta > 0.01) {
       const ultima = installments[installments.length - 1]
       installments.push({ installment_number: ultima.installment_number + 1, amount: falta, due_date: ultima.due_date })
+    }
+
+    // Enlaza cada cuota cobrada con su detalle de pago. Los montos de ambas
+    // pestañas deben coincidir: si no, es la hoja la que esta mal y se avisa en
+    // vez de adivinar cual vale.
+    const installmentErrors = []
+    const detail = detailIndex
+      ? findInstallmentDetail(detailIndex, get('course_code'), get('edition'), get('email'), get('full_name'), installments)
+      : null
+    if (detail) {
+      for (const inst of installments) {
+        const d = detail.get(inst.installment_number)
+        if (!inst.paid || !d) continue
+        if (Math.abs(d.amount - inst.amount) > 0.01) {
+          installmentErrors.push(`Cuota ${inst.installment_number}: "Cuota INS - N" dice ${d.amount} y "INS - N" dice ${inst.amount}.`)
+          continue
+        }
+        inst.payment = d
+      }
+      for (const [n, d] of detail) {
+        if (d.amount > 0 && !installments.some(i => i.paid && i.installment_number === n)) {
+          installmentErrors.push(`Cuota ${n}: "Cuota INS - N" la trae cobrada (${d.amount}) pero "INS - N" no.`)
+        }
+      }
     }
 
     rows.push({
@@ -163,7 +194,8 @@ function ingest (wb) {
         scholarship: get('scholarship'), // TIPO DSCT: "BECA" = beca (precio 0)
         // Forma de pago inferida: si hay cuotas en el cronograma es "cuotas".
         payment_way: installments.length > 0 ? 'cuotas' : 'contado',
-        _installments: installments
+        _installments: installments,
+        _installment_errors: installmentErrors
       }
     })
   })
@@ -193,6 +225,113 @@ function findHeaderRow (ws, probeOnly = false) {
     if (found) return r
   }
   return probeOnly ? null : 1
+}
+
+// --- Pestaña "Cuota INS - N" ------------------------------------------------
+// Una fila por alumno con un bloque por cuota: FCn (fecha de pago), Cn (monto),
+// MEDIO DE PAGO, ENTIDAD EMPRESA, ENTIDAD FINANCIERA, N° OPERACION. NO tiene DNI:
+// se enlaza con "INS - N" por curso (COD) + ED + correo, o + nombre si no hay correo.
+
+// La primera pestaña (distinta de la de inscripciones) cuyo encabezado tiene FC1
+// y MEDIO DE PAGO.
+function findInstallmentSheet (wb, insWs) {
+  return wb.worksheets.find(ws => ws !== insWs && installmentHeaderRow(ws) !== null) || null
+}
+
+function installmentHeaderRow (ws) {
+  const limit = Math.min(8, ws.rowCount || 8)
+  for (let r = 1; r <= limit; r++) {
+    const texts = []
+    ws.getRow(r).eachCell((cell) => texts.push(normText(cell.value)))
+    if (texts.includes('fc1') && texts.includes('medio de pago') && !texts.includes('dni')) return r
+  }
+  return null
+}
+
+// Map(clave de alumno -> [Map(numero de cuota -> detalle)]). Una clave puede
+// tener varias filas (mismo alumno dos veces en el mismo curso+ED, ej. dos
+// convalidaciones E0): findInstallmentDetail desempata por montos.
+function indexInstallmentDetail (ws) {
+  const headerRow = installmentHeaderRow(ws)
+  // El encabezado puede ocupar DOS filas: en CURSOS todo va en una, pero en ESP
+  // los datos del alumno (COD/ED/NOMBRES/CORREO) estan en la fila de arriba y los
+  // bloques FCn/Cn/MEDIO... en la de abajo. Cada columna toma su texto de la fila
+  // de FCn y, si ahi esta vacia, de la mas cercana por encima.
+  const headers = []
+  for (let r = 1; r <= headerRow; r++) {
+    ws.getRow(r).eachCell((cell, colNumber) => {
+      const t = normText(cell.value)
+      if (t) headers[colNumber] = t
+    })
+  }
+  const first = (name) => headers.indexOf(name)
+  const idCol = { cod: first('cod'), ed: first('ed'), email: first('correo'), name: first('nombres y apellidos') }
+
+  // El encabezado repite MEDIO DE PAGO/ENTIDAD... en cada bloque, asi que cada
+  // campo se busca DENTRO del bloque de su FCn (hasta el siguiente FC). La
+  // fecha a veces viene como "F6" en vez de "FC6".
+  const blocks = []
+  for (let n = 1; n <= MAX_CUOTAS; n++) {
+    const fcCol = first('fc' + n) >= 0 ? first('fc' + n) : first('f' + n)
+    if (fcCol < 0) continue
+    const block = { n, fc: fcCol }
+    for (let c = fcCol + 1; c <= fcCol + 6 && !/^fc?\d/.test(headers[c] || ''); c++) {
+      const h = headers[c] || ''
+      if (h === 'c' + n) block.amount = c
+      else if (h === 'medio de pago') block.medium = c
+      else if (h === 'entidad empresa') block.business = c
+      else if (h === 'entidad financiera') block.financial = c
+      else if (/^n\S* ?operacion/.test(h)) block.operation = c
+    }
+    if (block.amount) blocks.push(block)
+  }
+
+  const index = new Map()
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber <= headerRow) return
+    const text = (col) => col > 0 ? cellText(row.getCell(col).value) : ''
+    const cuotas = new Map()
+    for (const b of blocks) {
+      const amount = num(row.getCell(b.amount).value)
+      if (amount <= 0) continue
+      cuotas.set(b.n, {
+        amount,
+        payment_date: text(b.fc),
+        payment_medium: text(b.medium),
+        business_entity: text(b.business),
+        financial_entity: text(b.financial),
+        transaction_code: text(b.operation)
+      })
+    }
+    const keys = [
+      detailKey(text(idCol.cod), text(idCol.ed), 'mail', text(idCol.email)),
+      detailKey(text(idCol.cod), text(idCol.ed), 'name', text(idCol.name))
+    ]
+    for (const key of keys) {
+      if (!key) continue
+      if (!index.has(key)) index.set(key, [])
+      index.get(key).push(cuotas)
+    }
+  })
+  return index
+}
+
+// Detalle de la fila de inscripcion. Con una sola candidata, esa; con varias,
+// la unica cuyas cuotas cobradas tienen los mismos montos que las de la fila.
+// Si ninguna o mas de una coinciden, null: no se adivina.
+function findInstallmentDetail (index, courseCode, edition, email, fullName, installments) {
+  const candidates = index.get(detailKey(courseCode, edition, 'mail', email)) ||
+    index.get(detailKey(courseCode, edition, 'name', fullName)) || []
+  if (candidates.length <= 1) return candidates[0] || null
+  const paid = installments.filter(i => i.paid)
+  const same = candidates.filter(c =>
+    c.size === paid.length && paid.every(i => Math.abs((c.get(i.installment_number)?.amount ?? -1) - i.amount) <= 0.01))
+  return same.length === 1 ? same[0] : null
+}
+
+function detailKey (courseCode, edition, kind, value) {
+  const v = normText(value)
+  return v ? `${normText(courseCode)}|${normText(edition)}|${kind}:${v}` : null
 }
 
 // =============================================================================
@@ -329,6 +468,14 @@ async function resolveRow (raw, ctx, installments = []) {
   const accId = matchBankAccount(ctx?.bankAccounts || [], raw.financial_entity, beId, raw.currency)
   if (accId) data.bank_account_id = accId
 
+  // Cuotas COBRADAS (Cn con monto) -> pagos a registrar tras el alta. El SP crea
+  // todo el plan como pendiente; commitRow marca estas como pagadas.
+  errors.push(...(raw._installment_errors || []))
+  const paid = schedule.filter(c => c.paid && Number(c.amount) > 0)
+  if (paid.length > 0) {
+    data.installment_payments = paid.map(c => installmentPayment(c, raw, cat, ctx, beId))
+  }
+
   // --- ED -> edicion + programa via puerto -----------------------------------
   // Match por (codigo de curso, ED): global_code "E1" se repite, pero el par
   // version_code+global_code es unico entre ediciones activas.
@@ -413,6 +560,7 @@ function currencyCode (raw) {
 const BUSINESS_ENTITY_ALIAS = {
   'we educacion': 'we_business_entity_weee',
   'we consulting': 'we_business_entity_wec',
+  'world enterprise c.': 'we_business_entity_wec', // variante de "Cuota INS - N"
   'we foundation': 'we_business_entity_wef',
   'we latam': 'we_business_entity_wel',
   'johan palomino': 'we_business_entity_johan'
@@ -461,6 +609,38 @@ function matchBankAccount (accounts, bankText, businessEntityId, currencyRaw) {
     if (byCur.length) candidates = byCur
   }
   return candidates.length === 1 ? Number(candidates[0].account_id) : null
+}
+
+// Pago de una cuota cobrada. Con detalle de "Cuota INS - N" usa el de esa cuota;
+// sin detalle, el medio/empresa/banco de la fila (los de la inicial: el alumno
+// suele pagar todo por la misma via) y sin N° de operacion. Mercado Pago llega en
+// la columna ENTIDAD FINANCIERA con MEDIO vacio: de ahi sale el medio, y como no
+// es un banco no resuelve cuenta.
+//
+// Detalle con fecha y monto pero SIN medio/empresa/banco (bloque en blanco) =
+// mismo caso que sin detalle: se toman los de la fila.
+function installmentPayment (inst, raw, cat, ctx, rowBusinessEntityId) {
+  const d = inst.payment || {}
+  const blank = !d.payment_medium && !d.business_entity && !d.financial_entity
+  const src = blank
+    ? { ...d, payment_medium: raw.payment_medium, business_entity: raw.business_entity, financial_entity: raw.financial_entity }
+    : d
+  const businessEntityId = matchBusinessEntity(cat, src.business_entity) || rowBusinessEntityId || null
+  return {
+    installment_number: Number(inst.installment_number),
+    amount: Number(inst.amount),
+    payment_date: normalizeDate(src.payment_date || inst.due_date),
+    cat_payment_medium: catByText(cat, 'we_payment_medium', src.payment_medium) ||
+      catByText(cat, 'we_payment_medium', src.financial_entity),
+    bank_account_id: matchBankAccount(ctx?.bankAccounts || [], bankNameFor(src.financial_entity), businessEntityId, raw.currency),
+    transaction_code: src.transaction_code || null
+  }
+}
+
+// "Detraccion" en ENTIDAD FINANCIERA = deposito a la cuenta de detracciones, que
+// es la del Banco de la Nacion (BN) de la empresa.
+function bankNameFor (financialEntity) {
+  return /^detracci/.test(normText(financialEntity)) ? 'BN' : financialEntity
 }
 
 // ED "E0" = convalidacion: curso suelto, sin edicion programada que asociar.
@@ -611,12 +791,18 @@ async function commitRow (data, { userId }) {
       ? ' ADVERTENCIA: paquete SIN estructura de aulas hijas (edition_structure vacia para esta edicion); no se creo ninguna aula hija.'
       : ''
 
+  // Cuotas cobradas segun la hoja. Tambien sobre el duplicado: un re-import
+  // completa las inscripciones que se importaron antes con las cuotas pendientes
+  // (el puerto es idempotente y solo toca inscripciones de importacion masiva).
+  const pay = await applyPayments(parentId, data, userId)
+
   if (resp?.result === 1 && resp.enrollment_id) {
-    // Si fallaron hijas O el paquete no tiene estructura, la fila se marca como
-    // error visible (no como exito limpio): el paquete quedo incompleto.
-    return (childFails.length || noStructure)
-      ? { ok: false, id: resp.enrollment_id, message: `Inscripcion creada pero incompleta.${childNote}` }
-      : { ok: true, id: resp.enrollment_id, message: 'Inscripcion creada' }
+    // Si fallaron hijas, el paquete no tiene estructura o alguna cuota cobrada no
+    // se pudo registrar, la fila se marca como error visible (no como exito
+    // limpio): la inscripcion quedo incompleta.
+    return (childFails.length || noStructure || pay.failed)
+      ? { ok: false, id: resp.enrollment_id, message: `Inscripcion creada pero incompleta.${childNote}${pay.note}` }
+      : { ok: true, id: resp.enrollment_id, message: `Inscripcion creada${pay.note}` }
   }
   if (resp?.result === 2) {
     // Ya existia (re-import): completar/actualizar el asesor sobre la existente,
@@ -631,9 +817,31 @@ async function commitRow (data, { userId }) {
         console.error('[importer] No se pudo actualizar el asesor de la inscripcion', dupId, err.message)
       }
     }
-    return { ok: false, duplicate: true, message: `${resp.message || 'Inscripcion duplicada'}${childNote}` }
+    return { ok: false, duplicate: true, message: `${resp.message || 'Inscripcion duplicada'}${childNote}${pay.note}` }
   }
   return { ok: false, message: `${resp?.message || 'El registro no devolvio exito'}${childNote}` }
+}
+
+// Registra como pagadas las cuotas cobradas de la fila (y alinea la fecha de la
+// reserva con F. PAGO). Devuelve { note, failed } para el mensaje de la fila.
+async function applyPayments (enrollmentId, data, userId) {
+  const payments = data.installment_payments || []
+  if (!enrollmentId || (payments.length === 0 && !data.payment_date)) return { note: '', failed: false }
+  let r
+  try {
+    r = await importerPorts.applyInstallmentPayments({
+      enrollmentId, payments, initialPaymentDate: data.payment_date || null, userId
+    })
+  } catch (err) {
+    return { note: ` ADVERTENCIA: no se registraron las cuotas pagadas (${err.message}).`, failed: true }
+  }
+  if (!r || r.notImported) return { note: '', failed: false }
+  const parts = []
+  if (r.applied.length) parts.push(` ${r.applied.length} cuota(s) pagada(s) registrada(s).`)
+  if (r.skipped.length) {
+    parts.push(` ADVERTENCIA: cuota(s) cobrada(s) sin registrar: ${r.skipped.map(s => `cuota ${s.n} (${s.reason})`).join('; ')}.`)
+  }
+  return { note: parts.join(''), failed: r.skipped.length > 0 }
 }
 
 // Inscripcion de la MEMBRESIA (WE BLACK/GOLD/...) a partir de la fila de curso ya
@@ -766,6 +974,8 @@ export const enrollmentFicoImporter = {
   description: 'Importa la pestaña "INS - N" de las hojas FICO (MBA/PEE/ESP/CURSOS) por URL o archivo.',
   templateFilename: 'hoja-fico.xlsx',
   acceptsUrl: true,
+  // Pestañas que se bajan junto con la del link (detalle de pago por cuota).
+  companionTabs: [/cuota/i],
   columns,
   ingest,
   loadContext,
