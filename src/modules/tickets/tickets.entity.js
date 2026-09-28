@@ -1,4 +1,4 @@
-import { AREA_OF_LEADER, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
+import { AREA_OF_LEADER, AREA_LABEL, areaLabelOf, roleLabelOf } from '../../shared/organigrama.js'
 import { calcularSla, sumarMinutosHabiles, estadosEnRiesgo } from '../../shared/sla/sla-clock.js'
 import { DomainError, ForbiddenError } from '../../shared/errors.js'
 
@@ -64,6 +64,14 @@ export function ticketScopeFor ({ roles = [], userId = null } = {}) {
 // (rol del creador -> area), aplicada a un ticket en vez de a un usuario.
 export function ticketAreaLabel (creadorRoles = []) {
   return areaLabelOf(creadorRoles, 'Sin área')
+}
+
+// Los roles que forman el area de QUIEN CONSULTA (base + lider), para contar
+// los tickets de su area que van antes que el suyo. Mismo primer match que
+// areaLabelOf: un rol de area por persona. null si no pertenece a ninguna.
+export function areaRolesOf (roles = []) {
+  const base = (roles || []).map(r => r.replace(/^LIDER_/, '')).find(r => Object.hasOwn(AREA_LABEL, r))
+  return base ? [base, `LIDER_${base}`] : null
 }
 
 // El rol de quien creo el ticket, sin colapsar lider y base en la misma area

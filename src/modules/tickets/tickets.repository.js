@@ -81,6 +81,32 @@ export class TicketsRepository {
     return rows
   }
 
+  /**
+   * Cuantos tickets activos del area van antes que el ticket activo MAS
+   * ANTIGUO de userId: su lugar en la fila. Sin ticket activo propio, todos los
+   * activos del area: los que tendria delante si creara uno ahora.
+   * El area se deriva del rol del creador, igual que SCOPE_SQL.
+   */
+  async activosAntesDelMio (userId, areaRoles) {
+    const { rows } = await this.db.query(`
+      WITH mio AS (
+        SELECT registration_date, ticket_id
+          FROM public.tickets
+         WHERE created_by_id = $1 AND active = 'Y' AND status IN ('ABIERTO','EN_PROGRESO')
+         ORDER BY registration_date, ticket_id
+         LIMIT 1)
+      SELECT COUNT(t.ticket_id)::int AS total
+        FROM public.tickets t
+       WHERE t.active = 'Y' AND t.status IN ('ABIERTO','EN_PROGRESO')
+         AND (NOT EXISTS (SELECT 1 FROM mio)
+              OR (t.registration_date, t.ticket_id) < (SELECT registration_date, ticket_id FROM mio))
+         AND EXISTS (
+         SELECT 1 FROM public.user_roles ur
+           JOIN public.rol r ON r.rol_id = ur.rol_id
+          WHERE ur.user_id = t.created_by_id AND r.alias = ANY($2))`, [userId, areaRoles])
+    return rows[0]?.total ?? 0
+  }
+
   /** Los adjuntos del ticket. El listado solo lleva el conteo; el detalle, la lista. */
   async attachmentsOf (ticketId) {
     const { rows } = await this.db.query(`

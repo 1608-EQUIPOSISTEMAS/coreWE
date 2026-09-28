@@ -3,7 +3,7 @@ import { clasificarPrioridad, plazosSla } from './tickets.priority.js'
 import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
   nextStatus, pickAgent, assertReassignable, isTakeable, canChangeStatusOf,
-  canReopenOf, reopenByReporter,
+  canReopenOf, reopenByReporter, areaRolesOf,
   validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
   ESTADOS_ACTIVOS
@@ -53,11 +53,20 @@ export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS'
     canChangeStatus: canChangeStatusOf(r, scope, userId)
   }))
 
+  const kpis = buildKpis(rows, userId)
+  // ADMIN y GERENCIA no hacen fila (siguen viendo "Fuera de plazo"). El resto
+  // ve cuantos tickets de su area van antes que el suyo; se cuenta aparte
+  // porque `rows` solo trae los suyos (o los de su area, si es lider).
+  if (scope.kind !== 'ALL') {
+    const areaRoles = areaRolesOf(roles)
+    kpis.antesQueElMio = areaRoles ? await repo.activosAntesDelMio(userId, areaRoles) : 0
+  }
+
   return {
     // El frontend no deriva permisos de localStorage: los recibe de aca, que es
     // la misma fuente que decidio el filtro de la consulta.
     scope: { kind: scope.kind, area: scope.area, canManage: scope.canManage },
-    kpis: buildKpis(rows, userId),
+    kpis,
     tickets: applyFilter(rows, filtro, userId)
   }
 }
