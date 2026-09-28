@@ -25,6 +25,7 @@ const slack = {
   notificarEsperandoAsignacion: vi.fn(),
   notificarSlaIncumplido: vi.fn(),
   avisarTicketTomado: vi.fn(),
+  notificarTicketTomado: vi.fn(),
   avisarTicketResuelto: vi.fn(),
   avisarTicketReasignado: vi.fn(),
   buscarUsuarioSlackPorEmail: vi.fn(),

@@ -246,7 +246,8 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   let avisoSlack = null
 
   if (reabriendo) {
-    void slack.notificarTicketReabierto(actualizado)
+    // nextStatus exige ser el agente asignado, asi que quien reabre es `agente`.
+    void slack.notificarTicketReabierto(actualizado, `${agente} (admin)`)
   } else if (estado === 'CERRADO') {
     // Unico punto por el que un ticket llega a CERRADO: lo garantiza nextStatus.
     void slack.notificarTicketCerrado(actualizado)
@@ -259,6 +260,8 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
     }
   } else {
     void slack.avisarTicketTomado(actualizado, agente)
+    // Al canal tambien: el area sabe quien lo atiende sin entrar al ERP.
+    void slack.notificarTicketTomado(actualizado, agente)
   }
 
   return { ...(await conDetalle(actualizado, scope, userId, ahora)), avisoSlack }
@@ -278,7 +281,8 @@ export async function reopenTicket ({ roles = [], userId = null, ticketId }) {
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
-  void slack.notificarTicketReabierto(actualizado)
+  // reopenByReporter ya valido que quien reabre es el creador.
+  void slack.notificarTicketReabierto(actualizado, `${actualizado.creador} (solicitante)`)
   return conDetalle(actualizado, scope, userId)
 }
 

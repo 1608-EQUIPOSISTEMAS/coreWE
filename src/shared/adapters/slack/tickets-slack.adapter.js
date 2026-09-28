@@ -118,10 +118,18 @@ function payloadEsperandoAsignacion (t, minutos) {
   }
 }
 
-function payloadReabierto (t) {
+// Plano como el anterior: cierra ese aviso ("ya lo tomaron, no corras") y le
+// dice al area quien lo esta atendiendo.
+function payloadTomado (t, agente) {
+  return {
+    text: `👀 El ticket #${codigo(t.ticket_id)} "${t.title}" fue tomado por *${agente}*, quien lo está atendiendo.`
+  }
+}
+
+function payloadReabierto (t, reabiertoPor) {
   const emoji = EMOJI_PRIORIDAD[t.priority] ?? ':white_circle:'
   return {
-    text: `Ticket #${codigo(t.ticket_id)} reabierto: ${t.title}`,
+    text: `Ticket #${codigo(t.ticket_id)} reabierto por ${reabiertoPor}: ${t.title}`,
     blocks: [
       { type: 'header', text: { type: 'plain_text', text: `🔓 Ticket #${codigo(t.ticket_id)} reabierto`, emoji: true } },
       { type: 'section', text: { type: 'mrkdwn', text: `*${t.title}*` } },
@@ -130,7 +138,8 @@ function payloadReabierto (t) {
         type: 'section',
         fields: [
           { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${t.priority}` },
-          { type: 'mrkdwn', text: `*A cargo de:*\n${t.asignado ?? 'sin asignar'}` }
+          { type: 'mrkdwn', text: `*A cargo de:*\n${t.asignado ?? 'sin asignar'}` },
+          { type: 'mrkdwn', text: `*Reabierto por:*\n${reabiertoPor}` }
         ]
       }
     ]
@@ -213,8 +222,14 @@ export function notificarEsperandoAsignacion (ticket, minutos) {
   return enviarWebhook(payloadEsperandoAsignacion(ticket, minutos), `ticket #${ticket.ticket_id} (esperando asignación)`)
 }
 
-export function notificarTicketReabierto (ticket) {
-  return enviarWebhook(payloadReabierto(ticket), `ticket #${ticket.ticket_id} (reabierto)`)
+export function notificarTicketTomado (ticket, agente) {
+  return enviarWebhook(payloadTomado(ticket, agente), `ticket #${ticket.ticket_id} (tomado)`)
+}
+
+// `reabiertoPor` ya viene rotulado desde el usecase ("Nombre (solicitante)" o
+// "Nombre (admin)"): el adaptador no sabe de roles.
+export function notificarTicketReabierto (ticket, reabiertoPor) {
+  return enviarWebhook(payloadReabierto(ticket, reabiertoPor), `ticket #${ticket.ticket_id} (reabierto)`)
 }
 
 export function notificarSlaIncumplido (ticket, reloj, venceEn) {
