@@ -247,23 +247,28 @@ export async function correctInitialPayment ({ enrollmentId, newAmount, justific
   const current = await repo.findInitialPaymentForCorrection(enrollmentId)
   const plan = planInitialPaymentCorrection({ ...current, newAmount })
 
-  await repo.applyInitialPaymentCorrection({ enrollmentId, plan, userId })
+  const removalNote = `Pago inicial eliminado (${justificacion.trim()})`
+  await repo.applyInitialPaymentCorrection({ enrollmentId, plan, userId, removalNote })
 
+  const outcome = plan.removesInitial
+    ? `Pago inicial eliminado (${fmtMoney(plan.oldAmount)})`
+    : `Pago inicial corregido: ${fmtMoney(plan.oldAmount)} → ${fmtMoney(plan.newAmount)}`
   await repo.logAudit({
     enrollmentId,
     action: 'initial_payment_corrected',
     userId,
     justificacion: justificacion.trim(),
     changes: plan.changes,
-    details: `Pago inicial corregido: ${fmtMoney(plan.oldAmount)} → ${fmtMoney(plan.newAmount)}. Total ${fmtMoney(plan.total)}.`
+    details: `${outcome}. Total ${fmtMoney(plan.total)}.`
   })
 
   const warnings = [
     current.enrollment.email_sent && `El correo de confirmacion ya salio con ${fmtMoney(plan.oldAmount)}.`,
-    current.enrollment.odoo_order_id && 'La orden de Odoo no se actualiza: ajustar el monto alla.'
+    current.enrollment.odoo_order_id && 'La orden de Odoo no se actualiza: ajustar el monto alla.',
+    plan.removesInitial && 'La F. PAGO de la venta no cambia: si debe ser la de la cuota, corregirla en Editar datos.'
   ].filter(Boolean)
 
-  return { result: 1, message: 'Pago inicial corregido', old_amount: plan.oldAmount, new_amount: plan.newAmount, total: plan.total, warnings }
+  return { result: 1, message: outcome, old_amount: plan.oldAmount, new_amount: plan.newAmount, total: plan.total, warnings }
 }
 
 // Devuelve a pendiente una cuota confirmada por error (el pago nunca entro) y da

@@ -4,11 +4,11 @@ import { IS_SALE } from './comercial.repository.js'
 import { TABLE_LIMIT } from './results.entity.js'
 
 const FICO_PENDING_STATUS = 3051
-const INSTALLMENT_PENDING_STATUSES = [2470, 4452]
-const INSTALLMENT_EXCLUDED_STATUSES = [4456, 3174] // anulada, borrador: nunca se cobraran
+export const INSTALLMENT_PENDING_STATUSES = [2470, 4452]
+export const INSTALLMENT_EXCLUDED_STATUSES = [4456, 3174] // anulada, borrador: nunca se cobraran
 // Ventas retiradas, reprogramadas o con cambio de curso: su deuda se trasladó
 // o se perdonó, y dejarlas inflaría la morosidad con plata que ya no se espera.
-const MOVED_ENROLLMENT_STATUSES = [3245, 3240, 3242]
+export const MOVED_ENROLLMENT_STATUSES = [3245, 3240, 3242]
 
 // Montos en soles. 3042 = dolares; 3.75 es el mismo tipo fijo de v_dashboard_*.
 // Asume el alias `e` (enrollments).

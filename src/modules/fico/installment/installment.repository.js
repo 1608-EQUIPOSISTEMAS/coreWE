@@ -6,6 +6,7 @@ import { isMembership } from '../../../utils/fico-formatters.js'
 import { buildConfirmacionPagoHTML } from '../../../templates/confirmacion-pago.js'
 import {
   CAT_STATUS_PAID,
+  CAT_STATUS_ANNULLED,
   CAT_PAYMENT_TYPE_INSTALLMENT,
   CAT_SETTLEMENT_STATUS_PAID,
   PAID_STATUS_ALIASES
@@ -244,7 +245,7 @@ export class InstallmentRepository {
        WHERE e.enrollment_id = $1
     `, [enrollmentId])
     const { rows: [initialInstallment] } = await this.db.query(
-      'SELECT installment_id, installment_number, amount FROM payment_installments WHERE enrollment_id = $1 AND installment_number = 0',
+      'SELECT installment_id, installment_number, amount, cat_status FROM payment_installments WHERE enrollment_id = $1 AND installment_number = 0',
       [enrollmentId]
     )
     const { rows: activePayments } = initialInstallment
@@ -259,17 +260,30 @@ export class InstallmentRepository {
   // Aplica el plan de planInitialPaymentCorrection de forma atomica: cuota 0,
   // pago y totales cambian juntos o no cambia nada. user_modification_id firma
   // el cambio para el trigger fn_audit_changes de enrollments.
-  async applyInitialPaymentCorrection ({ enrollmentId, plan, userId }) {
+  async applyInitialPaymentCorrection ({ enrollmentId, plan, userId, removalNote }) {
     await withTransaction(async client => {
-      await client.query(
-        'UPDATE payment_installments SET amount = $1 WHERE installment_id = $2 AND enrollment_id = $3',
-        [plan.newAmount, plan.installmentId, enrollmentId]
-      )
-      if (plan.paymentId) {
+      if (plan.removesInitial) {
+        await client.query(`
+          UPDATE payment_installments
+             SET cat_status = $1,
+                 notes = CASE WHEN COALESCE(notes, '') = '' THEN $2 ELSE notes || ' | ' || $2 END
+           WHERE installment_id = $3 AND enrollment_id = $4
+        `, [CAT_STATUS_ANNULLED, removalNote, plan.installmentId, enrollmentId])
         await client.query(
-          'UPDATE payments SET amount = $1 WHERE payment_id = $2 AND enrollment_id = $3',
-          [plan.newAmount, plan.paymentId, enrollmentId]
+          "UPDATE payments SET active = 'N' WHERE installment_id = $1 AND enrollment_id = $2 AND active = 'Y'",
+          [plan.installmentId, enrollmentId]
         )
+      } else {
+        await client.query(
+          'UPDATE payment_installments SET amount = $1 WHERE installment_id = $2 AND enrollment_id = $3',
+          [plan.newAmount, plan.installmentId, enrollmentId]
+        )
+        if (plan.paymentId) {
+          await client.query(
+            'UPDATE payments SET amount = $1 WHERE payment_id = $2 AND enrollment_id = $3',
+            [plan.newAmount, plan.paymentId, enrollmentId]
+          )
+        }
       }
       await client.query(`
         UPDATE enrollments

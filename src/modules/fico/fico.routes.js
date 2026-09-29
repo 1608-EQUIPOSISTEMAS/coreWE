@@ -8,8 +8,9 @@ import odooSyncRoutes from './odoo-sync/odoo-sync.routes.js'
 import emailConfirmationRoutes from './email-confirmation/email-confirmation.routes.js'
 import auditRoutes from './audit/audit.routes.js'
 import classroomExportRoutes from './classroom-export/classroom-export.routes.js'
+import reportRoutes from './report/report.routes.js'
 
-// Agregador del modulo FICO. Registra los 9 subdominios como plugins Fastify
+// Agregador del modulo FICO. Registra los 10 subdominios como plugins Fastify
 // encapsulados bajo el mismo prefijo /api/fico (lo aplica buildApp). Cada subdominio
 // trae su propio preHandler de autenticacion. Importa fico.bootstrap (composition
 // root) que cablea los efectos cruzados entre subdominios. El legacy fico.service.js
@@ -24,4 +25,5 @@ export default async function ficoRoutes (fastify) {
   await fastify.register(emailConfirmationRoutes)
   await fastify.register(auditRoutes)
   await fastify.register(classroomExportRoutes)
+  await fastify.register(reportRoutes)
 }

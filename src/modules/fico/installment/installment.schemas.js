@@ -93,7 +93,7 @@ export const correctInitialPaymentSchema = {
     additionalProperties: false,
     properties: {
       enrollment_id: { type: 'integer' },
-      new_amount: { type: 'number', exclusiveMinimum: 0 },
+      new_amount: { type: 'number', minimum: 0 }, // 0 = eliminar la inicial
       justificacion: { type: 'string', minLength: 1 }
     }
   }

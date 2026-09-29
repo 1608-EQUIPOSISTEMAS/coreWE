@@ -124,10 +124,28 @@ describe('planInitialPaymentCorrection', () => {
       .toThrow('por encima del precio de lista')
   })
 
+  it('monto 0 elimina la inicial: el total pierde todo lo de la inicial', () => {
+    const plan = planInitialPaymentCorrection({
+      enrollment: { total_amount: 1950, discount_amount: 2050, list_price: 4000 },
+      initialInstallment: inicial(300), activePayments: [{ payment_id: 9 }], newAmount: 0
+    })
+    expect(plan).toMatchObject({ removesInitial: true, total: 1650, discount: 2350 })
+    expect(plan.changes['Pago inicial']).toEqual({ old: 'S/. 300.00', new: 'Eliminado' })
+  })
+
+  it('no elimina la inicial si la venta queda en 0 o si ya esta anulada', () => {
+    expect(() => planInitialPaymentCorrection({ enrollment: contado, initialInstallment: inicial(300), newAmount: 0 }))
+      .toThrow('anular la venta')
+    expect(() => planInitialPaymentCorrection({
+      enrollment: { total_amount: 1950, list_price: 4000 },
+      initialInstallment: { ...inicial(300), cat_status: 4456 }, newAmount: 0
+    })).toThrow('ya fue eliminado')
+  })
+
   it('rechaza monto igual, invalido, sin inicial o con varios pagos activos', () => {
     const base = { enrollment: contado, initialInstallment: inicial(300) }
     expect(() => planInitialPaymentCorrection({ ...base, newAmount: 300 })).toThrow('igual al actual')
-    expect(() => planInitialPaymentCorrection({ ...base, newAmount: 0 })).toThrow('Monto invalido')
+    expect(() => planInitialPaymentCorrection({ ...base, newAmount: -5 })).toThrow('Monto invalido')
     expect(() => planInitialPaymentCorrection({ ...base, initialInstallment: null, newAmount: 100 })).toThrow('no tiene pago inicial')
     expect(() => planInitialPaymentCorrection({ ...base, activePayments: [{}, {}], newAmount: 100 })).toThrow('mas de un pago activo')
   })

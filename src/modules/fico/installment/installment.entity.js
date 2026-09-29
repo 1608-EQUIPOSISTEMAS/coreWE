@@ -78,12 +78,18 @@ const round2 = n => Math.round(n * 100) / 100
 // Con mas de un pago activo (reserva partida o detraccion) no se sabe cual de
 // ellos esta mal: se rechaza en vez de adivinar.
 //
-// @returns {{ installmentId, paymentId, oldAmount, newAmount, total, discount, changes }}
+// Monto 0 = eliminar la inicial (se registro en otra venta y aqui sobra): la
+// cuota 0 no se borra, queda Anulada con su monto original como el resto de
+// anulaciones, y su pago se da de baja. Asi el sync deja de sumarla. Si la venta
+// quedaria en 0 no es una correccion sino una anulacion de venta.
+//
+// @returns {{ installmentId, paymentId, oldAmount, newAmount, removesInitial, total, discount, changes }}
 export function planInitialPaymentCorrection ({ enrollment, initialInstallment, activePayments = [], newAmount }) {
   const amt = Number(newAmount)
-  if (!Number.isFinite(amt) || amt <= 0) throw new DomainError('Monto invalido')
+  if (!Number.isFinite(amt) || amt < 0) throw new DomainError('Monto invalido')
   if (!enrollment) throw new DomainError('Inscripcion no encontrada')
   if (!initialInstallment) throw new DomainError('La inscripcion no tiene pago inicial')
+  if (Number(initialInstallment.cat_status) === CAT_STATUS_ANNULLED) throw new DomainError('El pago inicial ya fue eliminado')
   if (activePayments.length > 1) {
     throw new DomainError('El pago inicial tiene mas de un pago activo (reserva partida o detraccion): pedir la correccion a soporte')
   }
@@ -91,10 +97,12 @@ export function planInitialPaymentCorrection ({ enrollment, initialInstallment, 
   const oldAmount = Number(initialInstallment.amount || 0)
   if (Math.abs(oldAmount - amt) < 0.001) throw new DomainError('El monto nuevo es igual al actual')
 
+  const removesInitial = amt === 0
   const oldTotal = Number(enrollment.total_amount || 0)
   const oldDiscount = Number(enrollment.discount_amount || 0)
   const listPrice = enrollment.list_price == null ? null : Number(enrollment.list_price)
   const total = round2(oldTotal - oldAmount + amt)
+  if (total <= 0) throw new DomainError('La venta quedaria en S/. 0.00: eso es anular la venta, no corregir la inicial')
   if (listPrice != null && total > listPrice + 0.001) {
     throw new DomainError(`El total quedaria en ${fmtMoney(total)}, por encima del precio de lista (${fmtMoney(listPrice)})`)
   }
@@ -105,10 +113,11 @@ export function planInitialPaymentCorrection ({ enrollment, initialInstallment, 
     paymentId: activePayments[0]?.payment_id ?? null,
     oldAmount,
     newAmount: amt,
+    removesInitial,
     total,
     discount,
     changes: {
-      'Pago inicial': { old: fmtMoney(oldAmount), new: fmtMoney(amt) },
+      'Pago inicial': { old: fmtMoney(oldAmount), new: removesInitial ? 'Eliminado' : fmtMoney(amt) },
       Total: { old: fmtMoney(oldTotal), new: fmtMoney(total) },
       Descuento: { old: fmtMoney(oldDiscount), new: fmtMoney(discount) }
     }
