@@ -177,6 +177,12 @@ export default async function editionRoutes (fastify) {
   // de auditoria en una sola pasada). Sin body.
   fastify.post('/academicreport', {}, ctrl.academicReportHandler)
 
+  // Aprobados, jalados y certificados por mes (Reporte Academico). Sin body.
+  fastify.post('/academicoutcomes', {}, ctrl.academicOutcomesHandler)
+
+  // Criterios de la rubrica que mas restan al promedio de auditoria (objetivo 18).
+  fastify.post('/auditobjective', {}, ctrl.auditObjectiveHandler)
+
   // Recomendaciones IA del Reporte Academico (mismo Ollama local que las
   // observaciones de notas). Dos intentos de ~60s cada uno como maximo.
   fastify.post('/reportrecommendations', {

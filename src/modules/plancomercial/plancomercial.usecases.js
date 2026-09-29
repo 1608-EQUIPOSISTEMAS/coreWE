@@ -10,6 +10,7 @@ import {
   sumInRange,
   buildMonthPlan
 } from './plancomercial.entity.js'
+import { buildCommercialReport, lastMonths } from './commercial-report.entity.js'
 
 // Hoy en Lima: el servidor corre en UTC y a las 19:00 de Lima ya seria manana.
 const todayInLima = () => new Date(Date.now() - 5 * 3_600_000).toISOString().slice(0, 10)
@@ -181,4 +182,25 @@ export async function guardarPlanDelMes ({ month_start: month, weeks: input, use
     throw new DomainError(`Estas semanas no son del mes ${month}: ${plan.unknown.join(', ')}`)
   }
   return repo.saveMonth({ weeks: plan.weeks, userId })
+}
+
+// ── Informe Comercial: objetivos del area, un mes contra los 5 anteriores ─────
+
+const BLACK_EXPIRING_DAYS = 60
+
+export async function reporteComercial ({ date_start: start, date_end: end, today = todayInLima() }) {
+  if (start > end) throw new DomainError('La fecha de inicio no puede ser posterior a la de fin')
+  const meses = lastMonths(end.slice(0, 7))
+  // Los 6 meses de la serie y el rango elegido, que puede empezar antes.
+  const from = [`${meses[0]}-01`, start].sort()[0]
+  const to = [lastDayOfMonth(`${meses.at(-1)}-01`), end].sort().at(-1)
+  const [ventas, conversion, planWeeks, cohortes, ediciones, blackPorVencer] = await Promise.all([
+    repo.reportSales({ from, to }),
+    repo.reportConversion({ from, to }),
+    repo.reportSalesGoals({ from, to }),
+    repo.reportRepurchaseCohorts({ from: `${meses[0]}-01`, to }),
+    repo.reportLeadPlan({ from: start, to: end }),
+    repo.reportBlackExpiring({ days: BLACK_EXPIRING_DAYS })
+  ])
+  return buildCommercialReport({ period: { start, end }, today, ventas, conversion, planWeeks, cohortes, ediciones, blackPorVencer })
 }

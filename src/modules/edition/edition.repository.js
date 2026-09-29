@@ -48,6 +48,41 @@ export const isB2bSaleSql = ({ doctype, origin, advisor }) => `
             OR ((${doctype}) IS NOT NULL
                 AND ((${advisor}) IS NULL OR (${advisor}) IN ('NY12','JF39'))))`
 
+// Quien cuenta como alumno de un aula (Lista de Notas, Reporte Academico).
+// Espera los alias e, cf, cts, e_sold, cts_sold y seg_sold (ver
+// classroomStudentsList para los JOIN). Una sola regla: si el reporte usara
+// otra, contaria como jalado al que se fue por RP o retiro.
+const CLASSROOM_ROSTER_WHERE = `e.active = 'Y'
+       AND cf.alias = 'we_enrollment_status_checked'
+       -- Los que salieron del aula (retiro / cambio de curso / reprogramado) ya
+       -- no van en la lista activa; quedan en el Historial. RP y sus hijos se
+       -- excluyen igual que en el contador del cronograma (se fueron con el
+       -- diploma a otra edicion) => cronograma y Lista de Notas cuadran.
+       AND (cts.alias IS NULL OR cts.alias NOT IN (
+              'we_enrollment_status_retired',
+              'we_enrollment_status_course_changed',
+              'we_enrollment_status_reprogrammed'
+            ))
+       AND (cts_sold.alias IS NULL OR cts_sold.alias <> 'we_enrollment_status_reprogrammed')
+       -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo y
+       -- el alumno quedo VARADO; su caso vive en el modulo Reprogramaciones hasta
+       -- que academica le asigne destino, no asiste a esta aula. Solo aplica al
+       -- hijo: si la edicion A5 es la propia, se esta viendo su lista y ahi si van.
+       -- El destino de un CC tambien cuelga del origen, pero no es hijo: se movio
+       -- JUSTAMENTE porque el origen cayo en A5 (misma guarda que el contador del
+       -- cronograma; sin ella los reubicados #19276/#19288/#19388 no salian aqui).
+       AND (e.parent_enrollment_id IS NULL
+            OR seg_sold.alias IS NULL OR seg_sold.alias <> 'we_segment_a5'
+            OR EXISTS (SELECT 1 FROM public.course_changes ccd
+                        WHERE ccd.enrollment_destination_id = e.enrollment_id
+                          AND ccd.enrollment_origin_id = e.parent_enrollment_id))
+       -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y hijos:
+       -- asisten sus hijos, no el). Misma regla que classroomMetricsList.
+       AND NOT EXISTS (
+              SELECT 1 FROM public.enrollments c
+               WHERE c.parent_enrollment_id = e.enrollment_id
+            )`
+
 // Persistencia del dominio edition. Envuelve los stored procedures sp_edition_*
 // y el SQL directo de metricas de aula y auditoria (classroom_audit_rubric).
 export class EditionRepository {
@@ -1103,36 +1138,7 @@ export class EditionRepository {
          ORDER BY pc.registration_date DESC LIMIT 1
       ) contact_email ON TRUE
      WHERE e.program_edition_id = $1
-       AND e.active = 'Y'
-       AND cf.alias = 'we_enrollment_status_checked'
-       -- Los que salieron del aula (retiro / cambio de curso / reprogramado) ya
-       -- no van en la lista activa; quedan en el Historial. RP y sus hijos se
-       -- excluyen igual que en el contador del cronograma (se fueron con el
-       -- diploma a otra edicion) => cronograma y Lista de Notas cuadran.
-       AND (cts.alias IS NULL OR cts.alias NOT IN (
-              'we_enrollment_status_retired',
-              'we_enrollment_status_course_changed',
-              'we_enrollment_status_reprogrammed'
-            ))
-       AND (cts_sold.alias IS NULL OR cts_sold.alias <> 'we_enrollment_status_reprogrammed')
-       -- HIJO de un padre cuya EDICION esta CANCELADA (A5): el diploma se cayo y
-       -- el alumno quedo VARADO; su caso vive en el modulo Reprogramaciones hasta
-       -- que academica le asigne destino, no asiste a esta aula. Solo aplica al
-       -- hijo: si la edicion A5 es la propia, se esta viendo su lista y ahi si van.
-       -- El destino de un CC tambien cuelga del origen, pero no es hijo: se movio
-       -- JUSTAMENTE porque el origen cayo en A5 (misma guarda que el contador del
-       -- cronograma; sin ella los reubicados #19276/#19288/#19388 no salian aqui).
-       AND (e.parent_enrollment_id IS NULL
-            OR seg_sold.alias IS NULL OR seg_sold.alias <> 'we_segment_a5'
-            OR EXISTS (SELECT 1 FROM public.course_changes ccd
-                        WHERE ccd.enrollment_destination_id = e.enrollment_id
-                          AND ccd.enrollment_origin_id = e.parent_enrollment_id))
-       -- HOJA = sin hijos (un destino de CC hacia paquete tiene padre Y hijos:
-       -- asisten sus hijos, no el). Misma regla que classroomMetricsList.
-       AND NOT EXISTS (
-              SELECT 1 FROM public.enrollments c
-               WHERE c.parent_enrollment_id = e.enrollment_id
-            )
+       AND ${CLASSROOM_ROSTER_WHERE}
      ORDER BY per.last_name, per.first_name, e.enrollment_id
   `, [id])
     // platform_user: misma resolucion que el panel FICO (getEnrollmentFlags):
@@ -1524,8 +1530,10 @@ export class EditionRepository {
              ELSE NULL
            END AS ai_score20,
            GREATEST(car.updated_at, COALESCE(car.ai_generated_at, '-infinity'::timestamptz))
-             AS audited_at
+             AS audited_at,
+           u.alias AS audited_by
       FROM public.classroom_audit_rubric car
+      LEFT JOIN public.users u ON u.user_id = car.updated_by
      WHERE car.program_edition_id = ANY($1::int[])
   `, [ids])
     return rows
@@ -1615,6 +1623,11 @@ export class EditionRepository {
     ALTER TABLE public.classroom_student_grades
       ADD COLUMN IF NOT EXISTS odoo_cert_code TEXT,
       ADD COLUMN IF NOT EXISTS odoo_cert_at TIMESTAMPTZ;
+    -- Primera vez que se cargo la nota final. No es updated_at: el guardado de
+    -- la Lista de Notas reescribe TODAS las filas del aula, asi que updated_at
+    -- movia a todo el salon al mes de la ultima correccion.
+    ALTER TABLE public.classroom_student_grades
+      ADD COLUMN IF NOT EXISTS graded_at TIMESTAMPTZ;
   `)
     this._gradesTableReady = true
   }
@@ -2002,6 +2015,83 @@ CROSS JOIN LATERAL (
     }
   }
 
+  // Resultados del alumno: una fila por alumno del roster de cada aula curso
+  // (no A5) que usa la Lista de Notas. La clasificacion aprobado/jalado/en curso
+  // y el mes de cada resultado viven en academic-outcomes.entity.js.
+  async academicOutcomeStudents () {
+    await this.ensureGradesTable()
+    const { rows } = await this.db.query(`
+    WITH aulas AS (
+      SELECT pe.edition_num_id, pe.end_date::date AS fin,
+             concat_ws(' ', pv.abbreviation, pe.specific_code) AS codigo,
+             pv.abbreviation AS programa,
+             EXISTS (SELECT 1 FROM public.classroom_student_grades gx
+                      WHERE gx.program_edition_id = pe.edition_num_id
+                        AND gx.graded_at IS NOT NULL) AS con_notas
+        FROM public.program_editions pe
+        JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+        JOIN public.programs p          ON p.program_id = pv.program_id
+        JOIN public."catalog" ctp       ON ctp.catalog_id = p.cat_type_program
+                                       AND ctp.alias = 'we_program_type_course'
+        LEFT JOIN public."catalog" seg  ON seg.catalog_id = pe.cat_segment
+       WHERE pe.active = 'Y'
+         AND COALESCE(seg.alias, '') <> 'we_segment_a5'
+         AND EXISTS (SELECT 1 FROM public.classroom_student_grades g0
+                      WHERE g0.program_edition_id = pe.edition_num_id)
+    )
+    SELECT a.fin::text                                                AS aula_end,
+           a.codigo                                                   AS aula,
+           a.programa,
+           INITCAP(concat_ws(' ', per.first_name, per.last_name))     AS alumno,
+           a.con_notas                                                AS aula_has_grades,
+           g.graded_at IS NOT NULL                                    AS graded,
+           (g.graded_at AT TIME ZONE 'America/Lima')::date::text      AS graded_on,
+           g.final_grade,
+           g.odoo_cert_code IS NOT NULL                               AS certified,
+           (g.odoo_cert_at AT TIME ZONE 'America/Lima')::date::text   AS cert_on
+      FROM aulas a
+      JOIN public.enrollments e          ON e.program_edition_id = a.edition_num_id
+      JOIN public."catalog" cf           ON cf.catalog_id = e.cat_fico_status
+      JOIN public.customers cust         ON cust.customer_id = e.customer_id
+      JOIN public.persons per            ON per.person_id = cust.person_id
+ LEFT JOIN public."catalog" cts          ON cts.catalog_id = e.cat_type_status
+ LEFT JOIN public.enrollments e_sold     ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
+ LEFT JOIN public."catalog" cts_sold     ON cts_sold.catalog_id = e_sold.cat_type_status
+ LEFT JOIN public.program_editions pe_sold ON pe_sold.edition_num_id = e_sold.program_edition_id
+ LEFT JOIN public."catalog" seg_sold     ON seg_sold.catalog_id = pe_sold.cat_segment
+ LEFT JOIN public.classroom_student_grades g ON g.enrollment_id = e.enrollment_id
+     WHERE ${CLASSROOM_ROSTER_WHERE}
+  `)
+    return rows.map((r) => ({
+      aulaEnd: r.aula_end,
+      aula: r.aula,
+      alumno: r.alumno,
+      programa: r.programa,
+      aulaHasGrades: r.aula_has_grades,
+      graded: r.graded,
+      gradedOn: r.graded_on,
+      finalGrade: r.final_grade == null ? null : Number(r.final_grade),
+      certified: r.certified,
+      certOn: r.cert_on
+    }))
+  }
+
+  // Auditorias manuales (rubrica marcada) guardadas en el rango, aulas curso
+  // no A5. Una fila solo con reporte IA trae criteria vacio: no es rubrica.
+  async rubricAuditsInRange (dateStart, dateEnd) {
+    await this.ensureRubricTable()
+    const { rows } = await this.db.query(`
+    SELECT car.criteria, (car.updated_at AT TIME ZONE 'America/Lima')::date::text AS fecha
+      FROM public.classroom_audit_rubric car
+      JOIN public.program_editions pe ON pe.edition_num_id = car.program_edition_id
+      LEFT JOIN public."catalog" seg  ON seg.catalog_id = pe.cat_segment
+     WHERE car.criteria <> '{}'::jsonb
+       AND COALESCE(seg.alias, '') <> 'we_segment_a5'
+       AND (car.updated_at AT TIME ZONE 'America/Lima')::date BETWEEN $1::date AND $2::date
+  `, [dateStart, dateEnd])
+    return rows
+  }
+
   // Bulk upsert transaccional de filas de notas. Los items llegan saneados y
   // con totales ya calculados por el usecase (la formula no vive aqui).
   async classroomGradesSaveBulk (eid, items, uid) {
@@ -2016,9 +2106,10 @@ CROSS JOIN LATERAL (
           (program_edition_id, enrollment_id, tests, participation,
            partial_criteria, final_criteria, test_score, participation_score,
            partial_score, final_deliv_score, final_grade,
-           group_number, tracking_code, observation, updated_by, updated_at)
+           group_number, tracking_code, observation, updated_by, updated_at, graded_at)
         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb,
-                $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(),
+                CASE WHEN $16 THEN NOW() END)
         ON CONFLICT (enrollment_id) DO UPDATE
            SET tests = EXCLUDED.tests,
                participation = EXCLUDED.participation,
@@ -2033,7 +2124,8 @@ CROSS JOIN LATERAL (
                tracking_code = EXCLUDED.tracking_code,
                observation = EXCLUDED.observation,
                updated_by = EXCLUDED.updated_by,
-               updated_at = NOW()
+               updated_at = NOW(),
+               graded_at = COALESCE(public.classroom_student_grades.graded_at, EXCLUDED.graded_at)
         RETURNING enrollment_id, tests, participation, partial_criteria,
                   final_criteria, test_score, participation_score, partial_score,
                   final_deliv_score, final_grade, group_number, tracking_code,
@@ -2044,7 +2136,8 @@ CROSS JOIN LATERAL (
           JSON.stringify(it.partial_criteria), JSON.stringify(it.final_criteria),
           it.test_score, it.participation_score, it.partial_score,
           it.final_deliv_score, it.final_grade,
-          it.group_number, it.tracking_code, it.observation, uid
+          it.group_number, it.tracking_code, it.observation, uid,
+          it.has_final_grade === true
         ])
         saved.push(rows[0])
       }

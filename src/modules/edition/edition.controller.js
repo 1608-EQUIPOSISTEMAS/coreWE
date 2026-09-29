@@ -138,6 +138,16 @@ export async function academicReportHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function auditObjectiveHandler (req, reply) {
+  const data = await usecases.auditObjective(req.body || {})
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function academicOutcomesHandler (req, reply) {
+  const data = await usecases.academicOutcomes()
+  return reply.code(200).send({ ok: true, data })
+}
+
 // Multipart: transcript_text + syllabus_image + edition_id + session_number.
 // Sin schema porque @fastify/multipart parsea manualmente; validamos en el
 // usecase. La IA puede demorar; el timeout de socket vive en la ruta.

@@ -12,11 +12,12 @@ import {
 } from '../edition.entity.js'
 
 // Las dos rubricas viven en dos lados que nada ata en runtime: RUBRIC_V1/V2 en
-// el .vue (lo que ve el auditor) y RUBRIC_KEYS_* en la entidad (lo que califica
-// el SQL). El .vue se lee como TEXTO porque no exporta nada; es la unica red
-// contra la deriva silenciosa entre ambos.
+// el Frontend (features/rubrica-auditoria: lo que ve el auditor y el Reporte
+// Academico) y RUBRIC_KEYS_* en la entidad (lo que califica el SQL). El modulo
+// es de otro paquete y se lee como TEXTO; es la unica red contra la deriva
+// silenciosa entre ambos.
 const vue = readFileSync(
-  fileURLToPath(new URL('../../../../../Frontend/src/views/academica/AulaDetail.vue', import.meta.url)),
+  fileURLToPath(new URL('../../../../../Frontend/src/features/rubrica-auditoria/rubrica.js', import.meta.url)),
   'utf8'
 )
 const clavesDelFrontend = (desde, hasta) => [
@@ -59,7 +60,7 @@ describe('rubrica de auditoria de aula', () => {
 
   it('la rubrica que ve el auditor es la que califica el backend', () => {
     const v1 = clavesDelFrontend('const RUBRIC_V1 = [', '// VIGENTE.')
-    const v2 = clavesDelFrontend('const RUBRIC_V2 = [', 'const NOTA_MAXIMA_RUBRICA')
+    const v2 = clavesDelFrontend('export const RUBRIC_V2 = [', 'const NOTA_MAXIMA_RUBRICA')
     expect([...v1].sort()).toEqual([...RUBRIC_KEYS_V1].sort())
     expect([...v2].sort()).toEqual([...RUBRIC_KEYS_V2].sort())
     expect(new Set(v1).size).toBe(v1.length)

@@ -11,6 +11,7 @@ import { buildPresentialCourseName } from '../fico/odoo-sync/odoo-sync.entity.js
 import { proposeDestination } from '../reprogramacion/reprogramacion.usecases.js'
 import { ORIGEN } from '../reprogramacion/reprogramacion.entity.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
+import { hasFinalGrade, buildAcademicOutcomes, todayInLima } from './academic-outcomes.entity.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
   buildEditionFilters,
@@ -42,7 +43,10 @@ import {
   buildReportRecommendationsPrompt,
   parseReportRecommendations,
   OBS_SIN_NOTAS,
-  GRADE_RULES
+  GRADE_RULES,
+  AUDIT_GOAL_20,
+  rubricCompliance,
+  criteriaWindow
 } from './edition.entity.js'
 import {
   toSpRowOrFallback,
@@ -929,7 +933,8 @@ export async function classroomGradesSave ({ edition_id, items = [], user_id = n
     }
   }
 
-  const saved = await repo.classroomGradesSaveBulk(eid, withTotals, uid)
+  const conCarga = withTotals.map((it) => ({ ...it, has_final_grade: hasFinalGrade(it.final_criteria) }))
+  const saved = await repo.classroomGradesSaveBulk(eid, conCarga, uid)
   return { ok: true, data: saved }
 }
 
@@ -1080,6 +1085,27 @@ export async function classroomGradesObservations ({ edition_id, enrollment_ids 
 export async function academicReport ({ edition_id } = {}) {
   const eid = Number(edition_id)
   return repo.academicReportList({ editionId: Number.isFinite(eid) && eid > 0 ? eid : null })
+}
+
+// Resultados del alumno (aprobados, jalados, certificados) de los ultimos 6 meses.
+export async function academicOutcomes () {
+  const alumnos = await repo.academicOutcomeStudents()
+  return buildAcademicOutcomes({ alumnos }, todayInLima())
+}
+
+// Objetivo "auditoria promedio 18": que criterios de la rubrica restan mas.
+export async function auditObjective ({ date_start: desde, date_end: hasta } = {}) {
+  const ymd = /^\d{4}-\d{2}-\d{2}$/
+  if (!ymd.test(desde || '') || !ymd.test(hasta || '')) throw new DomainError('date_start y date_end deben ser YYYY-MM-DD')
+  const enPeriodo = await repo.rubricAuditsInRange(desde, hasta)
+  const ventana = criteriaWindow({ desde, hasta, auditoriasEnPeriodo: enPeriodo.length })
+  const base = ventana.ampliada ? await repo.rubricAuditsInRange(ventana.desde, ventana.hasta) : enPeriodo
+  return {
+    meta: AUDIT_GOAL_20,
+    auditorias_periodo: enPeriodo.length,
+    ventana: { ...ventana, auditorias: base.length },
+    criterios: rubricCompliance(base)
+  }
 }
 
 // Recomendaciones del Reporte Academico con la IA local (la misma que redacta

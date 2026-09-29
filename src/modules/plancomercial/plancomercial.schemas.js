@@ -45,3 +45,15 @@ export const savePlanSchema = {
     }
   }
 }
+
+export const reportSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['date_start', 'date_end'],
+    properties: {
+      date_start: { type: 'string', format: 'date' },
+      date_end: { type: 'string', format: 'date' }
+    }
+  }
+}

@@ -57,6 +57,53 @@ export function notaRubrica (criteria, fecha) {
   return marcados * puntosPorCriterio
 }
 
+// Objetivo del área (plan 2026): los docentes promedian 18 en auditoría.
+export const AUDIT_GOAL_20 = 18
+
+// Con menos auditorías manuales que esto, el % de cumplimiento de un criterio
+// salta con cada auditoría: se mira una ventana más larga.
+export const MIN_AUDITS_FOR_CRITERIA = 20
+export const CRITERIA_FALLBACK_DAYS = 90
+
+// Ventana para los criterios: el periodo elegido si tiene base; si no, los
+// últimos 90 días hasta el fin del periodo (el panel dice cuál usó).
+export function criteriaWindow ({ desde, hasta, auditoriasEnPeriodo }) {
+  if (auditoriasEnPeriodo >= MIN_AUDITS_FOR_CRITERIA) return { desde, hasta, ampliada: false }
+  const [y, m, d] = hasta.split('-').map(Number)
+  const inicio = new Date(Date.UTC(y, m - 1, d - (CRITERIA_FALLBACK_DAYS - 1))).toISOString().slice(0, 10)
+  return { desde: inicio < desde ? inicio : desde, hasta, ampliada: true }
+}
+
+// Qué criterios de la rúbrica fallan más en las auditorías manuales dadas.
+// Cada auditoría cuenta solo los criterios de SU versión (ver rubricaDe). El
+// "aporte" es cuánto subiría la nota promedio (/20) si ese criterio se
+// cumpliera siempre: es lo que ordena dónde capacitar para llegar a la meta.
+// Solo se listan los criterios de la rúbrica VIGENTE: capacitar en uno
+// retirado (content.4, content.6...) no mueve la nota de ahora.
+export function rubricCompliance (auditorias) {
+  const porCriterio = new Map()
+  for (const { criteria, fecha } of auditorias) {
+    const { keys, puntosPorCriterio } = rubricaDe(fecha)
+    for (const key of keys) {
+      const c = porCriterio.get(key) ?? { key, auditorias: 0, cumplidas: 0, puntosPerdidos: 0 }
+      c.auditorias++
+      if (criteria?.[key] === true) c.cumplidas++
+      else c.puntosPerdidos += puntosPorCriterio
+      porCriterio.set(key, c)
+    }
+  }
+  const total = auditorias.length
+  const vigentes = new Set(RUBRIC_KEYS_V2)
+  return [...porCriterio.values()]
+    .filter((c) => vigentes.has(c.key))
+    .map(({ puntosPerdidos, ...c }) => ({
+      ...c,
+      pct: Math.round((c.cumplidas / c.auditorias) * 1000) / 10,
+      aporte: total ? Math.round((puntosPerdidos / total) * 100) / 100 : 0
+    }))
+    .sort((a, b) => b.aporte - a.aporte)
+}
+
 // Normaliza el filtro 'active' al dominio del SP ('Y' | 'N' | string | null).
 // Semantica del listado: booleano -> Y/N, string -> tal cual, resto -> null.
 export function normalizeActive (active) {
@@ -755,7 +802,10 @@ export function attachSessionAudits (row, auditRows = []) {
         ...s,
         manual_20: Number.isFinite(manual) && manual > 0 ? manual : null,
         ai_20: Number.isFinite(ai) ? ai : null,
-        audited_at: audit?.audited_at || null
+        audited_at: audit?.audited_at || null,
+        // updated_by solo lo firma el guardado manual; una sesion auditada
+        // unicamente por la IA queda sin autor.
+        audited_by: audit?.audited_by || null
       }
     })
   }

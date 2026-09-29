@@ -24,3 +24,8 @@ export async function savePlanHandler (req, reply) {
   const data = await usecases.guardarPlanDelMes({ ...req.body, userId: req.user.id })
   return reply.send({ ok: true, data })
 }
+
+export async function reporteHandler (req, reply) {
+  const data = await usecases.reporteComercial(req.body)
+  return reply.send({ ok: true, data })
+}

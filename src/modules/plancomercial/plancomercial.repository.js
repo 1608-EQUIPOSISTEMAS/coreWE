@@ -1,5 +1,6 @@
 import { pool, withTransaction } from '../../shared/db/pool.js'
 import { IS_SALE } from '../dashboard/results/comercial.repository.js'
+import { RP_LINK_CTE } from '../integration/integration.repository.js'
 
 // Plan Comercial: los objetivos cargados y los logros diarios contra los que se
 // comparan. Las fechas salen como texto para que ni el driver ni la zona horaria
@@ -9,6 +10,64 @@ const USD = 3042 // catalogo de moneda: dolares
 
 // Una consulta borrada o anulada ya no existe administrativamente: no cuenta.
 const LEAD_DISCARDED = `('we_lead_status_deleted', 'we_lead_status_annulment')`
+
+// ── Informe Comercial ─────────────────────────────────────────────────────────
+const LEAD_DISCARDED_IDS = [3199, 3136] // eliminado, anulado
+const LEAD_B2B_SITUATIONS = [2533, 3237, 5057]
+// Fundacion y B2B registran la consulta cuando ya vendieron (jul: 30 de 31
+// convertidas): meterlas inflaria la conversion del equipo.
+const FOREIGN_REGISTRAR_ROLES = ['FUNDACION', 'LIDER_FUNDACION', 'B2B', 'LIDER_B2B']
+// "Canal Web" del objetivo: web wsp, cotizaciones y chatbot, o el medio WEB.
+const WEB_CHANNELS = [2590, 3172, 3173]
+const WEB_MEDIUM = 2590
+// ponytail: Presencial cuenta como "En Vivo" (clase sincronica); si el objetivo
+// es solo virtual, sacar 2622 de aqui.
+const LIVE_MODALITIES = [2624, 2622]
+const BLACK_PROGRAM_ID = 167
+const PERU = 2329
+const CHECKED = 3052
+const ANNULLED = 3135
+const EVENT_PROGRAM_TYPE = 2507
+
+// La F. PAGO de la hoja FICO: pay_date del lead -> primer pago -> registro. Un
+// pay_date futuro o del ano 22026 (hay) no es una fecha de pago.
+const SALE_DATES_CTES = `
+  lead_of AS (
+    SELECT DISTINCT ON (l.enrollment_id) l.enrollment_id, l.cat_code_country,
+           CASE WHEN l.pay_date BETWEEN DATE '2020-01-01' AND CURRENT_DATE THEN l.pay_date END AS pay_date
+      FROM public.leads l
+     WHERE l.enrollment_id IS NOT NULL AND l.active = 'Y'
+     ORDER BY l.enrollment_id, l.lead_id
+  ),
+  first_pay AS (
+    SELECT enrollment_id, MIN(payment_date)::date AS dia
+      FROM public.payments WHERE active = 'Y' GROUP BY enrollment_id
+  )`
+const SALE_DATE = 'COALESCE(lo.pay_date, fp.dia, e.registration_date::date)'
+const SALE_JOINS = `
+      JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+      JOIN public.programs p ON p.program_id = pv.program_id
+      LEFT JOIN lead_of lo ON lo.enrollment_id = e.enrollment_id
+      LEFT JOIN first_pay fp ON fp.enrollment_id = e.enrollment_id`
+
+// Una compra = la inscripcion raiz. RP y CC NO crean otra venta: la venta es la
+// del dia que compro su primer curso (el asesor no tiene la culpa del cambio),
+// asi que se cuenta el origen y se descartan el destino de la RP (raiz aparte) y
+// el del CC (cuelga del origen). B2B y eventos no son venta del area; el
+// COALESCE es a proposito: sin el, agent_origin NULL descarta la fila.
+// Requiere rp_link en el WITH y los alias e / p.
+const PURCHASE = `
+         e.active = 'Y' AND e.parent_enrollment_id IS NULL
+     AND COALESCE(e.cat_type_status, 0) <> ${ANNULLED}
+     AND COALESCE(e.agent_origin, '') NOT IN ('B2B', 'FWE') AND e.b2b_contract_id IS NULL
+     AND e.cat_event_category IS NULL AND p.cat_type_program IS DISTINCT FROM ${EVENT_PROGRAM_TYPE}
+     AND NOT EXISTS (SELECT 1 FROM rp_link WHERE rp_link.destino_id = e.enrollment_id)`
+// Venta del mes: compra aprobada por FICO, pagada (sin becas ni cursos incluidos
+// en la membresia) y del ERP (la importacion masiva es historia, no ritmo).
+const PAID_SALE = `${PURCHASE}
+     AND e.cat_fico_status = ${CHECKED}
+     AND COALESCE(e.total_amount, 0) > 0
+     AND COALESCE(e.notes, '') NOT LIKE '%masiva FICO%'`
 
 export const planComercialRepository = {
   db: pool,
@@ -118,5 +177,149 @@ export const planComercialRepository = {
       }
       return { saved: weeks.length }
     })
+  },
+
+  // ── Informe Comercial ───────────────────────────────────────────────────────
+
+  // Ventas pagadas por dia de F. PAGO (el entity las junta por mes o por rango). Extranjero = telefono de otro pais o
+  // venta en dolares; `con_pais` es la base (la venta web sin lead no dice pais).
+  async reportSales ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
+      venta AS (
+        SELECT ${SALE_DATE} AS f_pago, COALESCE(p.is_membership, false) AS membresia,
+               p.program_id, p.cat_model_modality, lo.cat_code_country, e.cat_currency
+          FROM public.enrollments e ${SALE_JOINS}
+         WHERE ${PAID_SALE}
+      )
+      SELECT to_char(f_pago, 'YYYY-MM-DD') AS dia,
+             COUNT(*) FILTER (WHERE NOT membresia AND cat_model_modality = ANY($3::int[]))::int AS vivo,
+             COUNT(*) FILTER (WHERE membresia)::int AS membresias,
+             COUNT(*) FILTER (WHERE program_id = $4)::int AS black,
+             COUNT(*) FILTER (WHERE cat_code_country IS NOT NULL OR cat_currency = $6)::int AS con_pais,
+             COUNT(*) FILTER (WHERE cat_code_country <> $5 OR cat_currency = $6)::int AS extranjeros
+        FROM venta
+       WHERE f_pago BETWEEN $1::date AND $2::date
+       GROUP BY 1`, [from, to, LIVE_MODALITIES, BLACK_PROGRAM_ID, PERU, USD])
+    return rows
+  },
+
+  // Conversion por flujo, igual que el panel del lider: consultas registradas en
+  // el mes contra consultas con pay_date en el mes (no cohorte: la del mes en
+  // curso aun no maduro). Una fila por dia x tipo de cliente x web.
+  async reportConversion ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ajenos AS (
+        SELECT ur.user_id FROM public.user_roles ur
+          JOIN public.rol r ON r.rol_id = ur.rol_id
+         WHERE UPPER(r.alias) = ANY($3::text[])
+      ),
+      consulta AS (
+        SELECT l.registration_date,
+               CASE WHEN l.pay_date <= CURRENT_DATE THEN l.pay_date END AS pay_date,
+               cm.variable_2 AS tipo,
+               (COALESCE(l.cat_channel, 0) = ANY($4::int[]) OR l.cat_medium_contact = $5) AS web
+          FROM public.leads l
+          LEFT JOIN public.catalog cm ON cm.catalog_id = l.cat_client_moment
+         WHERE l.active = 'Y'
+           AND COALESCE(l.cat_status_lead, 0) <> ALL($6::int[])
+           AND COALESCE(l.cat_prospect_situation, 0) <> ALL($7::int[])
+           AND NOT EXISTS (SELECT 1 FROM ajenos a WHERE a.user_id = l.user_registration_id)
+           AND (l.registration_date >= $1::date OR l.pay_date >= $1::date)
+      )
+      SELECT to_char(registration_date, 'YYYY-MM-DD') AS dia, tipo, web,
+             COUNT(*)::int AS consultas, 0 AS ventas
+        FROM consulta
+       WHERE registration_date >= $1::date AND registration_date < $2::date + 1
+       GROUP BY 1, 2, 3
+      UNION ALL
+      SELECT to_char(pay_date, 'YYYY-MM-DD'), tipo, web, 0, COUNT(*)::int
+        FROM consulta
+       WHERE pay_date BETWEEN $1::date AND $2::date
+       GROUP BY 1, 2, 3`,
+    [from, to, FOREIGN_REGISTRAR_ROLES, WEB_CHANNELS, WEB_MEDIUM, LEAD_DISCARDED_IDS, LEAD_B2B_SITUATIONS])
+    return rows
+  },
+
+  // Semanas del Plan Comercial con objetivo de vacantes que tocan el rango.
+  async reportSalesGoals ({ from, to }) {
+    const { rows } = await this.db.query(`
+      SELECT to_char(month_start, 'YYYY-MM') AS mes,
+             to_char(date_start, 'YYYY-MM-DD') AS date_start,
+             to_char(date_end, 'YYYY-MM-DD') AS date_end, target_vacancies AS meta
+        FROM public.commercial_plan_weeks
+       WHERE target_vacancies IS NOT NULL
+         AND date_start <= $2::date AND date_end >= $1::date`, [from, to])
+    return rows
+  },
+
+  // Cohortes de recompra: personas cuya PRIMERA compra cae en el mes y cuantas
+  // compran OTRO programa en los 12 meses siguientes. La importacion masiva
+  // cuenta como historia (quien ya compro antes del ERP no es cliente nuevo),
+  // pero su fecha es la de la carga, asi que no abre cohorte ni es recompra.
+  // ponytail: no mira `consolidated` (compras previas al ERP por telefono); si
+  // hace falta, unirla aqui como historia.
+  async reportRepurchaseCohorts ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
+      compra AS (
+        SELECT c.person_id, e.enrollment_id, p.program_id, ${SALE_DATE} AS f_pago,
+               COALESCE(e.notes, '') LIKE '%masiva FICO%' AS importada
+          FROM public.enrollments e ${SALE_JOINS}
+          JOIN public.customers c ON c.customer_id = e.customer_id
+         WHERE ${PURCHASE}
+           AND (COALESCE(e.total_amount, 0) > 0 OR COALESCE(e.notes, '') LIKE '%masiva FICO%')
+      ),
+      primera AS (
+        SELECT DISTINCT ON (person_id) person_id, program_id, f_pago, importada
+          FROM compra ORDER BY person_id, f_pago, enrollment_id
+      )
+      SELECT to_char(pr.f_pago, 'YYYY-MM') AS mes, COUNT(*)::int AS clientes,
+             COUNT(*) FILTER (WHERE EXISTS (
+               SELECT 1 FROM compra c2
+                WHERE c2.person_id = pr.person_id AND NOT c2.importada
+                  AND c2.program_id <> pr.program_id
+                  AND c2.f_pago > pr.f_pago AND c2.f_pago <= pr.f_pago + 365))::int AS recompraron
+        FROM primera pr
+       WHERE NOT pr.importada AND pr.f_pago BETWEEN $1::date AND $2::date
+       GROUP BY 1`, [from, to])
+    return rows
+  },
+
+  // Plan de consultas por canal de las ediciones que empiezan en el rango.
+  async reportLeadPlan ({ from, to }) {
+    const { rows } = await this.db.query(`
+      SELECT metas_canal, canales FROM public.v_gerencia_funnel
+       WHERE fecha_inicio BETWEEN $1::date AND $2::date`, [from, to])
+    return rows
+  },
+
+  // Membresias Black que vencen en los proximos `days` dias y cuya persona no
+  // tiene otra Black que venza despues (ya renovo). Vencimiento = arranque + 1
+  // ano, igual que la hoja "5. Membresias". Incluye las migradas en 0: vencen igual.
+  async reportBlackExpiring ({ days }) {
+    const { rows } = await this.db.query(`
+      WITH ${SALE_DATES_CTES},
+      black AS (
+        SELECT c.person_id, e.enrollment_id,
+               (COALESCE(e.membership_activation_date::date, lo.pay_date, fp.dia, e.registration_date::date)
+                  + interval '1 year')::date AS vence
+          FROM public.enrollments e
+          JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+          JOIN public.customers c ON c.customer_id = e.customer_id
+          LEFT JOIN lead_of lo ON lo.enrollment_id = e.enrollment_id
+          LEFT JOIN first_pay fp ON fp.enrollment_id = e.enrollment_id
+         WHERE e.active = 'Y' AND e.parent_enrollment_id IS NULL
+           AND pv.program_id = $2 AND COALESCE(e.cat_type_status, 0) <> $3
+      )
+      SELECT b.enrollment_id, to_char(b.vence, 'YYYY-MM-DD') AS vence,
+             (b.vence - CURRENT_DATE)::int AS dias,
+             TRIM(CONCAT_WS(' ', per.first_name, per.last_name, per.mother_last_name)) AS alumno
+        FROM black b
+        JOIN public.persons per ON per.person_id = b.person_id
+       WHERE b.vence BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int
+         AND NOT EXISTS (SELECT 1 FROM black b2 WHERE b2.person_id = b.person_id AND b2.vence > b.vence)
+       ORDER BY b.vence, alumno`, [days, BLACK_PROGRAM_ID, ANNULLED])
+    return rows
   }
 }
