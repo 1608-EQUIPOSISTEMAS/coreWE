@@ -18,7 +18,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
-  courseChangeInheritsDebt,
+  assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
   PAID_INSTALLMENT_CAT_IDS
 } from '../enrollment.entity.js'
@@ -458,13 +458,12 @@ describe('resolveWebMatchLead (match WEB)', () => {
   })
 })
 
-describe('courseChangeInheritsDebt', () => {
-  it('pago cero hereda las cuotas pendientes del origen', () => {
-    expect(courseChangeInheritsDebt(0)).toBe(true)
-    expect(courseChangeInheritsDebt('0.00')).toBe(true)
-    expect(courseChangeInheritsDebt(null)).toBe(true)
+describe('assertOriginNotMovedYet', () => {
+  it('rechaza un segundo CC sobre un origen ya movido (#19397 duplico el destino)', () => {
+    expect(() => assertOriginNotMovedYet('we_enrollment_status_course_changed')).toThrow(/ya fue cambiada o reprogramada/)
+    expect(() => assertOriginNotMovedYet('we_enrollment_status_reprogrammed')).toThrow(/ya fue cambiada o reprogramada/)
   })
-  it('un CC que cobra de nuevo no arrastra la deuda', () => {
-    expect(courseChangeInheritsDebt(435)).toBe(false)
+  it('deja pasar un origen activo', () => {
+    expect(() => assertOriginNotMovedYet('we_inscription_way_act')).not.toThrow()
   })
 })

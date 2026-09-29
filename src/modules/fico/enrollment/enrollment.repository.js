@@ -578,20 +578,23 @@ export class EnrollmentRepository {
     return rows
   }
 
-  // Bloque atomico del traslado de cuotas en una RP: elimina la cuota "pago
-  // cero" que el SP creo en el destino (recien nacido: es su unica fila) y
-  // mueve las pendientes del origen con su nuevo numero/monto/fecha. Sin
-  // pendientes, solo re-etiqueta la cuota cero para que no diga "Beca".
+  // Bloque atomico del traslado de cuotas (RP y CC): elimina la cuota "pago
+  // cero" que el SP creo en el destino y mueve las pendientes del origen con su
+  // nuevo numero/monto/fecha. Un CC que cobro diferencia trae ademas su cuota
+  // PAGADA (monto > 0, con fila en payments): esa se queda y pasa a ser la
+  // inicial (numero 0) del plan en cuotas. Sin pendientes, solo re-etiqueta la
+  // cuota cero para que no diga "Beca".
   async transferInstallmentsForReprogram ({ oldEnrollmentId, newEid, plan }) {
     await withTransaction(async client => {
       if (plan.length === 0) {
         await client.query(
-          'UPDATE payment_installments SET notes = $2 WHERE enrollment_id = $1',
+          'UPDATE payment_installments SET notes = $2 WHERE enrollment_id = $1 AND amount = 0',
           [newEid, `Reprogramacion - pagos registrados en inscripcion #${oldEnrollmentId}`]
         )
         return
       }
-      await client.query('DELETE FROM payment_installments WHERE enrollment_id = $1', [newEid])
+      await client.query('DELETE FROM payment_installments WHERE enrollment_id = $1 AND amount = 0', [newEid])
+      await client.query('UPDATE payment_installments SET installment_number = 0 WHERE enrollment_id = $1', [newEid])
       // Un destino de CC nace "contado"; con cuotas heredadas tiene que decir el
       // plan del origen o la hoja FICO lo cuenta como pagado. En la RP es no-op.
       await client.query(`
@@ -633,7 +636,8 @@ export class EnrollmentRepository {
              pv.abbreviation AS old_program_name,
              prog.odoo_activation AS old_odoo_activation,
              pe.global_code AS old_edition_code, pe.start_date AS old_start_date,
-             c_prof.alias AS old_profile_alias
+             c_prof.alias AS old_profile_alias,
+             c_st.alias AS old_status_alias
       FROM enrollments e
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
@@ -642,6 +646,7 @@ export class EnrollmentRepository {
       LEFT JOIN programs prog ON prog.program_id = pv.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
+      LEFT JOIN public."catalog" c_st ON c_st.catalog_id = e.cat_type_status
       WHERE e.enrollment_id = $1
     `, [enrollmentId])
     return rows?.[0] || null

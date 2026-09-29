@@ -19,7 +19,7 @@ import {
   buildReprogramInscription,
   buildReprogramPlan,
   courseChangeAmountDifference,
-  courseChangeInheritsDebt,
+  assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
   MEMBERSHIP_ACTIVATION_WINDOW_MONTHS
 } from './enrollment.entity.js'
@@ -228,6 +228,7 @@ export async function getProgramPrice ({ programVersionId }) {
 export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
+  assertOriginNotMovedYet(old.old_status_alias)
   if (old.program_edition_id === newEditionId) {
     throw new DomainError('La nueva edicion es la misma que la actual')
   }
@@ -383,6 +384,7 @@ async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId,
 export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
+  assertOriginNotMovedYet(old.old_status_alias)
 
   // Las membresias (WE PLUS/GOLD/PLAT/BLACK) no tienen program_editions: el CC
   // hacia una membresia llega sin new_edition_id y crea la inscripcion destino con
@@ -431,11 +433,12 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
       cat_method_payment, cat_business_entity, bank_account_id, transaction_code
     })
 
-    // Antes de Odoo y del correo: los dos leen las cuotas del destino. Con el
-    // traslado despues, el alumno recibia la confirmacion sin su cuota (#19388).
-    if (courseChangeInheritsDebt(totalAmount)) {
-      await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: newEid })
-    }
+    // La deuda viaja SIEMPRE, cobre o no diferencia: el modal calcula la
+    // diferencia contra el total del origen, no contra lo pagado, asi que lo
+    // adeudado sigue debiendose en el destino (#19397: +70 al contado y la
+    // cuota de 150 pendiente, en UNA inscripcion). Antes de Odoo y del correo:
+    // los dos leen las cuotas del destino (#19388).
+    await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: newEid })
 
     // Destino paquete/especializacion: crear sus hijos SEG (uno por aula de la
     // estructura), igual que la venta directa y el modelo RP. Sin esto el

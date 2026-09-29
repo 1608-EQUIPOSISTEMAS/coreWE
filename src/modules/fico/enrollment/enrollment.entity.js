@@ -307,11 +307,18 @@ export function courseChangeAmountDifference (oldTotal, newTotal) {
   return { oldAmount, amountDifference: Number(newTotal || 0) - oldAmount }
 }
 
-// Un CC pago cero no cobra de nuevo: lo que el alumno aun debe del origen viaja
-// al destino (modelo RP). Si no, la cuota queda colgada en el origen marcado CC
-// y el destino se ve como beca pagada (casos #16353 y #14712, set/2026).
-export function courseChangeInheritsDebt (newTotal) {
-  return Number(newTotal || 0) === 0
+// Un origen ya en CC o RP tiene su destino: un segundo CC/RP crea OTRA
+// inscripcion y otra orden Odoo. Lo que falte corregir se edita en el destino.
+// Casos: CC #19397 -> #20010 + #20011 (29/09/26); RP #3585 -> #15997 + #16001.
+const MOVED_ORIGIN_STATUSES = new Set([
+  'we_enrollment_status_course_changed',
+  'we_enrollment_status_reprogrammed'
+])
+
+export function assertOriginNotMovedYet (originStatusAlias) {
+  if (MOVED_ORIGIN_STATUSES.has(originStatusAlias)) {
+    throw new DomainError('La inscripcion ya fue cambiada o reprogramada: edite la inscripcion destino')
+  }
 }
 
 // Modulos del paquete ORIGEN que hay que retirar tras un cambio de curso: los
