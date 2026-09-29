@@ -203,6 +203,30 @@ export async function buildApp (opts = {}) {
   // Evita que Fastify cierre las conexiones SSE automáticamente
   app.addContentTypeParser('text/event-stream', (req, payload, done) => done(null, payload))
 
+  // Defensa en profundidad: cualquier error no manejado pasa por aqui. En produccion
+  // no devolvemos stack ni mensajes internos. El log interno conserva todo para debug.
+  // Va ANTES de las rutas: cada plugin hereda el handler vigente al registrarse
+  // con await; los registrados antes caian al de Fastify ({ error: 'Bad Request' })
+  // y el front mostraba eso en vez del motivo del DomainError.
+  app.setErrorHandler((err, request, reply) => {
+    const status = err.statusCode || err.validation ? (err.statusCode || 400) : 500
+    request.log.error({ err, reqId: request.id, userId: request.user?.id }, 'Unhandled error')
+
+    // Las rutas legacy devolvian la clave 'error'; los modulos nuevos delegan
+    // en este handler. Se emiten 'message' y 'error' juntas para no romper a
+    // clientes que leen cualquiera de las dos durante la migracion.
+    if (err.validation) {
+      return reply.code(400).send({ ok: false, message: 'Datos invalidos', error: 'Datos invalidos', details: err.validation })
+    }
+
+    if (status >= 500 && process.env.NODE_ENV === 'production' && !err.expose) {
+      return reply.code(status).send({ ok: false, message: 'Error interno del servidor', error: 'Error interno del servidor' })
+    }
+
+    const msg = err.message || 'Error'
+    return reply.code(status).send({ ok: false, message: msg, error: msg })
+  })
+
   // --- 5. RUTAS ---
   await app.register(catalogRoutes, { prefix: '/api/catalog' })
   await app.register(comercialRoutes, { prefix: '/api/comercial' })
@@ -232,27 +256,6 @@ export async function buildApp (opts = {}) {
   await app.register(planComercialRoutes, { prefix: '/api/plan-comercial' })
 
   app.get('/health', async () => ({ ok: true }))
-
-  // Defensa en profundidad: cualquier error no manejado pasa por aqui. En produccion
-  // no devolvemos stack ni mensajes internos. El log interno conserva todo para debug.
-  app.setErrorHandler((err, request, reply) => {
-    const status = err.statusCode || err.validation ? (err.statusCode || 400) : 500
-    request.log.error({ err, reqId: request.id, userId: request.user?.id }, 'Unhandled error')
-
-    // Las rutas legacy devolvian la clave 'error'; los modulos nuevos delegan
-    // en este handler. Se emiten 'message' y 'error' juntas para no romper a
-    // clientes que leen cualquiera de las dos durante la migracion.
-    if (err.validation) {
-      return reply.code(400).send({ ok: false, message: 'Datos invalidos', error: 'Datos invalidos', details: err.validation })
-    }
-
-    if (status >= 500 && process.env.NODE_ENV === 'production' && !err.expose) {
-      return reply.code(status).send({ ok: false, message: 'Error interno del servidor', error: 'Error interno del servidor' })
-    }
-
-    const msg = err.message || 'Error'
-    return reply.code(status).send({ ok: false, message: msg, error: msg })
-  })
 
   // --- 6. ARCHIVOS ESTÁTICOS ---
   if (process.env.NODE_ENV !== 'production') {

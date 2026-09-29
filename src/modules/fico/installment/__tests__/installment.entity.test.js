@@ -142,6 +142,14 @@ describe('planInitialPaymentCorrection', () => {
     })).toThrow('ya fue eliminado')
   })
 
+  it('destino de CC con deuda heredada: total 0 es valido si quedan cuotas vivas (#20010)', () => {
+    const plan = planInitialPaymentCorrection({
+      enrollment: { total_amount: 70, discount_amount: 0, list_price: 70 },
+      initialInstallment: inicial(70), activePayments: [{ payment_id: 9 }], liveInstallmentCount: 1, newAmount: 0
+    })
+    expect(plan).toMatchObject({ removesInitial: true, total: 0, discount: 70 })
+  })
+
   it('rechaza monto igual, invalido, sin inicial o con varios pagos activos', () => {
     const base = { enrollment: contado, initialInstallment: inicial(300) }
     expect(() => planInitialPaymentCorrection({ ...base, newAmount: 300 })).toThrow('igual al actual')

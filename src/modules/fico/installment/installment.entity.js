@@ -84,7 +84,8 @@ const round2 = n => Math.round(n * 100) / 100
 // quedaria en 0 no es una correccion sino una anulacion de venta.
 //
 // @returns {{ installmentId, paymentId, oldAmount, newAmount, removesInitial, total, discount, changes }}
-export function planInitialPaymentCorrection ({ enrollment, initialInstallment, activePayments = [], newAmount }) {
+// liveInstallmentCount = cuotas no anuladas de la venta ademas de la inicial.
+export function planInitialPaymentCorrection ({ enrollment, initialInstallment, activePayments = [], liveInstallmentCount = 0, newAmount }) {
   const amt = Number(newAmount)
   if (!Number.isFinite(amt) || amt < 0) throw new DomainError('Monto invalido')
   if (!enrollment) throw new DomainError('Inscripcion no encontrada')
@@ -102,7 +103,13 @@ export function planInitialPaymentCorrection ({ enrollment, initialInstallment, 
   const oldDiscount = Number(enrollment.discount_amount || 0)
   const listPrice = enrollment.list_price == null ? null : Number(enrollment.list_price)
   const total = round2(oldTotal - oldAmount + amt)
-  if (total <= 0) throw new DomainError('La venta quedaria en S/. 0.00: eso es anular la venta, no corregir la inicial')
+  // Total 0 sin nada mas que cobrar es anular la venta. Pero un destino de CC
+  // guarda solo la diferencia en su total y hereda la deuda del origen (que ya
+  // cuenta en el total del origen): con cuotas vivas, total 0 es un CC sin
+  // diferencia, no una venta anulada (#20010).
+  if (total < 0 || (total === 0 && liveInstallmentCount === 0)) {
+    throw new DomainError('La venta quedaria en S/. 0.00: eso es anular la venta, no corregir la inicial')
+  }
   if (listPrice != null && total > listPrice + 0.001) {
     throw new DomainError(`El total quedaria en ${fmtMoney(total)}, por encima del precio de lista (${fmtMoney(listPrice)})`)
   }

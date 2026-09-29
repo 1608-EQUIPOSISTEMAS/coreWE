@@ -254,7 +254,11 @@ export class InstallmentRepository {
         [initialInstallment.installment_id]
       )
       : { rows: [] }
-    return { enrollment: enrollment || null, initialInstallment: initialInstallment || null, activePayments }
+    const { rows: [{ count: liveInstallmentCount }] } = await this.db.query(
+      'SELECT count(*)::int AS count FROM payment_installments WHERE enrollment_id = $1 AND installment_number > 0 AND cat_status IS DISTINCT FROM $2',
+      [enrollmentId, CAT_STATUS_ANNULLED]
+    )
+    return { enrollment: enrollment || null, initialInstallment: initialInstallment || null, activePayments, liveInstallmentCount }
   }
 
   // Aplica el plan de planInitialPaymentCorrection de forma atomica: cuota 0,
