@@ -14,11 +14,12 @@ export async function reporteFico ({ date_start: start, date_end: end, today = t
   const from = [`${meses[0]}-01`, start].sort()[0]
   // ...y el mes de hoy, que la proyeccion necesita aunque el periodo sea viejo.
   const to = [lastDayOfMonth(`${meses.at(-1)}-01`), end, lastDayOfMonth(`${today.slice(0, 7)}-01`)].sort().at(-1)
-  const [cuotas, cobros, pendientes, porMedio] = await Promise.all([
+  const [cuotas, cobros, pendientes, porMedio, inscripciones] = await Promise.all([
     repo.installmentsDue({ from, to }),
     repo.collectedByDay({ from, to }),
     repo.pendingInstallments(),
-    repo.collectedByMethod({ from: start, to: end })
+    repo.collectedByMethod({ from: start, to: end }),
+    repo.enrollmentsByOutcome({ from, to })
   ])
-  return buildFicoReport({ period: { start, end }, today, cuotas, cobros, pendientes, porMedio })
+  return buildFicoReport({ period: { start, end }, today, cuotas, cobros, pendientes, porMedio, inscripciones })
 }

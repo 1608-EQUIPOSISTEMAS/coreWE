@@ -194,13 +194,14 @@ export async function reporteComercial ({ date_start: start, date_end: end, toda
   // Los 6 meses de la serie y el rango elegido, que puede empezar antes.
   const from = [`${meses[0]}-01`, start].sort()[0]
   const to = [lastDayOfMonth(`${meses.at(-1)}-01`), end].sort().at(-1)
-  const [ventas, conversion, planWeeks, cohortes, ediciones, blackPorVencer] = await Promise.all([
+  const [ventas, fuera, conversion, planWeeks, cohortes, ediciones, blackPorVencer] = await Promise.all([
     repo.reportSales({ from, to }),
+    repo.reportSalesOutside({ from, to }),
     repo.reportConversion({ from, to }),
     repo.reportSalesGoals({ from, to }),
     repo.reportRepurchaseCohorts({ from: `${meses[0]}-01`, to }),
     repo.reportLeadPlan({ from: start, to: end }),
     repo.reportBlackExpiring({ days: BLACK_EXPIRING_DAYS })
   ])
-  return buildCommercialReport({ period: { start, end }, today, ventas, conversion, planWeeks, cohortes, ediciones, blackPorVencer })
+  return buildCommercialReport({ period: { start, end }, today, ventas: [...ventas, ...fuera], conversion, planWeeks, cohortes, ediciones, blackPorVencer })
 }

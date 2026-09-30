@@ -173,13 +173,18 @@ export function salesProgress ({ logrado, meta, period, today }) {
   return { logrado, meta, ...goalProgress({ logrado, meta, transcurridos, delMes }) }
 }
 
-const EMPTY_SALES = { vivo: 0, membresias: 0, black: 0, con_pais: 0, extranjeros: 0 }
+const SALES_COUNTS = { ventas: 0, mkt: 0, com: 0, web: 0, otros: 0, observadas: 0, convenios: 0 }
+const EMPTY_SALES = { vivo: 0, membresias: 0, black: 0, con_pais: 0, extranjeros: 0, ...SALES_COUNTS }
+// Las filas vienen de dos consultas (ventas del area y lo de fuera): la que no
+// trae una cifra suma 0.
 function sumSales (rows) {
   return rows.reduce((acc, r) => {
-    for (const k of Object.keys(EMPTY_SALES)) acc[k] += r[k]
+    for (const k of Object.keys(EMPTY_SALES)) acc[k] += r[k] ?? 0
     return acc
   }, { ...EMPTY_SALES })
 }
+
+const salesCounts = (v) => Object.fromEntries(Object.keys(SALES_COUNTS).map((k) => [k, v[k]]))
 
 function foreignShare (v) {
   const pct = percentOf(v.extranjeros, v.con_pais)
@@ -203,6 +208,7 @@ export function buildCommercialReport ({ period, today, ventas, conversion, plan
       meta_vivo: monthGoal(mes),
       membresias: v.membresias,
       black: v.black,
+      conteo: salesCounts(v),
       extranjeros: foreignShare(v),
       conversion: conversionOf(conversion.filter(inMonth(mes)))
     }
@@ -214,6 +220,7 @@ export function buildCommercialReport ({ period, today, ventas, conversion, plan
     meses: serie,
     vivo: salesProgress({ logrado: rango.vivo, meta: goalInPeriod(planWeeks, period), period, today }),
     membresias: { logrado: rango.membresias, black: rango.black, meta: null },
+    conteo: salesCounts(rango),
     conversion: conversionOf(conversion.filter(inPeriod(period))),
     extranjeros: { ...foreignShare(rango), meta: FOREIGN_SHARE_GOAL },
     recompra: { meta: REPURCHASE_GOAL, cohortes: repurchaseCohorts(cohortes, meses, today) },

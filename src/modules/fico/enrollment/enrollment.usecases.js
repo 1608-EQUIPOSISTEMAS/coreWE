@@ -225,7 +225,25 @@ export async function getProgramPrice ({ programVersionId }) {
 //    FICO). El job register_followup crea sus hijos SEG, lo inscribe en Odoo y
 //    manda el correo — que asi lista SOLO las cuotas por pagar.
 
-export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null }) {
+// CUENTA PERSONAL del destino de un RP/CC: Producto decidio que NO se copia del
+// origen (el alumno puede tener que pagar la cuenta de nuevo), FICO la marca a
+// mano en el formulario. Va antes de crear los hijos del destino: ellos la heredan.
+async function tagDestinationPersonalAccount ({ newEid, personalAccount, userId, justificacion }) {
+  if (!personalAccount?.provider) return
+  const provider = await repo.setPersonalAccount(newEid, personalAccount)
+  if (!provider) return
+  const modules = personalAccount.modules?.length ? ` (modulos pv ${personalAccount.modules.join(', ')})` : ''
+  await repo.logAudit({
+    enrollmentId: newEid,
+    action: 'personal_account_set',
+    userId,
+    justificacion,
+    changes: { 'Cuenta personal': { old: '---', new: provider } },
+    details: `Etiqueta CUENTA PERSONAL ${provider}${modules} marcada por FICO`
+  })
+}
+
+export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null, personalAccount = null }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   assertOriginNotMovedYet(old.old_status_alias)
@@ -255,6 +273,7 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
   const newEid = newEnroll.enrollment_id
 
   await repo.transferInstallmentsForReprogram({ oldEnrollmentId: enrollmentId, newEid, plan })
+  await tagDestinationPersonalAccount({ newEid, personalAccount, userId, justificacion })
 
   const ccArray = repo.parseEmailCc(old.email_cc)
   if (ccArray.length > 0) {
@@ -381,7 +400,7 @@ async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId,
   return retirados
 }
 
-export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls }) {
+export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls, personalAccount = null }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   assertOriginNotMovedYet(old.old_status_alias)
@@ -439,6 +458,7 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
     // cuota de 150 pendiente, en UNA inscripcion). Antes de Odoo y del correo:
     // los dos leen las cuotas del destino (#19388).
     await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: newEid })
+    await tagDestinationPersonalAccount({ newEid, personalAccount, userId, justificacion })
 
     // Destino paquete/especializacion: crear sus hijos SEG (uno por aula de la
     // estructura), igual que la venta directa y el modelo RP. Sin esto el

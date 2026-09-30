@@ -1,31 +1,19 @@
 import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { odoo as odooDefault } from '../../../shared/adapters/odoo/odoo.adapter.js'
-import { email } from '../../../shared/adapters/email/email.adapter.js'
 import { STUDENT_EMAIL_SQL } from '../../../utils/student-contacts.sql.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
-import { buildConfirmacionPagoHTML } from '../../../templates/confirmacion-pago.js'
 import {
   CAT_STATUS_PAID,
   CAT_STATUS_ANNULLED,
   CAT_PAYMENT_TYPE_INSTALLMENT,
-  CAT_SETTLEMENT_STATUS_PAID,
-  PAID_STATUS_ALIASES
+  CAT_SETTLEMENT_STATUS_PAID
 } from './installment.entity.js'
 import { selectFeeForInstallment } from '../odoo-sync/odoo-sync.entity.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 
-// Etiqueta legible del tipo de programa para el correo de confirmacion de pago.
-function resolveProgramTypeLabel (categoryDescription) {
-  const raw = (categoryDescription || '').trim().toUpperCase()
-  if (raw === 'ESP.' || raw === 'ESPECIALIZACION') return 'Especializacion'
-  if (raw === 'DIPLOMADO') return 'Diplomado'
-  if (raw === 'PEE') return 'PEE'
-  return 'curso'
-}
-
 // Persistencia de cuotas y sus efectos directos (transaccion de confirmacion,
-// auditoria, correo de confirmacion y sync a Odoo). Las queries y SPs se movieron
-// verbatim del service legacy. No contiene reglas de negocio (viven en la entity).
+// auditoria y sync a Odoo; el correo de cuota vive en email-confirmation).
+// Las queries y SPs se movieron verbatim del service legacy. No contiene reglas de negocio (viven en la entity).
 export class InstallmentRepository {
   constructor (db = pool, odoo = odooDefault) {
     this.db = db
@@ -485,74 +473,6 @@ export class InstallmentRepository {
       console.error('[syncInstallmentPaymentToOdoo]', err.message)
       return { success: false, error: err.message }
     }
-  }
-
-  // Envia el correo de confirmacion de pago al alumno y registra el log de envio.
-  async sendPaymentConfirmationEmail ({ enrollmentId }) {
-    const { rows } = await this.db.query(`
-      SELECT e.enrollment_id,
-             per.first_name, per.last_name,
-             ${STUDENT_EMAIL_SQL} AS origin_email,
-             pv.abbreviation AS program_name,
-             curr.variable_2 AS currency_symbol,
-             c_cat.description AS category_description
-      FROM enrollments e
-      JOIN customers cust ON cust.customer_id = e.customer_id
-      JOIN persons per ON per.person_id = cust.person_id
-      LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-      LEFT JOIN programs prog ON prog.program_id = pv.program_id
-      LEFT JOIN catalog curr ON e.cat_currency = curr.catalog_id
-      LEFT JOIN catalog c_cat ON c_cat.catalog_id = prog.cat_category
-      WHERE e.enrollment_id = $1
-    `, [enrollmentId])
-
-    const data = rows?.[0]
-    if (!data) return { success: false, error: 'Inscripcion no encontrada' }
-
-    const toEmail = data.origin_email
-    if (!toEmail) return { success: false, error: 'El estudiante no tiene correo registrado' }
-
-    const { rows: instRows } = await this.db.query(`
-      SELECT pi.installment_number, pi.amount, pi.due_date, c.alias AS status_alias
-      FROM payment_installments pi
-      LEFT JOIN catalog c ON c.catalog_id = pi.cat_status
-      WHERE pi.enrollment_id = $1 AND pi.installment_number > 0
-      ORDER BY pi.installment_number
-    `, [enrollmentId])
-
-    const installments = instRows || []
-    const paidCount = installments.filter(i => PAID_STATUS_ALIASES.has(i.status_alias)).length
-    const isLastPayment = installments.length > 0 && paidCount >= installments.length
-    const nextInstallment = installments.find(i => !PAID_STATUS_ALIASES.has(i.status_alias))
-    const lastPaid = [...installments].reverse().find(i => PAID_STATUS_ALIASES.has(i.status_alias))
-
-    const htmlBody = buildConfirmacionPagoHTML({
-      studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
-      programType: resolveProgramTypeLabel(data.category_description),
-      isLastPayment,
-      lastPaymentDate: lastPaid?.due_date || new Date().toISOString(),
-      nextPaymentDate: nextInstallment?.due_date || null,
-      nextPaymentAmount: nextInstallment?.amount || 0,
-      currencySymbol: data.currency_symbol || 'S/.'
-    })
-
-    const subject = isLastPayment
-      ? `Pago Completado - ${data.program_name || 'WE Educacion'}`
-      : `Confirmacion de Cuota - ${data.program_name || 'WE Educacion'}`
-
-    const result = await email.sendFicoEmail({ to: toEmail, subject, htmlBody })
-
-    try {
-      await this.db.query(`
-        INSERT INTO public.email_logs (enrollment_id, to_email, subject, message_id, template_type, status)
-        VALUES ($1, $2, $3, $4, 'confirmacion_pago', $5)
-      `, [enrollmentId, toEmail, subject, result.messageId || null, result.success ? 'sent' : 'failed'])
-    } catch (logErr) {
-      console.error('[EmailLog] Error registrando log:', logErr.message)
-    }
-
-    return result
   }
 
   // Cuotas pendientes con vencimiento en el mes para el modulo Cobranzas.

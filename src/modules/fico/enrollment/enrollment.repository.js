@@ -2,6 +2,7 @@ import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../../shared/db/sp.js'
 import { attachEventCategory } from '../../../shared/event-category.js'
 import { attachChildCourses } from '../../../shared/enrollment-children.js'
+import { attachPersonalAccount, setPersonalAccount } from '../../../shared/personal-account.js'
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
@@ -75,8 +76,9 @@ export class EnrollmentRepository {
     )
     // Ni el SP ni la matview que lee exponen cat_event_category ni el arbol de
     // hijos: se enriquecen aqui para que el listado pueda mostrar la categoria
-    // de evento (VIP/GENERAL/...) y los cursos del paquete (CURSO n / FI n).
-    await Promise.all([attachEventCategory(rows, pool), attachChildCourses(rows, pool)])
+    // de evento (VIP/GENERAL/...), los cursos del paquete (CURSO n / FI n) y la
+    // etiqueta CUENTA PERSONAL.
+    await Promise.all([attachEventCategory(rows, pool), attachChildCourses(rows, pool), attachPersonalAccount(rows, pool)])
     return rows
   }
 
@@ -925,6 +927,10 @@ export class EnrollmentRepository {
   // el padre. Sin esto el aula seguia listando los cursos con la modalidad
   // vieja y no salian como FLEX (edition.repository lee e.cat_inscription_modality
   // fila por fila, no la del padre). Devuelve cuantas filas se movieron.
+  async setPersonalAccount (enrollmentId, personalAccount) {
+    return setPersonalAccount(this.db, enrollmentId, personalAccount)
+  }
+
   async setModalityWithChildren (enrollmentId, newModalityId) {
     const { rowCount } = await this.db.query(`
       UPDATE enrollments

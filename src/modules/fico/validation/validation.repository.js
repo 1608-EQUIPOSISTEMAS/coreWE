@@ -91,6 +91,7 @@ export class ValidationRepository {
     SELECT e.enrollment_id, e.customer_id, e.program_version_id, e.program_edition_id,
            e.cat_currency, e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
            e.cat_profile_id, e.seller_agent_id,
+           e.personal_account, e.personal_account_modules,
            per.first_name, per.last_name, per.document_number, per.cat_type_document,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,
@@ -130,7 +131,7 @@ export class ValidationRepository {
   async insertChildEnrollment ({
     customerId, childPvId, editionId, parentEnrollmentId,
     catCurrency, catInscriptionModality, catPaymentChannel, catPaymentPlan,
-    checkedCatId, segCatId, certCatId, catProfileId, userId, notes
+    checkedCatId, segCatId, certCatId, catProfileId, userId, notes, personalAccount = null
   }) {
     const { rows } = await this.db.query(`
         INSERT INTO enrollments (
@@ -139,14 +140,14 @@ export class ValidationRepository {
           cat_currency, cat_inscription_modality, cat_payment_channel, cat_payment_plan,
           cat_fico_status, cat_type_status, cat_certificate_status, cat_profile_id,
           seller_agent_id, agent_origin, active, user_registration_id, registration_date,
-          notes
+          notes, personal_account
         ) VALUES (
           $1, $2, $3,
           $4, 0, 0, 0,
           $5, $6, $7, $8,
           $9, $10, $11, $14,
           NULL, 'SA', 'Y', $12, NOW(),
-          $13
+          $13, $15
         ) RETURNING enrollment_id
       `, [
       customerId, childPvId, editionId,
@@ -155,7 +156,8 @@ export class ValidationRepository {
       checkedCatId || null, segCatId || null, certCatId || null,
       userId || 9,
       notes,
-      catProfileId
+      catProfileId,
+      personalAccount
     ])
     return rows?.[0]?.enrollment_id || null
   }

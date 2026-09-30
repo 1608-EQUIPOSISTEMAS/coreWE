@@ -204,7 +204,9 @@ export const courseChangeSchema = {
       // queda null. Para cursos regulares el usecase exige edicion explicitamente.
       new_edition_id: { type: ['integer', 'null'] },
       total_amount: { type: 'number' },
-      justificacion: { type: 'string', minLength: 1 }
+      justificacion: { type: 'string', minLength: 1 },
+      personal_account: { type: ['string', 'null'], enum: ['CLAUDE', 'CHATGPT', null] },
+      personal_account_modules: { type: ['array', 'null'], items: { type: 'integer' } }
     }
   }
 }
@@ -218,6 +220,9 @@ export const reprogramEditionSchema = {
       enrollment_id: { type: 'integer' },
       new_edition_id: { type: 'integer' },
       justificacion: { type: 'string', minLength: 1 },
+      // CUENTA PERSONAL del destino: FICO la marca a mano, no se copia del origen.
+      personal_account: { type: ['string', 'null'], enum: ['CLAUDE', 'CHATGPT', null] },
+      personal_account_modules: { type: ['array', 'null'], items: { type: 'integer' } },
       // Plan editado por FICO para las cuotas pendientes que se trasladan al
       // enrollment destino: mismas cuotas del origen (installment_id), montos y
       // fechas nuevos. La suma debe igualar el saldo (se valida en la entity).

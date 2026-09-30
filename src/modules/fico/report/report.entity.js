@@ -162,11 +162,23 @@ export function collectionByMethod (filas) {
   return { total: Math.round(total), medios }
 }
 
+const OUTCOME_KEYS = ['total', 'pt', 'pp', 'becas', 'retirados', 'rp', 'cc']
+
+// Inscripciones por F. PAGO y en que terminaron. Es cohorte, no evento: los
+// retirados de agosto son ventas de agosto que HOY estan retiradas, porque la
+// fecha del retiro o de la RP no se guarda (audit_logs empieza el 17/08/26).
+// filas = [{ dia, total, pt, pp, becas, retirados, rp, cc }]
+export function enrollmentOutcomes (filas) {
+  const n = Object.fromEntries(OUTCOME_KEYS.map((k) => [k, filas.reduce((s, f) => s + f[k], 0)]))
+  const pct = (k) => percentOf(n[k], n.total)
+  return { ...n, pct_pp: percentOf(n.pp, n.pt + n.pp), pct_retirados: pct('retirados'), pct_rp: pct('rp'), pct_cc: pct('cc') }
+}
+
 // period = { start, end } elegido en pantalla. La serie son los 6 meses que
 // terminan en el mes de `end`; las cifras de cabecera, el rango exacto. La
 // deuda y la proyeccion son la foto de hoy, sea cual sea el periodo.
 // cobros = [{ dia, soles }] cobrado por dia de pago.
-export function buildFicoReport ({ period, today, cuotas, cobros, pendientes = [], porMedio = [] }) {
+export function buildFicoReport ({ period, today, cuotas, cobros, pendientes = [], porMedio = [], inscripciones = [] }) {
   const serie = lastMonths(period.end.slice(0, 7)).map((mes) => {
     const delMes = (fecha) => fecha.startsWith(mes)
     const cobrado = sumSoles(cobros.filter((r) => delMes(r.dia)))
@@ -177,7 +189,8 @@ export function buildFicoReport ({ period, today, cuotas, cobros, pendientes = [
       meta_cobranza: MONTHLY_COLLECTION_GOAL,
       // El mes en curso se juzga por su ritmo, no contra el mes completo.
       tono_cobranza: salesProgress({ logrado: cobrado, meta: MONTHLY_COLLECTION_GOAL, period: delPeriodo, today }).tono,
-      ...studentCompliance(cuotas.filter((c) => delMes(c.vence)), today)
+      ...studentCompliance(cuotas.filter((c) => delMes(c.vence)), today),
+      inscripciones: enrollmentOutcomes(inscripciones.filter((f) => delMes(f.dia)))
     }
   })
   const enRango = inPeriod(period)
@@ -199,6 +212,7 @@ export function buildFicoReport ({ period, today, cuotas, cobros, pendientes = [
       meses: collectionForecast({ pendientes, cobros, tasa, today })
     },
     medios: collectionByMethod(porMedio),
+    inscripciones: enrollmentOutcomes(inscripciones.filter((f) => enRango(f.dia))),
     metas: { cumplen: PAYMENT_COMPLIANCE_GOAL, puntual: ON_TIME_GOAL, cobranza_mensual: MONTHLY_COLLECTION_GOAL },
     sin_medir: UNMEASURED_GOALS
   }

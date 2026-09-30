@@ -1,4 +1,6 @@
 import { pool } from '../../../shared/db/pool.js'
+import { RP_LINK_CTE } from '../../integration/integration.repository.js'
+import { SALE_DATES_CTES, SALE_DATE } from '../../plancomercial/plancomercial.repository.js'
 import { INSTALLMENT_EXCLUDED_STATUSES, INSTALLMENT_PENDING_STATUSES, MOVED_ENROLLMENT_STATUSES } from '../../dashboard/results/fico.repository.js'
 
 const INSTALLMENT_PAID_STATUSES = [2471, 4454] // pagado (legacy), pagada
@@ -8,6 +10,13 @@ const inSoles = (column) => `${column} * CASE WHEN e.cat_currency = 3042 THEN 3.
 // contado: se cobra al vender. En la BD la N.1 casi siempre es esa, asi que el
 // numero de cuota no sirve para separarlas; la fecha si.
 const IS_DEFERRED = 'pi.due_date > e.registration_date::date + 1'
+
+const CHECKED = 3052
+const ANNULLED = 3135
+const PLAN_SINGLE = 2466 // PT; el otro plan usado es 2467 = cuotas (PP)
+const RETIRED = 3245
+const REPROGRAMMED = 3240
+const COURSE_CHANGED = 3242
 
 export class FicoReportRepository {
   constructor (db = pool) {
@@ -73,6 +82,34 @@ export class FicoReportRepository {
        WHERE p.active = 'Y' AND e.active = 'Y'
          AND p.payment_date >= $1 AND p.payment_date < $2::date + 1
        GROUP BY 1, 2`, [from, to])
+    return rows
+  }
+
+  // Inscripciones aprobadas por dia de F. PAGO (la misma de la hoja FICO) y en
+  // que terminaron. Una inscripcion = la raiz: el destino de un CC cuelga del
+  // origen y el de una RP se descarta, porque ninguno es una venta nueva. La
+  // beca (monto 0) va aparte de PT/PP, como en la hoja.
+  async enrollmentsByOutcome ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES}
+      SELECT to_char(${SALE_DATE}, 'YYYY-MM-DD') AS dia,
+             COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE COALESCE(e.total_amount, 0) = 0)::int AS becas,
+             COUNT(*) FILTER (WHERE e.total_amount > 0 AND e.cat_payment_plan = $3)::int AS pt,
+             COUNT(*) FILTER (WHERE e.total_amount > 0 AND e.cat_payment_plan IS DISTINCT FROM $3)::int AS pp,
+             COUNT(*) FILTER (WHERE e.cat_type_status = $4)::int AS retirados,
+             COUNT(*) FILTER (WHERE e.cat_type_status = $5)::int AS rp,
+             COUNT(*) FILTER (WHERE e.cat_type_status = $6)::int AS cc
+        FROM enrollments e
+        LEFT JOIN lead_of lo ON lo.enrollment_id = e.enrollment_id
+        LEFT JOIN first_pay fp ON fp.enrollment_id = e.enrollment_id
+       WHERE e.active = 'Y' AND e.parent_enrollment_id IS NULL
+         AND e.cat_fico_status = $7
+         AND COALESCE(e.cat_type_status, 0) <> $8
+         AND NOT EXISTS (SELECT 1 FROM rp_link WHERE rp_link.destino_id = e.enrollment_id)
+         AND ${SALE_DATE} BETWEEN $1::date AND $2::date
+       GROUP BY 1`,
+    [from, to, PLAN_SINGLE, RETIRED, REPROGRAMMED, COURSE_CHANGED, CHECKED, ANNULLED])
     return rows
   }
 

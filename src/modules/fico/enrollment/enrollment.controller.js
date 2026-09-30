@@ -142,6 +142,11 @@ export async function editSellerAgentHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+const personalAccountFromBody = body => ({
+  provider: body.personal_account ?? null,
+  modules: body.personal_account_modules ?? null
+})
+
 export async function courseChangeHandler (req, reply) {
   const data = await usecases.courseChange({
     enrollmentId: req.body.enrollment_id,
@@ -155,7 +160,8 @@ export async function courseChangeHandler (req, reply) {
     cat_business_entity: req.body.cat_business_entity,
     bank_account_id: req.body.bank_account_id,
     transaction_code: req.body.transaction_code,
-    ticket_payment_urls: req.body.ticket_payment_urls
+    ticket_payment_urls: req.body.ticket_payment_urls,
+    personalAccount: personalAccountFromBody(req.body)
   })
   return reply.code(200).send({ ok: true, data })
 }
@@ -166,6 +172,7 @@ export async function reprogramEditionHandler (req, reply) {
     newEditionId: req.body.new_edition_id,
     justificacion: req.body.justificacion,
     installmentPlan: req.body.installment_plan ?? null,
+    personalAccount: personalAccountFromBody(req.body),
     userId: req.user?.id ?? req.body.user_id
   })
   return reply.code(200).send({ ok: true, data })

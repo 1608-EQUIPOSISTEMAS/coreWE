@@ -28,12 +28,21 @@ const PERU = 2329
 const CHECKED = 3052
 const ANNULLED = 3135
 const EVENT_PROGRAM_TYPE = 2507
+const OBSERVED = 3246
+// Canal de la venta = categoria del lead (columna Z de "3. SYSTEM", la que mira
+// Planeamiento): CM* marketing, CC* comercial (CCF es Fundacion), el resto otros.
+// La web va por agent_origin: casi nunca trae consulta registrada.
+const SALE_CHANNEL = `CASE
+    WHEN e.agent_origin = 'WEB' THEN 'WEB'
+    WHEN pr.categoria LIKE 'CM_' THEN 'MKT'
+    WHEN pr.categoria LIKE 'CC_' AND pr.categoria <> 'CCF' THEN 'COM'
+    ELSE 'OTROS' END`
 
 // La F. PAGO de la hoja FICO: pay_date del lead -> primer pago -> registro. Un
 // pay_date futuro o del ano 22026 (hay) no es una fecha de pago.
-const SALE_DATES_CTES = `
+export const SALE_DATES_CTES = `
   lead_of AS (
-    SELECT DISTINCT ON (l.enrollment_id) l.enrollment_id, l.cat_code_country,
+    SELECT DISTINCT ON (l.enrollment_id) l.enrollment_id, l.lead_id, l.cat_code_country,
            CASE WHEN l.pay_date BETWEEN DATE '2020-01-01' AND CURRENT_DATE THEN l.pay_date END AS pay_date
       FROM public.leads l
      WHERE l.enrollment_id IS NOT NULL AND l.active = 'Y'
@@ -43,7 +52,7 @@ const SALE_DATES_CTES = `
     SELECT enrollment_id, MIN(payment_date)::date AS dia
       FROM public.payments WHERE active = 'Y' GROUP BY enrollment_id
   )`
-const SALE_DATE = 'COALESCE(lo.pay_date, fp.dia, e.registration_date::date)'
+export const SALE_DATE = 'COALESCE(lo.pay_date, fp.dia, e.registration_date::date)'
 const SALE_JOINS = `
       JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
       JOIN public.programs p ON p.program_id = pv.program_id
@@ -188,11 +197,18 @@ export const planComercialRepository = {
       WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
       venta AS (
         SELECT ${SALE_DATE} AS f_pago, COALESCE(p.is_membership, false) AS membresia,
-               p.program_id, p.cat_model_modality, lo.cat_code_country, e.cat_currency
+               p.program_id, p.cat_model_modality, lo.cat_code_country, e.cat_currency,
+               ${SALE_CHANNEL} AS canal
           FROM public.enrollments e ${SALE_JOINS}
+          LEFT JOIN public.vw_r_prospectos pr ON pr.vacio_obligatorio = lo.lead_id::varchar
          WHERE ${PAID_SALE}
       )
       SELECT to_char(f_pago, 'YYYY-MM-DD') AS dia,
+             COUNT(*)::int AS ventas,
+             COUNT(*) FILTER (WHERE canal = 'MKT')::int AS mkt,
+             COUNT(*) FILTER (WHERE canal = 'COM')::int AS com,
+             COUNT(*) FILTER (WHERE canal = 'WEB')::int AS web,
+             COUNT(*) FILTER (WHERE canal = 'OTROS')::int AS otros,
              COUNT(*) FILTER (WHERE NOT membresia AND cat_model_modality = ANY($3::int[]))::int AS vivo,
              COUNT(*) FILTER (WHERE membresia)::int AS membresias,
              COUNT(*) FILTER (WHERE program_id = $4)::int AS black,
@@ -201,6 +217,34 @@ export const planComercialRepository = {
         FROM venta
        WHERE f_pago BETWEEN $1::date AND $2::date
        GROUP BY 1`, [from, to, LIVE_MODALITIES, BLACK_PROGRAM_ID, PERU, USD])
+    return rows
+  },
+
+  // Por la misma F. PAGO: las ventas que FICO observo alguna vez (hoy estan en
+  // Observado o el audit_logs guardo el cambio; al subsanar vuelven a Pendiente
+  // y el estado solo no las ve) y los convenios (B2B, aprobados), que no son
+  // venta del area. ponytail: audit_logs empieza el 17/08/26; antes solo se ven
+  // las que siguen observadas.
+  async reportSalesOutside ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
+      observed AS (
+        SELECT DISTINCT record_id::int AS enrollment_id
+          FROM public.audit_logs
+         WHERE table_name = 'enrollments' AND new_data->>'cat_fico_status' = ($3::int)::text
+      )
+      SELECT to_char(${SALE_DATE}, 'YYYY-MM-DD') AS dia,
+             COUNT(*) FILTER (WHERE ${PURCHASE} AND (e.cat_fico_status = $3
+                OR EXISTS (SELECT 1 FROM observed o WHERE o.enrollment_id = e.enrollment_id)))::int AS observadas,
+             COUNT(*) FILTER (WHERE e.cat_fico_status = $4
+                                AND (e.agent_origin = 'B2B' OR e.b2b_contract_id IS NOT NULL))::int AS convenios
+        FROM public.enrollments e ${SALE_JOINS}
+       WHERE e.active = 'Y' AND e.parent_enrollment_id IS NULL
+         AND COALESCE(e.cat_type_status, 0) <> $5
+         AND COALESCE(e.notes, '') NOT LIKE '%masiva FICO%'
+         AND NOT EXISTS (SELECT 1 FROM rp_link WHERE rp_link.destino_id = e.enrollment_id)
+         AND ${SALE_DATE} BETWEEN $1::date AND $2::date
+       GROUP BY 1`, [from, to, OBSERVED, CHECKED, ANNULLED])
     return rows
   },
 

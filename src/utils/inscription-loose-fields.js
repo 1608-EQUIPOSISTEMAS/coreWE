@@ -8,6 +8,7 @@
 // Nunca revierte la inscripcion si falla: la venta ya quedo registrada y estos
 // datos son de reporte / notificacion. El error queda en log para corregirlo.
 import { parseEmailCc } from './email-cc.js'
+import { normalizePersonalAccount, normalizePersonalAccountModules } from '../shared/personal-account.js'
 
 export async function saveLooseInscriptionFields (db, enrollmentId, inscription = {}) {
   const sets = []
@@ -45,6 +46,14 @@ export async function saveLooseInscriptionFields (db, enrollmentId, inscription 
   // observacion de la inscripcion, no por un alta.
   if (inscription.requires_email_cc === true) {
     sets.push('requires_email_cc = true')
+  }
+
+  // CUENTA PERSONAL: el formulario la manda siempre (null incluido), asi una
+  // subsanacion que quita el beneficio tambien quita la etiqueta.
+  if ('personal_account' in inscription) {
+    const provider = normalizePersonalAccount(inscription.personal_account)
+    sets.push(`personal_account = $${params.push(provider)}`)
+    sets.push(`personal_account_modules = $${params.push(provider ? normalizePersonalAccountModules(inscription.personal_account_modules) : null)}`)
   }
 
   if (sets.length === 0) return

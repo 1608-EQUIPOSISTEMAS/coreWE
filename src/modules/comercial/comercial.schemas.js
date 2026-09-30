@@ -220,6 +220,9 @@ export const enrollmentRegisterSchema = {
           cat_event_category: { type: ['integer', 'null'] },
           // Asiento asignado de la entrada VIP.
           event_seat: { type: ['string', 'null'] },
+          // CUENTA PERSONAL (Claude/ChatGPT) y, en un paquete, los modulos que la llevan.
+          personal_account: { type: ['string', 'null'] },
+          personal_account_modules: { type: ['array', 'null'], items: { type: 'integer' } },
 
           ticket_payment_urls: {
             type: 'array',

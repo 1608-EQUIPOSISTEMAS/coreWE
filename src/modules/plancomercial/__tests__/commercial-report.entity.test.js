@@ -99,3 +99,21 @@ describe('buildCommercialReport', () => {
     expect(r.meses).toHaveLength(6)
   })
 })
+
+describe('conteo de ventas', () => {
+  it('junta las filas de ventas y las de fuera del area sin romper con la cifra que falta', () => {
+    const r = buildCommercialReport({
+      period: { start: '2026-07-01', end: '2026-07-31' },
+      today: '2026-09-28',
+      ventas: [
+        { dia: '2026-07-03', vivo: 2, membresias: 0, black: 0, con_pais: 2, extranjeros: 0, ventas: 3, mkt: 2, com: 0, web: 1, otros: 0 },
+        { dia: '2026-07-03', observadas: 1, convenios: 4 },
+        { dia: '2026-08-01', ventas: 9, convenios: 9 } // fuera del rango
+      ],
+      conversion: [], planWeeks: [], cohortes: [], ediciones: [], blackPorVencer: []
+    })
+    expect(r.conteo).toEqual({ ventas: 3, mkt: 2, com: 0, web: 1, otros: 0, observadas: 1, convenios: 4 })
+    expect(r.meses.at(-1).conteo.convenios).toBe(4)
+    expect(r.vivo.logrado).toBe(2)
+  })
+})

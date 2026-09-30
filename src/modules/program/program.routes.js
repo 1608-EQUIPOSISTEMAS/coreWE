@@ -13,6 +13,7 @@ import {
   eventCategoryListSchema
 } from './program.schemas.js'
 import * as ctrl from './program.controller.js'
+import productReportRoutes from './report/report.routes.js'
 
 export default async function programRoutes (fastify) {
   fastify.post('/programregister', { schema: programRegisterSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.registerHandler)
@@ -31,4 +32,5 @@ export default async function programRoutes (fastify) {
   // de lectura de programa que ese formulario ya consume.
   fastify.post('/eventcategorylist', { schema: eventCategoryListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.eventCategoryListHandler)
   fastify.post('/programversiondetailget', { schema: programVersionDetailGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.versionDetailGetHandler)
+  await fastify.register(productReportRoutes)
 }

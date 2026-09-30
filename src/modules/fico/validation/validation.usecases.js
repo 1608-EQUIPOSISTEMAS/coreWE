@@ -10,6 +10,7 @@ import {
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
+import { childPersonalAccount } from '../../../shared/personal-account.js'
 
 // Orquestacion del subdominio de convalidaciones y estructura padre-hijo. No
 // contiene SQL (delega en el repository) ni reglas puras (delega en la entity).
@@ -179,6 +180,7 @@ export async function createChildEnrollments ({ enrollmentId, userId }) {
         segCatId,
         certCatId,
         catProfileId: parent.cat_profile_id,
+        personalAccount: childPersonalAccount(parent, childPvId),
         userId,
         notes: `Seguimiento (${item.sortOrder}/${totalChildren}) de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`.trim()
       })

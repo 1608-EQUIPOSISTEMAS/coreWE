@@ -1,6 +1,10 @@
 import { DomainError } from '../../../shared/errors.js'
 import { safeAsync } from '../../../shared/utils/safe-async.js'
 import { installmentRepository } from './installment.repository.js'
+// El correo de cuota sale del sender canonico: solo el aplica la cascada de CC
+// (enrollments.email_cc) y el gate requires_email_cc. Habia una copia en el repo
+// de cuotas que mandaba sin copia.
+import { sendPaymentConfirmationEmail } from '../email-confirmation/email-confirmation.usecases.js'
 import {
   isPaidByAlias,
   assertEditableAmount,
@@ -87,7 +91,7 @@ export async function confirmInstallment ({ installmentId, enrollmentId, catCurr
 
   const emailResult = await safeAsync(
     '[confirmInstallment][Email]',
-    () => repo.sendPaymentConfirmationEmail({ enrollmentId })
+    () => sendPaymentConfirmationEmail({ enrollmentId })
   )
 
   if (emailResult?.success) {
@@ -520,7 +524,7 @@ export async function applyCollectionCampaign ({ enrollmentId, annulIds, adjustm
   if (normalizedPays.length) {
     const emailResult = await safeAsync(
       '[applyCollectionCampaign][Email]',
-      () => repo.sendPaymentConfirmationEmail({ enrollmentId })
+      () => sendPaymentConfirmationEmail({ enrollmentId })
     )
     emailSent = emailResult?.success === true
     await repo.logAudit({

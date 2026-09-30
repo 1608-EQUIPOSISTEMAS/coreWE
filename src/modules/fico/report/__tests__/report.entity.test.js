@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   studentCompliance, collectionGoal, buildFicoReport,
-  debtAging, historicalCollectionRate, collectionForecast, collectionByMethod
+  debtAging, historicalCollectionRate, collectionForecast, collectionByMethod, enrollmentOutcomes
 } from '../report.entity.js'
 
 const cuota = (customer_id, vence, pagada_el, extra = {}) =>
@@ -105,5 +105,21 @@ describe('collectionByMethod', () => {
     expect(r.medios.map((m) => [m.medio, m.soles, m.pct])).toEqual([
       ['YAPE', 500, 50], ['Transferencia', 400, 40], ['Sin medio registrado', 100, 10]
     ])
+  })
+})
+
+describe('enrollmentOutcomes', () => {
+  it('suma los dias y saca el % de PP sin contar becas', () => {
+    const r = enrollmentOutcomes([
+      { dia: '2026-08-01', total: 10, pt: 6, pp: 2, becas: 2, retirados: 1, rp: 1, cc: 0 },
+      { dia: '2026-08-02', total: 10, pt: 4, pp: 4, becas: 2, retirados: 1, rp: 0, cc: 1 }
+    ])
+    expect(r).toMatchObject({ total: 20, pt: 10, pp: 6, becas: 4, retirados: 2, rp: 1, cc: 1 })
+    expect(r.pct_pp).toBe(37.5) // 6 de 16 pagadas
+    expect(r.pct_retirados).toBe(10)
+  })
+
+  it('sin inscripciones no inventa porcentajes', () => {
+    expect(enrollmentOutcomes([])).toMatchObject({ total: 0, pct_retirados: null, pct_pp: null })
   })
 })
