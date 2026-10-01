@@ -7,7 +7,8 @@ export function createSlackAdapter (client = slackClient) {
   return {
     notifyTokenCreated: payload => client.notifyTokenCreated(payload),
     notifyTokenLinkAdded: payload => client.notifyTokenLinkAdded(payload),
-    notifyInstructorCredentials: payload => client.notifyInstructorCredentials(payload)
+    notifyInstructorCredentials: payload => client.notifyInstructorCredentials(payload),
+    notifySheetsSyncFailing: payload => client.notifySheetsSyncFailing(payload)
   }
 }
 

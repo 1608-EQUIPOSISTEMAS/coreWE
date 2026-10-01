@@ -36,12 +36,12 @@ export async function syncFicoToSheetsHandler (req, reply) {
   // El sync corre en segundo plano y no cambia ninguna fila: sin esta huella
   // no queda rastro de quien apreto "Sincronizar ventas" en Inscripciones.
   await recordSystemAction(req.user?.id, 'SYNC_FICO')
-  const data = usecases.startFicoSyncInBackground()
+  const data = await usecases.startFicoSyncInBackground(req.user?.id ?? null)
   return reply.code(202).send({ ok: true, data })
 }
 
 export async function ficoSyncStatusHandler (req, reply) {
-  return reply.code(200).send({ ok: true, data: usecases.getFicoSyncStatus() })
+  return reply.code(200).send({ ok: true, data: await usecases.getFicoSyncStatus() })
 }
 
 export async function sendSlackReportHandler (req, reply) {

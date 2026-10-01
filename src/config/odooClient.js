@@ -248,6 +248,18 @@ function buildPartnerNameVals ({ names, surnames } = {}) {
   return vals
 }
 
+// Odoo (l10n_pe) crea todo partner con tipo de documento RUC por defecto
+// (l10n_latam.identification.type 11). Si solo se escribe `vat`, un DNI queda
+// como "RUC - 75192933" y rompe la facturacion. 8 digitos = DNI; el resto se
+// deja al default porque el numero solo no distingue CE de pasaporte.
+const ODOO_ID_TYPE_DNI = 4
+export function buildPartnerDocumentVals (documentNumber) {
+  const vat = String(documentNumber ?? '').trim()
+  if (vat === '') return {}
+  if (/^\d{8}$/.test(vat)) return { vat, l10n_latam_identification_type_id: ODOO_ID_TYPE_DNI }
+  return { vat }
+}
+
 async function searchSlideGroup (courseName) {
   const rows = await callKw('slide.group', 'search_read', [
     [['name', 'ilike', courseName]]
@@ -305,7 +317,7 @@ async function syncStudentToOdoo ({ searchEmail, createEmail, fullName, password
     // estos datos, los completamos; nunca los borra (solo escribe si vienen).
     const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
-    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    Object.assign(partnerVals, buildPartnerDocumentVals(documentNumber))
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
@@ -388,7 +400,7 @@ async function syncStudentToOdooOnline ({ searchEmail, createEmail, fullName, pa
 
     const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
-    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    Object.assign(partnerVals, buildPartnerDocumentVals(documentNumber))
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
@@ -453,7 +465,7 @@ async function enrollInAllOnlineCourses ({ searchEmail, createEmail, fullName, p
 
     const partnerVals = buildPartnerNameVals({ names, surnames })
     if (phone && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
-    if (documentNumber && String(documentNumber).trim() !== '') partnerVals.vat = String(documentNumber).trim()
+    Object.assign(partnerVals, buildPartnerDocumentVals(documentNumber))
     if (Object.keys(partnerVals).length > 0) {
       try {
         await callKw('res.partner', 'write', [[odooPartnerId], partnerVals])
@@ -1014,7 +1026,7 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names
       if (userVals.name)     partnerVals.name   = userVals.name
       if (userVals.email)    partnerVals.email  = userVals.email
       if (phone !== undefined && phone !== null && String(phone).trim() !== '') partnerVals.phone = String(phone).trim()
-      if (vat   !== undefined && vat   !== null && String(vat).trim()   !== '') partnerVals.vat   = String(vat).trim()
+      Object.assign(partnerVals, buildPartnerDocumentVals(vat))
       if (Object.keys(partnerVals).length) {
         await callKw('res.partner', 'write', [[partnerId], partnerVals])
       }

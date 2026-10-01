@@ -84,7 +84,7 @@ export function buildAulaRow (r) {
 }
 
 // Cabecera de "7. Convenios" (ventas B2B). Solo se escribe si la hoja no
-// existe todavia: ensureAndWrite respeta los headers que ya puso el usuario.
+// existe todavia: ensureAndReplaceRows respeta los headers que ya puso el usuario.
 export const CONVENIOS_HEADER_ROW = [
   'FECHA', 'EMPRESA', 'TIPO DE CLIENTE', 'PROGRAMA', 'NOMBRE', 'NÚMERO',
   'NOMBRE P.', 'F.PROGRAMA', 'OCUP.', 'F. PAGO', 'MONEDA', 'MONTO',
@@ -133,7 +133,7 @@ export function buildConveniosRow (r) {
 }
 
 // Cabecera de "5. Membresias". Solo se escribe si la hoja no existe todavia:
-// ensureAndWrite respeta los headers que ya puso el usuario.
+// ensureAndReplaceRows respeta los headers que ya puso el usuario.
 export const MEMBRESIAS_HEADER_ROW = [
   'NOMBRES', 'APELLIDOS', 'CELULAR', 'CORREO', 'MEMBRESIA', 'VENCIMIENTO'
 ]
@@ -147,7 +147,7 @@ export function buildMembresiasRow (r) {
 }
 
 // Cabecera de "4. Ventas Eventos" (ventas de congresos/eventos). Solo se
-// escribe si la hoja no existe todavia: ensureAndWrite respeta los headers que
+// escribe si la hoja no existe todavia: ensureAndReplaceRows respeta los headers que
 // ya puso el usuario.
 export const EVENTOS_HEADER_ROW = [
   'F. PAGO', 'DNI', 'NOMBRES', 'APELLIDOS', 'CELULAR', 'CORREO', 'OCUP',

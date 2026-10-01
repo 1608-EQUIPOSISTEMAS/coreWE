@@ -3,6 +3,7 @@ import { google } from 'googleapis'
 import path from 'path'
 import { WebClient } from '@slack/web-api'
 import { ALIAS } from '../../utils/catalog-aliases.js'
+import { buildReplacement, columnWidth } from './fico-autosync.entity.js'
 
 // Capa de infraestructura del modulo integration. Centraliza el acceso a la
 // base de datos, a Google Sheets y a Slack para que los usecases no instancien
@@ -37,6 +38,22 @@ async function getGoogleSheets () {
   })
   const authClient = await auth.getClient()
   return google.sheets({ version: 'v4', auth: authClient })
+}
+
+// Reintenta una llamada a Google si responde 429 (cuota por minuto) o 5xx
+// (falla temporal suya): 2 s, 4 s, 8 s. Cualquier otro error sube directo.
+const RETRY_DELAYS_MS = [2000, 4000, 8000]
+async function withSheetsRetry (fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const status = Number(err?.code ?? err?.response?.status)
+      const transient = status === 429 || status >= 500
+      if (!transient || attempt >= RETRY_DELAYS_MS.length) throw err
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
+    }
+  }
 }
 
 // Verifica que la hoja exista en el spreadsheet; si no, la crea y escribe la
@@ -252,19 +269,21 @@ export const IS_EVENT = `
 // registro las dejaba pasar. La familia entera (padre + hijas) se corta por la
 // fecha del PADRE para que aparezcan o desaparezcan juntos.
 export const SYNC_FROM_DATE = '2026-04-28'
+// Va como `IN (conjunto)` y no como subconsulta por fila: correlacionada, el
+// planificador estimaba ~6 filas donde pasan ~5000 y armaba bucles anidados
+// sobre tablas enteras (Aula tardaba 50 s-4 min por esto).
 export const SYNC_FROM = `
-         AND (
-           SELECT COALESCE(
+         AND COALESCE(e.parent_enrollment_id, e.enrollment_id) IN (
+           SELECT fam.enrollment_id
+             FROM public.enrollments fam
+            WHERE COALESCE(
                     (SELECT lf.pay_date FROM public.leads lf
                       WHERE lf.enrollment_id = fam.enrollment_id LIMIT 1),
-                    (SELECT py.payment_date::date FROM public.payments py
-                      WHERE py.enrollment_id = fam.enrollment_id AND py.active = 'Y'
-                      ORDER BY py.payment_date ASC LIMIT 1),
+                    (SELECT MIN(py.payment_date)::date FROM public.payments py
+                      WHERE py.enrollment_id = fam.enrollment_id AND py.active = 'Y'),
                     fam.registration_date::date
-                  )
-             FROM public.enrollments fam
-            WHERE fam.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
-         ) >= DATE '${SYNC_FROM_DATE}'`
+                  ) >= DATE '${SYNC_FROM_DATE}'
+         )`
 
 // Corte propio de la hoja "7. Convenios": el negocio arranco el reporte de
 // convenios el 2026-08-14, asi que solo suben las ventas B2B pagadas desde ese
@@ -1529,20 +1548,22 @@ export class IntegrationRepository {
   }
 
 
-  // Limpia un rango y escribe valores desde una celda de inicio. El clear es
-  // obligatorio: si falla, el update solo sobrescribe las primeras N filas y deja
-  // filas viejas debajo, mezclando datos de corridas distintas.
-  async clearAndWrite (spreadsheetId, clearRange, writeRange, values) {
+  // Reemplaza las filas de datos (desde A2 hasta la columna lastCol) en UNA sola
+  // llamada atómica: ver buildReplacement. Lee cuántas filas hay hoy para pisar
+  // con vacío las que sobren.
+  async replaceRows (spreadsheetId, sheetName, lastCol, values) {
     const googleSheets = await this.sheets()
-    await googleSheets.spreadsheets.values.clear({ spreadsheetId, range: clearRange })
-    if (values.length > 0) {
-      await googleSheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: writeRange,
-        valueInputOption: 'USER_ENTERED',
-        resource: { values }
-      })
-    }
+    const current = await withSheetsRetry(() => googleSheets.spreadsheets.values.get({
+      spreadsheetId, range: `'${sheetName}'!A2:${lastCol}`
+    }))
+    const rows = buildReplacement(values, columnWidth(lastCol), (current.data.values || []).length)
+    if (rows.length === 0) return
+    await withSheetsRetry(() => googleSheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${sheetName}'!A2`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: rows }
+    }))
   }
 
   // Limpia desde A2 y escribe headers (A2 + valores) con la semantica legacy de
@@ -1631,20 +1652,13 @@ export class IntegrationRepository {
     return res.data.updatedCells
   }
 
-  // Asegura que una hoja exista (creandola con headers si no) y escribe
-  // valores con clear previo. Usado por la hoja "3. Cuotas" generada por codigo.
-  async ensureAndWrite (spreadsheetId, sheetName, headerRow, clearRange, writeRange, values) {
+  // Asegura que una hoja exista (creandola con headers si no) y reemplaza sus
+  // filas de datos. Usado por las hojas generadas por codigo (Cuotas, Eventos...).
+  async ensureAndReplaceRows (spreadsheetId, sheetName, headerRow, lastCol, values) {
     const googleSheets = await this.sheets()
-    const created = await this.ensureSheetExists(googleSheets, spreadsheetId, sheetName, headerRow)
-    await googleSheets.spreadsheets.values.clear({ spreadsheetId, range: clearRange })
-    if (values.length > 0) {
-      await googleSheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: writeRange,
-        valueInputOption: 'USER_ENTERED',
-        resource: { values }
-      })
-    }
+    const created = await withSheetsRetry(() =>
+      this.ensureSheetExists(googleSheets, spreadsheetId, sheetName, headerRow))
+    await this.replaceRows(spreadsheetId, sheetName, lastCol, values)
     return created
   }
 

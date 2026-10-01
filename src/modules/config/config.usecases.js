@@ -27,8 +27,6 @@ export async function registerUser (body = {}) {
   if (await repo.aliasExists(user.alias)) {
     throw new DomainError(`Ya existe un usuario con alias ${user.alias}`, { statusCode: 409 })
   }
-  // NOTA: la contraseña se guarda tal cual porque sp_auth_login compara texto
-  // plano. Migrar a hash (pgcrypto/bcrypt) requiere actualizar ese SP a la vez.
   return repo.userCreate(user, body.user_id ?? null)
 }
 
