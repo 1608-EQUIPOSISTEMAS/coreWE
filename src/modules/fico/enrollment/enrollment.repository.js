@@ -428,6 +428,21 @@ export class EnrollmentRepository {
     return rows
   }
 
+  // Liga una inscripcion hija YA EXISTENTE a su padre de paquete. Solo si no tiene
+  // padre: no le roba la hija a otro paquete. Devuelve { linked, currentParentId }
+  // (currentParentId = padre que ya tenia, si no se pudo ligar).
+  async linkChildToParent (childEnrollmentId, parentEnrollmentId) {
+    const { rowCount } = await this.db.query(
+      `UPDATE public.enrollments SET parent_enrollment_id = $1
+        WHERE enrollment_id = $2 AND parent_enrollment_id IS NULL AND enrollment_id <> $1`,
+      [parentEnrollmentId, childEnrollmentId])
+    if (rowCount > 0) return { linked: true, currentParentId: parentEnrollmentId }
+    const { rows } = await this.db.query(
+      'SELECT parent_enrollment_id FROM public.enrollments WHERE enrollment_id = $1', [childEnrollmentId])
+    const current = rows?.[0]?.parent_enrollment_id ?? null
+    return { linked: false, currentParentId: current == null ? null : Number(current) }
+  }
+
   // Usuarios-asesor con su alias (codigo de agente, ej "AE30"). La importacion
   // masiva lo indexa para resolver la columna AS -> seller_agent_id.
   async listAgents () {

@@ -31,6 +31,10 @@ export const importerPorts = {
   // () -> [{ parent_edition_id, child_edition_id, child_version_id }]. Estructura
   // padre->aulas hijas; la hoja FICO crea las inscripciones hijas de un paquete.
   listEditionStructure: null,
+  // ({ childEnrollmentId, parentEnrollmentId }) -> { linked, currentParentId }.
+  // Liga al padre una hija que ya existia (el registro salio duplicado, result=2),
+  // solo si no tenia padre. Sin esto la hija quedaba suelta.
+  linkChildToParent: null,
   // () -> [{ account_id, business_entity_catalog_id, bank_name, currency }]. La hoja
   // FICO resuelve "ENTIDAD FINANCIERA" (+ empresa + moneda) a bank_account_id.
   listBankAccounts: null,

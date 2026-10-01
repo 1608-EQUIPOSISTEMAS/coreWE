@@ -77,6 +77,9 @@ setImporterPorts({
     enrollmentRepository.updateEnrollmentAgent(enrollmentId, sellerAgentId, agentOrigin),
   // Estructura padre->aulas hijas, para crear inscripciones hijas de paquete.
   listEditionStructure: () => enrollmentRepository.listEditionStructure(),
+  // Liga al padre una hija que ya existia (salio duplicada al crearla).
+  linkChildToParent: ({ childEnrollmentId, parentEnrollmentId }) =>
+    enrollmentRepository.linkChildToParent(childEnrollmentId, parentEnrollmentId),
   // Cuentas bancarias y monedas, para resolver "ENTIDAD FINANCIERA" y "TIPO DE
   // MONEDA" de la hoja FICO.
   listBankAccounts: () => enrollmentRepository.bankAccountList(),

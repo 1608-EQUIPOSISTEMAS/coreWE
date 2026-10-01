@@ -760,8 +760,8 @@ async function commitRow (data, { userId }) {
   // Paquete (especializacion): el padre no tiene aula propia. Crear las hijas en
   // cada aula hija, ligadas al padre. parentId sale del create o del duplicado
   // (re-import), asi el backfill de hijas funciona aunque el padre ya exista.
-  // El SP devuelve result=1 (creada) o 2 (ya existia, idempotente por findDuplicate);
-  // cualquier otro valor o excepcion es un FALLO REAL que antes se tragaba en
+  // El SP devuelve result=1 (creada) o 2 (ya existia, idempotente por findDuplicate;
+  // se liga al padre si estaba suelta); cualquier otro valor o excepcion es un FALLO REAL que antes se tragaba en
   // silencio (por eso aparecian padres sin hijas). Ahora se cuenta y se reporta.
   const parentId = resp?.enrollment_id || resp?.duplicate_info?.enrollment_id
   const childFails = []
@@ -771,7 +771,20 @@ async function commitRow (data, { userId }) {
         const cresp = await importerPorts.registerEnrollment({
           data: childInscription(data, child, parentId), userId, skipFollowup: true
         })
-        if (cresp?.result !== 1 && cresp?.result !== 2) {
+        if (cresp?.result === 2) {
+          // La hija YA existia en esa aula (import previo como curso suelto, o
+          // registro manual): el duplicado no la liga al padre, asi que antes
+          // quedaba suelta. Se liga aqui; si ya tiene OTRO padre no se toca y se avisa.
+          const childId = cresp?.duplicate_info?.enrollment_id
+          const link = childId
+            ? await importerPorts.linkChildToParent({ childEnrollmentId: childId, parentEnrollmentId: parentId })
+            : null
+          if (!link) {
+            childFails.push(`aula ${child.edition_id}: duplicada sin id, no se pudo ligar al padre`)
+          } else if (!link.linked && Number(link.currentParentId) !== Number(parentId)) {
+            childFails.push(`aula ${child.edition_id}: la inscripcion ${childId} ya pertenece al padre ${link.currentParentId}`)
+          }
+        } else if (cresp?.result !== 1) {
           childFails.push(`aula ${child.edition_id}: ${cresp?.message || 'sin exito'}`)
         }
       } catch (err) {

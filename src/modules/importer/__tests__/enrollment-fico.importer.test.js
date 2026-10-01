@@ -349,6 +349,37 @@ describe('enrollment-fico commitRow — importacion solo inserta', () => {
     expect(calls[1].parent_enrollment_id).toBe(2000)
   })
 
+  it('hija que ya existia suelta (result=2) -> se liga al padre', async () => {
+    let linked = null
+    setImporterPorts({
+      registerEnrollment: async (args) => args.data.parent_enrollment_id
+        ? { result: 2, duplicate_info: { enrollment_id: 700 } }
+        : { result: 1, enrollment_id: 1000 },
+      linkChildToParent: async (args) => { linked = args; return { linked: true, currentParentId: 1000 } }
+    })
+    const out = await enrollmentFicoImporter.commitRow({
+      program_version_id: 42, program_edition_id: 500, document_number: '123',
+      child_editions: [{ edition_id: 600, version_id: 60 }]
+    }, { userId: 7 })
+    expect(linked).toEqual({ childEnrollmentId: 700, parentEnrollmentId: 1000 })
+    expect(out.ok).toBe(true)
+  })
+
+  it('hija existente ligada a OTRO padre -> no se toca y la fila avisa', async () => {
+    setImporterPorts({
+      registerEnrollment: async (args) => args.data.parent_enrollment_id
+        ? { result: 2, duplicate_info: { enrollment_id: 700 } }
+        : { result: 1, enrollment_id: 1000 },
+      linkChildToParent: async () => ({ linked: false, currentParentId: 888 })
+    })
+    const out = await enrollmentFicoImporter.commitRow({
+      program_version_id: 42, program_edition_id: 500, document_number: '123',
+      child_editions: [{ edition_id: 600, version_id: 60 }]
+    }, { userId: 7 })
+    expect(out.ok).toBe(false)
+    expect(out.message).toMatch(/ya pertenece al padre 888/)
+  })
+
   it('hija que falla (result!=1/2) -> fila NO ok y mensaje con ADVERTENCIA (no se traga el fallo)', async () => {
     let n = 0
     setImporterPorts({
