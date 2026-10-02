@@ -32,6 +32,27 @@ pool.on('connect', (client) => {
   }
 });
 
+// Pool aparte para el sync FICO → Google Sheets: corre solo cada pocos minutos y
+// lanza consultas pesadas; con su propio tope de 3 conexiones nunca le quita
+// conexiones al API. 3 = 1 que sostiene el advisory lock + 2 para las consultas.
+// statement_timeout: una consulta colgada muere sola en vez de bloquear el sync.
+export const syncPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: isSSL ? { rejectUnauthorized: false } : false,
+  max: 3,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
+});
+syncPool.on('error', (err) => {
+  console.error('[pg-sync-pool] Conexion idle perdida (se repondra sola):', err.message);
+});
+syncPool.on('connect', (client) => {
+  client.query(`SET application_name = 'we-edu-fico-sheets-sync'`);
+  client.query(`SET TIME ZONE 'America/Lima'`);
+  client.query('SET statement_timeout = 60000');
+});
+
 /** Acceso directo tipo antes: */
 export const query = (text, params) => pool.query(text, params);
 

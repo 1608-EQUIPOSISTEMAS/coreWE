@@ -301,4 +301,19 @@ async function notifyTokenLinkAdded ({ students, groupTotal, currency, advisorNa
   }
 }
 
-export default { notifyInstructorCredentials, notifyStudentRetirement, notifyEnrollmentObserved, notifyEnrollmentResubmitted, notifyTokenCreated, notifyTokenLinkAdded }
+// Sync FICO → Google Sheets fallando seguido: las hojas de FICO están
+// desactualizadas. Va al canal de FICO porque son ellos los que leen esas hojas.
+// Nunca lanza al caller.
+async function notifySheetsSyncFailing ({ failures, error }) {
+  try {
+    await post({
+      channel: SLACK_CHANNEL_FICO,
+      text: `⚠️ El sync automático a Google Sheets (FICO) falló ${failures} veces seguidas. ` +
+        `Las hojas pueden estar desactualizadas. Último error: ${String(error).slice(0, 500)}`
+    })
+  } catch (err) {
+    console.error('[slack] notifySheetsSyncFailing:', err.message)
+  }
+}
+
+export default { notifySheetsSyncFailing, notifyInstructorCredentials, notifyStudentRetirement, notifyEnrollmentObserved, notifyEnrollmentResubmitted, notifyTokenCreated, notifyTokenLinkAdded }

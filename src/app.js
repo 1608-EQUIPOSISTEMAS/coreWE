@@ -9,6 +9,7 @@ import './services/tickets-sla.cron.js'
 import './services/tickets-autoassign.cron.js'
 import './services/daily-plan.cron.js'
 import './services/lead-summary.cron.js'
+import './services/fico-sheets-autosync.cron.js'
 import { buildApp } from './buildApp.js'
 
 const app = await buildApp()

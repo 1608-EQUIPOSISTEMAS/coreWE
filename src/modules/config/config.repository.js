@@ -60,8 +60,9 @@ export class ConfigRepository {
         [firstName, lastName, registrationUserId]
       )
       const { rows: [user] } = await client.query(
+        // bcrypt vía pgcrypto: sp_auth_login compara con crypt(clave, hash).
         `INSERT INTO public.users (person_id, alias, email, password, active, telefonos, name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         VALUES ($1, $2, $3, crypt($4, gen_salt('bf', 10)), $5, $6, $7)
          RETURNING user_id`,
         [person.person_id, alias, email, password, active, phones, firstName]
       )
@@ -80,7 +81,7 @@ export class ConfigRepository {
       const { rows: [user] } = await client.query(
         `UPDATE public.users
          SET alias = $2, email = $3, active = $4, telefonos = $5, name = $6,
-             password = COALESCE($7, password)
+             password = COALESCE(crypt($7, gen_salt('bf', 10)), password)
          WHERE user_id = $1
          RETURNING user_id, person_id`,
         [userId, alias, email, active, phones, firstName, password]

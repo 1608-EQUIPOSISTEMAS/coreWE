@@ -1,6 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { integrationRepository } from './integration.repository.js'
+import { integrationRepository, IntegrationRepository } from './integration.repository.js'
+import { ficoAutosyncRepository } from './fico-autosync.repository.js'
+import { AUTOSYNC, observeChanges, decideAutoSync, shouldAlertFailures } from './fico-autosync.entity.js'
+import { syncPool } from '../../shared/db/pool.js'
+import { slack } from '../../shared/adapters/slack/slack.adapter.js'
 import { editionRepository } from '../edition/edition.repository.js'
 import {
   serializeSheetRow,
@@ -23,6 +27,10 @@ import {
 } from './integration.entity.js'
 
 const repo = integrationRepository
+// Las 9 hojas FICO consultan por el pool del sync (3 conexiones, timeout 60 s)
+// para no competir con el API por conexiones.
+const ficoRepo = new IntegrationRepository(syncPool)
+const autosyncRepo = ficoAutosyncRepository
 
 // Sincroniza el ODS de leads de un usuario a su Google Sheet personal.
 export async function syncLeadsToSheet ({ user_id }) {
@@ -169,72 +177,72 @@ export async function syncEnrollmentToSheet () {
 
 // FICO -> hoja "0. Ventas Sistemas". 20 columnas A..T, sobreescritura total.
 export async function syncFicoSalesToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '0. Ventas Sistemas'
 
-  const rows = await repo.getFicoSales()
+  const rows = await ficoRepo.getFicoSales()
   const values = rows.map(buildSalesRow)
 
-  await repo.clearAndWrite(SPREADSHEET_ID, `'${SHEET_NAME}'!A2:T`, `'${SHEET_NAME}'!A2`, values)
+  await ficoRepo.replaceRows(SPREADSHEET_ID, SHEET_NAME, 'T', values)
 
   return { rows_synced: values.length, sheet: SHEET_NAME }
 }
 
 // FICO -> hoja "1. Aula Sistemas". Vista academica de 16 columnas A..P.
 export async function syncFicoAulaToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '1. Aula Sistemas'
 
-  const rows = await repo.getFicoAula()
+  const rows = await ficoRepo.getFicoAula()
   const values = rows.map(buildAulaRow)
 
-  await repo.clearAndWrite(SPREADSHEET_ID, `'${SHEET_NAME}'!A2:P`, `'${SHEET_NAME}'!A2`, values)
+  await ficoRepo.replaceRows(SPREADSHEET_ID, SHEET_NAME, 'P', values)
 
   return { rows_synced: values.length, sheet: SHEET_NAME }
 }
 
 // FICO -> hoja "2. Consolidado". Vista financiera detallada de 31 columnas A..AE.
 export async function syncFicoConsolidadoToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '2. Consolidado'
 
-  const rows = await repo.getFicoConsolidado()
+  const rows = await ficoRepo.getFicoConsolidado()
   const values = rows.map(buildConsolidadoRow)
 
-  await repo.clearAndWrite(SPREADSHEET_ID, `'${SHEET_NAME}'!A2:AE`, `'${SHEET_NAME}'!A2`, values)
+  await ficoRepo.replaceRows(SPREADSHEET_ID, SHEET_NAME, 'AE', values)
 
   return { rows_synced: values.length, sheet: SHEET_NAME }
 }
 
 // FICO -> hoja "3. Cuotas". Una fila por inscripcion PP con cuotas pivotadas.
 export async function syncFicoCuotasToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '3. Cuotas'
   const MAX_CUOTAS = 8
 
-  const rows = await repo.getFicoCuotas()
+  const rows = await ficoRepo.getFicoCuotas()
 
+  // Un solo aviso por corrida con los ids: el sync automatico corre varias veces
+  // por hora y una linea por inscripcion llenaba el log.
   let truncatedCuotas = 0
-  let truncatedEnrollments = 0
+  const truncatedIds = []
   const values = rows.map(r => {
     const { row, truncated } = buildCuotasRow(r, MAX_CUOTAS)
     if (truncated > 0) {
-      const totalCuotas = (Array.isArray(r.cuotas_json) ? r.cuotas_json.length : 0)
       truncatedCuotas += truncated
-      truncatedEnrollments++
-      console.warn(`[syncFicoCuotasToSheet] enrollment_id=${r.enrollment_id} truncado: ${totalCuotas} cuotas -> mostrando primeras ${MAX_CUOTAS}`)
+      truncatedIds.push(r.enrollment_id)
     }
     return row
   })
 
-  if (truncatedEnrollments > 0) {
-    console.warn(`[syncFicoCuotasToSheet] Total: ${truncatedEnrollments} enrollments con mas de ${MAX_CUOTAS} cuotas, ${truncatedCuotas} cuotas omitidas`)
+  if (truncatedIds.length > 0) {
+    console.warn(`[syncFicoCuotasToSheet] ${truncatedIds.length} inscripciones con mas de ${MAX_CUOTAS} cuotas ` +
+      `(${truncatedCuotas} cuotas no caben): ${truncatedIds.join(', ')}`)
   }
 
   const HEADER_ROW = buildCuotasHeaderRow(MAX_CUOTAS)
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, HEADER_ROW,
-    `'${SHEET_NAME}'!A2:BV`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, HEADER_ROW, 'BV', values
   )
 
   return {
@@ -242,7 +250,7 @@ export async function syncFicoCuotasToSheet () {
     sheet: SHEET_NAME,
     sheet_created: created,
     truncated_cuotas: truncatedCuotas,
-    truncated_enrollments: truncatedEnrollments
+    truncated_enrollments: truncatedIds.length
   }
 }
 
@@ -251,15 +259,14 @@ export async function syncFicoCuotasToSheet () {
 // Estas ventas siguen apareciendo tambien en "0. Ventas Sistemas": esta hoja es
 // una vista aparte con la modalidad y el asiento, que las otras no llevan.
 export async function syncFicoEventosToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '4. Ventas Eventos'
 
-  const rows = await repo.getFicoEventos()
+  const rows = await ficoRepo.getFicoEventos()
   const values = rows.map(buildEventosRow)
 
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, EVENTOS_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:Q`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, EVENTOS_HEADER_ROW, 'Q', values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
@@ -276,10 +283,10 @@ export async function syncFicoEventosToSheet () {
 // edicion en el sistema (eventos, separadores en blanco) quedan en blanco;
 // ediciones que no estan en el planeamiento van al final.
 export async function syncFicoCronogramaToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = 'CONT SISTEMAS'
 
-  const rows = await repo.getFicoCronograma()
+  const rows = await ficoRepo.getFicoCronograma()
   const ids = rows.map(r => Number(r.edition_num_id))
   const metrics = ids.length ? await editionRepository.classroomChannelMetricsList(ids) : []
   const byId = new Map(metrics.map(m => [Number(m.edition_num_id), m]))
@@ -293,9 +300,8 @@ export async function syncFicoCronogramaToSheet () {
   }))
   const values = await alignToPlaneamiento26(entries)
 
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, CRONOGRAMA_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:Y`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, CRONOGRAMA_HEADER_ROW, 'Y', values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
@@ -313,7 +319,7 @@ export async function syncFicoCronogramaToSheet () {
 async function alignToPlaneamiento26 (entries) {
   let plan
   try {
-    plan = await repo.readRange(repo.SPREADSHEET.cronograma26, "'0. Planeamiento 26'!D2:K")
+    plan = await ficoRepo.readRange(ficoRepo.SPREADSHEET.cronograma26, "'0. Planeamiento 26'!D2:K")
   } catch (err) {
     console.warn('CONT SISTEMAS: no se pudo leer 0. Planeamiento 26, se mantiene orden por fecha:', err.message)
     return entries.filter(e => e.active && e.recent).map(e => e.row)
@@ -349,15 +355,14 @@ async function alignToPlaneamiento26 (entries) {
 // sobreescritura total desde A2 (igual que las demas hojas). Crea la hoja con
 // headers si no existe.
 export async function syncFicoAdicionalesToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '6. Adicionales'
 
-  const rows = await repo.getFicoAdicionales()
+  const rows = await ficoRepo.getFicoAdicionales()
   const values = rows.map(buildAdicionalesRow)
 
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, ADICIONALES_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:S`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, ADICIONALES_HEADER_ROW, 'S', values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
@@ -367,15 +372,14 @@ export async function syncFicoAdicionalesToSheet () {
 // que se le retira el beneficio (un anio desde que arranco). 6 columnas A..F.
 // Crea la hoja con headers si no existe.
 export async function syncFicoMembresiasToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '5. Membresias'
 
-  const rows = await repo.getFicoMembresias()
+  const rows = await ficoRepo.getFicoMembresias()
   const values = rows.map(buildMembresiasRow)
 
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, MEMBRESIAS_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:F`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, MEMBRESIAS_HEADER_ROW, 'F', values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
@@ -384,68 +388,125 @@ export async function syncFicoMembresiasToSheet () {
 // FICO -> hoja "7. Convenios". Ventas B2B pagadas desde CONVENIOS_FROM_DATE:
 // 20 columnas A..T. Crea la hoja con headers si no existe.
 export async function syncFicoConveniosToSheet () {
-  const SPREADSHEET_ID = repo.SPREADSHEET.fico
+  const SPREADSHEET_ID = ficoRepo.SPREADSHEET.fico
   const SHEET_NAME = '7. Convenios'
 
-  const rows = await repo.getFicoConvenios()
+  const rows = await ficoRepo.getFicoConvenios()
   const values = rows.map(buildConveniosRow)
 
-  const created = await repo.ensureAndWrite(
-    SPREADSHEET_ID, SHEET_NAME, CONVENIOS_HEADER_ROW,
-    `'${SHEET_NAME}'!A2:T`, `'${SHEET_NAME}'!A2`, values
+  const created = await ficoRepo.ensureAndReplaceRows(
+    SPREADSHEET_ID, SHEET_NAME, CONVENIOS_HEADER_ROW, 'T', values
   )
 
   return { rows_synced: values.length, sheet: SHEET_NAME, sheet_created: created }
 }
 
-// Sincroniza las 9 hojas FICO en paralelo: son independientes (misma
-// spreadsheet, hojas y rangos distintos), asi el tiempo total es el de la hoja
-// mas lenta y no la suma de las 9. Si alguna falla, la request completa falla
-// (Promise.all), pero las demas ya lanzadas terminan igual: cada hoja se
-// sobreescribe completa en cada sync, asi que no queda estado corrupto.
-// ponytail: si Sheets empieza a devolver 429 por la rafaga, volver a lotes de 2-3.
+// Las 9 hojas FICO, de 3 en 3: en paralelo total eran ~25 llamadas a Google en
+// rafaga y 9 consultas a la vez contra la BD. Cada hoja se reemplaza entera y de
+// forma atomica (ensureAndReplaceRows), asi que si una falla las demas quedan
+// bien y la siguiente corrida la corrige.
+const FICO_SHEETS = [
+  ['ventas', syncFicoSalesToSheet], ['aula', syncFicoAulaToSheet],
+  ['consolidado', syncFicoConsolidadoToSheet], ['cuotas', syncFicoCuotasToSheet],
+  ['eventos', syncFicoEventosToSheet], ['cronograma', syncFicoCronogramaToSheet],
+  ['adicionales', syncFicoAdicionalesToSheet], ['membresias', syncFicoMembresiasToSheet],
+  ['convenios', syncFicoConveniosToSheet]
+]
+const SHEETS_PER_BATCH = 3
+
 export async function syncFicoToSheets () {
-  const [ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias, convenios] = await Promise.all([
-    syncFicoSalesToSheet(),
-    syncFicoAulaToSheet(),
-    syncFicoConsolidadoToSheet(),
-    syncFicoCuotasToSheet(),
-    syncFicoEventosToSheet(),
-    syncFicoCronogramaToSheet(),
-    syncFicoAdicionalesToSheet(),
-    syncFicoMembresiasToSheet(),
-    syncFicoConveniosToSheet()
-  ])
-  return { ventas, aula, consolidado, cuotas, eventos, cronograma, adicionales, membresias, convenios }
+  const result = {}
+  const errors = []
+  for (let i = 0; i < FICO_SHEETS.length; i += SHEETS_PER_BATCH) {
+    const batch = FICO_SHEETS.slice(i, i + SHEETS_PER_BATCH)
+    const settled = await Promise.allSettled(batch.map(([, sync]) => sync()))
+    settled.forEach((r, j) => {
+      const name = batch[j][0]
+      if (r.status === 'fulfilled') result[name] = r.value.rows_synced
+      else errors.push(`${name}: ${r.reason?.message ?? r.reason}`)
+    })
+  }
+  if (errors.length) {
+    const err = new Error(errors.join(' | '))
+    err.rowsBySheet = result
+    throw err
+  }
+  return result
 }
 
-// Version fire-and-forget de syncFicoToSheets: responde al instante y deja la
-// sincronizacion corriendo en segundo plano, para que el usuario no espere.
-// El resultado (contadores por hoja) y los errores quedan solo en el log del
-// servidor. Cada hoja se sobreescribe completa en cada sync, asi que un fallo
-// a mitad se corrige solo en la siguiente corrida.
-// ponytail: candado en memoria, vale porque hay una sola instancia del backend.
-let ficoSyncRunning = false
-let ficoSyncLastError = null
-export function startFicoSyncInBackground () {
-  if (ficoSyncRunning) return { started: false, already_running: true }
-  ficoSyncRunning = true
-  ficoSyncLastError = null
-  syncFicoToSheets()
-    .then(r => console.log('[syncFicoToSheets] fondo ok:',
-      Object.entries(r).map(([k, v]) => `${k}=${v.rows_synced}`).join(' ')))
-    .catch(err => {
-      ficoSyncLastError = err.message
-      console.error('[syncFicoToSheets] fallo en segundo plano:', err)
-    })
-    .finally(() => { ficoSyncRunning = false })
+const withTimeout = (promise, ms) => {
+  let timer
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`Sync cancelado: paso de ${ms / 1000} s`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+// Una corrida completa, automatica o manual. Devuelve null si ya hay otra en
+// curso (el advisory lock lo decide, no un booleano en memoria). El contador se
+// lee ANTES de consultar: lo que cambie mientras corre queda por encima y lo
+// toma la siguiente corrida.
+export async function runFicoSheetsSync ({ trigger, requestedBy = null }) {
+  return autosyncRepo.withLock(async () => {
+    await autosyncRepo.closeOrphanRuns()
+    const watermark = await autosyncRepo.changeVersion()
+    const runId = await autosyncRepo.startRun({ trigger, watermark, requestedBy })
+    const t0 = Date.now()
+    try {
+      const rowsBySheet = await withTimeout(syncFicoToSheets(), AUTOSYNC.runTimeoutMs)
+      await autosyncRepo.finishRun(runId, { status: 'ok', rowsBySheet })
+      console.log(`[fico-sheets] ${trigger} OK en ${Date.now() - t0} ms`)
+      return { run_id: runId, status: 'ok', rows_by_sheet: rowsBySheet }
+    } catch (err) {
+      await autosyncRepo.finishRun(runId, { status: 'failed', rowsBySheet: err.rowsBySheet ?? null, error: err.message })
+      console.error(`[fico-sheets] ${trigger} FALLO en ${Date.now() - t0} ms:`, err.message)
+      const failures = await autosyncRepo.consecutiveFailures()
+      if (shouldAlertFailures(failures)) {
+        await slack.notifySheetsSyncFailing({ failures, error: err.message })
+      }
+      return { run_id: runId, status: 'failed', error: err.message }
+    }
+  })
+}
+
+// Boton manual: arranca en segundo plano y responde al instante.
+export async function startFicoSyncInBackground (requestedBy = null) {
+  if (await autosyncRepo.isRunning()) return { started: false, already_running: true }
+  runFicoSheetsSync({ trigger: 'manual', requestedBy })
+    .catch((err) => console.error('[fico-sheets] manual no pudo arrancar:', err.message))
   return { started: true }
 }
 
-// Estado del sync en fondo, para que el frontend haga polling y mantenga el
-// boton deshabilitado hasta que termine (y muestre el error si fallo).
-export function getFicoSyncStatus () {
-  return { running: ficoSyncRunning, last_error: ficoSyncLastError }
+// Lo que ve FICO en Inscripciones: si esta corriendo, cuando quedo al dia y si
+// hay cambios esperando subir.
+export async function getFicoSyncStatus () {
+  const [{ last, last_ok: lastOk }, version, running] = await Promise.all([
+    autosyncRepo.lastRuns(), autosyncRepo.changeVersion(), autosyncRepo.isRunning()
+  ])
+  return {
+    running,
+    last_status: last?.status ?? null,
+    last_error: last?.status === 'failed' ? last.error : null,
+    last_ok_at: lastOk?.finished_at ?? null,
+    pending_changes: version > Number(lastOk?.watermark ?? 0)
+  }
+}
+
+// Una vuelta del vigilante (cron cada minuto). Guarda su memoria en `state`
+// entre vueltas; la decision es pura (fico-autosync.entity.js).
+export async function ficoAutosyncTick (state, now = Date.now()) {
+  const [{ last, last_ok: lastOk }, version] = await Promise.all([
+    autosyncRepo.lastRuns(), autosyncRepo.changeVersion()
+  ])
+  const next = observeChanges(state, { version, syncedVersion: Number(lastOk?.watermark ?? 0), now })
+  const decision = decideAutoSync({
+    state: next,
+    now,
+    lastRunAt: last ? new Date(last.started_at).getTime() : null,
+    lastOkAt: lastOk ? new Date(lastOk.finished_at).getTime() : null
+  })
+  if (decision.run) await runFicoSheetsSync({ trigger: decision.trigger })
+  return next
 }
 
 // Publica un reporte (titulo + texto + adjuntos) en Slack. Resuelve los adjuntos
