@@ -8,6 +8,8 @@ import { refreshEnrollmentMv } from '../../services/fico-mv-refresh.cron.js'
 import { buildValidationRows } from '../fico/validation/validation.entity.js'
 import {
   buildFilterPayload,
+  shouldMoveToUniqueContact,
+  UNIQUE_CONTACT_STATUS,
   buildUniqueFilename,
   detectChannelAlias,
   normalizeActiveProgramVersion,
@@ -37,7 +39,25 @@ export async function leadRegister ({ lead = {}, person = {}, contact_attempts =
 
 export async function leadUpdate (payload) {
   const { id, lead = {}, user_id, contact_attempts } = payload
-  return repo.leadUpdate(id, lead, user_id, contact_attempts)
+  const response = await repo.leadUpdate(id, lead, user_id, contact_attempts)
+  await applyUniqueContactRule(id, user_id)
+  return response
+}
+
+// Tras guardar gestiones, el lead que ya recibio toda la secuencia sin mostrar
+// interes pasa solo a "Unico contacto" (regla en comercial.entity). Si esto
+// falla, la gestion YA quedo guardada: se registra el error y no se tumba el
+// guardado del asesor; el siguiente guardado vuelve a evaluar.
+async function applyUniqueContactRule (leadId, userId) {
+  if (!leadId) return
+  try {
+    const inputs = await repo.getUniqueContactInputs(leadId)
+    if (!inputs) return
+    if (!shouldMoveToUniqueContact({ statusAlias: inputs.status_alias, attempts: inputs.attempts })) return
+    await repo.setLeadStatusByAlias(leadId, inputs.status_alias, UNIQUE_CONTACT_STATUS, userId)
+  } catch (err) {
+    console.error(`[comercial.applyUniqueContactRule] lead ${leadId}:`, err)
+  }
 }
 
 export async function leadGet (payload) {

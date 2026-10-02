@@ -426,3 +426,32 @@ export function buildRescheduleAuditDetails ({ reasonCode, count, odooResult, ha
     : (hasOrder ? ' | Odoo: sincronizado' : ' | Odoo: sin orden asociada')
   return `Motivo: ${reasonLabel} — ${count} cuota(s) reprogramada(s)${odooNote}`
 }
+
+// Moneda de la venta (enrollments.cat_currency): 3042 = DOLARES; todo lo demas
+// se cobra en soles (3041, y ~300 ventas viejas con un id que no existe en el
+// catalogo). Cobranzas sumaba S/ y $ juntos en un solo total.
+export const CAT_CURRENCY_DOLLARS = 3042
+const COLLECTION_STATES = ['overdue', 'today', 'upcoming']
+
+// KPIs de Cobranzas por estado, con el monto SEPARADO por moneda. Las claves
+// llevan la moneda en el nombre para que ningun consumidor vuelva a sumarlas.
+export function summarizeCollections (rows = []) {
+  const kpis = { total_count: 0, total_amount_pen: 0, total_amount_usd: 0 }
+  for (const state of COLLECTION_STATES) {
+    Object.assign(kpis, { [`${state}_count`]: 0, [`${state}_amount_pen`]: 0, [`${state}_amount_usd`]: 0 })
+  }
+  for (const r of rows) {
+    const amount = Number(r.amount) || 0
+    const currency = r.currency === 'USD' ? 'usd' : 'pen'
+    kpis.total_count++
+    kpis[`total_amount_${currency}`] += amount
+    if (!COLLECTION_STATES.includes(r.state_label)) continue
+    kpis[`${r.state_label}_count`]++
+    kpis[`${r.state_label}_amount_${currency}`] += amount
+  }
+  // Centimos: sumar floats deja 375.50000000000006
+  for (const k of Object.keys(kpis)) {
+    if (k.includes('_amount_')) kpis[k] = Math.round(kpis[k] * 100) / 100
+  }
+  return kpis
+}

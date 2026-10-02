@@ -506,6 +506,8 @@ export class InstallmentRepository {
         pi.enrollment_id,
         pi.installment_number,
         pi.amount,
+        -- 3042 = DOLARES (CAT_CURRENCY_DOLLARS); el resto se cobra en soles
+        CASE WHEN e.cat_currency = 3042 THEN 'USD' ELSE 'PEN' END AS currency,
         to_char(pi.due_date, 'YYYY-MM-DD') AS due_date,
         (pi.due_date - (now() AT TIME ZONE 'America/Lima')::date)::int AS days_to_due,
         CASE
