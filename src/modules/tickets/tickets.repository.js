@@ -324,6 +324,10 @@ export class TicketsRepository {
         UNION ALL
         SELECT 'tomado', 'TOMADO', first_response_at, asignado, NULL, NULL, NULL
           FROM t WHERE first_response_at IS NOT NULL
+           -- El cierre por el manual tambien sella la primera respuesta, pero
+           -- ningun agente lo tomo: ese instante ya lo cuenta MANUAL_RESPUESTA.
+           AND NOT (manual_answer IN ('RESUELTO', 'SIN_RESPUESTA')
+                    AND first_response_at = manual_answered_at)
         UNION ALL
         SELECT 'resuelto', 'RESUELTO', resolved_at,
                -- Lo cerro el manual (mismo instante que la respuesta), no el agente.
