@@ -42,6 +42,40 @@ export class ComercialRepository {
     return rows?.[0] || { result: 0, message: 'No response from DB', response: null }
   }
 
+  // Estado actual + gestiones del lead para la regla de Unico contacto. Un lead
+  // ya vendido (enrollment_id) no se lee: el candado block_update_when_enrolled
+  // no deja cambiarlo y la regla no aplica.
+  async getUniqueContactInputs (leadId) {
+    const { rows } = await this.db.query(
+      `SELECT s.alias AS status_alias,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object('type_alias', t.alias, 'result_alias', r.alias))
+                          FROM public.lead_contact_attempts a
+                          LEFT JOIN public.catalog t ON t.catalog_id = a.cat_type_attempt
+                          LEFT JOIN public.catalog r ON r.catalog_id = a.cat_result
+                         WHERE a.lead_id = l.lead_id), '[]'::jsonb) AS attempts
+         FROM public.leads l
+         LEFT JOIN public.catalog s ON s.catalog_id = l.cat_status_lead
+        WHERE l.lead_id = $1 AND l.enrollment_id IS NULL`,
+      [leadId]
+    )
+    return rows[0] || null
+  }
+
+  // Cambia el estado por alias solo si sigue en el que se evaluo (fromAlias):
+  // si otro usuario lo movio entre la lectura y el UPDATE, no se pisa.
+  async setLeadStatusByAlias (leadId, fromAlias, toAlias, userId) {
+    const { rowCount } = await this.db.query(
+      `UPDATE public.leads l
+          SET cat_status_lead = (SELECT catalog_id FROM public.catalog WHERE alias = $3),
+              user_modification_id = $4,
+              modification_date = now()
+        WHERE l.lead_id = $1
+          AND l.cat_status_lead = (SELECT catalog_id FROM public.catalog WHERE alias = $2)`,
+      [leadId, fromAlias, toAlias, userId]
+    )
+    return rowCount > 0
+  }
+
   async leadGet (id) {
     const rows = await this.sp(
       this.db,

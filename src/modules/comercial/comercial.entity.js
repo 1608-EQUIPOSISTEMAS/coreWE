@@ -32,6 +32,9 @@ export function buildFilterPayload (payload = {}) {
     attempt_origin_ids,
     first_contact_from = null,
     first_contact_to = null,
+    last_contact_from = null,
+    last_contact_to = null,
+    last_contact_empty = false,
     strategy_ids,
     word_ids,
     medium_contact_ids,
@@ -98,6 +101,11 @@ export function buildFilterPayload (payload = {}) {
     active: activeParam,
     first_contact_from,
     first_contact_to,
+    // Ult. fecha de contacto = fecha del ultimo intento. 'empty' trae los leads
+    // que nunca se contactaron (la columna sale '—'); con rango, se suman (OR).
+    last_contact_from,
+    last_contact_to,
+    include_null_last_contact: last_contact_empty === true,
     program_text,
     web,
     b2b,
@@ -150,6 +158,42 @@ export function buildFilterPayload (payload = {}) {
     channel_ids: chan.ids,
     include_null_channel: chan.includeNull
   }
+}
+
+// ── Unico contacto automatico (pedido de los asesores, 02/10/26) ──────────
+// Un lead que ya recibio toda la secuencia de gestiones sin responder con
+// interes pasa solo a "Unico contacto". Basta con que esten las 5, en cualquier
+// orden (un asesor que se adelanta un paso no rompe la regla).
+export const UNIQUE_CONTACT_STATUS = 'we_lead_status_unique'
+const UNIQUE_CONTACT_SEQUENCE = [
+  'we_attempt_seg_1', // Seguimiento 1
+  'we_attempt_call', // Llamada 1
+  'we_attempt_seg_2', // Seguimiento 2
+  'we_attempt_call_2', // Llamada 2
+  'we_attempt_msg_close' // Cierre de Campana
+]
+// Si en alguna gestion el lead mostro interes, no es "unico contacto".
+const INTEREST_RESULTS = new Set([
+  'we_calling_show_interest',
+  'we_calling_will_pay',
+  'we_calling_call_again',
+  'we_calling_next_start_interest'
+])
+// Solo se mueve desde estados abiertos: Pagara, Pago, Inscrito, Cerrado,
+// Desestimado y Anulado nunca se tocan.
+const OPEN_STATUSES = new Set([
+  'we_lead_status_atendido',
+  'we_lead_status_interesado',
+  'we_lead_status_indiferente',
+  'we_lead_status_proximo'
+])
+
+// attempts = [{ type_alias, result_alias }] de lead_contact_attempts.
+export function shouldMoveToUniqueContact ({ statusAlias, attempts = [] }) {
+  if (!OPEN_STATUSES.has(statusAlias)) return false
+  if (attempts.some(a => INTEREST_RESULTS.has(a.result_alias))) return false
+  const types = new Set(attempts.map(a => a.type_alias))
+  return UNIQUE_CONTACT_SEQUENCE.every(t => types.has(t))
 }
 
 // Reemplaza caracteres no seguros del nombre de archivo para persistirlo en disco.

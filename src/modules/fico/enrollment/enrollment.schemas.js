@@ -36,7 +36,9 @@ export const enrollmentListSchema = {
       program_version_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       edition_num_ids: { type: ['array', 'null'], items: { type: 'integer' } },
       payment_channels: { type: ['array', 'null'], items: { type: 'string' } },
-      only_scholarship: { type: ['boolean', 'null'] }
+      only_scholarship: { type: ['boolean', 'null'] },
+      // Una sola venta leida en vivo (detalle): ver sp_fico_enrollment_list.sql
+      enrollment_id: { type: ['integer', 'null'] }
     }
   }
 }

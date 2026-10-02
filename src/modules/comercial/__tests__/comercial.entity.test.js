@@ -3,6 +3,7 @@ import {
   splitNullSentinel,
   normalizeActive,
   buildFilterPayload,
+  shouldMoveToUniqueContact,
   sanitizeFilename,
   buildUniqueFilename,
   detectChannelAlias,
@@ -125,5 +126,49 @@ describe('buildEditionFilterPayload', () => {
   it('normaliza el booleano active', () => {
     expect(buildEditionFilterPayload({ active: true }).active).toBe('Y')
     expect(buildEditionFilterPayload({ active: false }).active).toBe('N')
+  })
+})
+
+describe('buildFilterPayload / ult. fecha de contacto', () => {
+  it('sin filtro: rango null y sin incluir los nunca contactados', () => {
+    const f = buildFilterPayload({})
+    expect(f).toMatchObject({ last_contact_from: null, last_contact_to: null, include_null_last_contact: false })
+  })
+  it('rango y "—" viajan juntos al SP (el SP los suma con OR)', () => {
+    const f = buildFilterPayload({ last_contact_from: '2026-10-01', last_contact_to: '2026-10-02', last_contact_empty: true })
+    expect(f).toMatchObject({ last_contact_from: '2026-10-01', last_contact_to: '2026-10-02', include_null_last_contact: true })
+  })
+  it('solo true activa "—" (un string "false" no lo enciende)', () => {
+    expect(buildFilterPayload({ last_contact_empty: 'false' }).include_null_last_contact).toBe(false)
+  })
+})
+
+describe('shouldMoveToUniqueContact', () => {
+  const full = [
+    { type_alias: 'we_attempt_msg_close', result_alias: 'we_calling_message' },
+    { type_alias: 'we_attempt_seg_1', result_alias: 'we_calling_message' },
+    { type_alias: 'we_attempt_call', result_alias: 'we_calling_no_hold' },
+    { type_alias: 'we_attempt_seg_2', result_alias: 'we_calling_message' },
+    { type_alias: 'we_attempt_call_2', result_alias: 'we_calling_phone_off' }
+  ]
+
+  it('las 5 gestiones en cualquier orden y estado abierto: pasa', () => {
+    expect(shouldMoveToUniqueContact({ statusAlias: 'we_lead_status_atendido', attempts: full })).toBe(true)
+  })
+
+  it('falta una gestion (Llamada 2): no pasa', () => {
+    const sinLlamada2 = full.filter(a => a.type_alias !== 'we_attempt_call_2')
+    expect(shouldMoveToUniqueContact({ statusAlias: 'we_lead_status_atendido', attempts: sinLlamada2 })).toBe(false)
+  })
+
+  it('si mostro interes en alguna gestion: no pasa', () => {
+    const conInteres = [...full, { type_alias: 'we_attempt_call_2', result_alias: 'we_calling_will_pay' }]
+    expect(shouldMoveToUniqueContact({ statusAlias: 'we_lead_status_interesado', attempts: conInteres })).toBe(false)
+  })
+
+  it('estados cerrados o de venta nunca se mueven', () => {
+    for (const statusAlias of ['we_lead_status_will_pay', 'we_lead_status_bought', 'we_lead_status_insc', 'we_lead_status_unique', null]) {
+      expect(shouldMoveToUniqueContact({ statusAlias, attempts: full })).toBe(false)
+    }
   })
 })
