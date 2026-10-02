@@ -325,8 +325,21 @@ export class TicketsRepository {
         SELECT 'tomado', 'TOMADO', first_response_at, asignado, NULL, NULL, NULL
           FROM t WHERE first_response_at IS NOT NULL
         UNION ALL
-        SELECT 'resuelto', 'RESUELTO', resolved_at, asignado, NULL, NULL, NULL
+        SELECT 'resuelto', 'RESUELTO', resolved_at,
+               -- Lo cerro el manual (mismo instante que la respuesta), no el agente.
+               CASE WHEN manual_answer IN ('RESUELTO', 'SIN_RESPUESTA') AND resolved_at = manual_answered_at
+                    THEN 'Sistema' ELSE asignado END,
+               NULL, NULL, NULL
           FROM t WHERE resolved_at IS NOT NULL
+        UNION ALL
+        SELECT 'manual', 'MANUAL_ENVIADO', manual_sent_at, NULL, NULL, NULL,
+               (SELECT d.title FROM public.ticket_documents d WHERE d.ticket_document_id = t.manual_document_id)
+          FROM t WHERE manual_sent_at IS NOT NULL
+        UNION ALL
+        SELECT 'manual-respuesta', 'MANUAL_RESPUESTA', manual_answered_at,
+               CASE WHEN manual_answer = 'SIN_RESPUESTA' THEN NULL ELSE creador END,
+               NULL, NULL, manual_answer
+          FROM t WHERE manual_answered_at IS NOT NULL
         UNION ALL
         SELECT 'c' || c.ticket_comment_id, 'COMENTARIO', c.registration_date,
                u.name, NULL, NULL, left(c.body, 160)
@@ -445,6 +458,103 @@ export class TicketsRepository {
     await this.db.query(
       `UPDATE public.tickets SET ${columna} = $2 WHERE ticket_id = $1 AND ${columna} IS NULL`,
       [ticketId, ahora])
+  }
+
+  // ── Documentos ───────────────────────────────────────────────────────────
+
+  async listDocuments () {
+    const { rows } = await this.db.query(`
+      SELECT d.ticket_document_id, d.title, d.description, d.kind, d.url, d.original_name,
+             d.mime_type, d.size_bytes, d.registration_date,
+             u.name AS creador, u.alias AS creador_alias
+        FROM public.ticket_documents d
+        JOIN public.users u ON u.user_id = d.created_by_id
+       WHERE d.active = 'Y'
+       ORDER BY d.ticket_document_id DESC
+       LIMIT 500`)
+    return rows
+  }
+
+  async document (documentId) {
+    const { rows } = await this.db.query(`
+      SELECT d.ticket_document_id, d.title, d.description, d.kind, d.url, d.original_name,
+             d.stored_name, d.mime_type, d.size_bytes, d.registration_date,
+             u.name AS creador, u.alias AS creador_alias
+        FROM public.ticket_documents d
+        JOIN public.users u ON u.user_id = d.created_by_id
+       WHERE d.ticket_document_id = $1 AND d.active = 'Y'`, [documentId])
+    return rows[0] ?? null
+  }
+
+  async createDocument ({ title, description, kind, url, archivo = null, createdById }) {
+    const { rows } = await this.db.query(`
+      INSERT INTO public.ticket_documents (
+        title, kind, url, original_name, stored_name, mime_type, size_bytes,
+        created_by_id, user_registration_id, description)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
+      RETURNING ticket_document_id`, [
+      title, kind, url,
+      archivo?.original_name ?? null, archivo?.stored_name ?? null,
+      archivo?.mime_type ?? null, archivo?.size_bytes ?? null,
+      createdById, description
+    ])
+    return rows[0].ticket_document_id
+  }
+
+  // ── Manual como solucion (bot de Slack, ver manual/) ─────────────────────
+
+  /** Se sella DESPUES de que la pregunta llego al DM: sin pregunta vista no hay cierre por silencio. */
+  async saveManualOffer (ticketId, { documentId, sentAt, deadlineAt, messageTs }) {
+    await this.db.query(`
+      UPDATE public.tickets
+         SET manual_document_id = $2, manual_sent_at = $3, manual_deadline_at = $4,
+             manual_message_ts = $5, manual_answer = NULL, manual_answered_at = NULL
+       WHERE ticket_id = $1`, [ticketId, documentId, sentAt, deadlineAt, messageTs])
+  }
+
+  /**
+   * Cierra el ticket por el manual ("si, fue suficiente" o sin respuesta a
+   * tiempo) y registra la respuesta, en un solo UPDATE. `manual_answer IS NULL`
+   * es el candado entre el boton y el barrido: solo uno de los dos gana.
+   *
+   * Si un agente ya lo habia cerrado, se conserva su resolved_at. Devuelve el
+   * estado que tenia antes (para saber si hay que avisar el cierre), o null si
+   * ya no habia pregunta pendiente.
+   */
+  async resolveByManual (ticketId, answer, ahora) {
+    const { rows } = await this.db.query(`
+      UPDATE public.tickets t
+         SET manual_answer = $2,
+             manual_answered_at = $3,
+             status = 'CERRADO',
+             first_response_at = COALESCE(t.first_response_at, $3),
+             resolved_at = CASE WHEN p.previo = 'CERRADO' THEN t.resolved_at ELSE $3 END,
+             modification_date = now()
+        FROM (SELECT status AS previo FROM public.tickets WHERE ticket_id = $1 FOR UPDATE) p
+       WHERE t.ticket_id = $1 AND t.active = 'Y'
+         AND t.manual_answer IS NULL AND t.manual_deadline_at IS NOT NULL
+      RETURNING p.previo`, [ticketId, answer, ahora])
+    return rows[0]?.previo ?? null
+  }
+
+  /** "No, sigo necesitando ayuda": el ticket sigue su curso. Devuelve si habia pregunta pendiente. */
+  async declineManual (ticketId, ahora) {
+    const { rowCount } = await this.db.query(`
+      UPDATE public.tickets
+         SET manual_answer = 'NO_RESUELTO', manual_answered_at = $2
+       WHERE ticket_id = $1 AND manual_answer IS NULL AND manual_deadline_at IS NOT NULL`, [ticketId, ahora])
+    return rowCount > 0
+  }
+
+  async expiredManualOffers (ahora) {
+    const { rows } = await this.db.query(`
+      SELECT t.ticket_id
+        FROM public.tickets t
+       WHERE t.active = 'Y'
+         AND t.manual_answer IS NULL
+         AND t.manual_deadline_at IS NOT NULL
+         AND t.manual_deadline_at <= $1`, [ahora])
+    return rows
   }
 
   // ── Identidad (bot de Slack por DM) ──────────────────────────────────────

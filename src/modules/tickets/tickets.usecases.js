@@ -6,13 +6,14 @@ import {
   canReopenOf, reopenByReporter, areaRolesOf,
   validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
-  ESTADOS_ACTIVOS
+  ESTADOS_ACTIVOS, validateDocumentInput
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import { removeAttachments, guardarAdjunto, MAX_FILES, MAX_BYTES } from './tickets.files.js'
 import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
 import { startTicketNote, getTicketNote } from './ai-note/ticket-ai.usecases.js'
+import { ofrecerManual, responderManual, runManualSweep as barrerManuales } from './manual/ticket-manual.usecases.js'
 
 // Orquestacion: consulta al repositorio, decide con la entity y dispara los
 // efectos externos. Los avisos a Slack van siempre con `void`: no suman latencia
@@ -213,7 +214,7 @@ export async function createTicket ({ userId, titulo, problema, link, archivos =
 }
 
 async function abrirSeguimiento (ticket, slackUserId) {
-  const mensaje = await slack.abrirHiloDeTicket(ticket, slackUserId)
+  const mensaje = await slack.abrirHiloDeTicket(ticket, slackUserId, await abiertosDe(ticket.created_by_id))
   if (!mensaje) return
   try {
     await repo.saveSlackThread(ticket.ticket_id, { channelId: mensaje.canal, messageTs: mensaje.ts })
@@ -222,7 +223,39 @@ async function abrirSeguimiento (ticket, slackUserId) {
     // sin seguimiento, pero no se pierde ni se deja una excepcion suelta (esto
     // corre fuera del ciclo request/response).
     console.error(`[tickets] no se pudo guardar el hilo del ticket #${ticket.ticket_id}`, err.message)
+    return
   }
+
+  // Con el DM guardado (los botones del manual lo validan contra el), se
+  // busca un manual de Documentos que resuelva el problema. Nunca lanza.
+  await ofrecerManual(ticket, mensaje.canal)
+}
+
+/**
+ * Los tickets abiertos de quien reporto (incluido el recien creado), para la
+ * linea chica del mensaje de apertura. Si la consulta falla, el mensaje sale
+ * igual sin esa linea.
+ */
+async function abiertosDe (userId) {
+  try {
+    const filas = await repo.list({ areaRoles: null, userId })
+    return filas.filter(f => ESTADOS_ACTIVOS.includes(f.status))
+  } catch (err) {
+    console.error('[tickets] tickets abiertos para el DM de apertura:', err.message)
+    return []
+  }
+}
+
+// ── Manual como solucion (manual/ticket-manual.usecases.js) ────────────────
+
+/** Botones "Si / No" del manual. Devuelve el texto que reemplaza la pregunta. */
+export function responderManualDesdeSlack ({ ticketId, canal, resuelto }) {
+  return responderManual({ ticketId, canal, resuelto }, { onCambio: avisarCambio })
+}
+
+/** Lo llama tickets-autoassign.cron.js cada minuto. */
+export function runManualSweep (ahora = new Date()) {
+  return barrerManuales(ahora, { onCambio: avisarCambio })
 }
 
 // ── Gestion (solo ADMIN) ───────────────────────────────────────────────────
@@ -554,4 +587,41 @@ export async function consultarAvanceDesdeSlack ({ slackUserId, ticketRef = null
     .map(f => withSla(f, ahora))
 
   return { ticket: null, activos }
+}
+
+// ── Documentos ─────────────────────────────────────────────────────────────
+//
+// Biblioteca de manuales del modulo, solo ADMIN (gate de ruta). Cada documento
+// lleva una descripcion de que trata: con ella y el titulo, el bot de Slack
+// decide si un manual resuelve un ticket (manual/).
+
+export async function listDocuments () {
+  return repo.listDocuments()
+}
+
+/**
+ * Alta de documento. El PDF ya llego escrito a disco (readMultipart): si la
+ * validacion o el INSERT fallan, se borra para no dejar huerfanos.
+ */
+export async function createDocument ({ userId, titulo, descripcion, tipo, url, archivos = [] }) {
+  const archivo = archivos[0] ?? null
+  try {
+    const datos = validateDocumentInput({ titulo, descripcion, tipo, url, archivo })
+    const documentId = await repo.createDocument({
+      ...datos,
+      archivo: datos.kind === 'PDF' ? archivo : null,
+      createdById: userId
+    })
+    return repo.document(documentId)
+  } catch (err) {
+    await removeAttachments(archivos.map(a => a.stored_name))
+    throw err
+  }
+}
+
+/** Descarga del PDF. Un documento por enlace no tiene archivo que bajar. */
+export async function downloadDocument ({ documentId }) {
+  const documento = await repo.document(documentId)
+  if (!documento || documento.kind !== 'PDF') throw new NotFoundError('Documento no encontrado')
+  return documento
 }

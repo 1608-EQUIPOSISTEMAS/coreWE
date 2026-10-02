@@ -5,8 +5,11 @@
 //   SLACK_WEBHOOK_URL     incoming webhook -> el canal de tickets. El canal esta
 //                         codificado dentro de la URL, no hace falta variable.
 //   SLACK_BOT_TOKEN       Web API: users.info (identidad de quien escribe al
-//                         bot), chat.postMessage (seguimiento por DM)
-//                         y files.info (imagenes adjuntas).
+//                         bot), chat.postMessage (seguimiento por DM),
+//                         files.info (imagenes adjuntas),
+//                         conversations.history (entrevista previa al ticket)
+//                         y files.getUploadURLExternal (manuales PDF, scope
+//                         files:write).
 //   SLACK_SIGNING_SECRET   verificacion de firma de eventos y botones.
 //   FRONTEND_PUBLIC_URL    base del ERP (ej. https://app.we-educacion.com) para
 //                         armar el link "Ver detalle" del DM de apertura.
@@ -356,6 +359,126 @@ export async function reemplazarMensaje (responseUrl, texto) {
   })
 }
 
+async function webApi (metodo, cuerpo, referencia) {
+  try {
+    const res = await fetch(`https://slack.com/api/${metodo}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+    const datos = await res.json()
+    if (!datos.ok) {
+      console.error(`[tickets-slack] ${metodo} fallo (${referencia}): ${datos.error}`)
+      return null
+    }
+    return datos
+  } catch (err) {
+    console.error(`[tickets-slack] ${metodo} (${referencia}): fallo de red`, err.message)
+    return null
+  }
+}
+
+/**
+ * Edita un mensaje ya publicado por el bot (chat.update). Lo usa el cierre por
+ * silencio del manual: ahi no hay response_url, que solo existe tras un clic.
+ * Nunca lanza; devuelve si se pudo.
+ */
+export async function actualizarMensaje (canal, ts, texto) {
+  if (!slackBotConfigurado() || !canal || !ts) return false
+  const datos = await webApi('chat.update', {
+    channel: canal,
+    ts,
+    text: texto,
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: texto } }]
+  }, `mensaje ${ts}`)
+  return Boolean(datos)
+}
+
+/**
+ * Sube un archivo y lo comparte en un DM (scope files:write), con el flujo
+ * actual de Slack: getUploadURLExternal -> POST de los bytes ->
+ * completeUploadExternal. Nunca lanza; devuelve si quedo compartido.
+ */
+export async function subirArchivoADm (canal, { buffer, nombre, titulo, comentario }) {
+  if (!slackBotConfigurado() || !canal || !buffer?.length) return false
+  const auth = { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` }
+  try {
+    const params = new URLSearchParams({ filename: nombre, length: String(buffer.length) })
+    const res = await fetch(`https://slack.com/api/files.getUploadURLExternal?${params}`, {
+      headers: auth,
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+    const destino = await res.json()
+    if (!destino.ok) {
+      console.error(`[tickets-slack] files.getUploadURLExternal fallo: ${destino.error}`)
+      return false
+    }
+
+    const subida = await fetch(destino.upload_url, {
+      method: 'POST',
+      body: buffer,
+      signal: AbortSignal.timeout(TIMEOUT_MS * 6)
+    })
+    if (!subida.ok) {
+      console.error(`[tickets-slack] subida de ${nombre}: HTTP ${subida.status}`)
+      return false
+    }
+
+    const listo = await webApi('files.completeUploadExternal', {
+      files: [{ id: destino.file_id, title: titulo ?? nombre }],
+      channel_id: canal,
+      ...(comentario ? { initial_comment: comentario } : {})
+    }, nombre)
+    return Boolean(listo)
+  } catch (err) {
+    console.error(`[tickets-slack] subida de ${nombre}: fallo de red`, err.message)
+    return false
+  }
+}
+
+/** Igual que reemplazarMensaje, pero con bloques propios (p. ej. el borrador). */
+export function reemplazarMensajeConBloques (responseUrl, payload) {
+  return enviarResponseUrl(responseUrl, payload)
+}
+
+/**
+ * Mensajes de un DM con el bot (scope im:history), del mas nuevo al mas viejo.
+ * Es la memoria de la entrevista previa al ticket: el bot no guarda la
+ * conversacion, la relee de aca.
+ *
+ * `antesDe` excluye ese ts (el mensaje que se esta procesando); `desde` lo
+ * incluye. Nunca lanza: null si no se pudo leer, y quien llama sigue sin
+ * historial.
+ */
+export async function leerHistorialDm (canal, { antesDe = null, desde = null, limite = 30 } = {}) {
+  if (!slackBotConfigurado() || !canal) return null
+  const params = new URLSearchParams({ channel: canal, limit: String(limite) })
+  if (antesDe) params.set('latest', antesDe)
+  if (desde) {
+    params.set('oldest', desde)
+    params.set('inclusive', 'true')
+  }
+  try {
+    const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
+      headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+    const datos = await res.json()
+    if (!datos.ok) {
+      console.error(`[tickets-slack] conversations.history fallo: ${datos.error}`)
+      return null
+    }
+    return datos.messages ?? []
+  } catch (err) {
+    console.error('[tickets-slack] conversations.history: fallo de red', err.message)
+    return null
+  }
+}
+
 async function enviarResponseUrl (responseUrl, payload) {
   try {
     const res = await fetch(responseUrl, {
@@ -385,7 +508,26 @@ async function enviarResponseUrl (responseUrl, payload) {
 // Mensaje de apertura MINIMO a proposito: quien lo escribe ya sabe que conto,
 // y el detalle completo vive en el ERP; repetir la problematica aca era el bug
 // que hacia parecer que "se seguia mandando por DM".
-export function construirMensajeDeApertura (ticket) {
+// Estado en palabras para la linea de tickets abiertos del mensaje de apertura.
+const ESTADO_CORTO = { ABIERTO: 'Abierto', EN_PROGRESO: 'En progreso', CERRADO: 'Cerrado' }
+
+// Tope de filas en la linea chica: con mas, el mensaje deja de ser un aviso.
+const MAX_ABIERTOS_EN_APERTURA = 10
+
+/**
+ * Los tickets abiertos de quien reporto, solo numero y estado, uno por linea.
+ * Va en letra chica al pie del mensaje de apertura.
+ */
+export function lineaDeAbiertos (abiertos = []) {
+  if (!abiertos.length) return null
+  const filas = abiertos.slice(0, MAX_ABIERTOS_EN_APERTURA)
+    .map(t => `#${codigo(t.ticket_id)} · ${ESTADO_CORTO[t.status] ?? t.status}`)
+  const resto = abiertos.length - filas.length
+  if (resto > 0) filas.push(`y ${resto} más`)
+  return `*Tus tickets abiertos:*\n${filas.join('\n')}`
+}
+
+export function construirMensajeDeApertura (ticket, abiertos = []) {
   const emoji = EMOJI_PRIORIDAD[ticket.priority] ?? ':white_circle:'
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `🆕 Ticket #${codigo(ticket.ticket_id)} creado`, emoji: true } },
@@ -403,16 +545,16 @@ export function construirMensajeDeApertura (ticket) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*🔗 Ver detalle:*\n${urlDetalle}` } })
   }
 
-  blocks.push({
-    type: 'context',
-    elements: [{ type: 'mrkdwn', text: 'Te voy avisando por acá cómo avanza.' }]
-  })
+  const linea = lineaDeAbiertos(abiertos)
+  if (linea) {
+    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: linea }] })
+  }
 
   return { text: `Ticket #${codigo(ticket.ticket_id)} creado`, blocks }
 }
 
 /** Link al detalle en el ERP. Sin FRONTEND_PUBLIC_URL configurado, se omite el bloque. */
-function enlaceAlTicket (ticketId) {
+export function enlaceAlTicket (ticketId) {
   const base = process.env.FRONTEND_PUBLIC_URL
   if (!base) return null
   return `${base.replace(/\/+$/, '')}/tickets/${ticketId}`
@@ -422,8 +564,8 @@ function enlaceAlTicket (ticketId) {
  * Confirma la apertura por DM y devuelve { canal, ts } de ese mensaje (el
  * canal D... es lo que se guarda para seguir escribiendo), o null.
  */
-export function abrirHiloDeTicket (ticket, slackUserId) {
-  return postearMensaje(slackUserId, construirMensajeDeApertura(ticket))
+export function abrirHiloDeTicket (ticket, slackUserId, abiertos = []) {
+  return postearMensaje(slackUserId, construirMensajeDeApertura(ticket, abiertos))
 }
 
 /**

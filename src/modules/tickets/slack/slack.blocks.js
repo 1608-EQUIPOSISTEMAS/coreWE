@@ -13,6 +13,11 @@ import { escaparSlack, desescaparSlack, limpiarTextoSlack } from './slack.text.j
 
 export const ACCION_CREAR = 'ticket_crear'
 export const ACCION_DESCARTAR = 'ticket_descartar'
+export const ACCION_OMITIR = 'ticket_omitir_preguntas'
+export const ACCION_MANUAL_SI = 'ticket_manual_si'
+export const ACCION_MANUAL_NO = 'ticket_manual_no'
+
+export const BLOQUE_PREGUNTAS = 'tk_preguntas'
 
 const BLOQUE_TITULO = 'tk_titulo'
 const BLOQUE_PROBLEMA = 'tk_problema'
@@ -151,6 +156,103 @@ export function leerBorrador (bloques) {
   const problema = leerProblema(bloques)
   if (!titulo || !problema) return null
   return { titulo, problema, link: leerEnlaces(bloques), archivos: leerArchivos(bloques) }
+}
+
+/**
+ * Las preguntas de una ronda de la entrevista (ver slack.conversacion.js).
+ *
+ * El estado de la entrevista viaja en el value del boton, como los archivos
+ * del borrador: { ronda, inicio, preguntas }. Es lo que permite releer la
+ * conversacion del historial sin guardar nada.
+ *
+ * @param {{ preguntas: string[], ronda: number, inicio: string }} entrevista
+ */
+export function bloquesDePreguntas ({ preguntas, ronda, inicio }) {
+  const lista = preguntas.map((p, i) => `${i + 1}. ${escaparSlack(p)}`).join('\n')
+  const intro = ronda === 1
+    ? '🧐 Antes de armar el ticket necesito un par de datos para que lo resuelvan más rápido:'
+    : '🙏 Gracias. Una última cosa:'
+
+  return {
+    text: `${intro}\n${preguntas.join('\n')}`,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: intro } },
+      { type: 'section', block_id: BLOQUE_PREGUNTAS, text: { type: 'mrkdwn', text: lista.slice(0, SECTION_MAX) } },
+      {
+        type: 'actions',
+        elements: [{
+          type: 'button',
+          action_id: ACCION_OMITIR,
+          text: { type: 'plain_text', text: 'Armar el ticket con lo que hay', emoji: true },
+          value: JSON.stringify({ ronda, inicio, preguntas })
+        }]
+      },
+      {
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: 'Respóndeme por acá, en uno o varios mensajes. Si no sabes algún dato, dímelo y seguimos.' }]
+      }
+    ]
+  }
+}
+
+/**
+ * El manual que podria resolver el ticket, con la pregunta y su plazo (ver
+ * manual/). Un PDF ya se subio al DM justo antes; un enlace va aca mismo.
+ *
+ * @param {{ codigo: string, documento: { title: string, kind: string, url?: string },
+ *           minutos: number, ticketId: number }} manual
+ */
+export function bloquesDeManual ({ codigo, documento, minutos, ticketId }) {
+  const donde = documento.kind === 'ENLACE' && documento.url
+    ? `<${documento.url}|${escaparSlack(documento.title)}>`
+    : `*${escaparSlack(documento.title)}* (te lo dejé arriba en PDF)`
+  const value = JSON.stringify({ ticket: ticketId })
+
+  return {
+    text: `📘 Encontré un manual que podría resolver tu ticket #${codigo}. ¿Esto fue suficiente para la solución?`,
+    blocks: [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `📘 Encontré un manual que podría resolver tu ticket *#${codigo}*:\n${donde}` }
+      },
+      { type: 'section', text: { type: 'mrkdwn', text: '*¿Esto fue suficiente para la solución?*' } },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            action_id: ACCION_MANUAL_SI,
+            style: 'primary',
+            text: { type: 'plain_text', text: 'Sí, quedó resuelto', emoji: true },
+            value
+          },
+          {
+            type: 'button',
+            action_id: ACCION_MANUAL_NO,
+            text: { type: 'plain_text', text: 'No, sigo necesitando ayuda', emoji: true },
+            value
+          }
+        ]
+      },
+      {
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `⏱️ Tienes *${minutos} minutos* para responder. Si no respondes, daré el ticket por resuelto automáticamente.`
+        }]
+      }
+    ]
+  }
+}
+
+/** El ticket del value de los botones del manual, o null. */
+export function leerTicketDeManual (value) {
+  try {
+    const { ticket } = JSON.parse(value ?? '')
+    return Number.isInteger(ticket) && ticket > 0 ? ticket : null
+  } catch {
+    return null
+  }
 }
 
 /** Reemplazo del borrador una vez resuelto: el mismo mensaje, ya sin botones. */

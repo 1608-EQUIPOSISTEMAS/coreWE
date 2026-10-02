@@ -140,7 +140,11 @@ export function reopenByReporter (ticket, userId) {
   if (ticket.status !== 'CERRADO') {
     throw new DomainError('Solo se puede reabrir un ticket resuelto')
   }
-  return { status: 'EN_PROGRESO', first_response_at: ticket.first_response_at, resolved_at: null }
+  // Un ticket que cerro el manual de Slack antes del reparto no tiene agente:
+  // vuelve a la cola (ABIERTO) para que el reparto automatico lo asigne, en
+  // vez de quedar EN_PROGRESO sin nadie que lo atienda.
+  const status = ticket.assigned_to_id ? 'EN_PROGRESO' : 'ABIERTO'
+  return { status, first_response_at: ticket.first_response_at, resolved_at: null }
 }
 
 // ── Transiciones ───────────────────────────────────────────────────────────
@@ -330,4 +334,61 @@ export function buildKpis (tickets = [], userId = null) {
     porVencer: tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido).length,
     vencidos: tickets.filter(t => t.riesgo.vencido).length
   }
+}
+
+// ── Documentos ─────────────────────────────────────────────────────────────
+
+export const DOCUMENTO_TIPOS = ['PDF', 'ENLACE']
+const DOC_TITULO_MIN = 3
+const DOC_TITULO_MAX = 150
+// La descripcion es lo que lee la IA para saber si el manual resuelve un
+// ticket: con menos de una frase no hay de donde sacarlo.
+const DOC_DESCRIPCION_MIN = 20
+const DOC_DESCRIPCION_MAX = 1000
+
+/**
+ * Alta de un documento: O un PDF O un enlace, nunca los dos ni ninguno. Vive
+ * aca y no en un schema AJV por lo mismo que validateTicketInput: la ruta es
+ * multipart.
+ *
+ * A diferencia de los enlaces de un ticket, aca SI se exige http(s): el enlace
+ * es el documento entero y se pinta como <a href> en la lista, asi que un
+ * `javascript:` o un texto suelto no tienen por que entrar.
+ */
+export function validateDocumentInput ({ titulo, descripcion, tipo, url, archivo = null } = {}) {
+  const t = String(titulo ?? '').trim()
+  if (t.length < DOC_TITULO_MIN || t.length > DOC_TITULO_MAX) {
+    throw new DomainError(`El título debe tener entre ${DOC_TITULO_MIN} y ${DOC_TITULO_MAX} caracteres`)
+  }
+
+  const description = String(descripcion ?? '').replace(/\s+/g, ' ').trim()
+  if (description.length < DOC_DESCRIPCION_MIN || description.length > DOC_DESCRIPCION_MAX) {
+    throw new DomainError(
+      `Describe de qué trata el documento (entre ${DOC_DESCRIPCION_MIN} y ${DOC_DESCRIPCION_MAX} caracteres)`)
+  }
+
+  const kind = String(tipo ?? '').trim().toUpperCase()
+  if (!DOCUMENTO_TIPOS.includes(kind)) {
+    throw new DomainError('Elige si el documento es un PDF o un enlace')
+  }
+
+  if (kind === 'PDF') {
+    if (!archivo) throw new DomainError('Adjunta el archivo PDF')
+    return { title: t, description, kind, url: null }
+  }
+
+  if (archivo) throw new DomainError('Un documento por enlace no lleva archivo adjunto')
+  const enlace = String(url ?? '').trim()
+  if (!enlace) throw new DomainError('Pega el enlace del documento')
+  if (enlace.length > LINK_MAX) throw new DomainError('El enlace es demasiado largo')
+  let protocolo
+  try {
+    protocolo = new URL(enlace).protocol
+  } catch {
+    throw new DomainError('El enlace no es una URL válida')
+  }
+  if (protocolo !== 'https:' && protocolo !== 'http:') {
+    throw new DomainError('El enlace debe empezar con http:// o https://')
+  }
+  return { title: t, description, kind, url: enlace }
 }

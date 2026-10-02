@@ -20,6 +20,17 @@ export const MIME_PERMITIDOS = ['image/png', 'image/jpeg', 'image/webp', 'applic
 export const MAX_BYTES = 5 * 1024 * 1024
 export const MAX_FILES = 4
 
+// Documentos del modulo: un solo PDF por alta, y mas holgado que un adjunto
+// (un manual pesa mas que una captura). Sigue por debajo del limite global de
+// @fastify/multipart (30 MB, buildApp.js).
+export const DOCUMENTO_MAX_BYTES = 20 * 1024 * 1024
+export const DOCUMENTO_MULTIPART = {
+  maxFiles: 1,
+  mimes: ['application/pdf'],
+  maxBytes: DOCUMENTO_MAX_BYTES,
+  mensajeMime: 'Solo se permiten archivos PDF'
+}
+
 const EXT_POR_MIME = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -66,7 +77,12 @@ function escribir (buffer, storedName) {
  * Si alguna parte falla, borra las que ya se escribieron: nunca queda basura en
  * disco por un request rechazado.
  */
-export async function readMultipart (req, { maxFiles = MAX_FILES } = {}) {
+export async function readMultipart (req, {
+  maxFiles = MAX_FILES,
+  mimes = MIME_PERMITIDOS,
+  maxBytes = MAX_BYTES,
+  mensajeMime = 'Solo se permiten imágenes PNG, JPG, WEBP o archivos PDF'
+} = {}) {
   const campos = {}
   const archivos = []
 
@@ -78,17 +94,17 @@ export async function readMultipart (req, { maxFiles = MAX_FILES } = {}) {
       }
 
       if (archivos.length >= maxFiles) {
-        throw new DomainError(`Como máximo ${maxFiles} archivos por ticket`)
+        throw new DomainError(maxFiles === 1 ? 'Solo se permite un archivo' : `Como máximo ${maxFiles} archivos por ticket`)
       }
-      if (!MIME_PERMITIDOS.includes(parte.mimetype)) {
-        throw new DomainError('Solo se permiten imágenes PNG, JPG, WEBP o archivos PDF')
+      if (!mimes.includes(parte.mimetype)) {
+        throw new DomainError(mensajeMime)
       }
 
       const buffer = await parte.toBuffer()
 
       // @fastify/multipart trunca al llegar al limite global en vez de lanzar.
-      if (parte.file?.truncated || buffer.length > MAX_BYTES) {
-        throw new DomainError('Cada archivo debe pesar como máximo 5 MB')
+      if (parte.file?.truncated || buffer.length > maxBytes) {
+        throw new DomainError(`Cada archivo debe pesar como máximo ${Math.round(maxBytes / 1024 / 1024)} MB`)
       }
       if (!buffer.length) {
         throw new DomainError('Uno de los archivos llegó vacío')

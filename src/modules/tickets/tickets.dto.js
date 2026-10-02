@@ -75,3 +75,20 @@ export function toActivityDto (e) {
 export function toAssigneeDto (u) {
   return { id: u.user_id, nombre: u.name }
 }
+
+/** Fila de la lista de documentos. stored_name nunca sale: es la ruta en disco. */
+export function toDocumentDto (d) {
+  if (!d) return null
+  return {
+    id: d.ticket_document_id,
+    titulo: d.title,
+    descripcion: d.description ?? null,
+    tipo: d.kind,
+    url: d.kind === 'ENLACE' ? d.url : null,
+    archivo: d.kind === 'PDF'
+      ? { nombre: d.original_name, mime: d.mime_type, bytes: d.size_bytes }
+      : null,
+    subidoPor: persona(d.creador, d.creador_alias),
+    creadoEn: d.registration_date
+  }
+}

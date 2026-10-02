@@ -1,7 +1,7 @@
 import { authenticate, ADMIN_ONLY, ALL_TICKETS_INTERNO } from '../../shared/http/auth.middleware.js'
 import {
   listSchema, detailSchema, commentsSchema, activitySchema, statusSchema, reopenSchema, assigneesSchema,
-  reassignSchema, attachmentSchema
+  reassignSchema, attachmentSchema, documentsSchema, documentFileSchema
 } from './tickets.schemas.js'
 import * as ctrl from './tickets.controller.js'
 import { registrarParserSlack, verificarFirmaSlack } from './slack/slack.verify.js'
@@ -40,6 +40,16 @@ export default async function ticketsRoutes (fastify) {
   // control de acceso del ticket al que pertenecen.
   fastify.get('/attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.attachmentHandler)
   fastify.get('/comment-attachment/:attachmentId', { schema: attachmentSchema, preHandler: [authenticate, ALL_TICKETS_INTERNO] }, ctrl.commentAttachmentHandler)
+
+  // ── Documentos: biblioteca de manuales, solo ADMIN ───────────────────────
+  //
+  // Solo los administra ADMIN: quien reporta los recibe por el bot de Slack
+  // cuando uno resuelve su ticket (manual/), no entrando a la biblioteca. El
+  // alta es multipart (PDF) o solo campos (enlace); en ambos casos valida
+  // validateDocumentInput, sin schema.body.
+  fastify.post('/documents', { schema: documentsSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.documentsHandler)
+  fastify.post('/documents/create', { config: LIMITE_SUBIDA, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.documentCreateHandler)
+  fastify.get('/documents/:documentId/file', { schema: documentFileSchema, preHandler: [authenticate, ADMIN_ONLY] }, ctrl.documentFileHandler)
 
   // ── Gestion: solo ADMIN ──────────────────────────────────────────────────
   //

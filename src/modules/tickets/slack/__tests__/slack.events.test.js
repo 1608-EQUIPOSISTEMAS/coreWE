@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const consultarAvanceDesdeSlack = vi.fn()
+const createTicketFromSlack = vi.fn()
 const postearMensaje = vi.fn()
 const interpretarMensaje = vi.fn()
+const leerHistorialDm = vi.fn()
 
-vi.mock('../../tickets.usecases.js', () => ({ consultarAvanceDesdeSlack }))
-vi.mock('../../../../shared/adapters/slack/tickets-slack.adapter.js', () => ({ postearMensaje }))
-vi.mock('../slack.ai.js', () => ({ interpretarMensaje }))
+// Sin la espera anti-rafaga: cada test procesa su mensaje en el acto.
+process.env.TICKETS_SLACK_ESPERA_MS = '0'
+
+vi.mock('../../tickets.usecases.js', () => ({ consultarAvanceDesdeSlack, createTicketFromSlack }))
+vi.mock('../../../../shared/adapters/slack/tickets-slack.adapter.js', () => ({ postearMensaje, leerHistorialDm }))
+vi.mock('../slack.ai.js', () => ({ interpretarConversacion: interpretarMensaje }))
 
 const { eventsHandler, esDmDePersona, yaProcesado } = await import('../slack.events.js')
+const { bloquesDePreguntas } = await import('../slack.blocks.js')
 
 const replyDoble = () => {
   const reply = { payload: null }
@@ -29,7 +35,8 @@ const ultimoTexto = () => postearMensaje.mock.calls.at(-1)[1].text
 
 beforeEach(() => {
   vi.clearAllMocks()
-  interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'El ERP no carga', ticketRef: null })
+  interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'El ERP no carga', ticketRef: null, preguntas: [] })
+  leerHistorialDm.mockResolvedValue([])
 })
 
 describe('esDmDePersona', () => {
@@ -144,7 +151,7 @@ describe('eventsHandler', () => {
   })
 
   it('con intención OTRO manda a comentar dentro del ERP, sin crear nada', async () => {
-    interpretarMensaje.mockResolvedValue({ intencion: 'OTRO', titulo: '', ticketRef: null })
+    interpretarMensaje.mockResolvedValue({ intencion: 'OTRO', titulo: '', ticketRef: null, preguntas: [] })
 
     eventsHandler({ body: callback(), headers: {} }, replyDoble())
 
@@ -154,7 +161,7 @@ describe('eventsHandler', () => {
   })
 
   it('un mensaje demasiado corto pide detalle en vez de abrir un ticket vacío', async () => {
-    interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'ayuda', ticketRef: null })
+    interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'ayuda', ticketRef: null, preguntas: [] })
 
     eventsHandler({ body: callback(evento({ text: 'ayuda' })), headers: {} }, replyDoble())
 
@@ -163,7 +170,7 @@ describe('eventsHandler', () => {
   })
 
   it('con intención AVANCE responde con datos de la BD, no del modelo', async () => {
-    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: 42 })
+    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: 42, preguntas: [] })
     consultarAvanceDesdeSlack.mockResolvedValue({
       ticket: { ticket_id: 42, title: 'No carga', status: 'EN_PROGRESO', priority: 'ALTA', asignado: 'Ana', comentarios: 0 },
       activos: []
@@ -178,7 +185,7 @@ describe('eventsHandler', () => {
   })
 
   it('un ticket que no es suyo no se confirma ni se niega con detalles', async () => {
-    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: 99 })
+    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: 99, preguntas: [] })
     consultarAvanceDesdeSlack.mockResolvedValue({ ticket: null, activos: [] })
 
     eventsHandler({ body: callback(), headers: {} }, replyDoble())
@@ -188,7 +195,7 @@ describe('eventsHandler', () => {
   })
 
   it('sin número de ticket lista los activos del usuario', async () => {
-    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: null })
+    interpretarMensaje.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticketRef: null, preguntas: [] })
     consultarAvanceDesdeSlack.mockResolvedValue({
       ticket: null,
       activos: [{ ticket_id: 7, title: 'Pago no se registró', status: 'ABIERTO' }]
@@ -219,5 +226,131 @@ describe('eventsHandler', () => {
 
     await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
     expect(ultimoTexto()).not.toMatch(/ECONNREFUSED/)
+  })
+})
+
+describe('entrevista antes del borrador', () => {
+  const botonDe = payload => payload.blocks.find(b => b.type === 'actions').elements[0]
+
+  it('si al reporte le falta contexto, pregunta en vez de proponer el borrador', async () => {
+    interpretarMensaje.mockResolvedValue({
+      intencion: 'TICKET', titulo: 'No carga', ticketRef: null, preguntas: ['¿En qué módulo?', '¿Desde cuándo?']
+    })
+
+    eventsHandler({ body: callback(), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    const payload = postearMensaje.mock.calls[0][1]
+    expect(payload.blocks.find(b => b.block_id === 'tk_preguntas').text.text).toMatch(/1\. ¿En qué módulo\?\n2\. ¿Desde cuándo\?/)
+    expect(JSON.parse(botonDe(payload).value)).toEqual({
+      ronda: 1, inicio: '1.1', preguntas: ['¿En qué módulo?', '¿Desde cuándo?']
+    })
+  })
+
+  it('la respuesta se lee junto con el mensaje inicial y termina en el borrador', async () => {
+    const ahora = Math.floor(Date.now() / 1000)
+    leerHistorialDm.mockResolvedValue([
+      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿Qué alumno?'], ronda: 1, inicio: `${ahora - 60}.1` }) },
+      { type: 'message', user: 'U1', ts: `${ahora - 60}.1`, text: 'no puedo matricular a un alumno' }
+    ])
+
+    eventsHandler({ body: callback(evento({ ts: `${ahora}.3`, text: 'el 4521' })), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    const turnos = interpretarMensaje.mock.calls[0][0]
+    expect(turnos.map(t => t.rol)).toEqual(['usuario', 'bot', 'usuario'])
+    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: true })
+
+    const problema = postearMensaje.mock.calls[0][1].blocks.find(b => b.block_id === 'tk_problema').text.text
+    expect(problema).toMatch(/no puedo matricular a un alumno\n\nP: ¿Qué alumno\?\nR: el 4521/)
+  })
+
+  it('dentro de la entrevista una respuesta corta no se rechaza por corta', async () => {
+    const ahora = Math.floor(Date.now() / 1000)
+    leerHistorialDm.mockResolvedValue([
+      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿Sale error?'], ronda: 1, inicio: `${ahora - 60}.1` }) },
+      { type: 'message', user: 'U1', ts: `${ahora - 60}.1`, text: 'el reporte de cobranza no carga' }
+    ])
+    interpretarMensaje.mockResolvedValue({ intencion: 'OTRO', titulo: 'Reporte de cobranza no carga', ticketRef: null, preguntas: [] })
+
+    eventsHandler({ body: callback(evento({ ts: `${ahora}.3`, text: 'no' })), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(postearMensaje.mock.calls[0][1].blocks.some(b => b.block_id === 'tk_titulo')).toBe(true)
+  })
+
+  it('agotadas las rondas, ya no permite preguntar', async () => {
+    const ahora = Math.floor(Date.now() / 1000)
+    leerHistorialDm.mockResolvedValue([
+      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿x?'], ronda: 2, inicio: `${ahora - 90}.1` }) },
+      { type: 'message', user: 'U1', ts: `${ahora - 90}.1`, text: 'el reporte de cobranza no carga' }
+    ])
+
+    eventsHandler({ body: callback(evento({ ts: `${ahora}.3`, text: 'eso' })), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: false })
+  })
+
+  it('sin historial disponible no pregunta: no podría releer las respuestas', async () => {
+    leerHistorialDm.mockResolvedValue(null)
+
+    eventsHandler({ body: callback(), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: false })
+  })
+})
+
+describe('creación automática', () => {
+  it('con el reporte completo crea el ticket sin borrador ni botones', async () => {
+    interpretarMensaje.mockResolvedValue({
+      intencion: 'TICKET', titulo: 'No carga el reporte de cobranza', ticketRef: null, preguntas: [], completo: true
+    })
+    createTicketFromSlack.mockResolvedValue({ ticket_id: 77, title: 'No carga el reporte de cobranza' })
+    const files = [{ id: 'F1', name: 'captura.png', mimetype: 'image/png', size: 1000 }]
+
+    eventsHandler({
+      body: callback(evento({
+        subtype: 'file_share',
+        files,
+        text: 'desde ayer el <https://erp.test/cobranza|reporte> de cobranza no carga, a todo el equipo'
+      })),
+      headers: {}
+    }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(createTicketFromSlack).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      titulo: 'No carga el reporte de cobranza',
+      problema: 'desde ayer el reporte de cobranza no carga, a todo el equipo',
+      link: 'https://erp.test/cobranza',
+      archivosSlack: ['F1']
+    })
+    const payload = postearMensaje.mock.calls[0][1]
+    expect(payload.text).toMatch(/#00077/)
+    expect(payload.blocks.some(b => b.type === 'actions')).toBe(false)
+  })
+
+  it('incompleto y sin preguntas pendientes, sigue ofreciendo el borrador', async () => {
+    interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticketRef: null, preguntas: [], completo: false })
+
+    eventsHandler({ body: callback(), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(createTicketFromSlack).not.toHaveBeenCalled()
+    expect(postearMensaje.mock.calls[0][1].blocks.some(b => b.type === 'actions')).toBe(true)
+  })
+
+  it('si crear falla por dominio (sin cuenta en el ERP), lo dice tal cual', async () => {
+    interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticketRef: null, preguntas: [], completo: true })
+    const err = new Error('No encontramos una cuenta activa del ERP con tu correo')
+    err.expose = true
+    createTicketFromSlack.mockRejectedValue(err)
+
+    eventsHandler({ body: callback(), headers: {} }, replyDoble())
+
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(ultimoTexto()).toMatch(/cuenta activa/)
   })
 })

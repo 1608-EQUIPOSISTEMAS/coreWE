@@ -5,7 +5,7 @@ const geminiConfigurado = vi.fn(() => true)
 
 vi.mock('../../../../shared/adapters/ai/gemini.adapter.js', () => ({ generarJson, geminiConfigurado }))
 
-const { interpretarMensaje } = await import('../slack.ai.js')
+const { interpretarMensaje, interpretarConversacion } = await import('../slack.ai.js')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -18,8 +18,59 @@ describe('interpretarMensaje', () => {
     generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'No carga el reporte', ticket_ref: 0 })
 
     expect(await interpretarMensaje('desde ayer el reporte no carga')).toEqual({
-      intencion: 'TICKET', titulo: 'No carga el reporte', ticketRef: null, porIa: true
+      intencion: 'TICKET', titulo: 'No carga el reporte', ticketRef: null, preguntas: [], completo: false, porIa: true
     })
+  })
+
+  it('devuelve las preguntas del modelo, limpias y como máximo tres', async () => {
+    generarJson.mockResolvedValue({
+      intencion: 'TICKET',
+      titulo: 'No carga el reporte',
+      ticket_ref: 0,
+      preguntas: ['¿En qué módulo?', '  ¿En  qué módulo?', '¿Desde cuándo?', 'ok', '¿Qué alumno?', '¿Captura?']
+    })
+    const r = await interpretarMensaje('el reporte no carga')
+    expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?'])
+  })
+
+  it('completo solo si el modelo lo afirma y no quedan preguntas', async () => {
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [], completo: true })
+    expect((await interpretarMensaje('el reporte no carga desde ayer, a todos')).completo).toBe(true)
+
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: ['¿Desde cuándo?'], completo: true })
+    expect((await interpretarMensaje('el reporte no carga')).completo).toBe(false)
+
+    // La salida del modelo no es confiable: un "true" en texto no cuenta.
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [], completo: 'true' })
+    expect((await interpretarMensaje('el reporte no carga')).completo).toBe(false)
+  })
+
+  it('una consulta de avance nunca es un ticket completo', async () => {
+    generarJson.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticket_ref: 4, preguntas: [], completo: true })
+    expect((await interpretarMensaje('cómo va el 4')).completo).toBe(false)
+  })
+
+  it('sin permiso para preguntar descarta las preguntas del modelo', async () => {
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: ['¿En qué módulo?'] })
+    const r = await interpretarMensaje('el reporte no carga', { permitirPreguntas: false })
+    expect(r.preguntas).toEqual([])
+  })
+
+  it('una consulta de avance nunca trae preguntas', async () => {
+    generarJson.mockResolvedValue({ intencion: 'AVANCE', titulo: '', ticket_ref: 42, preguntas: ['¿Qué ticket?'] })
+    expect((await interpretarMensaje('cómo va el 42')).preguntas).toEqual([])
+  })
+
+  it('le pasa al modelo la conversación completa con preguntas y respuestas', async () => {
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [] })
+    await interpretarConversacion([
+      { rol: 'usuario', texto: 'no puedo matricular' },
+      { rol: 'bot', preguntas: ['¿Qué alumno?'] },
+      { rol: 'usuario', texto: 'el código 123', archivos: [{ id: 'F1' }] }
+    ])
+    const { texto } = generarJson.mock.calls[0][0]
+    expect(texto).toMatch(/no puedo matricular[\s\S]*¿Qué alumno\?[\s\S]*el código 123/)
+    expect(texto).toMatch(/1 imagen/)
   })
 
   it('el 0 de ticket_ref significa "ninguno"', async () => {

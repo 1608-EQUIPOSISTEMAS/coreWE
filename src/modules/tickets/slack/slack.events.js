@@ -1,26 +1,37 @@
-import { consultarAvanceDesdeSlack } from '../tickets.usecases.js'
+import { consultarAvanceDesdeSlack, createTicketFromSlack } from '../tickets.usecases.js'
+import { escaparSlack } from './slack.text.js'
 import { formatTicketCode } from '../tickets.entity.js'
-import { postearMensaje } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
-import { limpiarTextoSlack, recortar } from './slack.text.js'
-import { interpretarMensaje } from './slack.ai.js'
-import { bloquesDeBorrador, bloquesDeTextoPlano, MAX_ARCHIVOS } from './slack.blocks.js'
-import { MIME_PERMITIDOS, MAX_BYTES } from '../tickets.files.js'
+import { postearMensaje, leerHistorialDm } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
+import { interpretarConversacion } from './slack.ai.js'
+import { bloquesDeBorrador, bloquesDePreguntas, bloquesDeTextoPlano } from './slack.blocks.js'
+import {
+  MAX_RONDAS, PROBLEMA_MIN, archivosDelMensaje, armarBorrador, enlacesYArchivos,
+  reconstruirConversacion, textoDelUsuario, turnoDeMensaje
+} from './slack.conversacion.js'
+import { textoDeEstado, ESTADO_LEGIBLE } from './slack.estado.js'
+import { mensajeDeError } from './slack.errores.js'
+
+export { mensajeDeError }
 
 // Events API: el bot escucha `message.im`, o sea los DM que le escriben.
 //
 // Es la unica via de alta desde Slack. No hay formato que aprender
 // ni separadores que respetar: se escribe el problema como se le contaria a un
-// companero, la IA lo lee, y el bot devuelve un borrador con dos botones.
+// companero y la IA lo lee. Si al reporte le falta algo para poder atenderlo,
+// el bot pregunta (hasta MAX_RONDAS veces, ver slack.conversacion.js). Cuando
+// el reporte queda completo el ticket se crea solo; si se agotaron las
+// preguntas y sigue faltando algo, devuelve un borrador con dos botones.
 //
 // Scopes que necesita la app en Slack: im:history, im:read, chat:write,
 // users:read.email y files:read (imagenes adjuntas). Y en "Event
 // Subscriptions", la suscripcion a message.im.
 
-// Tope de la columna problem en la entity. Se recorta aca para que el borrador
-// muestre exactamente lo que se va a guardar, y no prometa un texto que la
-// validacion despues rechazaria entero.
-const PROBLEMA_MAX = 2000
-const PROBLEMA_MIN = 10
+// La gente escribe en rafagas: "hola", y despues el problema; o el problema y
+// despues la captura. Cada mensaje espera un momento antes de procesarse, y si
+// llega otro del mismo DM, el anterior se cancela: el ultimo lee del historial
+// todo lo que quedo pendiente y contesta una sola vez.
+const ESPERA_MS = Number(process.env.TICKETS_SLACK_ESPERA_MS ?? 2500)
+const enEspera = new Map()
 
 const RESPUESTA_OTRO =
   '💬 Por acá solo creo *tickets nuevos*.\n' +
@@ -34,15 +45,6 @@ const RESPUESTA_SOLO_ARCHIVOS =
   '🖼️ Recibí tus archivos, pero me falta saber qué pasó.\n' +
   'Envíame en un solo mensaje la descripción del problema junto con las imágenes y te armo el ticket.'
 
-const RESPUESTA_SIN_ACTIVOS =
-  '📭 No tienes tickets activos ahora mismo.\n' +
-  'Si algo dejó de funcionar, escríbeme de qué se trata y te abro uno.'
-
-const ESTADO_LEGIBLE = {
-  ABIERTO: '🆕 Abierto, esperando que lo tomen',
-  EN_PROGRESO: '👀 En progreso',
-  CERRADO: '✅ Cerrado'
-}
 
 // ── Deduplicacion ──────────────────────────────────────────────────────────
 //
@@ -91,12 +93,7 @@ export function esDmDePersona (evento) {
 }
 
 /** Los adjuntos del DM que el ticket acepta (mismos tipos y peso que la web). */
-export function archivosDelEvento (evento) {
-  return (evento?.files ?? [])
-    .filter(f => f?.id && MIME_PERMITIDOS.includes(f.mimetype) && (!f.size || f.size <= MAX_BYTES))
-    .slice(0, MAX_ARCHIVOS)
-    .map(f => ({ id: f.id, nombre: f.name ?? f.title ?? 'archivo' }))
-}
+export const archivosDelEvento = archivosDelMensaje
 
 export function eventsHandler (req, reply) {
   const body = req.body ?? {}
@@ -120,45 +117,81 @@ export function eventsHandler (req, reply) {
   if (body.type !== 'event_callback' || !esDmDePersona(evento)) return
   if (yaProcesado(body.event_id)) return
 
-  void procesarDm(evento)
+  clearTimeout(enEspera.get(evento.channel))
+  enEspera.set(evento.channel, setTimeout(() => {
+    enEspera.delete(evento.channel)
+    void procesarDm(evento)
+  }, ESPERA_MS))
 }
 
 async function procesarDm (evento) {
   const canal = evento.channel
-  const { texto, enlaces } = limpiarTextoSlack(evento.text)
-  const archivos = archivosDelEvento(evento)
 
-  // Solo imagenes, sin contar que paso: no hay ticket que armar todavia.
-  if (archivos.length && texto.length < PROBLEMA_MIN) {
+  // Lo que el usuario escribio antes en este DM: las respuestas a una ronda de
+  // preguntas en curso, o mensajes sueltos que todavia no tuvieron respuesta.
+  // Sin historial (falta el scope, Slack caido) se sigue solo con este mensaje.
+  const previos = await leerHistorialDm(canal, { antesDe: evento.ts })
+  const { ronda, inicio, turnos: anteriores } = reconstruirConversacion(previos ?? [], evento.ts)
+  const turnos = [...anteriores, turnoDeMensaje(evento)]
+  const enEntrevista = ronda > 0
+  const texto = textoDelUsuario(turnos)
+
+  // Solo imagenes, sin contar que paso: no hay ticket que armar todavia. En
+  // medio de la entrevista si vale: puede ser la captura que se le pidio.
+  if (!enEntrevista && enlacesYArchivos(turnos).archivos.length && texto.length < PROBLEMA_MIN) {
     await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_SOLO_ARCHIVOS))
     return
   }
 
   try {
-    const { intencion, titulo, ticketRef } = await interpretarMensaje(texto)
+    // Sin historial no hay como releer las respuestas despues: no se pregunta.
+    const permitirPreguntas = previos !== null && ronda < MAX_RONDAS
+    const { intencion, titulo, ticketRef, preguntas, completo } = await interpretarConversacion(turnos, { permitirPreguntas })
 
-    if (intencion === 'OTRO') {
-      await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_OTRO))
+    // Dentro de una entrevista el mensaje es una respuesta, diga lo que diga:
+    // "no se" o "gracias" no la cortan, siguen hacia el borrador.
+    if (!enEntrevista) {
+      if (intencion === 'OTRO') {
+        await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_OTRO))
+        return
+      }
+
+      if (intencion === 'AVANCE') {
+        await postearMensaje(canal, bloquesDeTextoPlano(await textoDeAvance(evento.user, ticketRef)))
+        return
+      }
+
+      // Un "no anda nada" no da para un ticket que alguien pueda atender.
+      if (texto.length < PROBLEMA_MIN) {
+        await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_CORTO))
+        return
+      }
+    }
+
+    if (preguntas.length) {
+      await postearMensaje(canal, bloquesDePreguntas({ preguntas, ronda: ronda + 1, inicio: inicio ?? evento.ts }))
       return
     }
 
-    if (intencion === 'AVANCE') {
-      await postearMensaje(canal, bloquesDeTextoPlano(await textoDeAvance(evento.user, ticketRef)))
+    const borrador = armarBorrador(turnos, titulo)
+
+    // Con los tres puntos cubiertos no hay nada que confirmar: se crea directo.
+    // El borrador con botones queda para lo incompleto (se agotaron las rondas
+    // o la IA no estuvo disponible), donde conviene que el usuario lo revise.
+    if (completo) {
+      const ticket = await createTicketFromSlack({
+        slackUserId: evento.user,
+        titulo: borrador.titulo,
+        problema: borrador.problema,
+        link: borrador.enlaces.join('\n') || null,
+        archivosSlack: borrador.archivos.map(a => a.id)
+      })
+      await postearMensaje(canal, bloquesDeTextoPlano(
+        `✅ Con eso ya tengo todo lo necesario. Creé tu ticket *#${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}.`))
       return
     }
 
-    // Un "no anda nada" no da para un ticket que alguien pueda atender.
-    if (texto.length < PROBLEMA_MIN) {
-      await postearMensaje(canal, bloquesDeTextoPlano(RESPUESTA_CORTO))
-      return
-    }
-
-    await postearMensaje(canal, bloquesDeBorrador({
-      titulo,
-      problema: recortar(texto, PROBLEMA_MAX),
-      enlaces,
-      archivos
-    }))
+    await postearMensaje(canal, bloquesDeBorrador(borrador))
   } catch (err) {
     await postearMensaje(canal, bloquesDeTextoPlano(mensajeDeError(err, '[tickets-slack] DM')))
   }
@@ -190,20 +223,6 @@ async function textoDeAvance (slackUserId, ticketRef) {
     return lineas.join('\n')
   }
 
-  if (!activos.length) return RESPUESTA_SIN_ACTIVOS
-
-  const filas = activos.map(t =>
-    `• *#${formatTicketCode(t.ticket_id)}* — ${t.title} _(${ESTADO_LEGIBLE[t.status] ?? t.status})_`)
-  return [`📋 Tienes ${activos.length} ticket(s) activo(s):`, ...filas].join('\n')
-}
-
-/**
- * Un DomainError trae un mensaje escrito para leerse (no hay cuenta en el ERP,
- * no hay agentes...); cualquier otra cosa se enmascara y se queda en el log.
- * Mismo criterio que los botones del borrador.
- */
-export function mensajeDeError (err, etiqueta) {
-  if (err?.expose) return `❌ ${err.message}`
-  console.error(`${etiqueta}:`, err)
-  return '❌ Se me complicó procesar tu mensaje. Inténtalo de nuevo en un momento.'
+  // Sin numero: la lista de sus tickets abiertos.
+  return textoDeEstado(activos)
 }

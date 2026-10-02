@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import * as usecases from './tickets.usecases.js'
-import { readMultipart, attachmentPath } from './tickets.files.js'
-import { toTicketDto, toCommentDto, toAssigneeDto, toActivityDto } from './tickets.dto.js'
+import { readMultipart, attachmentPath, DOCUMENTO_MULTIPART } from './tickets.files.js'
+import { toTicketDto, toCommentDto, toAssigneeDto, toActivityDto, toDocumentDto } from './tickets.dto.js'
 
 // Unico lugar que sabe de HTTP. Traduce request -> caso de uso y resultado -> reply.
 //
@@ -101,12 +101,17 @@ async function enviarAdjunto (req, reply, kind) {
     attachmentId: Number(req.params.attachmentId),
     kind
   })
-  const ruta = await attachmentPath(adjunto.stored_name)
+  return enviarArchivo(reply, adjunto)
+}
+
+// Comun a adjuntos y documentos: { stored_name, original_name, mime_type }.
+async function enviarArchivo (reply, archivo) {
+  const ruta = await attachmentPath(archivo.stored_name)
 
   // El nombre original solo viaja en la cabecera; en disco el archivo es un UUID.
-  const nombre = adjunto.original_name.replace(/["\\]/g, '')
+  const nombre = archivo.original_name.replace(/["\\]/g, '')
   return reply
-    .type(adjunto.mime_type)
+    .type(archivo.mime_type)
     .header('Content-Disposition', `inline; filename="${encodeURIComponent(nombre)}"`)
     .send(createReadStream(ruta))
 }
@@ -114,4 +119,29 @@ async function enviarAdjunto (req, reply, kind) {
 export async function aiNoteHandler (req, reply) {
   const data = await usecases.ticketAiNote({ ...quien(req), ticketId: req.body.ticket_id })
   return reply.send({ ok: true, data })
+}
+
+// ── Documentos ─────────────────────────────────────────────────────────────
+
+export async function documentsHandler (req, reply) {
+  const data = await usecases.listDocuments()
+  return reply.code(200).send({ ok: true, data: data.map(toDocumentDto) })
+}
+
+export async function documentCreateHandler (req, reply) {
+  const { campos, archivos } = await readMultipart(req, DOCUMENTO_MULTIPART)
+  const data = await usecases.createDocument({
+    userId: req.user?.id,
+    titulo: campos.titulo,
+    descripcion: campos.descripcion,
+    tipo: campos.tipo,
+    url: campos.url,
+    archivos
+  })
+  return reply.code(201).send({ ok: true, message: 'Documento subido', data: toDocumentDto(data) })
+}
+
+export async function documentFileHandler (req, reply) {
+  const documento = await usecases.downloadDocument({ documentId: Number(req.params.documentId) })
+  return enviarArchivo(reply, documento)
 }

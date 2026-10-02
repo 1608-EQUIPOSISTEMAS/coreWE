@@ -179,3 +179,74 @@ ON CONFLICT (priority) DO NOTHING;
 
 COMMENT ON TABLE public.ticket_sla_policies IS
   'Plazos por prioridad, en minutos corridos. Editables desde la pestana "Politicas SLA" de /tickets (solo ADMIN). Cambiarlos no reescribe compromisos ya adquiridos.';
+
+-- ── Documentos ─────────────────────────────────────────────────────────────
+--
+-- Biblioteca de documentos del modulo (manuales, procedimientos, plantillas).
+-- No cuelga de un ticket: es una lista propia, pestana "Documentos" de /tickets.
+--
+-- Un documento es O un PDF subido O un enlace a un documento online (Google
+-- Docs/Sheets, Word online). kind decide cual, y el CHECK impide filas a medias:
+-- un PDF sin archivo o un ENLACE sin url. El PDF vive en coreWE/uploads/tickets
+-- con el mismo esquema que los adjuntos (UUID en disco, original solo en la
+-- descarga).
+CREATE TABLE IF NOT EXISTS public.ticket_documents (
+  ticket_document_id   serial PRIMARY KEY,
+  title                varchar(150) NOT NULL,
+  kind                 varchar(6)   NOT NULL,
+  url                  varchar(2048),
+  original_name        varchar(255),
+  stored_name          varchar(64) UNIQUE,
+  mime_type            varchar(100),
+  size_bytes           integer,
+  created_by_id        integer NOT NULL REFERENCES public.users(user_id),
+  active               char(1) NOT NULL DEFAULT 'Y',
+  registration_date    timestamp with time zone NOT NULL DEFAULT now(),
+  modification_date    timestamp with time zone,
+  user_registration_id integer,
+  CONSTRAINT ticket_documents_kind_chk CHECK (kind IN ('PDF', 'ENLACE')),
+  CONSTRAINT ticket_documents_pdf_chk CHECK (
+    kind <> 'PDF' OR (stored_name IS NOT NULL AND mime_type = 'application/pdf'
+                      AND size_bytes > 0 AND size_bytes <= 20971520)),
+  CONSTRAINT ticket_documents_enlace_chk CHECK (
+    kind <> 'ENLACE' OR (url IS NOT NULL AND stored_name IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS ticket_documents_list_idx
+  ON public.ticket_documents (ticket_document_id DESC) WHERE active = 'Y';
+
+COMMENT ON TABLE public.ticket_documents IS
+  'Documentos del modulo Tickets: un PDF subido (kind PDF) o un enlace a un documento online (kind ENLACE). Los administra solo ADMIN; el bot de Slack los envia como solucion de un ticket (manual_*).';
+
+-- ── Manual enviado como solucion (bot de Slack) ─────────────────────────────
+--
+-- Al crear un ticket por DM, si el titulo de un documento corresponde al
+-- problema, el bot lo envia y pregunta si fue suficiente. Sin respuesta en
+-- manual_deadline_at, el ticket se da por resuelto (barrido de cada minuto).
+-- manual_answer IS NULL con deadline = pregunta pendiente; es tambien el
+-- candado: el boton y el barrido solo actuan si sigue en NULL.
+ALTER TABLE public.tickets
+  ADD COLUMN IF NOT EXISTS manual_document_id integer REFERENCES public.ticket_documents(ticket_document_id),
+  ADD COLUMN IF NOT EXISTS manual_sent_at      timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS manual_deadline_at  timestamp with time zone,
+  ADD COLUMN IF NOT EXISTS manual_message_ts   varchar(32),
+  ADD COLUMN IF NOT EXISTS manual_answer       varchar(16),
+  ADD COLUMN IF NOT EXISTS manual_answered_at  timestamp with time zone;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tickets_manual_answer_chk') THEN
+    ALTER TABLE public.tickets ADD CONSTRAINT tickets_manual_answer_chk
+      CHECK (manual_answer IS NULL OR manual_answer IN ('RESUELTO', 'NO_RESUELTO', 'SIN_RESPUESTA'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS tickets_manual_pendiente_idx
+  ON public.tickets (manual_deadline_at)
+  WHERE manual_answer IS NULL AND manual_deadline_at IS NOT NULL;
+
+-- Descripcion del documento: de que trata y que problema resuelve. La lee la
+-- IA (junto al titulo) para decidir si un manual soluciona un ticket. Nullable
+-- por los documentos previos; las altas nuevas la exigen (validateDocumentInput).
+ALTER TABLE public.ticket_documents
+  ADD COLUMN IF NOT EXISTS description varchar(1000);

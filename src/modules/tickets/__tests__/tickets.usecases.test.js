@@ -14,7 +14,8 @@ const repo = {
   saveSlackThread: vi.fn(),
   findActiveUserByEmail: vi.fn(),
   unassignedOlderThan: vi.fn(),
-  reassign: vi.fn()
+  reassign: vi.fn(),
+  list: vi.fn(async () => [])
 }
 
 const slack = {
@@ -32,6 +33,8 @@ const slack = {
   descargarArchivoSlack: vi.fn(),
   avisarComentarioNuevo: vi.fn(),
   abrirHiloDeTicket: vi.fn(),
+  // Sin bot configurado el manual (manual/) no se ofrece: estos tests no lo cubren.
+  slackBotConfigurado: vi.fn(() => false),
   obtenerEmailDeUsuarioSlack: vi.fn(),
   slackWebhookConfigurado: vi.fn(() => true)
 }
@@ -334,5 +337,25 @@ describe('createTicketFromSlack', () => {
     expect(repo.create.mock.calls[0][0].created_by_id).toBe(55)
     // El hilo se abre fuera del camino critico; se espera a que decante.
     await vi.waitFor(() => expect(repo.saveSlackThread).toHaveBeenCalledWith(1, { channelId: 'D123', messageTs: '1.2' }))
+  })
+
+  it('el mensaje de apertura lleva los tickets abiertos de quien reporta, sin los cerrados', async () => {
+    slack.obtenerEmailDeUsuarioSlack.mockResolvedValue('ana@we.edu.pe')
+    repo.findActiveUserByEmail.mockResolvedValue({ user_id: 55, name: 'Ana' })
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+    repo.create.mockResolvedValue(1)
+    repo.detail.mockResolvedValue(ticketFila({ created_by_id: 55 }))
+    repo.list.mockResolvedValue([
+      ticketFila({ ticket_id: 1, status: 'ABIERTO' }),
+      ticketFila({ ticket_id: 2, status: 'EN_PROGRESO' }),
+      ticketFila({ ticket_id: 3, status: 'CERRADO' })
+    ])
+    slack.abrirHiloDeTicket.mockResolvedValue(null)
+
+    await createTicketFromSlack({ slackUserId: 'U1', ...VALIDO })
+
+    await vi.waitFor(() => expect(slack.abrirHiloDeTicket).toHaveBeenCalled())
+    expect(repo.list).toHaveBeenCalledWith({ areaRoles: null, userId: 55 })
+    expect(slack.abrirHiloDeTicket.mock.calls[0][2].map(t => t.ticket_id)).toEqual([1, 2])
   })
 })

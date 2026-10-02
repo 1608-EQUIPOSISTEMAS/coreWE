@@ -130,3 +130,20 @@ export const attachmentSchema = {
     properties: { attachmentId: { type: 'integer', minimum: 1 } }
   }
 }
+
+export const documentsSchema = {
+  tags: TAG,
+  summary: 'Documentos del modulo (PDF subidos y enlaces a documentos online)',
+  body: { type: 'object', properties: { user_id: { type: 'integer' } }, additionalProperties: false },
+  response: ok({ type: 'array' })
+}
+
+export const documentFileSchema = {
+  tags: TAG,
+  summary: 'Descargar el PDF de un documento',
+  params: {
+    type: 'object',
+    required: ['documentId'],
+    properties: { documentId: { type: 'integer', minimum: 1 } }
+  }
+}

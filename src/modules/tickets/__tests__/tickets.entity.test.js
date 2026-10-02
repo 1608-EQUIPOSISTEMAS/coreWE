@@ -3,7 +3,7 @@ import {
   ticketScopeFor, canRead, assertCanRead, assertCanManage, nextStatus, pickAgent,
   assertReassignable, validateTicketInput, validateComment,
   computeDueDates, formatTicketCode, withSla, applyFilter, buildKpis,
-  canChangeStatusOf, canReopenOf, reopenByReporter
+  canChangeStatusOf, canReopenOf, reopenByReporter, validateDocumentInput
 } from '../tickets.entity.js'
 
 const AHORA = new Date('2026-01-01T12:00:00Z')
@@ -129,6 +129,11 @@ describe('reabrir desde quien reporto', () => {
     expect(canReopenOf(cerrado(), 10)).toBe(true)
     expect(reopenByReporter(cerrado(), 10))
       .toEqual({ status: 'EN_PROGRESO', first_response_at: AHORA, resolved_at: null })
+  })
+
+  it('sin agente (lo cerró el manual antes del reparto) vuelve a la cola como ABIERTO', () => {
+    expect(reopenByReporter(cerrado({ assigned_to_id: null }), 10))
+      .toEqual({ status: 'ABIERTO', first_response_at: AHORA, resolved_at: null })
   })
 
   it('otro usuario no puede, aunque sea el agente asignado', () => {
@@ -354,5 +359,46 @@ describe('applyFilter y buildKpis', () => {
     const kpis = buildKpis([...todos, cerrado], 99)
     expect(kpis.sinAsignar).toBe(2)
     expect(kpis.porAsignar).toBe(1)
+  })
+})
+
+describe('validateDocumentInput', () => {
+  const pdf = { original_name: 'manual.pdf', stored_name: 'x.pdf', mime_type: 'application/pdf', size_bytes: 10 }
+  const DESC = 'Qué hacer cuando el Sheets de ventas no muestra los datos'
+
+  it('exige la descripción de qué trata (la lee la IA para enviar el manual)', () => {
+    const url = 'https://docs.google.com/x'
+    expect(() => validateDocumentInput({ titulo: 'Manual', tipo: 'ENLACE', url })).toThrow(/De qué trata/i)
+    expect(() => validateDocumentInput({ titulo: 'Manual', descripcion: 'muy corta', tipo: 'ENLACE', url })).toThrow(/De qué trata/i)
+    expect(validateDocumentInput({ titulo: 'Manual', descripcion: `  ${DESC}
+ con   espacios `, tipo: 'ENLACE', url }).description)
+      .toBe(`${DESC} con espacios`)
+  })
+
+  it('acepta un PDF con archivo y descarta la url', () => {
+    expect(validateDocumentInput({ titulo: '  Manual FICO ', descripcion: DESC, tipo: 'pdf', url: 'https://x', archivo: pdf }))
+      .toEqual({ title: 'Manual FICO', description: DESC, kind: 'PDF', url: null })
+  })
+
+  it('acepta un enlace https', () => {
+    const url = 'https://docs.google.com/spreadsheets/d/abc/edit'
+    expect(validateDocumentInput({ titulo: 'Tarifario', descripcion: DESC, tipo: 'ENLACE', url }))
+      .toEqual({ title: 'Tarifario', description: DESC, kind: 'ENLACE', url })
+  })
+
+  it('rechaza un PDF sin archivo', () => {
+    expect(() => validateDocumentInput({ titulo: 'Manual', descripcion: DESC, tipo: 'PDF' })).toThrow(/Adjunta/)
+  })
+
+  it('rechaza un enlace con archivo, vacío o sin http(s)', () => {
+    expect(() => validateDocumentInput({ titulo: 'Doc', descripcion: DESC, tipo: 'ENLACE', url: 'https://x', archivo: pdf })).toThrow()
+    expect(() => validateDocumentInput({ titulo: 'Doc', descripcion: DESC, tipo: 'ENLACE', url: '' })).toThrow(/Pega/)
+    expect(() => validateDocumentInput({ titulo: 'Doc', descripcion: DESC, tipo: 'ENLACE', url: 'javascript:alert(1)' })).toThrow(/http/)
+    expect(() => validateDocumentInput({ titulo: 'Doc', descripcion: DESC, tipo: 'ENLACE', url: 'no es url' })).toThrow(/válida/)
+  })
+
+  it('rechaza título corto y tipo desconocido', () => {
+    expect(() => validateDocumentInput({ titulo: 'ab', descripcion: DESC, tipo: 'ENLACE', url: 'https://x' })).toThrow(/título/)
+    expect(() => validateDocumentInput({ titulo: 'Manual', descripcion: DESC, tipo: 'WORD', url: 'https://x' })).toThrow(/PDF o un enlace/)
   })
 })
