@@ -161,7 +161,8 @@ export async function courseChangeHandler (req, reply) {
     bank_account_id: req.body.bank_account_id,
     transaction_code: req.body.transaction_code,
     ticket_payment_urls: req.body.ticket_payment_urls,
-    personalAccount: personalAccountFromBody(req.body)
+    personalAccount: personalAccountFromBody(req.body),
+    newInstallments: req.body.new_installments || []
   })
   return reply.code(200).send({ ok: true, data })
 }

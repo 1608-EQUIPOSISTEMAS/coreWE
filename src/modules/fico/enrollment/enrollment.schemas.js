@@ -208,7 +208,16 @@ export const courseChangeSchema = {
       total_amount: { type: 'number' },
       justificacion: { type: 'string', minLength: 1 },
       personal_account: { type: ['string', 'null'], enum: ['CLAUDE', 'CHATGPT', null] },
-      personal_account_modules: { type: ['array', 'null'], items: { type: 'integer' } }
+      personal_account_modules: { type: ['array', 'null'], items: { type: 'integer' } },
+      // Cuotas nuevas que financian el cambio (ej. upgrade PLUS -> BLACK).
+      new_installments: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['amount', 'due_date'],
+          properties: { amount: { type: 'number' }, due_date: { type: 'string', format: 'date' } }
+        }
+      }
     }
   }
 }

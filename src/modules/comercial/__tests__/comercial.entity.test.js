@@ -145,15 +145,14 @@ describe('buildFilterPayload / ult. fecha de contacto', () => {
 
 describe('shouldMoveToUniqueContact', () => {
   const full = [
-    { type_alias: 'we_attempt_msg_close', result_alias: 'we_calling_message' },
     { type_alias: 'we_attempt_seg_1', result_alias: 'we_calling_message' },
     { type_alias: 'we_attempt_call', result_alias: 'we_calling_no_hold' },
     { type_alias: 'we_attempt_seg_2', result_alias: 'we_calling_message' },
     { type_alias: 'we_attempt_call_2', result_alias: 'we_calling_phone_off' }
   ]
 
-  it('las 5 gestiones en cualquier orden y estado abierto: pasa', () => {
-    expect(shouldMoveToUniqueContact({ statusAlias: 'we_lead_status_atendido', attempts: full })).toBe(true)
+  it('las 4 gestiones en cualquier orden y estado abierto: pasa (sin Cierre de Campana)', () => {
+    expect(shouldMoveToUniqueContact({ statusAlias: 'we_lead_status_atendido', attempts: [...full].reverse() })).toBe(true)
   })
 
   it('falta una gestion (Llamada 2): no pasa', () => {

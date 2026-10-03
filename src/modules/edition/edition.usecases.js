@@ -30,6 +30,7 @@ import {
   B2B_JUSTIFICATION_MAX,
   reproEventsOf,
   MAX_EDITION_REPROS,
+  reschedulesToSameDate,
   buildA5Payload,
   buildA5MigrationPlan,
   validateRubricParams,
@@ -250,7 +251,19 @@ export async function editionTeacherFollowup ({ date_start, date_end } = {}) {
 // MAX_EDITION_REPROS reprogramaciones del curso.
 export async function editionSessionControlSave ({ edition_num_id, session_number, status, new_date, user_id } = {}) {
   if (status === 'R' && new_date) {
-    const controls = await repo.sessionControlsList([Number(edition_num_id)])
+    const [current, controls, catalog] = await Promise.all([
+      repo.controlEditionGet(edition_num_id),
+      repo.sessionControlsList([Number(edition_num_id)]),
+      getCatalog()
+    ])
+    const session = current && buildControlRow(current, {
+      dayCombos: catalog.we_day_combination || [],
+      holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
+      controls
+    }).sessions.find((s) => s.session_number === Number(session_number))
+    if (reschedulesToSameDate(session, new_date)) {
+      throw new DomainError('La nueva fecha es la misma que ya tiene la sesion')
+    }
     const existing = controls.find((c) => Number(c.session_number) === Number(session_number))
     const isNewEvent = String(existing?.new_date || '').slice(0, 10) !== new_date
     const total = controls.reduce((a, c) => a + reproEventsOf(c), 0)

@@ -1,13 +1,18 @@
 import * as usecases from './edition.usecases.js'
 import { generateSchedulePdf } from '../../services/pdf.service.js'
 
+// El autor de un cambio sale del token, nunca del body: el front mandaba el
+// user_id de localStorage y cualquiera podia firmar (asistencia, notas,
+// auditorias, ediciones) como otro usuario.
+const bodyWithAuthor = (req) => ({ ...req.body, user_id: req.user?.id ?? null })
+
 export async function registerHandler (req, reply) {
-  const response = await usecases.editionRegister(req.body)
+  const response = await usecases.editionRegister(bodyWithAuthor(req))
   return reply.code(201).send(response)
 }
 
 export async function treeRegisterHandler (req, reply) {
-  const response = await usecases.editionTreeRegister(req.body)
+  const response = await usecases.editionTreeRegister(bodyWithAuthor(req))
   return reply.code(201).send(response)
 }
 
@@ -89,7 +94,7 @@ export async function classroomAuditSummaryListHandler (req, reply) {
 }
 
 export async function classroomAuditSaveHandler (req, reply) {
-  const result = await usecases.classroomAuditSave(req.body)
+  const result = await usecases.classroomAuditSave(bodyWithAuthor(req))
   return reply.code(result.ok ? 200 : 400).send(result)
 }
 
@@ -99,7 +104,7 @@ export async function classroomGradesGetHandler (req, reply) {
 }
 
 export async function classroomGradesSaveHandler (req, reply) {
-  const result = await usecases.classroomGradesSave(req.body)
+  const result = await usecases.classroomGradesSave(bodyWithAuthor(req))
   return reply.code(result.ok ? 200 : 400).send(result)
 }
 
@@ -228,7 +233,7 @@ export async function classroomLinksSaveHandler (req, reply) {
 }
 
 export async function updateHandler (req, reply) {
-  const response = await usecases.editionUpdate(req.body)
+  const response = await usecases.editionUpdate(bodyWithAuthor(req))
   return reply.code(201).send(response)
 }
 
@@ -248,7 +253,7 @@ export async function bulkUpdateWhatsappHandler (req, reply) {
 }
 
 export async function treeUpdateHandler (req, reply) {
-  const response = await usecases.editionTreeUpdate(req.body)
+  const response = await usecases.editionTreeUpdate(bodyWithAuthor(req))
   return reply.code(201).send(response)
 }
 
@@ -279,6 +284,6 @@ export async function b2bTrackingListHandler (req, reply) {
 }
 
 export async function b2bAttendanceSaveHandler (req, reply) {
-  const result = await usecases.b2bAttendanceSave(req.body)
+  const result = await usecases.b2bAttendanceSave(bodyWithAuthor(req))
   return reply.code(result.ok ? 200 : 400).send(result)
 }

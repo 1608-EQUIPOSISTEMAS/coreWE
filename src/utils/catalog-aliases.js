@@ -44,6 +44,9 @@ export const ALIAS = Object.freeze({
   PAYMENT_WAY_SINGLE:               'we_payment_way_single',
   PAYMENT_WAY_INSTALLMENTS:         'we_payment_way_installments',
 
+  // Estado de cuota (payment_installments.cat_status)
+  INSTALLMENT_PENDING:              'we_inst_pending',
+
   // Metodos de pago (payments.cat_method_payment)
   PAYMENT_METHOD_TRANSFER:          'we_payment_method_transfer',
 

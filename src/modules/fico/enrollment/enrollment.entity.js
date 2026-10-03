@@ -443,3 +443,22 @@ export function buildReprogramPlan ({ pendingRows = [], requestedPlan = null, di
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .map((r, i) => ({ ...r, number: i + 1 }))
 }
+
+// Cuotas NUEVAS que FICO financia en un cambio de curso (upgrade PLUS -> BLACK:
+// paga la diferencia de la inicial hoy y el resto en cuotas). Se numeran detras
+// de las pendientes que el CC ya trasladó del origen. Exige un pago hoy: sin
+// inicial el destino nace por la via "pago cero" del SP y no hay cuota 0 real.
+export function buildCourseChangeNewInstallments ({ requested = [], paidNow = 0, lastNumber = 0 }) {
+  if (!requested.length) return []
+  if (!(Number(paidNow) > 0)) {
+    throw new DomainError('Para financiar en cuotas el cambio de curso debe registrar un pago inicial')
+  }
+  return requested
+    .map((c, i) => {
+      const amount = round2(c.amount)
+      if (!Number.isFinite(amount) || amount <= 0) throw new DomainError(`Monto invalido en la cuota nueva ${i + 1}`)
+      return { amount, due_date: shiftCalendarDate(c.due_date, 0) }
+    })
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .map((c, i) => ({ ...c, number: lastNumber + i + 1 }))
+}

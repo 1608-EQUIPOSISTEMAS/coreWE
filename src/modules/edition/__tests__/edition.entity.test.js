@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  reschedulesToSameDate,
   normalizeActive,
   normalizeActiveForCaller,
   buildEditionFilters,
@@ -476,5 +477,21 @@ describe('computeGradeTotals: la sesion sin test cuenta 0', () => {
   it('sube a 20 cuando se completan los tests que faltaban', () => {
     const completo = { ...alumno, tests: { 1: 20, 2: 16, 3: 16, 4: 20, 5: 20, 6: 20 } }
     expect(computeGradeTotals(completo, 6).final_grade).toBe(20) // topado por CAP_FINAL_AT_20
+  })
+})
+
+describe('reschedulesToSameDate', () => {
+  const session = { session_number: 3, planned_date: '2026-10-06', date: '2026-10-06' }
+  it('la misma fecha que ya tiene la sesion no es reprogramar (no gasta repro)', () => {
+    expect(reschedulesToSameDate(session, '2026-10-06')).toBe(true)
+    expect(reschedulesToSameDate({ ...session, date: '2026-10-09' }, '2026-10-09')).toBe(true)
+  })
+  it('otra fecha si es reprogramar', () => {
+    expect(reschedulesToSameDate(session, '2026-10-08')).toBe(false)
+    expect(reschedulesToSameDate({ ...session, date: '2026-10-09' }, '2026-10-06')).toBe(false)
+  })
+  it('sin sesion o sin fecha no bloquea', () => {
+    expect(reschedulesToSameDate(undefined, '2026-10-06')).toBe(false)
+    expect(reschedulesToSameDate(session, null)).toBe(false)
   })
 })

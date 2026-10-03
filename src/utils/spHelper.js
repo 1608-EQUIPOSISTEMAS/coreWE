@@ -1,4 +1,14 @@
 // spHelper.js
+
+// Nombre FIJO por SP (antes era aleatorio). pg_stat_statements guarda el
+// FETCH tal cual: con un nombre aleatorio cada llamada era una fila distinta,
+// llenaba el limite de 5000 y no se podia saber de que SP era el tiempo. No
+// choca: cada llamada abre, lee y cierra su cursor dentro de su transaccion.
+// Postgres corta los identificadores en 63 caracteres.
+export function cursorNameFor(procName) {
+  return `cur_${procName}`.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase().slice(0, 63);
+}
+
 /**
  * Llama a un PROCEDURE que devuelve un REFCURSOR (INOUT p_cur REFCURSOR)
  * y retorna todas las filas del cursor.
@@ -6,7 +16,7 @@
 export async function callProcedureReturningRows(pool, procName, params = [], options = {}) {
   const externalClient = options.client ?? null;
   const client = externalClient ?? await pool.connect();
-  const cursorName = `cur_${Date.now()}_${Math.floor(Math.random() * 1e6)}`.replace(/[^a-zA-Z0-9_]/g, '_');
+  const cursorName = cursorNameFor(procName);
 
   try {
     await client.query('BEGIN');

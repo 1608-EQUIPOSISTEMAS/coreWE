@@ -636,6 +636,41 @@ export class EnrollmentRepository {
     })
   }
 
+  // Cuotas nuevas que financian un CC. El destino nace contado con el pago de hoy
+  // como cuota 1: si el CC no trasladó pendientes, ese pago pasa a ser la inicial
+  // (n=0). El total del destino y el course_changes suben lo financiado: el
+  // alumno lo debe aunque todavia no lo pague.
+  async appendCourseChangeInstallments ({ newEid, rows }) {
+    const planCatId = await getCatalogIdByAlias(ALIAS.PAYMENT_WAY_INSTALLMENTS)
+    const pendingCatId = await getCatalogIdByAlias(ALIAS.INSTALLMENT_PENDING)
+    if (!planCatId || !pendingCatId) throw new Error('Catalogos de plan en cuotas / cuota pendiente no encontrados')
+    const financed = rows.reduce((s, r) => s + r.amount, 0)
+    await withTransaction(async client => {
+      await client.query(`
+        UPDATE payment_installments SET installment_number = 0
+         WHERE enrollment_id = $1
+           AND NOT EXISTS (SELECT 1 FROM payment_installments WHERE enrollment_id = $1 AND installment_number = 0)
+      `, [newEid])
+      for (const r of rows) {
+        await client.query(
+          `INSERT INTO payment_installments (enrollment_id, installment_number, amount, due_date, cat_status, notes)
+           VALUES ($1, $2, $3, $4::date, $5, $6)`,
+          [newEid, r.number, r.amount, r.due_date, pendingCatId, `Cuota ${r.number} - Pendiente (financiada en cambio de curso)`]
+        )
+      }
+      await client.query(`
+        UPDATE enrollments
+           SET cat_payment_plan = $2, total_amount = total_amount + $3, list_price = list_price + $3
+         WHERE enrollment_id = $1
+      `, [newEid, planCatId, financed])
+      await client.query(`
+        UPDATE course_changes
+           SET amount_destination = amount_destination + $2, amount_difference = amount_difference + $2
+         WHERE enrollment_destination_id = $1
+      `, [newEid, financed])
+    })
+  }
+
   // --- Cambio de curso ----------------------------------------------------
 
   async getCourseChangeOrigin (enrollmentId) {

@@ -17,6 +17,7 @@ import {
   buildCourseChangeInscription,
   buildReprogramInscription,
   buildReprogramPlan,
+  buildCourseChangeNewInstallments,
   courseChangeAmountDifference,
   assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
@@ -465,5 +466,29 @@ describe('assertOriginNotMovedYet', () => {
   })
   it('deja pasar un origen activo', () => {
     expect(() => assertOriginNotMovedYet('we_inscription_way_act')).not.toThrow()
+  })
+})
+
+describe('buildCourseChangeNewInstallments', () => {
+  const cuotas = [
+    { amount: '277', due_date: '2026-12-02' },
+    { amount: 277, due_date: '2026-11-02' }
+  ]
+
+  it('numera detras de las cuotas trasladadas, en orden de vencimiento', () => {
+    expect(buildCourseChangeNewInstallments({ requested: cuotas, paidNow: 210, lastNumber: 2 })).toEqual([
+      { amount: 277, due_date: '2026-11-02', number: 3 },
+      { amount: 277, due_date: '2026-12-02', number: 4 }
+    ])
+  })
+  it('sin cuotas pedidas no hace nada', () => {
+    expect(buildCourseChangeNewInstallments({ requested: [], paidNow: 0 })).toEqual([])
+  })
+  it('exige un pago inicial para financiar', () => {
+    expect(() => buildCourseChangeNewInstallments({ requested: cuotas, paidNow: 0 })).toThrow(DomainError)
+  })
+  it('rechaza montos no positivos y fechas invalidas', () => {
+    expect(() => buildCourseChangeNewInstallments({ requested: [{ amount: 0, due_date: '2026-11-02' }], paidNow: 1 })).toThrow(DomainError)
+    expect(() => buildCourseChangeNewInstallments({ requested: [{ amount: 5, due_date: '' }], paidNow: 1 })).toThrow(DomainError)
   })
 })

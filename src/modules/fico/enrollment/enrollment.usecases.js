@@ -18,6 +18,7 @@ import {
   buildCourseChangeInscription,
   buildReprogramInscription,
   buildReprogramPlan,
+  buildCourseChangeNewInstallments,
   courseChangeAmountDifference,
   assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
@@ -400,10 +401,16 @@ async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId,
   return retirados
 }
 
-export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls, personalAccount = null }) {
+export async function courseChange ({ enrollmentId, newProgramVersionId, newEditionId, totalAmount, justificacion, userId, cat_currency, cat_method_payment, cat_business_entity, bank_account_id, transaction_code, ticket_payment_urls, personalAccount = null, newInstallments = [] }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   assertOriginNotMovedYet(old.old_status_alias)
+  // Se valida antes de crear nada: van detras de las pendientes que se trasladan.
+  const financedInstallments = buildCourseChangeNewInstallments({
+    requested: newInstallments,
+    paidNow: totalAmount,
+    lastNumber: (await repo.getReprogramPendingInstallments(enrollmentId)).length
+  })
 
   // Las membresias (WE PLUS/GOLD/PLAT/BLACK) no tienen program_editions: el CC
   // hacia una membresia llega sin new_edition_id y crea la inscripcion destino con
@@ -458,6 +465,9 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
     // cuota de 150 pendiente, en UNA inscripcion). Antes de Odoo y del correo:
     // los dos leen las cuotas del destino (#19388).
     await movePendingInstallments({ fromEnrollmentId: enrollmentId, toEnrollmentId: newEid })
+    if (financedInstallments.length > 0) {
+      await repo.appendCourseChangeInstallments({ newEid, rows: financedInstallments })
+    }
     await tagDestinationPersonalAccount({ newEid, personalAccount, userId, justificacion })
 
     // Destino paquete/especializacion: crear sus hijos SEG (uno por aula de la
@@ -505,7 +515,10 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
       changes: {
         'Programa origen': { old: '---', new: `${old.old_program_name || '---'} - ${old.old_edition_code || '---'} (${fmtDate(old.old_start_date)})` },
         'Programa destino': { old: '---', new: `${newEd.new_program_name || '---'} - ${newEd.global_code || '---'} (${fmtDate(newEd.start_date)})` },
-        'Enrollment origen': { old: '---', new: `#${enrollmentId}` }
+        'Enrollment origen': { old: '---', new: `#${enrollmentId}` },
+        ...(financedInstallments.length > 0 && {
+          'Cuotas financiadas': { old: '---', new: financedInstallments.map(c => `#${c.number} ${c.amount} vence ${c.due_date}`).join(', ') }
+        })
       },
       details: `Cambio de curso: ${old.old_program_name} ${old.old_edition_code} → ${newEd.new_program_name} ${newEd.global_code}`
     })

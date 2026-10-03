@@ -1564,8 +1564,11 @@ export class EditionRepository {
     ON CONFLICT (program_edition_id, session_number) DO UPDATE
        SET ai_report = EXCLUDED.ai_report,
            ai_metadata = EXCLUDED.ai_metadata,
-           ai_generated_at = NOW(),
-           updated_at = NOW()
+           ai_generated_at = NOW()
+           -- updated_at NO se toca: es la fecha de la auditoria MANUAL y decide
+           -- la version de la rubrica (rubricaDe / MANUAL_SCORE20_SQL). Correr
+           -- la IA sobre una sesion auditada con V1 la pasaba a V2 y cambiaba
+           -- su nota manual sola.
     RETURNING session_number, criteria, ai_report, ai_metadata, ai_generated_at, updated_at
   `, [eid, sn, JSON.stringify(report), JSON.stringify(metadata)])
     return rows

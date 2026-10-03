@@ -162,15 +162,15 @@ export function buildFilterPayload (payload = {}) {
 
 // ── Unico contacto automatico (pedido de los asesores, 02/10/26) ──────────
 // Un lead que ya recibio toda la secuencia de gestiones sin responder con
-// interes pasa solo a "Unico contacto". Basta con que esten las 5, en cualquier
-// orden (un asesor que se adelanta un paso no rompe la regla).
+// interes pasa solo a "Unico contacto". Basta con que esten las 4, en cualquier
+// orden (un asesor que se adelanta un paso no rompe la regla). Cierre de
+// Campana NO es parte de la secuencia (corregido por el usuario 02/10/26).
 export const UNIQUE_CONTACT_STATUS = 'we_lead_status_unique'
 const UNIQUE_CONTACT_SEQUENCE = [
   'we_attempt_seg_1', // Seguimiento 1
   'we_attempt_call', // Llamada 1
   'we_attempt_seg_2', // Seguimiento 2
-  'we_attempt_call_2', // Llamada 2
-  'we_attempt_msg_close' // Cierre de Campana
+  'we_attempt_call_2' // Llamada 2
 ]
 // Si en alguna gestion el lead mostro interes, no es "unico contacto".
 const INTEREST_RESULTS = new Set([

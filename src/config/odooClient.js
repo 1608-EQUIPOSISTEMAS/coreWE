@@ -630,7 +630,9 @@ async function updateFeeDueDates ({ orderId, changes }) {
 
   const fees = await callKw('sale.order.fee', 'search_read', [
     [['order_id', '=', orderId]]
-  ], { fields: ['id', 'seq', 'state', 'due_date', 'amount', 'company_id'], limit: 50, order: 'seq asc', ...multiCtx })
+  // sale.order.fee no tiene company_id: pedirlo tiraba "Invalid field" y la
+  // reprogramacion de cuotas de FICO nunca llegaba a Odoo (caso 16753, 02/10/26).
+  ], { fields: ['id', 'seq', 'state', 'due_date', 'amount'], limit: 50, order: 'seq asc', ...multiCtx })
 
   console.log(`[updateFeeDueDates] order=${orderId} fees encontradas: ${(fees || []).length}`,
     (fees || []).map(f => ({ id: f.id, seq: f.seq, state: f.state, due_date: f.due_date })))
@@ -659,6 +661,16 @@ async function updateFeeDueDates ({ orderId, changes }) {
       console.error(`[updateFeeDueDates] fee_id=${fee.id} seq=${change.seq}:`, err.message)
       results.push({ seq: change.seq, fee_id: fee.id, success: false, error: err.message })
     }
+  }
+
+  // seq es computado en Odoo (depende de due_date) y se recalcula en cada write:
+  // con las fechas a medio mover sale desordenado (16753 quedo 2,3,4,5,5) y
+  // markFeeAsPaid busca la fee por seq. Reescribir en orden de fecha final lo
+  // recalcula ya con el orden consistente.
+  if (results.some(r => r.success)) {
+    const finalFees = await callKw('sale.order.fee', 'search_read', [[['order_id', '=', orderId]]],
+      { fields: ['id', 'due_date'], order: 'due_date asc', ...multiCtx })
+    for (const f of finalFees) await callKw('sale.order.fee', 'write', [[f.id], { due_date: f.due_date }], multiCtx)
   }
 
   const failed = results.filter(r => !r.success)

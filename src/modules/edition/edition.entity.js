@@ -696,6 +696,12 @@ export function buildWeeklySessionDays ({
 // todas sus sesiones, incluyendo re-reprogramar la misma sesion).
 export const MAX_EDITION_REPROS = 3
 
+// Reprogramar a la fecha que la sesion YA tiene no es reprogramar: el popover
+// precarga esa fecha y un Guardar sin tocarla gastaba 1 de las 3 repros.
+export function reschedulesToSameDate (session, newDate) {
+  return Boolean(session && newDate) && String(newDate).slice(0, 10) === session.date
+}
+
 // Eventos de reprogramacion de un override. Fallback new_date?1:0 para filas
 // creadas antes de la columna repro_times.
 export const reproEventsOf = (c = {}) =>
