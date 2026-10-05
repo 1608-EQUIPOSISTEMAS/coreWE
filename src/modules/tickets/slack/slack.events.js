@@ -3,7 +3,7 @@ import { escaparSlack } from './slack.text.js'
 import { formatTicketCode } from '../tickets.entity.js'
 import { postearMensaje, leerHistorialDm } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
 import { interpretarConversacion } from './slack.ai.js'
-import { bloquesDeBorrador, bloquesDePreguntas, bloquesDeTextoPlano } from './slack.blocks.js'
+import { bloquesDePreguntas, bloquesDeTextoPlano } from './slack.blocks.js'
 import {
   MAX_RONDAS, PROBLEMA_MIN, archivosDelMensaje, armarBorrador, enlacesYArchivos,
   reconstruirConversacion, textoDelUsuario, turnoDeMensaje
@@ -18,9 +18,10 @@ export { mensajeDeError }
 // Es la unica via de alta desde Slack. No hay formato que aprender
 // ni separadores que respetar: se escribe el problema como se le contaria a un
 // companero y la IA lo lee. Si al reporte le falta algo para poder atenderlo,
-// el bot pregunta (hasta MAX_RONDAS veces, ver slack.conversacion.js). Cuando
-// el reporte queda completo el ticket se crea solo; si se agotaron las
-// preguntas y sigue faltando algo, devuelve un borrador con dos botones.
+// el bot pregunta (hasta MAX_RONDAS veces, ver slack.conversacion.js). El
+// ticket se crea solo, sin botones ni confirmacion: en cuanto el reporte queda
+// completo, o si ya no hay mas preguntas que hacer (se agotaron las rondas, o
+// no hay IA para proponerlas), se crea con lo que haya.
 //
 // Scopes que necesita la app en Slack: im:history, im:read, chat:write,
 // users:read.email y files:read (imagenes adjuntas). Y en "Event
@@ -173,25 +174,23 @@ async function procesarDm (evento) {
       return
     }
 
+    // Sin preguntas pendientes ya no hay nada que esperar: completo porque
+    // cubre los tres puntos, o incompleto porque se agotaron las rondas (o no
+    // hay IA para proponer mas). En ambos casos el ticket se crea con lo que
+    // haya, sin botones ni confirmacion.
     const borrador = armarBorrador(turnos, titulo)
+    const ticket = await createTicketFromSlack({
+      slackUserId: evento.user,
+      titulo: borrador.titulo,
+      problema: borrador.problema,
+      link: borrador.enlaces.join('\n') || null,
+      archivosSlack: borrador.archivos.map(a => a.id)
+    })
 
-    // Con los tres puntos cubiertos no hay nada que confirmar: se crea directo.
-    // El borrador con botones queda para lo incompleto (se agotaron las rondas
-    // o la IA no estuvo disponible), donde conviene que el usuario lo revise.
-    if (completo) {
-      const ticket = await createTicketFromSlack({
-        slackUserId: evento.user,
-        titulo: borrador.titulo,
-        problema: borrador.problema,
-        link: borrador.enlaces.join('\n') || null,
-        archivosSlack: borrador.archivos.map(a => a.id)
-      })
-      await postearMensaje(canal, bloquesDeTextoPlano(
-        `✅ Con eso ya tengo todo lo necesario. Creé tu ticket *#${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}.`))
-      return
-    }
-
-    await postearMensaje(canal, bloquesDeBorrador(borrador))
+    const mensajeFinal = completo
+      ? `✅ Con eso ya tengo todo lo necesario. Creé tu ticket *#${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}.`
+      : `✅ Creé tu ticket *#${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}. Si falta algo, cuéntamelo y lo agrego desde el ERP.`
+    await postearMensaje(canal, bloquesDeTextoPlano(mensajeFinal))
   } catch (err) {
     await postearMensaje(canal, bloquesDeTextoPlano(mensajeDeError(err, '[tickets-slack] DM')))
   }

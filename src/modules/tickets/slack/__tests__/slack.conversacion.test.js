@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   reconstruirConversacion, turnosDesde, componerProblema, enlacesYArchivos,
-  armarBorrador, parsearEstado, VENTANA_ENTREVISTA_S, VENTANA_PENDIENTES_S
+  armarBorrador, VENTANA_ENTREVISTA_S, VENTANA_PENDIENTES_S
 } from '../slack.conversacion.js'
 import { bloquesDePreguntas } from '../slack.blocks.js'
 
@@ -90,14 +90,5 @@ describe('enlacesYArchivos / armarBorrador', () => {
       archivos: [{ id: 'F1', nombre: 'a.png' }, { id: 'F2', nombre: 'b.png' }]
     })
     expect(armarBorrador(turnos, 'T')).toMatchObject({ titulo: 'T', problema: 'a\n\nb' })
-  })
-})
-
-describe('parsearEstado', () => {
-  it('lee el estado del botón y rechaza lo que no tiene forma', () => {
-    expect(parsearEstado(JSON.stringify({ ronda: 1, inicio: '1.1', preguntas: ['¿a?', 3] })))
-      .toEqual({ ronda: 1, inicio: '1.1', preguntas: ['¿a?'] })
-    expect(parsearEstado('nada')).toBeNull()
-    expect(parsearEstado(JSON.stringify({ ronda: 0, inicio: '1.1' }))).toBeNull()
   })
 })
