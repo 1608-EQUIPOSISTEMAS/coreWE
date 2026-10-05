@@ -258,7 +258,9 @@ describe('entrevista antes de crear el ticket', () => {
     await vi.waitFor(() => expect(createTicketFromSlack).toHaveBeenCalled())
     const turnos = interpretarMensaje.mock.calls[0][0]
     expect(turnos.map(t => t.rol)).toEqual(['usuario', 'bot', 'usuario'])
-    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: true })
+    // MAX_RONDAS es 1: la ronda que ya se hizo agota las preguntas, y esta
+    // respuesta va directo al ticket, no a una segunda ronda.
+    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: false })
 
     expect(createTicketFromSlack.mock.calls[0][0].problema)
       .toMatch(/no puedo matricular a un alumno\n\nP: ¿Qué alumno\?\nR: el 4521/)
@@ -281,7 +283,7 @@ describe('entrevista antes de crear el ticket', () => {
   it('agotadas las rondas, ya no permite preguntar', async () => {
     const ahora = Math.floor(Date.now() / 1000)
     leerHistorialDm.mockResolvedValue([
-      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿x?'], ronda: 2, inicio: `${ahora - 90}.1` }) },
+      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿x?'], ronda: 1, inicio: `${ahora - 90}.1` }) },
       { type: 'message', user: 'U1', ts: `${ahora - 90}.1`, text: 'el reporte de cobranza no carga' }
     ])
 

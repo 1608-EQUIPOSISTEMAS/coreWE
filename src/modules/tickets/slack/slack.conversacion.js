@@ -15,7 +15,7 @@ import { MIME_PERMITIDOS, MAX_BYTES } from '../tickets.files.js'
 // slack.blocks.js), que Slack devuelve tal cual; `inicio` es el ts del primer
 // mensaje del usuario, el ancla desde donde se relee la conversacion.
 
-export const MAX_RONDAS = 2
+export const MAX_RONDAS = 1
 
 // Una entrevista que el usuario dejo colgada 5 minutos ya no es la misma
 // conversacion: se cancela el intento (no se crea nada) y lo que escriba
