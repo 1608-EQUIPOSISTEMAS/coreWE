@@ -789,6 +789,18 @@ function nameTokensMatch (a, b) {
   return true
 }
 
+// Odoo sube cada PDF de certificado a Google Drive; si Drive falla, el error
+// llega con las cabeceras HTTP crudas pegadas y el usuario no entiende nada.
+// retryable=false: el problema no es de este certificado, fallaran todos.
+export function describePdfError (message) {
+  const m = String(message || '')
+  if (/storageQuotaExceeded|storage quota has been exceeded/i.test(m)) {
+    return { cause: 'El Google Drive donde Odoo guarda los certificados está LLENO: hay que liberar espacio o ampliar el almacenamiento', retryable: false }
+  }
+  const apiMessage = m.match(/"message":\s*"([^"]+)"/)?.[1]
+  return { cause: apiMessage || m.slice(0, 200) || 'Error desconocido de Odoo', retryable: true }
+}
+
 async function certifyClassroom ({ groupName, grades }) {
   const groups = await callKw('slide.group', 'search_read', [
     [['name', '=', groupName]]
@@ -954,23 +966,35 @@ async function certifyClassroom ({ groupName, grades }) {
   }
 
   // 3) Generar PDF de los certificados del grupo que aún no lo tengan
-  // (de cualquier proceso), salvo deudores.
+  // (de cualquier proceso), salvo deudores. El PDF vive en pdf_certificate_file
+  // (binario): certificate_file esta vacio en TODOS los certificados de Odoo
+  // (39.5k, 05/10/26), y mirarlo hacia "regenerar" PDFs que ya existian; esa
+  // accion sube a un Google Drive lleno y cada certificado salia como error.
+  // El binario no se lee (pesa MB): basta el search con el dominio.
   const certs = await callKw('issued.certificates', 'search_read', [
     [['slide_group_id', '=', slideGroupId], ['state', '!=', 'cancel']]
-  ], { fields: ['id', 'code', 'state', 'certificate_file', 'student_id'], limit: 1000 })
+  ], { fields: ['id', 'code', 'state', 'student_id'], limit: 1000 })
+  const withoutPdf = new Set(await callKw('issued.certificates', 'search', [
+    [['slide_group_id', '=', slideGroupId], ['state', '!=', 'cancel'], ['pdf_certificate_file', '=', false]]
+  ], { limit: 1000 }))
 
   let pdfsGenerated = 0
-  const pdfErrors = []
-  for (const c of (certs || [])) {
-    if (c.certificate_file) continue
-    if (debtorIdSet.has(c.student_id?.[0])) continue
+  const failedByCause = new Map() // causa legible -> codigos de certificado
+  const pending = (certs || []).filter(c => withoutPdf.has(c.id) && !debtorIdSet.has(c.student_id?.[0]))
+  for (const [i, c] of pending.entries()) {
     try {
       await callKw('issued.certificates', 'action_generate_certificate', [[c.id]])
       pdfsGenerated++
     } catch (err) {
-      pdfErrors.push(`${c.code}: ${err.message}`)
+      const { cause, retryable } = describePdfError(err.message)
+      if (!failedByCause.has(cause)) failedByCause.set(cause, [])
+      // Un Drive lleno falla igual para todos: se corta y se reportan los
+      // pendientes juntos en vez de gastar un intento (y ~1.5 s) por PDF.
+      if (!retryable) { failedByCause.get(cause).push(...pending.slice(i).map(p => p.code)); break }
+      failedByCause.get(cause).push(c.code)
     }
   }
+  const pdfErrors = [...failedByCause].map(([cause, codes]) => `${cause} — ${codes.length} PDF(s) sin generar: ${codes.join(', ')}`)
 
   // Código de certificado por enrollment (para marcar la fila de notas en el
   // ERP): cubre también certificados de corridas/procesos anteriores del grupo.
