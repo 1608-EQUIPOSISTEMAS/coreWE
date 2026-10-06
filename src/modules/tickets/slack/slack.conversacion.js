@@ -175,15 +175,27 @@ export function armarBorrador (turnos, titulo) {
   }
 }
 
+/** Si el usuario ya adjunto alguna imagen en la conversacion. */
+export function tieneImagenes (turnos) {
+  return delUsuario(turnos).some(t => t.archivos?.length)
+}
+
+/** Si el usuario ya compartio algun enlace en la conversacion. */
+export function tieneEnlaces (turnos) {
+  return delUsuario(turnos).some(t => t.enlaces?.length)
+}
+
 /**
- * La conversacion como la lee la IA. Solo texto y cantidades: los enlaces y
- * nombres de archivo no le aportan para decidir que falta.
+ * La conversacion como la lee la IA. Solo texto y cantidades: las URLs y
+ * nombres de archivo no le aportan para decidir que falta. Lo que si importa es
+ * que sepa que los enlaces YA estan: en el texto solo queda su etiqueta ("la
+ * base de Control de cuentas"), y sin el aviso los pide de nuevo.
  */
 export function conversacionParaIa (turnos) {
   return turnos.map(t => {
     if (t.rol === 'bot') return `PREGUNTAS DEL BOT:\n${t.preguntas.map(p => `- ${p}`).join('\n')}`
     const extras = [
-      t.enlaces?.length ? `${t.enlaces.length} enlace(s)` : '',
+      t.enlaces?.length ? `ya compartio ${t.enlaces.length} enlace(s) en este mensaje` : '',
       t.archivos?.length ? `${t.archivos.length} imagen(es) adjunta(s)` : ''
     ].filter(Boolean).join(', ')
     return `USUARIO:\n${t.texto || '(sin texto)'}${extras ? `\n[${extras}]` : ''}`

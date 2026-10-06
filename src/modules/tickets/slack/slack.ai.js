@@ -1,6 +1,6 @@
 import { generarJson, geminiConfigurado } from '../../../shared/adapters/ai/gemini.adapter.js'
 import { detectarNumeroTicket, recortar } from './slack.text.js'
-import { conversacionParaIa, textoDelUsuario } from './slack.conversacion.js'
+import { conversacionParaIa, textoDelUsuario, tieneImagenes, tieneEnlaces } from './slack.conversacion.js'
 
 // Lectura con IA del DM: para que sirve el mensaje, que titulo ponerle y que
 // le falta al reporte para que soporte lo resuelva sin volver a preguntar.
@@ -45,8 +45,9 @@ Devuelves cinco campos:
    Un reporte completo deja claro estos tres puntos:
    a) que paso exactamente y que se esperaba que pasara (el mensaje de error, si salio alguno);
    b) desde cuando pasa y si afecta a un solo registro o persona, o a varios;
-   c) una captura del error EN PANTALLA, SOLO cuando el problema es algo visual. Si ya adjunto una imagen que muestra ese error, o si el problema no se ve en pantalla (un pedido de acceso, una consulta), este punto ya esta cubierto. Una imagen que solo muestra el reporte o el dato en cuestion (sin ningun error visible) NO cubre este punto por si sola.
+   c) al menos una imagen adjunta (captura) para entender el problema. Si ya adjunto alguna, este punto esta cubierto. De la captura NO te ocupas tu: si falta, el sistema la pide aparte, asi que no la incluyas en tus preguntas.
    Reglas para preguntar:
+   - Lee TODO el mensaje antes de preguntar. Si dice que ya compartio enlaces, esos enlaces (hojas de calculo, reportes, documentos) YA estan en el ticket: nunca pidas enlaces, links, URLs ni "de donde sacaste" la informacion.
    - Cada pregunta tiene que ser ACCIONABLE: su respuesta debe cambiar como soporte va a investigar o resolver el caso (que revisar, a quien contactar, que probar). Si la respuesta es solo un dato de clasificacion que no mueve la aguja para resolverlo, no la hagas.
    - Nunca preguntes algo generico que ya se puede inferir de lo que el usuario escribio o adjunto. "Que error te muestra" sobra si el error ya esta descrito o en la captura; "desde cuando pasa" sobra si ya quedo claro en el relato.
    - Pregunta solo lo que falte y sirva para ESTE caso: un pedido de acceso o de un reporte nuevo no necesita pasos para reproducirlo.
@@ -114,7 +115,10 @@ export async function interpretarConversacion (turnos = [], { permitirPreguntas 
   const intencion = INTENCIONES.includes(salida.intencion) ? salida.intencion : 'TICKET'
   const titulo = recortar(String(salida.titulo ?? '').replace(/\s+/g, ' ').trim(), TITULO_MAX)
   const refIa = Number.isFinite(Number(salida.ticket_ref)) ? Number(salida.ticket_ref) : 0
-  const preguntas = intencion === 'TICKET' && permitirPreguntas ? limpiarPreguntas(salida.preguntas) : []
+  const conImagen = tieneImagenes(turnos)
+  const preguntas = intencion === 'TICKET' && permitirPreguntas
+    ? completarPreguntas(limpiarPreguntas(salida.preguntas), { conImagen, conEnlaces: tieneEnlaces(turnos) })
+    : []
 
   return {
     intencion,
@@ -124,7 +128,7 @@ export async function interpretarConversacion (turnos = [], { permitirPreguntas 
     preguntas,
     // Completo y sin nada que preguntar: el ticket se crea solo, sin borrador.
     // Estricto con el tipo: un "true" en texto o un 1 no cuentan.
-    completo: intencion === 'TICKET' && salida.completo === true && preguntas.length === 0,
+    completo: intencion === 'TICKET' && salida.completo === true && conImagen && preguntas.length === 0,
     porIa: true
   }
 }
@@ -135,6 +139,23 @@ function limpiarPreguntas (preguntas) {
     .map(p => recortar(String(p ?? '').replace(/\s+/g, ' ').trim(), PREGUNTA_MAX))
     .filter(p => p.length >= 5)
   return [...new Set(limpias)].slice(0, MAX_PREGUNTAS)
+}
+
+// La captura es obligatoria y no se deja a criterio del modelo: si no hay
+// ninguna imagen, se pide siempre, con un texto fijo. Y si el usuario ya
+// compartio enlaces, una pregunta que los pida se descarta aunque el modelo la
+// proponga (ya paso: pidio los links de dos hojas que estaban en el mensaje).
+export const PREGUNTA_CAPTURA = 'Adjunta una captura de pantalla donde se vea el problema, para entenderlo mejor.'
+const PIDE_ENLACE = /\b(enlaces?|links?|urls?)\b/i
+const PIDE_CAPTURA = /\b(captura|imagen|pantallazo|screenshot)/i
+
+function completarPreguntas (preguntas, { conImagen, conEnlaces }) {
+  let lista = preguntas
+  if (conEnlaces) lista = lista.filter(p => !PIDE_ENLACE.test(p))
+  // La de captura va con texto fijo: se saca la que haya redactado el modelo.
+  lista = lista.filter(p => !PIDE_CAPTURA.test(p))
+  if (conImagen) return lista.slice(0, MAX_PREGUNTAS)
+  return [...lista.slice(0, MAX_PREGUNTAS - 1), PREGUNTA_CAPTURA]
 }
 
 /**
