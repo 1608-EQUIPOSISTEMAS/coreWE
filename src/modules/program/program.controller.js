@@ -1,7 +1,7 @@
 import * as usecases from './program.usecases.js'
 
 export async function registerHandler (req, reply) {
-  const { program_id, program_versions } = await usecases.registerProgram(req.body)
+  const { program_id, program_versions } = await usecases.registerProgram({ ...req.body, user_id: req.user?.id ?? null })
   return reply.code(201).send({ ok: true, program_id, program_versions })
 }
 
@@ -16,7 +16,7 @@ export async function getHandler (req, reply) {
 }
 
 export async function updateHandler (req, reply) {
-  const { program_id, program_versions } = await usecases.updateProgram(req.body)
+  const { program_id, program_versions } = await usecases.updateProgram({ ...req.body, user_id: req.user?.id ?? null })
   return reply.code(200).send({ ok: true, program_id, program_versions })
 }
 

@@ -94,12 +94,15 @@ export class ProductReportRepository {
          AND f.fecha_inicio BETWEEN $2 AND LEAST($3::date, $4::date - 1)
       UNION ALL
       -- Cambio de fecha, horario o docente a una edicion. audit_logs empieza el 25/08/26.
-      SELECT 'cambios', to_char(a.created_at, 'YYYY-MM-DD')
+      -- Cuenta EDICIONES (el KPI dice "ediciones"): una movida tres veces en el
+      -- periodo cuenta una, el dia de su primer cambio.
+      SELECT 'cambios', to_char(MIN(a.created_at), 'YYYY-MM-DD')
         FROM audit_logs a
         JOIN linea l ON l.edition_num_id = a.record_id
        WHERE a.table_name = 'program_editions' AND a.action = 'UPDATE'
          AND a.changed_fields ?| $5::text[]
          AND a.created_at >= $2 AND a.created_at < $3::date + 1
+       GROUP BY a.record_id
       UNION ALL
       SELECT 'docentes', to_char(i.registration_date, 'YYYY-MM-DD')
         FROM instructors i

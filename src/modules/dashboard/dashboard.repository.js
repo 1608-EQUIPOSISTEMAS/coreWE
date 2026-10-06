@@ -343,6 +343,18 @@ export class DashboardRepository {
     return rows
   }
 
+  // Filas de un mes de v_dashboard_ventas_canal (todos los asesores: el filtro
+  // por asesor se aplica en el entity para que la lista de asesores no se vacie).
+  async ventasCanal ({ year, month }) {
+    const { rows } = await this.db.query(
+      `SELECT cod_asesor, asesor_nombre, asesor_alias, semana_mes,
+              to_char(fecha_desde, 'YYYY-MM-DD') AS fecha_desde,
+              to_char(fecha_hasta, 'YYYY-MM-DD') AS fecha_hasta, rows_data
+         FROM public.v_dashboard_ventas_canal
+        WHERE anio = $1 AND mes_num = $2`, [year, month])
+    return rows
+  }
+
   async detailSales ({ cod_asesor, date, size, offset }) {
     let sql = `SELECT * FROM public.v_dashboard_detail_sales WHERE fecha_venta = $1`
     const params = [date]

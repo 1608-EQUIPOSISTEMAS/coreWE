@@ -184,6 +184,19 @@ export const detailLeadsSchema = {
   }
 }
 
+export const ventasCanalSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['year', 'month'],
+    properties: {
+      year: { type: 'integer', minimum: 2024, maximum: 2100 },
+      month: { type: 'integer', minimum: 1, maximum: 12 },
+      advisor: { type: ['integer', 'null'] }
+    }
+  }
+}
+
 export const detailSalesSchema = {
   body: {
     type: 'object',

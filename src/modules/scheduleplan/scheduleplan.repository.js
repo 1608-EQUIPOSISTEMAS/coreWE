@@ -59,6 +59,22 @@ export class SchedulePlanRepository {
     return rows[0] || null
   }
 
+  // Marca UN item como publicado sin reescribir el blob: se llama apenas el SP
+  // crea la edicion, asi una caida a mitad de la publicacion no deja ediciones
+  // reales sin marca (que el reintento volveria a crear).
+  async markPublished ({ planId, uid, editionId }) {
+    const { rowCount } = await this.db.query(`
+      UPDATE schedule_plans
+         SET items = (
+               SELECT jsonb_agg(CASE WHEN e->>'uid' = $2
+                                     THEN e || jsonb_build_object('published_edition_id', $3::int)
+                                     ELSE e END ORDER BY ord)
+                 FROM jsonb_array_elements(items) WITH ORDINALITY AS t(e, ord)),
+             modification_date = NOW()
+       WHERE plan_id = $1 AND active = 'Y'`, [planId, String(uid), editionId])
+    return rowCount > 0
+  }
+
   async softDelete ({ planId, userId = null }) {
     const { rowCount } = await this.db.query(`
       UPDATE schedule_plans
@@ -113,18 +129,6 @@ export class SchedulePlanRepository {
        WHERE program_version_id = $1
          AND specific_code ~ '^E[0-9]+-[0-9]+$'`, [programVersionId])
     return Number(rows[0]?.seq || 0)
-  }
-
-  // sp_edition_tree_register solo contesta { result, message }: a diferencia de
-  // sp_edition_register no devuelve el id de lo que creo. Sin ese id el plan no
-  // puede marcar el paquete como publicado y volver a publicar lo duplicaria,
-  // asi que se recupera la edicion recien insertada de esa version de programa.
-  async lastEditionIdOf (programVersionId) {
-    const { rows } = await this.db.query(`
-      SELECT edition_num_id FROM program_editions
-       WHERE program_version_id = $1
-       ORDER BY edition_num_id DESC LIMIT 1`, [programVersionId])
-    return rows[0]?.edition_num_id ?? null
   }
 }
 

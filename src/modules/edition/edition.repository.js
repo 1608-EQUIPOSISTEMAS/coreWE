@@ -1,7 +1,8 @@
 import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
-import { FECHA_CORTE_RUBRICA, rubricaDe } from './edition.entity.js'
+import { accountProvidersSql, studentPersonalAccount } from '../../shared/personal-account.js'
+import { FECHA_CORTE_RUBRICA, rubricaDe, GRADE_RULES } from './edition.entity.js'
 
 // Los unicos estados de lead que negocio considera una CONSULTA. Cualquier otro
 // (Eliminado, Cerrado, Desestimado, Indiferente, Prox. Inicio, Inscrito,
@@ -43,6 +44,16 @@ const MANUAL_SCORE20_SQL = `(CASE
 //
 // Recibe EXPRESIONES SQL, no alias: la "venta" es el padre cuando la fila es un
 // hijo de paquete, y cada query la resuelve a su manera (par/e, e_sold/e, es/e).
+// "Tiene nota" = alguien cargo ALGO del alumno: un test (un 0 escrito cuenta),
+// una participacion, un criterio del parcial o del final. Misma regla que
+// hasAnyGrade del aula (AulaDetail): el panel del lider ignoraba tests y
+// participacion y mostraba menos alumnos con nota que el aula.
+const anyNumber = (col) => `EXISTS (SELECT 1 FROM jsonb_each(COALESCE(${col}, '{}'::jsonb)) x WHERE jsonb_typeof(x.value) = 'number')`
+export const hasAnyGradeSql = (g) => `(${anyNumber(`${g}.tests`)}
+      OR EXISTS (SELECT 1 FROM jsonb_each(COALESCE(${g}.participation, '{}'::jsonb)) x WHERE x.value = 'true'::jsonb)
+      OR ${anyNumber(`${g}.partial_criteria`)}
+      OR ${anyNumber(`${g}.final_criteria`)})`
+
 export const isB2bSaleSql = ({ doctype, origin, advisor }) => `
            (COALESCE(${origin}, '') ILIKE '%b2b%'
             OR ((${doctype}) IS NOT NULL
@@ -52,6 +63,29 @@ export const isB2bSaleSql = ({ doctype, origin, advisor }) => `
 // Espera los alias e, cf, cts, e_sold, cts_sold y seg_sold (ver
 // classroomStudentsList para los JOIN). Una sola regla: si el reporte usara
 // otra, contaria como jalado al que se fue por RP o retiro.
+// Estado financiero sobre el enrollment "vendido" (padre si es hijo de
+// paquete, propio si es standalone): cuotas pagadas y vencidas. Va en un
+// LEFT JOIN LATERAL sobre un enrollment `e`; lo usan el aula y el buscador.
+const SOLD_FINANCE_SELECT = `
+        SELECT
+          ef.total_amount AS fin_total,
+          (SELECT COALESCE(SUM(pi.amount), 0)
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_paid,
+          (SELECT COUNT(*)::int
+             FROM public.payment_installments pi
+             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+            WHERE pi.enrollment_id = ef.enrollment_id
+              AND pi.installment_number > 0
+              AND pi.due_date < CURRENT_DATE
+              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+          ) AS fin_overdue
+          FROM public.enrollments ef
+         WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)`
+
 const CLASSROOM_ROSTER_WHERE = `e.active = 'Y'
        AND cf.alias = 'we_enrollment_status_checked'
        -- Los que salieron del aula (retiro / cambio de curso / reprogramado) ya
@@ -155,6 +189,15 @@ export class EditionRepository {
       ],
       { statementTimeoutMs: 25000 }
     )
+  }
+
+  // Fecha de inicio guardada por edicion: para saber si un guardado la CAMBIA.
+  async startDatesByIds (ids = []) {
+    if (!ids.length) return new Map()
+    const { rows } = await this.db.query(
+      `SELECT edition_num_id, to_char(start_date, 'YYYY-MM-DD') AS start_date
+         FROM program_editions WHERE edition_num_id = ANY($1::int[])`, [ids])
+    return new Map(rows.map(r => [Number(r.edition_num_id), r.start_date]))
   }
 
   async treeGet (editionId) {
@@ -1025,6 +1068,14 @@ export class EditionRepository {
               WHERE edx.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
                 AND dx.description ILIKE '%laptop%'
            )                                            AS has_laptop_promo,
+           -- CUENTA PERSONAL (usa su propia cuenta: Academica no le entrega una).
+           -- Se resuelve en JS con studentPersonalAccount. Los beneficios son los
+           -- de la venta: el padre solo si es hijo SEG; un destino RP/CC tambien
+           -- cuelga del origen y ahi Producto decidio que no viaje sola.
+           e.personal_account,
+           pv_mod.brand_name                            AS module_name,
+           ${accountProvidersSql(`CASE WHEN cts.alias = 'we_enrollment_status_tracking'
+                                       THEN e.parent_enrollment_id ELSE e.enrollment_id END`)} AS sold_account_providers,
            fin.fin_total,
            fin.fin_paid,
            fin.fin_overdue
@@ -1036,6 +1087,7 @@ export class EditionRepository {
  LEFT JOIN public."catalog" cim  ON cim.catalog_id   = e.cat_inscription_modality
  LEFT JOIN public."catalog" c_prof ON c_prof.catalog_id = e.cat_profile_id
  LEFT JOIN public."catalog" ccert  ON ccert.catalog_id  = e.cat_certificate_status
+ LEFT JOIN public.program_versions pv_mod ON pv_mod.program_version_id = e.program_version_id
  LEFT JOIN public.enrollments e_sold ON e_sold.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
  LEFT JOIN public."catalog" cts_sold ON cts_sold.catalog_id = e_sold.cat_type_status
  LEFT JOIN public."catalog" ccert_sold ON ccert_sold.catalog_id = e_sold.cat_certificate_status
@@ -1073,28 +1125,7 @@ export class EditionRepository {
                   e2.enrollment_id DESC
          LIMIT 1
       ) odoo_src ON TRUE
- LEFT JOIN LATERAL (
-        -- Estado financiero sobre el enrollment "vendido" (padre si es hijo de
-        -- paquete, propio si es standalone): cuotas pagadas y vencidas.
-        SELECT
-          ef.total_amount AS fin_total,
-          (SELECT COALESCE(SUM(pi.amount), 0)
-             FROM public.payment_installments pi
-             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-            WHERE pi.enrollment_id = ef.enrollment_id
-              AND cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
-          ) AS fin_paid,
-          (SELECT COUNT(*)::int
-             FROM public.payment_installments pi
-             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-            WHERE pi.enrollment_id = ef.enrollment_id
-              AND pi.installment_number > 0
-              AND pi.due_date < CURRENT_DATE
-              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
-          ) AS fin_overdue
-          FROM public.enrollments ef
-         WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
-      ) fin ON TRUE
+ LEFT JOIN LATERAL (${SOLD_FINANCE_SELECT}) fin ON TRUE
  LEFT JOIN LATERAL (
         -- "Member" en aulas = la persona tiene una membresia ACTIVA en ventas
         -- FICO: inscripcion a un programa is_membership, confirmada por FICO
@@ -1145,7 +1176,8 @@ export class EditionRepository {
     // odoo_email guardado > sintetizado apellido.nombre@dominio si existe
     // cuenta Odoo (odoo_user_id) > correo de contacto registrado.
     const students = rows.map((r) => {
-      const { odoo_email_stored, odoo_user_id, ...rest } = r
+      const { odoo_email_stored, odoo_user_id, module_name, sold_account_providers, ...rest } = r
+      rest.personal_account = studentPersonalAccount(r)
       let platformUser = (odoo_email_stored || '').trim() || null
       if (!platformUser && odoo_user_id) {
         const { base, domain } = buildOdooEmailBase(r.first_name, r.last_name)
@@ -1167,6 +1199,116 @@ export class EditionRepository {
       }
     }
     return [...byPerson.values()]
+  }
+
+  // Aulas terminadas en los ultimos `days` dias con aprobados en el ERP, y lo
+  // necesario para ubicar su grupo en Odoo (filtro "Por certificar" de Aulas).
+  async finishedClassroomsWithApproved (days) {
+    await this.ensureGradesTable()
+    const { rows } = await this.db.query(`
+    -- approved = aprobados AL DIA: el que tiene cuotas vencidas no se certifica a
+    -- proposito, y contarlo dejaria el aula "pendiente" para siempre.
+    SELECT pe.edition_num_id, prog.odoo_activation, pe.start_date,
+           COUNT(DISTINCT g.enrollment_id)
+             FILTER (WHERE g.final_grade >= $2 AND COALESCE(fin.fin_overdue, 0) = 0)::int AS approved
+      FROM public.program_editions pe
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+      JOIN public.programs prog       ON prog.program_id = pv.program_id
+      JOIN public.classroom_student_grades g ON g.program_edition_id = pe.edition_num_id
+      JOIN public.enrollments e ON e.enrollment_id = g.enrollment_id
+ LEFT JOIN LATERAL (${SOLD_FINANCE_SELECT}) fin ON TRUE
+     WHERE pe.end_date::date < CURRENT_DATE
+       AND pe.end_date::date >= CURRENT_DATE - $1::int
+       AND NULLIF(TRIM(prog.odoo_activation), '') IS NOT NULL
+     GROUP BY pe.edition_num_id, prog.odoo_activation, pe.start_date
+    HAVING COUNT(*) FILTER (WHERE g.final_grade >= $2 AND COALESCE(fin.fin_overdue, 0) = 0) > 0
+  `, [days, GRADE_RULES.PASS_THRESHOLD])
+    return rows
+  }
+
+  // Buscador de alumno (pantalla Aulas). Solo personas con alguna aula
+  // confirmada: Academica busca alumnos, no leads. `match` lo arma el usecase segun lo
+  // tecleado (DNI/celular, correo o nombre) y llega ya saneado.
+  async studentSearch ({ digits, email, nameTokens }, limit) {
+    // Un solo criterio por busqueda, como semi-join (IN): con OR + EXISTS
+    // correlacionados, una busqueda SIN resultados recorria persons x contacts
+    // (>2 min en local, 05/10/26).
+    const [match, param] = digits
+      ? [`(per.document_number = $1 OR per.person_id IN (
+            SELECT pc.person_id FROM public.person_contacts pc
+             WHERE pc.active = 'Y' AND regexp_replace(pc.value, '[^0-9]', '', 'g') LIKE '%' || $1))`, digits]
+      : email
+        ? [`per.person_id IN (SELECT pc.person_id FROM public.person_contacts pc
+             WHERE pc.active = 'Y' AND LOWER(pc.value) LIKE $1 || '%')`, email]
+        : [`NOT EXISTS (SELECT 1 FROM unnest($1::text[]) t
+             WHERE translate(UPPER(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)),
+                             'ÁÉÍÓÚÜÑ', 'AEIOUUN') NOT LIKE '%' || t || '%')`, nameTokens]
+    const { rows } = await this.db.query(`
+    SELECT per.person_id,
+           per.document_number AS dni,
+           TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
+           contact.phone,
+           contact.email
+      FROM public.persons per
+ LEFT JOIN LATERAL (
+        SELECT MAX(pc.value) FILTER (WHERE c.alias <> 'we_way_contact_email') AS phone,
+               MAX(pc.value) FILTER (WHERE c.alias = 'we_way_contact_email')  AS email
+          FROM public.person_contacts pc
+          JOIN public."catalog" c ON c.catalog_id = pc.cat_way_contact
+         WHERE pc.person_id = per.person_id AND pc.active = 'Y'
+           AND c.alias IN ('we_way_contact_phone', 'we_way_contact_whatsapp', 'we_way_contact_email')
+      ) contact ON TRUE
+     WHERE ${match}
+       -- Solo quien tiene un aula CONFIRMADA por FICO (la misma condicion de
+       -- studentCourses): sin esto salian leads con "0 cursos llevados".
+       AND per.person_id IN (SELECT cu.person_id FROM public.enrollments e
+                               JOIN public.customers cu ON cu.customer_id = e.customer_id
+                               JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+                                                       AND cf.alias = 'we_enrollment_status_checked'
+                              WHERE e.program_edition_id IS NOT NULL AND e.active = 'Y')
+     ORDER BY per.last_name, per.first_name
+     LIMIT $2
+  `, [param, limit])
+    return rows
+  }
+
+  // Aulas de cada persona (hojas: un paquete no es aula, sus hijos si), con
+  // nota, certificado, links de clase y la deuda de SU venta.
+  async studentCourses (personIds) {
+    if (!personIds.length) return []
+    await this.ensureGradesTable()
+    const { rows } = await this.db.query(`
+    SELECT cu.person_id,
+           e.enrollment_id,
+           pe.edition_num_id,
+           pv.abbreviation,
+           pe.specific_code,
+           pe.start_date::date::text AS start_date,
+           pe.end_date::date::text   AS end_date,
+           pe.teams_link,
+           pe.whatsapp_link,
+           cts.alias                 AS type_status_alias,
+           g.final_grade,
+           g.odoo_cert_code,
+           fin.fin_total,
+           fin.fin_paid,
+           fin.fin_overdue
+      FROM public.enrollments e
+      JOIN public.customers cu        ON cu.customer_id = e.customer_id
+      JOIN public."catalog" cf        ON cf.catalog_id = e.cat_fico_status
+                                     AND cf.alias = 'we_enrollment_status_checked'
+      JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+      JOIN public.program_versions pv ON pv.program_version_id = pe.program_version_id
+ LEFT JOIN public."catalog" cts       ON cts.catalog_id = e.cat_type_status
+ LEFT JOIN public.classroom_student_grades g
+        ON g.enrollment_id = e.enrollment_id AND g.program_edition_id = pe.edition_num_id
+ LEFT JOIN LATERAL (${SOLD_FINANCE_SELECT}) fin ON TRUE
+     WHERE cu.person_id = ANY($1::int[])
+       AND e.active = 'Y'
+       AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)
+     ORDER BY pe.start_date DESC
+  `, [personIds])
+    return rows
   }
 
   // Historial del aula: alumnos que estuvieron matriculados en esta edicion pero
@@ -1551,6 +1693,18 @@ export class EditionRepository {
      ORDER BY session_number
   `, [id])
     return rows
+  }
+
+  // Metadata de las auditorias IA del mes en curso (hora Lima), para el tope.
+  async aiAuditMetadataThisMonth () {
+    await this.ensureRubricTable()
+    const { rows } = await this.db.query(`
+    SELECT ai_metadata
+      FROM public.classroom_audit_rubric
+     WHERE ai_report IS NOT NULL
+       AND ai_generated_at >= (date_trunc('month', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima')
+  `)
+    return rows.map((r) => r.ai_metadata)
   }
 
   // Upsert del reporte IA en la fila (edicion, sesion). Preserva los criterios

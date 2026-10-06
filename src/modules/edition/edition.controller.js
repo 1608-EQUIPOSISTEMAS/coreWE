@@ -78,6 +78,16 @@ export async function classroomStudentsListHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function aiAuditSpendHandler (req, reply) {
+  const data = await usecases.aiAuditSpend()
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function academicStudentSearchHandler (req, reply) {
+  const data = await usecases.academicStudentSearch(req.body)
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function classroomStudentsHistoryHandler (req, reply) {
   const data = await usecases.classroomStudentsHistory(req.body)
   return reply.code(200).send({ ok: true, data })
@@ -105,6 +115,16 @@ export async function classroomGradesGetHandler (req, reply) {
 
 export async function classroomGradesSaveHandler (req, reply) {
   const result = await usecases.classroomGradesSave(bodyWithAuthor(req))
+  return reply.code(result.ok ? 200 : 400).send(result)
+}
+
+export async function classroomsCertificationStatusHandler (req, reply) {
+  const data = await usecases.classroomsCertificationStatus()
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function classroomOdooCertifyPreviewHandler (req, reply) {
+  const result = await usecases.classroomOdooCertifyPreview(req.body)
   return reply.code(result.ok ? 200 : 400).send(result)
 }
 

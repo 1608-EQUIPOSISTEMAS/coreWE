@@ -290,6 +290,15 @@ export function assertPublishable (item = {}) {
     if (!hijos.length) throw new SchedulePlanError('Un paquete sin modulos no se puede publicar')
     const sinPrograma = hijos.find(h => !h.child_program_version_id)
     if (sinPrograma) throw new SchedulePlanError(`El modulo "${sinPrograma.abbreviation || sinPrograma.sort_order}" no tiene programa`)
+    // Un paquete nuevo arma sus modulos sin fecha; publicarlo asi creaba
+    // ediciones sin inicio. Y el orden de los modulos es el orden de dictado.
+    const nombre = h => h.abbreviation || h.sort_order
+    const sinFecha = hijos.find(h => !h.start_date)
+    if (sinFecha) throw new SchedulePlanError(`El modulo "${nombre(sinFecha)}" no tiene fecha de inicio`)
+    const desordenado = hijos.find((h, i) => i > 0 && toIsoDate(h.start_date) < toIsoDate(hijos[i - 1].start_date))
+    if (desordenado) throw new SchedulePlanError(`El modulo "${nombre(desordenado)}" empieza antes que el anterior`)
+    const finAntes = hijos.find(h => h.end_date && toIsoDate(h.end_date) < toIsoDate(h.start_date))
+    if (finAntes) throw new SchedulePlanError(`El modulo "${nombre(finAntes)}" termina antes de empezar`)
   } else if (!item.cat_day_combination_id) {
     throw new SchedulePlanError('Falta la combinacion de dias')
   }
@@ -368,4 +377,29 @@ export function toTreeRegisterPayload (item = {}, year, modulosYaPublicados = ne
       active: flagSiNo(hijo.active)
     }))
   }
+}
+
+// Re-sembrar un mes (o el anio) vuelve a traer del cronograma de origen las
+// mismas ediciones con el mismo uid (s<id de origen>). Si esa copia ya se
+// publico, la nueva quedaba como pendiente al lado y la siguiente publicacion
+// creaba la edicion por segunda vez. Se descarta la copia de lo ya publicado.
+export function withoutPublishedTwins (conservados = [], nuevos = []) {
+  const publicados = new Set(conservados.filter(i => i.published_edition_id).map(i => String(i.uid)))
+  return nuevos.filter(i => !publicados.has(String(i.uid)))
+}
+
+// El planner guarda el blob entero. Una pestana abierta antes de publicar
+// mandaba los items sin published_edition_id y borraba las marcas: la siguiente
+// publicacion duplicaba todo. Lo publicado en la BD manda: se conserva la marca
+// y, si la pestana vieja ya no tenia el item, se reincorpora.
+export function keepPublishedMarks (stored = [], incoming = []) {
+  const marcas = new Map(stored.filter(i => i.published_edition_id).map(i => [String(i.uid), i]))
+  const merged = incoming.map(item => {
+    const publicado = marcas.get(String(item.uid))
+    return publicado && !item.published_edition_id
+      ? { ...item, published_edition_id: publicado.published_edition_id }
+      : item
+  })
+  const presentes = new Set(merged.map(i => String(i.uid)))
+  return [...merged, ...[...marcas.values()].filter(i => !presentes.has(String(i.uid)))]
 }

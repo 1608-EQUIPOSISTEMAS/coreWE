@@ -1,6 +1,6 @@
 import { dashboardRepository } from './dashboard.repository.js'
 import { ForbiddenError } from '../../shared/errors.js'
-import { teamScopeFor } from './dashboard.entity.js'
+import { teamScopeFor, aggregateVentasCanal } from './dashboard.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
 import { areaResults, myTicketReports, orgTicketReports } from './results/results.usecases.js'
 import {
@@ -220,6 +220,12 @@ export async function detailLeads (payload = {}) {
   const offset = (page - 1) * size
   const rows = await repo.detailLeads({ cod_asesor, date, size, offset })
   return { data: toDetailLeadsDto(rows), page, size }
+}
+
+// Comercial > Marketing - Gestión: consultas y ventas por canal y tipo de cliente.
+export async function ventasCanalList ({ year, month, advisor = null } = {}) {
+  const rows = await repo.ventasCanal({ year, month })
+  return { year, month, ...aggregateVentasCanal(rows, advisor) }
 }
 
 export async function detailSales (payload = {}) {

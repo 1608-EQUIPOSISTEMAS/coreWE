@@ -41,7 +41,7 @@ def main():
     # 2. Si el clasificador devuelve [] (bloqueo persistente), el batch completa
     #    degradado a ADMIN: pide, re-pide una vez, y no lanza.
     calls = []
-    classifier._call_classifier = lambda client, blocks, bn, tb: (calls.append(1), [])[1]
+    classifier._call_classifier = lambda client, blocks, bn, tb, usage=None: (calls.append(1), [])[1]
     blocks = [{"inicio_seg": 0.0, "fin_seg": 60.0, "transcript_excerpt": "video institucional"}]
     out = _classify_one_batch(None, blocks, 1, 1)
     assert len(out) == 1

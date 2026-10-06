@@ -70,3 +70,6 @@ tests/local/
 # Sondeos, backfills y respaldos locales (traen DNI y montos de alumnos): se
 # corren desde la PC del equipo y nunca forman parte del sistema desplegado.
 scripts/
+
+# Transcripts reales para comparar modelos de la IA (datos personales, Ley 29733)
+ai_auditor/pruebas/

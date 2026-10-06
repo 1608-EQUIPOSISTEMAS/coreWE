@@ -1,5 +1,5 @@
 import { pool } from '../../../shared/db/pool.js'
-import { editionRepository } from '../../edition/edition.repository.js'
+import { editionRepository, hasAnyGradeSql } from '../../edition/edition.repository.js'
 import { GRADE_RULES } from '../../edition/edition.entity.js'
 
 // Filas crudas del panel de Académica. Aula = curso activo que no es A5, el
@@ -36,12 +36,13 @@ export async function fetchAcademicaRaw (_scope, db = pool, editions = editionRe
 
     // Aulas que terminaron en los últimos 60 días: notas y certificados.
     // "Tiene nota" NO es final_grade IS NOT NULL: la fila de notas se crea al
-    // abrir el aula con ceros, así que se mira que alguien haya cargado algo.
+    // abrir el aula con ceros, así que se mira que alguien haya cargado algo
+    // (misma regla que el aula: hasAnyGradeSql).
     db.query(`
       SELECT pe.edition_num_id,
              p.program_name AS programa, ${CLASSROOM_CODE} AS codigo,
              pe.end_date::date::text AS fin,
-             COUNT(g.grade_id) FILTER (WHERE g.partial_score > 0 OR g.final_criteria <> '{}'::jsonb)::int AS con_nota,
+             COUNT(g.grade_id) FILTER (WHERE ${hasAnyGradeSql('g')})::int AS con_nota,
              COUNT(g.grade_id) FILTER (WHERE g.final_grade >= $1)::int AS aprobados,
              COUNT(g.grade_id) FILTER (WHERE g.final_grade >= $1 AND g.odoo_cert_code IS NOT NULL)::int AS certificados
         FROM public.program_editions pe

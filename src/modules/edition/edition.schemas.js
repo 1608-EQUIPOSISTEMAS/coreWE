@@ -33,6 +33,10 @@ export const editionRegisterSchema = {
           active: { type: ['string', 'null'] },
           cat_day_combination_id: { type: ['integer', 'null'] },
           cat_hour_combination_id: { type: ['integer', 'null'] },
+          whatsapp_link: { type: ['string', 'null'] },
+          teams_link: { type: ['string', 'null'] },
+          ficha_link: { type: ['string', 'null'] },
+          grades_link: { type: ['string', 'null'] },
           schedules: {
             type: ['array', 'null'],
             items: {
@@ -102,6 +106,7 @@ export const editionTreeRegisterSchema = {
                 specific_code: { type: ['string', 'null'] },
                 global_code: { type: ['string', 'null'] },
                 expedient: { type: ['string', 'null'] },
+                upgrade: { type: ['string', 'null'] },
                 preconfirmation: { type: ['string', 'null'] },
                 confirmation: { type: ['string', 'null'] },
                 active: { type: ['string', 'null'] },
@@ -740,6 +745,7 @@ export const editionTreeUpdateSchema = {
                 specific_code: { type: ['string', 'null'] },
                 global_code: { type: ['string', 'null'] },
                 expedient: { type: ['string', 'null'] },
+                upgrade: { type: ['string', 'null'] },
                 preconfirmation: { type: ['string', 'null'] },
                 confirmation: { type: ['string', 'null'] },
                 active: { type: ['string', 'null'] },
@@ -878,5 +884,16 @@ export const aiJobStatusSchema = {
     additionalProperties: false,
     required: ['job_id'],
     properties: { job_id: { type: 'string', maxLength: 64 } }
+  }
+}
+
+export const academicStudentSearchSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['q'],
+    properties: {
+      q: { type: 'string', maxLength: 120 }
+    }
   }
 }

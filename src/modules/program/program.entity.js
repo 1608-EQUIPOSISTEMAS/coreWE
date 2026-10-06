@@ -23,9 +23,11 @@ export function sliceCharacter (character) {
   return String(character).slice(0, 1)
 }
 
-// Fusiona el user_id dentro del objeto program para que el SP lo consuma.
+// Fusiona el autor dentro del objeto program. sp_program_register lee
+// user_registration_id y sp_program_update user_modification_id: con solo
+// user_id ningun programa registraba quien lo creo o modifico (06/10/26).
 export function buildProgramPayload (program = {}, user_id = null) {
-  return { ...program, user_id }
+  return { ...program, user_id, user_registration_id: user_id, user_modification_id: user_id }
 }
 
 // Lectura de total_count del primer row y casteo de la paginacion a Number.

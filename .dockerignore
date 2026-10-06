@@ -1,3 +1,5 @@
 # Carpeta local (fuera de git): sondeos, backfills y respaldos con datos de
 # alumnos. Si existe en la PC que construye la imagen, no debe viajar dentro.
 scripts/
+
+ai_auditor/pruebas/

@@ -18,8 +18,9 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import (
-    UPLOADS_DIR, REPORTS_DIR, ROOT_DIR, assert_ready,
+    UPLOADS_DIR, REPORTS_DIR, ROOT_DIR, GEMINI_CLASSIFIER_MODEL, assert_ready,
 )
+from pricing import cost_usd
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger("ai_auditor")
@@ -68,9 +69,17 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-def _audit_metadata(result, segments, report_path, classified, *, preview: bool) -> dict:
+def _audit_metadata(result, segments, report_path, classified, classifier_usage, *, preview: bool) -> dict:
     """Metadata común de ambos endpoints. thinking se reporta aparte del output
-    porque se factura a precio de output y suele dominar el costo."""
+    porque se factura a precio de output y suele dominar el costo.
+    estimated_cost_usd = auditor + clasificador: el ERP lo suma para el tope
+    mensual (cost_version 2; las filas viejas solo contaban el auditor)."""
+    classifier_cost = cost_usd(
+        GEMINI_CLASSIFIER_MODEL, input_tokens=classifier_usage.get("input", 0),
+        output_tokens=classifier_usage.get("output", 0),
+        thinking_tokens=classifier_usage.get("thinking", 0),
+        cached_tokens=classifier_usage.get("cached", 0),
+    )
     meta = {
         "report_file": report_path.name,
         "duration_min": round(total_duration_min(segments), 1),
@@ -81,7 +90,9 @@ def _audit_metadata(result, segments, report_path, classified, *, preview: bool)
             "thinking": result.thinking_tokens,
             "cached": result.cached_tokens,
         },
-        "estimated_cost_usd": round(result.cost_estimate_usd(), 4),
+        "classifier_tokens": classifier_usage,
+        "estimated_cost_usd": round(result.cost_estimate_usd() + classifier_cost, 4),
+        "cost_version": 2,
     }
     if preview:
         meta["classification_preview"] = serialize_blocks(classified[:5])
@@ -109,7 +120,8 @@ async def audit_endpoint(
         )
 
     blocks = chunk_transcript(segments)
-    classified = classify_blocks(blocks)
+    classifier_usage: dict = {}
+    classified = classify_blocks(blocks, classifier_usage)
 
     result = audit(AuditInput(
         sesion_numero=sesion_numero,
@@ -125,7 +137,7 @@ async def audit_endpoint(
 
     return JSONResponse({
         "report": result.report,
-        "metadata": _audit_metadata(result, segments, report_path, classified, preview=True),
+        "metadata": _audit_metadata(result, segments, report_path, classified, classifier_usage, preview=True),
     })
 
 
@@ -148,7 +160,8 @@ async def audit_from_video(
         raise HTTPException(422, "Whisper no encontró audio transcribible en el video.")
 
     blocks = chunk_transcript(segments)
-    classified = classify_blocks(blocks)
+    classifier_usage: dict = {}
+    classified = classify_blocks(blocks, classifier_usage)
 
     result = audit(AuditInput(
         sesion_numero=sesion_numero,
@@ -164,7 +177,7 @@ async def audit_from_video(
 
     return JSONResponse({
         "report": result.report,
-        "metadata": _audit_metadata(result, segments, report_path, classified, preview=False),
+        "metadata": _audit_metadata(result, segments, report_path, classified, classifier_usage, preview=False),
     })
 
 

@@ -12,6 +12,7 @@ import {
   isValidAiAuditorHost,
   resolveAiAuditorUrl,
   formatStartDate,
+  holidayStartErrors,
   b2bAttendanceSummary,
   isoWeekRange,
   getAllowedDays,
@@ -226,8 +227,14 @@ describe('formatStartDate', () => {
     expect(formatStartDate('5/3/2026')).toBe('2026-03-05')
     expect(formatStartDate('15/12/2026')).toBe('2026-12-15')
   })
-  it('devuelve el valor original si no tiene 3 partes', () => {
+  it('acepta una fecha ya en ISO', () => {
     expect(formatStartDate('2026-01-01')).toBe('2026-01-01')
+  })
+  it('null si no es una fecha real (no debe llegar al ::date del SQL)', () => {
+    expect(formatStartDate('31/02/2026')).toBeNull()
+    expect(formatStartDate('4-feb-2026')).toBeNull()
+    expect(formatStartDate('')).toBeNull()
+    expect(formatStartDate(null)).toBeNull()
   })
 })
 
@@ -493,5 +500,25 @@ describe('reschedulesToSameDate', () => {
   it('sin sesion o sin fecha no bloquea', () => {
     expect(reschedulesToSameDate(undefined, '2026-10-06')).toBe(false)
     expect(reschedulesToSameDate(session, null)).toBe(false)
+  })
+})
+
+describe('holidayStartErrors (no se inicia en feriado)', () => {
+  const feriados = new Map([['2026-10-08', 'Combate de Angamos']])
+  it('bloquea un inicio nuevo en feriado con el nombre del feriado', () => {
+    expect(holidayStartErrors([{ label: 'Inicio', date: '2026-10-08' }], feriados))
+      .toEqual(['Inicio: el 08/10/2026 es feriado (Combate de Angamos). Elige otro día de inicio.'])
+  })
+  it('deja pasar un dia normal', () => {
+    expect(holidayStartErrors([{ label: 'Inicio', date: '2026-10-09' }], feriados)).toEqual([])
+  })
+  it('no traba una edicion que YA empezaba en feriado si no se le mueve la fecha', () => {
+    expect(holidayStartErrors([{ label: 'Inicio', date: '2026-10-08T00:00:00', previous: '2026-10-08' }], feriados)).toEqual([])
+  })
+  it('si la mueven A un feriado, si bloquea', () => {
+    expect(holidayStartErrors([{ label: 'Módulo 2', date: '2026-10-08', previous: '2026-10-01' }], feriados)).toHaveLength(1)
+  })
+  it('sin fecha no juzga', () => {
+    expect(holidayStartErrors([{ label: 'Módulo 1', date: null }], feriados)).toEqual([])
   })
 })

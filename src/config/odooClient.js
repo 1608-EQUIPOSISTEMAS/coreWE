@@ -801,20 +801,11 @@ export function describePdfError (message) {
   return { cause: apiMessage || m.slice(0, 200) || 'Error desconocido de Odoo', retryable: true }
 }
 
-async function certifyClassroom ({ groupName, grades }) {
-  const groups = await callKw('slide.group', 'search_read', [
-    [['name', '=', groupName]]
-  ], { fields: ['id', 'name', 'slide_channel_id'], limit: 1 })
-  const group = groups?.[0]
-  if (!group) return { success: false, error: `Grupo de curso no encontrado en Odoo: "${groupName}"` }
-  const slideGroupId = group.id
-  const slideChannelId = group.slide_channel_id?.[0]
-
-  // 1) Notas → slide.group.evaluation. Match por slide.group.student id y, si
-  // no hay id guardado, por nombre (único). Filas duplicadas: se escriben todas.
-  const evals = await callKw('slide.group.evaluation', 'search_read', [
-    [['slide_group_id', '=', slideGroupId]]
-  ], { fields: ['id', 'student_id', 'partner_id'], limit: 1000 })
+// Cruce alumno ERP -> slide.group.student del aula en Odoo. Puro: lo usan la
+// vista previa (solo lee) y la certificacion (escribe). Match por id guardado
+// y, si no hay, por nombre unico. Odoo a veces duplica a la persona: allSids
+// trae todas sus filas (la primera certifica, las demas solo reciben nota).
+export function matchGradesToEvaluations (evals, grades) {
   const evalsByStudent = new Map()
   for (const ev of (evals || [])) {
     const sid = ev.student_id?.[0]
@@ -822,14 +813,11 @@ async function certifyClassroom ({ groupName, grades }) {
     if (!evalsByStudent.has(sid)) evalsByStudent.set(sid, [])
     evalsByStudent.get(sid).push(ev)
   }
-
-  const gradesApplied = []
-  const gradesMissing = []
+  const matched = []
+  const missing = []
   const resolvedByName = []
-  const duplicateSids = new Set() // student_id duplicados de la misma persona: nota sí, certificado no
+  const duplicateSids = new Set()
   for (const g of grades) {
-    // allSids: todos los slide.group.student de la persona (Odoo a veces la
-    // tiene duplicada). El primero certifica; los demás solo reciben nota.
     let allSids = (g.odoo_student_id && evalsByStudent.has(g.odoo_student_id)) ? [g.odoo_student_id] : null
     if (!allSids) {
       const gTokens = nameTokens(g.student_name)
@@ -850,16 +838,75 @@ async function certifyClassroom ({ groupName, grades }) {
         resolvedByName.push({ enrollment_id: g.enrollment_id, odoo_student_id: allSids[0] })
       }
     }
-    if (!allSids) { gradesMissing.push(g.student_name); continue }
+    if (!allSids) { missing.push(g.student_name); continue }
     for (const dup of allSids.slice(1)) duplicateSids.add(dup)
-    const evalIds = allSids.flatMap(sid => evalsByStudent.get(sid).map(e => e.id))
-    await callKw('slide.group.evaluation', 'write', [evalIds, {
+    matched.push({ ...g, student_id: allSids[0], all_sids: allSids, eval_ids: allSids.flatMap(sid => evalsByStudent.get(sid).map(e => e.id)) })
+  }
+  return { matched, missing, resolvedByName, duplicateSids }
+}
+
+async function loadClassroomGroup (groupName) {
+  const groups = await callKw('slide.group', 'search_read', [
+    [['name', '=', groupName]]
+  ], { fields: ['id', 'name', 'slide_channel_id'], limit: 1 })
+  const group = groups?.[0]
+  if (!group) return null
+  const evals = await callKw('slide.group.evaluation', 'search_read', [
+    [['slide_group_id', '=', group.id]]
+  ], { fields: ['id', 'student_id', 'partner_id'], limit: 1000 })
+  return { group, evals }
+}
+
+// Certificados emitidos (no cancelados) por nombre de grupo, en UNA llamada
+// agrupada: el filtro "Por certificar" de Aulas mira decenas de aulas a la vez
+// y cuenta lo certificado a mano en Odoo tambien. SOLO LEE.
+async function certificatesCountByGroup (groupNames) {
+  if (!groupNames.length) return new Map()
+  const rows = await callKw('issued.certificates', 'read_group', [
+    [['slide_group_id.name', 'in', groupNames], ['state', '!=', 'cancel']],
+    ['slide_group_id'],
+    ['slide_group_id']
+  ], { lazy: false })
+  return new Map((rows || []).map(r => [r.slide_group_id?.[1], r.__count ?? r.slide_group_id_count ?? 0]))
+}
+
+// Vista previa del boton "Certificar": SOLO LEE. Dice por alumno si esta en el
+// aula de Odoo y si ya tiene certificado, para avisar antes de confirmar.
+async function previewCertification ({ groupName, grades }) {
+  const loaded = await loadClassroomGroup(groupName)
+  if (!loaded) return { success: false, error: `Grupo de curso no encontrado en Odoo: "${groupName}"` }
+  const { matched } = matchGradesToEvaluations(loaded.evals, grades)
+  const certs = await callKw('issued.certificates', 'search_read', [
+    [['slide_group_id', '=', loaded.group.id], ['state', '!=', 'cancel']]
+  ], { fields: ['student_id'], limit: 1000 })
+  const certified = new Set((certs || []).map(c => c.student_id?.[0]).filter(Boolean))
+  const byEnrollment = new Map(matched.map(m => [m.enrollment_id, m]))
+  return {
+    success: true,
+    students: grades.map(g => {
+      const m = byEnrollment.get(g.enrollment_id)
+      return { enrollment_id: g.enrollment_id, in_odoo: Boolean(m), already_certified: Boolean(m?.all_sids.some(s => certified.has(s))) }
+    })
+  }
+}
+
+async function certifyClassroom ({ groupName, grades }) {
+  const loaded = await loadClassroomGroup(groupName)
+  if (!loaded) return { success: false, error: `Grupo de curso no encontrado en Odoo: "${groupName}"` }
+  const slideGroupId = loaded.group.id
+  const slideChannelId = loaded.group.slide_channel_id?.[0]
+
+  // 1) Notas -> slide.group.evaluation (filas duplicadas: se escriben todas).
+  const { matched, missing: gradesMissing, resolvedByName, duplicateSids } = matchGradesToEvaluations(loaded.evals, grades)
+  const gradesApplied = []
+  for (const g of matched) {
+    await callKw('slide.group.evaluation', 'write', [g.eval_ids, {
       midterm_exam:  g.midterm,
       final_exam:    g.final,
       participation: g.participation,
       final_score:   g.final_score
     }])
-    gradesApplied.push({ ...g, student_id: allSids[0], all_sids: allSids, eval_ids: evalIds })
+    gradesApplied.push(g)
   }
 
   // La nota OFICIAL del certificado es la de Odoo (decision del area academica,
@@ -1075,4 +1122,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names
   }
 }
 
-export default { callKw, certifyClassroom, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchUsersByDocument, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, certifyClassroom, previewCertification, certificatesCountByGroup, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchUsersByDocument, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

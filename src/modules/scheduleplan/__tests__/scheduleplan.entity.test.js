@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  withoutPublishedTwins,
+  keepPublishedMarks,
   toIsoDate,
   shiftDate,
   weekOfMonth,
@@ -303,6 +305,14 @@ describe('assertPublishable', () => {
     const roto = { ...PAQUETE, children: [{ sort_order: 1, abbreviation: 'AUTOMATE' }] }
     expect(() => assertPublishable(roto)).toThrow(/AUTOMATE/)
   })
+
+  it('un modulo sin fecha, desordenado o que termina antes de empezar no se publica', () => {
+    const [a, b] = PAQUETE.children
+    expect(() => assertPublishable({ ...PAQUETE, children: [a, { ...b, start_date: null }] })).toThrow(/AUTOMATE.*fecha de inicio/)
+    expect(() => assertPublishable({ ...PAQUETE, children: [a, { ...b, start_date: '2026-06-01' }] })).toThrow(/AUTOMATE.*antes que el anterior/)
+    expect(() => assertPublishable({ ...PAQUETE, children: [{ ...a, end_date: '2026-06-01' }, b] })).toThrow(/POWER APPS.*termina antes/)
+    expect(() => assertPublishable(PAQUETE)).not.toThrow()
+  })
 })
 
 describe('toRegisterPayload', () => {
@@ -339,5 +349,27 @@ describe('toTreeRegisterPayload', () => {
     expect(payload.children[0]).toMatchObject({ new: false, edition_id: 40007 })
     // El que nadie creo todavia sigue siendo nuevo.
     expect(payload.children[1]).toMatchObject({ new: true, edition_id: null })
+  })
+})
+
+describe('withoutPublishedTwins (re-sembrar no duplica lo publicado)', () => {
+  it('descarta la copia nueva de un item ya publicado y deja pasar el resto', () => {
+    const conservados = [{ uid: 's10', published_edition_id: 900 }, { uid: 's11' }]
+    const nuevos = [{ uid: 's10' }, { uid: 's12' }]
+    expect(withoutPublishedTwins(conservados, nuevos)).toEqual([{ uid: 's12' }])
+  })
+})
+
+describe('keepPublishedMarks (pestana vieja no borra marcas)', () => {
+  const stored = [{ uid: 'a', published_edition_id: 1 }, { uid: 'b' }, { uid: 'c', published_edition_id: 3 }]
+  it('restaura la marca que la pestana vieja no traia y conserva sus ediciones', () => {
+    const r = keepPublishedMarks(stored, [{ uid: 'a', vacant: 30 }, { uid: 'b', vacant: 5 }, { uid: 'c' }])
+    expect(r).toEqual([{ uid: 'a', vacant: 30, published_edition_id: 1 }, { uid: 'b', vacant: 5 }, { uid: 'c', published_edition_id: 3 }])
+  })
+  it('reincorpora un publicado que la pestana vieja ya no tenia', () => {
+    expect(keepPublishedMarks(stored, [{ uid: 'b' }]).map(i => i.uid)).toEqual(['b', 'a', 'c'])
+  })
+  it('un borrador borrado en la pestana se queda borrado', () => {
+    expect(keepPublishedMarks(stored, [{ uid: 'a' }, { uid: 'c' }]).map(i => i.uid)).toEqual(['a', 'c'])
   })
 })

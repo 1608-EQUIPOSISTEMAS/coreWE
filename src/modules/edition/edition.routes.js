@@ -1,4 +1,4 @@
-import { authenticate, hasRole, ALL_ADMIN, ALL_COMERCIAL } from '../../shared/http/auth.middleware.js'
+import { authenticate, hasRole, hasModuleOrRole } from '../../shared/http/auth.middleware.js'
 import {
   editionRegisterSchema,
   editionTreeRegisterSchema,
@@ -7,6 +7,7 @@ import {
   classroomMetricsListSchema,
   classroomStudentsListSchema,
   classroomStudentsHistorySchema,
+  academicStudentSearchSchema,
   classroomAuditGetSchema,
   classroomAuditSaveSchema,
   classroomAuditSummaryListSchema,
@@ -45,32 +46,41 @@ import {
 } from './edition.schemas.js'
 import * as ctrl from './edition.controller.js'
 
+// Escribir el cronograma (crear/editar ediciones, cancelar A5, cargar links en
+// masa) es de Producto: por ROL y no por modulo, porque la matriz tambien le da
+// el modulo PRODUCTO a Academica (06/10/26). Academica mantiene los links del
+// aula por /classroomlinkssave.
+const CRONOGRAMA_WRITERS = hasRole(['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO'])
+// Alumnos con correo/celular: AulaDetail (Academica) y el modal del aula de
+// Cronograma Vista (gerencia y lideres).
+const CLASSROOM_STUDENTS_READERS = hasModuleOrRole('ACADEMICA', [
+  'ADMIN', 'GERENCIA', 'ACADEMICA', 'LIDER_ACADEMICA', 'LIDER_PRODUCTO',
+  'LIDER_COMERCIAL', 'LIDER_FICO', 'LIDER_FUNDACION', 'LIDER_B2B'
+])
+
 export default async function editionRoutes (fastify) {
   fastify.addHook('preHandler', authenticate)
 
   fastify.post('/editionregister', {
-    schema: editionRegisterSchema
-    // preHandler: [authenticate, ALL_ADMIN]
+    schema: editionRegisterSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.registerHandler)
 
   fastify.post('/editiontreeregister', {
-    schema: editionTreeRegisterSchema
-    // preHandler: [authenticate, ALL_ADMIN]
+    schema: editionTreeRegisterSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.treeRegisterHandler)
 
   fastify.post('/auditlogsget', {
     schema: auditLogsGetSchema
-    // preHandler: [authenticate, ALL_ADMIN]
   }, ctrl.auditLogsGetHandler)
 
   fastify.post('/editionlist', {
     schema: editionListSchema
-    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.listHandler)
 
   fastify.post('/editionbyweeklist', {
     schema: editionByWeekListSchema
-    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.byWeekListHandler)
 
   // Vista Semanal Academica: aulas en curso por dia con nº de sesion.
@@ -103,43 +113,52 @@ export default async function editionRoutes (fastify) {
 
   fastify.post('/classroommetricslist', {
     schema: classroomMetricsListSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomMetricsListHandler)
 
   fastify.post('/classroomstudentslist', {
-    schema: classroomStudentsListSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
+    schema: classroomStudentsListSchema,
+    preHandler: CLASSROOM_STUDENTS_READERS
   }, ctrl.classroomStudentsListHandler)
+
+  // Gasto del mes en auditorias IA (informativo en el modal de IA). Sin body.
+  fastify.post('/aiauditspend', {}, ctrl.aiAuditSpendHandler)
+
+  // Buscador de alumno de la pantalla Aulas (DNI, celular, correo o nombre).
+  fastify.post('/studentsearch', {
+    schema: academicStudentSearchSchema
+  }, ctrl.academicStudentSearchHandler)
 
   fastify.post('/classroomstudentshistory', {
     schema: classroomStudentsHistorySchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomStudentsHistoryHandler)
 
   fastify.post('/classroomauditget', {
     schema: classroomAuditGetSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomAuditGetHandler)
 
   fastify.post('/classroomauditsummarylist', {
     schema: classroomAuditSummaryListSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomAuditSummaryListHandler)
 
   fastify.post('/classroomauditsave', {
     schema: classroomAuditSaveSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomAuditSaveHandler)
 
   fastify.post('/classroomgradesget', {
     schema: classroomGradesGetSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomGradesGetHandler)
 
   fastify.post('/classroomgradessave', {
     schema: classroomGradesSaveSchema
-    // preHandler: [authenticate, ALL_ADMIN, ALL_COMERCIAL]
   }, ctrl.classroomGradesSaveHandler)
+
+  // Aulas terminadas: aprobados del ERP vs certificados en Odoo. Sin body.
+  fastify.post('/classroomscertificationstatus', {}, ctrl.classroomsCertificationStatusHandler)
+
+  // Vista previa de la certificacion: solo lee Odoo (mismo body que certificar).
+  fastify.post('/classroomodoocertifypreview', {
+    schema: classroomOdooCertifySchema
+  }, ctrl.classroomOdooCertifyPreviewHandler)
 
   // Certifica el aula en Odoo: notas → evaluaciones + proceso de certificación
   // masiva + PDFs. Son decenas de llamadas JSON-RPC; timeout amplio.
@@ -206,7 +225,6 @@ export default async function editionRoutes (fastify) {
 
   fastify.post('/editionget', {
     schema: editionGetSchema
-    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.getHandler)
 
   // Recursos del correo de evento. Endpoint propio con SQL directo porque
@@ -231,38 +249,39 @@ export default async function editionRoutes (fastify) {
   }, ctrl.classroomLinksSaveHandler)
 
   fastify.post('/editionupdate', {
-    schema: editionUpdateSchema
-    // preHandler: [authenticate, ALL_ADMIN]
+    schema: editionUpdateSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.updateHandler)
 
   fastify.post('/editioncaller', {
     schema: editionCallerSchema
-    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.callerHandler)
 
   fastify.post('/editionextrainfocaller', {
     schema: editionExtraInfoCallerSchema
-    // preHandler: [authenticate, ALL_ADMIN,ALL_COMERCIAL]
   }, ctrl.extraInfoCallerHandler)
 
   fastify.post('/bulkupdatewhatsapp', {
-    schema: bulkUpdateWhatsappSchema
+    schema: bulkUpdateWhatsappSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.bulkUpdateWhatsappHandler)
 
   fastify.post('/editiontreeupdate', {
-    schema: editionTreeUpdateSchema
-    // preHandler: [authenticate, ALL_ADMIN]
+    schema: editionTreeUpdateSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.treeUpdateHandler)
 
   // A5 MIGRATION: listar alumnos vigentes en una edicion.
   fastify.post('/a5pendingenrollments', {
-    schema: a5PendingEnrollmentsSchema
+    schema: a5PendingEnrollmentsSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.a5PendingEnrollmentsHandler)
 
   // A5: cancelar la edicion y derivar a sus alumnos a Reprogramaciones con el
   // destino que propone Producto. No mueve a nadie: eso lo firma FICO despues.
   fastify.post('/a5cancelandhandoff', {
-    schema: a5CancelAndHandOffSchema
+    schema: a5CancelAndHandOffSchema,
+    preHandler: CRONOGRAMA_WRITERS
   }, ctrl.a5CancelAndHandOffHandler)
 
   // PDF: programacion del curso.

@@ -180,7 +180,7 @@ export async function createChildEnrollments ({ enrollmentId, userId }) {
         segCatId,
         certCatId,
         catProfileId: parent.cat_profile_id,
-        personalAccount: childPersonalAccount(parent, childPvId),
+        personalAccount: childPersonalAccount(parent, { pvId: childPvId, name: item.childName }),
         userId,
         notes: `Seguimiento (${item.sortOrder}/${totalChildren}) de ${parent.parent_program_name || ''} ${parent.parent_edition_code || ''}`.trim()
       })

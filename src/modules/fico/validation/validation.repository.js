@@ -1,6 +1,7 @@
 import { pool } from '../../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../../shared/db/sp.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
+import { accountProvidersSql } from '../../../shared/personal-account.js'
 
 // Persistencia del subdominio de convalidaciones y estructura padre-hijo.
 // Envuelve pool.query y el SP sp_edition_tree_get; no contiene reglas de negocio
@@ -92,6 +93,7 @@ export class ValidationRepository {
            e.cat_currency, e.cat_inscription_modality, e.cat_payment_channel, e.cat_payment_plan,
            e.cat_profile_id, e.seller_agent_id,
            e.personal_account, e.personal_account_modules,
+           ${accountProvidersSql('e.enrollment_id')} AS account_providers,
            per.first_name, per.last_name, per.document_number, per.cat_type_document,
            ${STUDENT_EMAIL_SQL} AS origin_email,
            ${STUDENT_PHONE_SQL} AS origin_phone,

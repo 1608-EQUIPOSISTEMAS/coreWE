@@ -866,12 +866,31 @@ export function buildClosureRow (row, closureRows = []) {
 
 // Convierte una fecha DD/MM/YYYY a YYYY-MM-DD. Si no tiene 3 partes, devuelve
 // el valor original. Usada en el bulk de WhatsApp para normalizar la fecha.
+// Una edicion no puede ARRANCAR en feriado (pedido de Producto, 06/10/26): antes
+// el modal solo avisaba. Se juzga solo la fecha nueva o cambiada: las ediciones
+// que ya empezaban en feriado se pueden seguir editando sin moverlas.
+// starts: [{ label, date, previous }] · holidays: Map 'YYYY-MM-DD' -> nombre.
+export function holidayStartErrors (starts = [], holidays = new Map()) {
+  return starts
+    .map(s => ({ ...s, date: s.date ? String(s.date).slice(0, 10) : null, previous: s.previous ? String(s.previous).slice(0, 10) : null }))
+    .filter(s => s.date && s.date !== s.previous && holidays.has(s.date))
+    .map(s => {
+      const [y, m, d] = s.date.split('-')
+      return `${s.label}: el ${d}/${m}/${y} es feriado (${holidays.get(s.date)}). Elige otro día de inicio.`
+    })
+}
+
+// Fecha pegada desde el Sheet (d/m/aaaa) o ya ISO. null si no es una fecha real:
+// antes un texto raro llegaba al ::date de Postgres y cortaba la carga a la mitad.
 export function formatStartDate (startDate) {
-  const parts = String(startDate).split('/')
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
-  }
-  return startDate
+  const text = String(startDate ?? '').trim()
+  const dmy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const ymd = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const [y, m, d] = dmy ? [dmy[3], dmy[2], dmy[1]].map(Number) : ymd ? ymd.slice(1).map(Number) : []
+  if (!y) return null
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
 // =====================================================================
@@ -910,4 +929,117 @@ export function b2bAttendanceSummary (sessionsMap = {}, totalSessions = 0) {
     pending: Math.max(0, (Number(totalSessions) || 0) - taken),
     pct: taken ? Math.round(((present + tardy + justified) / taken) * 100) : null
   }
+}
+
+// ---------------------------------------------------------------------------
+// Buscador de alumno (pantalla Aulas): estado de cada aula del alumno y su
+// resumen. Salir del aula (retiro, cambio de curso, reprogramacion) no cuenta
+// como curso llevado: es la misma exclusion que la lista activa del aula.
+// ---------------------------------------------------------------------------
+const EXIT_STATUSES = {
+  we_enrollment_status_retired: 'Retirado',
+  we_enrollment_status_course_changed: 'Cambio de curso',
+  we_enrollment_status_reprogrammed: 'Reprogramado'
+}
+
+export function studentCourseStatus (course, today) {
+  if (EXIT_STATUSES[course.type_status_alias]) return EXIT_STATUSES[course.type_status_alias]
+  const start = course.start_date ? String(course.start_date).slice(0, 10) : null
+  const end = course.end_date ? String(course.end_date).slice(0, 10) : null
+  if (!start || start > today) return 'Proximo'
+  if (end && end < today) return 'Finalizado'
+  return 'Activo'
+}
+
+export function summarizeStudentCourses (courses, today) {
+  const withStatus = courses.map((c) => ({ ...c, status: studentCourseStatus(c, today) }))
+  const taken = withStatus.filter((c) => !Object.values(EXIT_STATUSES).includes(c.status))
+  const finished = taken.filter((c) => c.status === 'Finalizado')
+  return {
+    courses: withStatus,
+    summary: {
+      taken: taken.length,
+      active: taken.filter((c) => c.status === 'Activo').length,
+      finished: finished.length,
+      approved: finished.filter((c) => c.final_grade != null && Number(c.final_grade) >= GRADE_RULES.PASS_THRESHOLD).length,
+      certified: taken.filter((c) => c.odoo_cert_code).length,
+      exited: withStatus.length - taken.length
+    }
+  }
+}
+
+// Lo tecleado en el buscador -> criterio de busqueda. 6+ digitos = DNI o
+// celular (el celular se compara por el final: en la BD puede venir con +51
+// o espacios); con @ = correo; lo demas = nombre, palabra por palabra y sin
+// tildes. Menos de 3 caracteres no busca (traeria media BD).
+export function parseStudentQuery (raw) {
+  const q = String(raw || '').trim()
+  if (q.length < 3) return null
+  const digits = q.replace(/[\s+\-()]/g, '')
+  if (/^\d{6,}$/.test(digits)) return { digits, email: null, nameTokens: null }
+  if (q.includes('@')) return { digits: null, email: q.toLowerCase().replace(/[%_]/g, ''), nameTokens: null }
+  const nameTokens = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter((t) => t.length >= 2)
+  return nameTokens.length ? { digits: null, email: null, nameTokens } : null
+}
+
+// Cada auditoria IA cuesta (Gemini Pro, ~72K tokens de entrada). No se vuelve a
+// correr una sesion que ya tiene reporte ni una que ya se esta analizando: la
+// llamada tarda minutos y si el navegador se cortaba, la persona veia error y
+// reintentaba mientras la primera seguia corriendo y cobrando.
+export function aiAuditBlockReason ({ running, existingReport }) {
+  if (running) return 'Esta sesion ya se esta analizando. Espera unos minutos y recarga el aula: el resultado aparecera solo.'
+  if (existingReport) return 'Esta sesion ya tiene analisis IA guardado; se muestra ese (no se vuelve a pagar).'
+  return null
+}
+
+// Gasto del mes en auditoria IA (informativo en el modal; SIN tope por decision
+// del usuario 05/10/26). cost_version 2 = costo real (auditor + clasificador con su tarifa). Las filas
+// anteriores solo contaban el auditor a tarifa de 2.5 Pro (~US$0.13): se toman
+// al costo real medido de una auditoria tipica.
+// ponytail: estimado fijo para filas viejas; desde nov/26 todas son v2 y esta
+// rama sobra.
+const LEGACY_AUDIT_USD = 0.5
+
+export function aiAuditCostUsd (metadata) {
+  if (!metadata) return 0
+  return metadata.cost_version === 2 ? Number(metadata.estimated_cost_usd) || 0 : LEGACY_AUDIT_USD
+}
+
+export function aiMonthlySpend (metadatas, { usdToPen }) {
+  const spentUsd = metadatas.reduce((acc, m) => acc + aiAuditCostUsd(m), 0)
+  return { audits: metadatas.length, spentPen: Math.round(spentUsd * usdToPen * 100) / 100 }
+}
+
+// Vista previa de "Certificar en Odoo": en que grupo cae cada alumno ANTES de
+// confirmar (pedido de Academica: "que avise los casos que no se certifican").
+// La aprobacion final la decide Odoo con SU nota; aqui se usa la del ERP como
+// aviso, por eso el grupo dice "probablemente".
+export function classifyCertificationPreview (grades, odooStudents, withoutGrade = []) {
+  const byId = new Map(odooStudents.map((s) => [s.enrollment_id, s]))
+  const out = { ready: [], already_certified: [], with_debt: [], likely_failed: [], not_in_odoo: [], without_grade: withoutGrade }
+  for (const g of grades) {
+    const s = byId.get(g.enrollment_id)
+    if (!s?.in_odoo) out.not_in_odoo.push(g.student_name)
+    else if (s.already_certified) out.already_certified.push(g.student_name)
+    else if (g.has_debt) out.with_debt.push(g.student_name)
+    else if (Number(g.final_score) < GRADE_RULES.PASS_THRESHOLD) out.likely_failed.push(g.student_name)
+    else out.ready.push(g.student_name)
+  }
+  // Un alumno hijo de dos paquetes trae dos filas de notas: se lista una vez.
+  for (const k of Object.keys(out)) out[k] = [...new Set(out[k])]
+  // Nadie del ERP esta en el aula de Odoo: casi siempre es que el aula de
+  // Odoo no tiene alumnos matriculados, no 21 problemas distintos.
+  out.odoo_classroom_empty = grades.length > 0 && out.not_in_odoo.length === new Set(grades.map((g) => g.student_name)).size
+  return out
+}
+
+// Estado de certificacion de un aula terminada: aprobados al dia segun el ERP contra
+// certificados emitidos en Odoo (por cualquier via: boton del ERP o a mano).
+// La nota oficial es la de Odoo, asi que "aprobados" es la referencia del ERP.
+export function classroomCertificationStatus ({ approved, certified }) {
+  if (!approved) return null // sin aprobados no hay nada que certificar
+  if (!certified) return { label: 'Sin certificar', tone: 'bad', pending: true }
+  if (certified < approved) return { label: `Certificados ${certified} de ${approved}`, tone: 'warn', pending: true }
+  return { label: 'Certificada', tone: 'ok', pending: false }
 }

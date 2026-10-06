@@ -12,6 +12,7 @@ import {
   targetRegisterSchema,
   detailLeadsSchema,
   detailSalesSchema,
+  ventasCanalSchema,
   teamSummarySchema,
   dailyPlanSchema
 } from './dashboard.schemas.js'
@@ -47,4 +48,6 @@ export default async function dashboardRoutes (fastify) {
   fastify.post('/dashboardtargetregister', { schema: targetRegisterSchema }, ctrl.targetRegisterHandler)
   fastify.post('/detailleads', { schema: detailLeadsSchema }, ctrl.detailLeadsHandler)
   fastify.post('/detailsales', { schema: detailSalesSchema }, ctrl.detailSalesHandler)
+  // Mismos roles que la opcion "Marketing - Gestión" del sidebar: ve a todos los asesores.
+  fastify.post('/ventas-canal', { schema: ventasCanalSchema, preHandler: hasRole(['ADMIN', 'LIDER_COMERCIAL', 'GERENCIA']) }, ctrl.ventasCanalHandler)
 }

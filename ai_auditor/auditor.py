@@ -41,6 +41,7 @@ from classifier import (
     ClassifiedBlock, EmptyResponseError, render_classification_table, compute_ratio,
 )
 from retry import with_retry
+from pricing import cost_usd
 
 
 LAST_BAD_RESPONSE = CACHE_DIR / "last_bad_response.txt"
@@ -80,24 +81,12 @@ class AuditResult:
     thinking_tokens: int = 0
 
     def cost_estimate_usd(self) -> float:
-        """Tarifas Gemini 2.5 Pro (Nov 2025), prompts < 200K tokens.
-          input:  $1.25 / 1M
-          output: $10.00 / 1M  (incluye thinking tokens)
-          cached: $0.31 / 1M  (~75% off)
-
-        candidates_token_count NO incluye los thinking tokens, que se facturan
-        aparte a precio de output: por eso se suman explícitamente.
-        """
-        per_mtok_input = 1.25
-        per_mtok_output = 10.00
-        per_mtok_cached = 0.3125
-        fresh_input = max(self.input_tokens - self.cached_tokens, 0)
-        billable_output = self.output_tokens + self.thinking_tokens
-        return (
-            fresh_input * per_mtok_input
-            + self.cached_tokens * per_mtok_cached
-            + billable_output * per_mtok_output
-        ) / 1_000_000
+        """Costo del auditor con la tarifa de SU modelo (pricing.py). Antes usaba
+        precios fijos de 2.5 Pro y corria 3.1 Pro: subestimaba."""
+        return cost_usd(
+            GEMINI_MODEL, input_tokens=self.input_tokens, output_tokens=self.output_tokens,
+            thinking_tokens=self.thinking_tokens, cached_tokens=self.cached_tokens,
+        )
 
 
 def _read_image_part(path: Path) -> types.Part:

@@ -1,12 +1,14 @@
 import { pool } from './db/pool.js'
 
-// Etiqueta "CUENTA PERSONAL": el alumno lleva el curso de IA con su propia
-// cuenta de Claude o ChatGPT y Academica le entrega una por cada modulo marcado.
+// Etiqueta "CUENTA PERSONAL": el alumno lleva el curso de IA con SU PROPIA
+// cuenta de Claude o ChatGPT, asi que Academica NO le entrega una en ese modulo
+// (confirmado 06/10/26: la leen en la Lista de Notas del aula). Ningun member
+// recibe cuenta gratis: el que no adjunta comprobante usa la suya y se etiqueta.
 //
-// Vive en enrollments.personal_account y NO se deriva del beneficio: en un
-// paquete el beneficio va en el padre, pero la cuenta se entrega por modulo
-// (S/100 = uno, S/200 = todos), y en RP/CC Producto decidio que no viaje sola
-// (depende de que el alumno pague otra vez la cuenta): FICO la pone a mano.
+// Vive en enrollments.personal_account, una por modulo (hijo SEG). Solo los
+// modulos de CLAUDE o CHATGPT usan cuenta, y cada uno toma el proveedor de su
+// propio nombre: un Diplomado con los dos lleva CHATGPT en uno y CLAUDE en otro.
+// En RP/CC Producto decidio que no viaje sola: FICO la pone a mano.
 
 export const PERSONAL_ACCOUNT_PROVIDERS = ['CLAUDE', 'CHATGPT']
 
@@ -23,13 +25,43 @@ export function normalizePersonalAccountModules (value) {
   return ids.length ? ids : null
 }
 
-// Etiqueta que hereda un hijo SEG al crearse: la del padre si su modulo esta
-// entre los elegidos (lista vacia/null = todos).
-export function childPersonalAccount (parent, childPvId) {
-  const provider = normalizePersonalAccount(parent?.personal_account)
-  if (!provider) return null
+// Proveedores de los beneficios CUENTA de la venta (S/100 y S/200) como
+// subconsulta: el beneficio vive en enrollment_discounts, no en la fila.
+// `enrollmentIdSql` es la expresion SQL del enrollment vendido.
+export const accountProvidersSql = enrollmentIdSql => `ARRAY(
+  SELECT DISTINCT CASE WHEN d.alias LIKE 'cuenta_claude%' THEN 'CLAUDE' ELSE 'CHATGPT' END
+    FROM public.enrollment_discounts ed
+    JOIN public.discounts d ON d.discount_id = ed.discount_id
+   WHERE ed.enrollment_id = ${enrollmentIdSql}
+     AND (d.alias LIKE 'cuenta_claude%' OR d.alias LIKE 'cuenta_chatgpt%'))`
+
+// Proveedor del modulo segun su nombre, o null si el modulo no usa cuenta.
+export function moduleProvider (moduleName) {
+  const name = String(moduleName || '').toUpperCase()
+  return PERSONAL_ACCOUNT_PROVIDERS.find(p => name.includes(p)) ?? null
+}
+
+// Etiqueta que hereda un hijo SEG al crearse. parent.account_providers son los
+// beneficios CUENTA de la venta (puede traer los dos); personal_account_modules
+// acota a los modulos que marco la asesora (S/100), null = todos.
+export function childPersonalAccount (parent, child) {
+  const provider = moduleProvider(child?.name)
+  const providers = [parent?.personal_account, ...(parent?.account_providers ?? [])].map(normalizePersonalAccount)
+  if (!provider || !providers.includes(provider)) return null
   const modules = normalizePersonalAccountModules(parent?.personal_account_modules)
-  return !modules || modules.includes(Number(childPvId)) ? provider : null
+  return !modules || modules.includes(Number(child.pvId)) ? provider : null
+}
+
+// Etiqueta que lee Academica en el aula: la misma regla que al crear el hijo,
+// pero evaluada al leer con los beneficios ACTUALES de la venta. Asi cubre lo
+// que no la escribe al registrar (FICO directo, que es por donde entran los
+// members) y el beneficio agregado despues, y corrige hijos viejos que la
+// heredaron en todos los modulos (antes del 06/10/26).
+export function studentPersonalAccount ({ personal_account, sold_account_providers, module_name } = {}) {
+  return childPersonalAccount(
+    { personal_account, account_providers: sold_account_providers },
+    { name: module_name }
+  )
 }
 
 // Escribe la etiqueta de una inscripcion (null la quita).

@@ -1,5 +1,7 @@
 import { schedulePlanRepository } from './scheduleplan.repository.js'
 import { NotFoundError } from '../../shared/errors.js'
+import { getCatalog } from '../catalog/catalog.usecases.js'
+import { holidayStartErrors } from '../edition/edition.entity.js'
 import {
   SchedulePlanError,
   DATE_MODES,
@@ -12,7 +14,9 @@ import {
   toCarryOverItem,
   formatSpecificCode,
   toRegisterPayload,
-  toTreeRegisterPayload
+  toTreeRegisterPayload,
+  withoutPublishedTwins,
+  keepPublishedMarks
 } from './scheduleplan.entity.js'
 
 const repo = schedulePlanRepository
@@ -45,9 +49,9 @@ export async function createPlan ({ name, year, user_id = null } = {}) {
 // (cientos de ediciones) y una sola escritura evita tener que resolver mezclas
 // entre dos pestanas editando el mismo plan.
 export async function savePlan ({ plan_id, name = null, items = [], user_id = null } = {}) {
-  await requirePlan(plan_id)
+  const plan = await requirePlan(plan_id)
   const guardado = await repo.saveItems({
-    planId: Number(plan_id), name, items, userId: user_id
+    planId: Number(plan_id), name, items: keepPublishedMarks(plan.items, items), userId: user_id
   })
   if (!guardado) throw new NotFoundError('El plan no existe')
   return guardado
@@ -186,7 +190,8 @@ export async function seedYearFromYear ({
 // El descarte de modulos sueltos corre sobre el plan COMPLETO y no sobre el mes:
 // un paquete de junio puede tener un modulo que arranca en julio, asi que el
 // duplicado aparece recien cuando estan los dos meses, en el orden que sea.
-async function guardarSembrado ({ plan, conservados, nuevos, userId, month }) {
+async function guardarSembrado ({ plan, conservados, nuevos: traidos, userId, month }) {
+  const nuevos = withoutPublishedTwins(conservados, traidos)
   const items = withoutPackageModules([...conservados, ...nuevos])
   await repo.saveItems({ planId: plan.plan_id, name: null, items, userId })
   return {
@@ -248,7 +253,7 @@ async function nextSpecificCode (programVersionId, year, secuencias) {
   return formatSpecificCode(seq, year)
 }
 
-async function publishItem (item, year, userId, { modulosYaPublicados, secuencias }) {
+async function publishItem (item, { plan_id: planId, year }, userId, { modulosYaPublicados, secuencias }) {
   const paquete = isPackage(item)
   const payload = paquete
     ? toTreeRegisterPayload(
@@ -264,14 +269,18 @@ async function publishItem (item, year, userId, { modulosYaPublicados, secuencia
     throw new SchedulePlanError(fila.message || 'El cronograma rechazo la edicion')
   }
 
-  // El SP del arbol no devuelve el id; se busca la edicion recien creada. Si ni
-  // asi aparece se corta: marcar el item como publicado sin id dejaria la guarda
-  // de idempotencia muerta y la siguiente publicacion crearia todo de nuevo.
-  const editionId = newEditionId(fila) ?? await repo.lastEditionIdOf(item.program_version_id)
+  // Ambos SPs devuelven el id (el del arbol desde el 06/10/26: antes se adivinaba
+  // con "la ultima edicion de la version" y podia tomar una ajena). Sin id se
+  // corta: marcar el item como publicado sin id dejaria la guarda de
+  // idempotencia muerta y la siguiente publicacion crearia todo de nuevo.
+  const editionId = newEditionId(fila)
   if (!editionId) {
     throw new SchedulePlanError('La edicion se creo pero no se pudo identificar: revisala en el cronograma antes de reintentar')
   }
 
+  // Se marca ANTES de leer los modulos: si eso falla, la edicion ya existe y un
+  // reintento no debe volver a crearla.
+  await repo.markPublished({ planId, uid: item.uid, editionId })
   if (paquete) await registerCreatedModules(item, editionId, modulosYaPublicados)
   return editionId
 }
@@ -300,27 +309,52 @@ async function registerCreatedModules (item, parentEditionId, modulosYaPublicado
 // codigo repetido) los demas igual entran y el error viaja con el uid para
 // corregirlo en el planner. El uid publicado queda marcado en el blob, de modo
 // que volver a darle a Publicar no duplica nada.
+// ponytail: candado en memoria por plan; con mas de una instancia del backend
+// haria falta un pg_advisory_lock o un estado "publicando" en schedule_plans.
+const PLANS_PUBLISHING = new Set()
+
 export async function publishPlan ({ plan_id, uids = null, user_id = null } = {}) {
+  const key = Number(plan_id) || 0
+  if (PLANS_PUBLISHING.has(key)) throw new SchedulePlanError('Este plan ya se está publicando. Espera a que termine.')
+  PLANS_PUBLISHING.add(key)
+  try {
+    return await publishPlanItems({ plan_id, uids, user_id })
+  } finally {
+    PLANS_PUBLISHING.delete(key)
+  }
+}
+
+// Misma regla que el cronograma: ninguna edicion arranca en feriado. Copiar el
+// anio anterior "por dia de semana" puede caer en uno (p. ej. 08/10 Angamos).
+function assertNotHolidayStart (item, holidays) {
+  const starts = isPackage(item)
+    ? (item.children || []).map((h, i) => ({ label: `Módulo ${i + 1}`, date: h.start_date }))
+    : [{ label: 'Inicio', date: item.start_date }]
+  const errores = holidayStartErrors(starts, holidays)
+  if (errores.length) throw new SchedulePlanError(errores.join(' '))
+}
+
+async function publishPlanItems ({ plan_id, uids, user_id }) {
   const plan = await requirePlan(plan_id)
+  const catalog = await getCatalog()
+  const holidays = new Map((catalog.we_holiday || []).filter(h => h.variable_3).map(h => [h.variable_3, h.description]))
   const seleccion = Array.isArray(uids) && uids.length ? new Set(uids.map(String)) : null
 
   const publicados = []
   const fallidos = []
-  const items = [...plan.items]
   // Vive durante toda la publicacion: es lo que hace que un modulo compartido
   // entre paquetes se cree una sola vez.
   const modulosYaPublicados = new Map()
   // Ultima secuencia de specific_code entregada por version de programa.
   const secuencias = new Map()
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
+  for (const item of plan.items) {
     if (item.published_edition_id) continue
     if (seleccion && !seleccion.has(String(item.uid))) continue
 
     try {
-      const editionId = await publishItem(item, plan.year, user_id, { modulosYaPublicados, secuencias })
-      items[i] = { ...item, published_edition_id: editionId }
+      assertNotHolidayStart(item, holidays)
+      const editionId = await publishItem(item, plan, user_id, { modulosYaPublicados, secuencias })
       publicados.push({ uid: item.uid, edition_num_id: editionId })
     } catch (err) {
       // No se traga el error: viaja al planner con el uid para que el usuario
@@ -331,10 +365,6 @@ export async function publishPlan ({ plan_id, uids = null, user_id = null } = {}
         message: err.message
       })
     }
-  }
-
-  if (publicados.length) {
-    await repo.saveItems({ planId: plan.plan_id, name: null, items, userId: user_id })
   }
 
   return { plan_id: plan.plan_id, published: publicados, failed: fallidos }

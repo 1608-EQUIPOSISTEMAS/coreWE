@@ -48,14 +48,15 @@ describe('sliceCharacter', () => {
 })
 
 describe('buildProgramPayload', () => {
-  it('fusiona user_id dentro del objeto program', () => {
-    expect(buildProgramPayload({ program_name: 'X' }, 9)).toEqual({ program_name: 'X', user_id: 9 })
+  const autor = id => ({ user_id: id, user_registration_id: id, user_modification_id: id })
+  it('fusiona el autor con las claves que leen los SPs de alta y edicion', () => {
+    expect(buildProgramPayload({ program_name: 'X' }, 9)).toEqual({ program_name: 'X', ...autor(9) })
   })
   it('aplica defaults cuando no se pasan argumentos', () => {
-    expect(buildProgramPayload()).toEqual({ user_id: null })
+    expect(buildProgramPayload()).toEqual(autor(null))
   })
-  it('user_id explicito sobreescribe el del program', () => {
-    expect(buildProgramPayload({ user_id: 1 }, 7)).toEqual({ user_id: 7 })
+  it('el autor del token sobreescribe el que venga en el program', () => {
+    expect(buildProgramPayload({ user_id: 1, user_modification_id: 1 }, 7)).toEqual(autor(7))
   })
 })
 

@@ -14,6 +14,7 @@ import { handleSpResponse } from '../../utils/dbResponse.js'
 import { hasFinalGrade, buildAcademicOutcomes, todayInLima } from './academic-outcomes.entity.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
 import {
+  holidayStartErrors,
   buildEditionFilters,
   buildEditionByWeekFilters,
   isoWeekRange,
@@ -31,6 +32,12 @@ import {
   reproEventsOf,
   MAX_EDITION_REPROS,
   reschedulesToSameDate,
+  classifyCertificationPreview,
+  classroomCertificationStatus,
+  aiAuditBlockReason,
+  aiMonthlySpend,
+  parseStudentQuery,
+  summarizeStudentCourses,
   buildA5Payload,
   buildA5MigrationPlan,
   validateRubricParams,
@@ -59,13 +66,41 @@ import {
 const repo = editionRepository
 
 // REGISTER (simple). El SP devuelve result, response, message.
+// sp_edition_register no conoce los links del aula: si el modal los trae, se
+// guardan con classroomLinksSave apenas existe la edicion (antes AJV los
+// borraba y se perdian sin aviso).
+// Arma la lista de inicios a juzgar contra los feriados del catalogo. Los
+// existentes se comparan con su fecha guardada (solo bloquea si la mueve).
+async function assertNoHolidayStarts (starts) {
+  const conFecha = starts.filter(s => s.date)
+  if (!conFecha.length) return
+  const ids = conFecha.map(s => Number(s.edition_id)).filter(Boolean)
+  const [catalog, guardadas] = await Promise.all([getCatalog(), repo.startDatesByIds(ids)])
+  const holidays = new Map((catalog.we_holiday || []).filter(h => h.variable_3).map(h => [h.variable_3, h.description]))
+  const errores = holidayStartErrors(
+    conFecha.map(s => ({ ...s, previous: guardadas.get(Number(s.edition_id)) ?? null })), holidays)
+  if (errores.length) throw new DomainError(errores.join(' '), { statusCode: 400 })
+}
+
+const childStarts = (children = []) => (children || []).map((c, i) => ({
+  label: `Módulo ${i + 1}`,
+  date: c.start_date,
+  edition_id: c.new ? null : c.edition_id
+}))
+
 export async function editionRegister ({ edition = {}, user_id } = {}) {
-  const rows = await repo.register(edition, user_id)
-  return toSpRowOrFallback(rows)
+  await assertNoHolidayStarts([{ label: 'Inicio', date: edition.start_date }])
+  const row = toSpRowOrFallback(await repo.register(edition, user_id))
+  if (row.result === 1 && row.id) {
+    const links = Object.fromEntries(CLASSROOM_LINK_FIELDS.filter(f => edition[f]).map(f => [f, edition[f]]))
+    await classroomLinksSave({ edition_num_id: row.id, ...links })
+  }
+  return row
 }
 
 // REGISTER TREE (padre + hijos). handleSpResponse lanza si result === 0.
 export async function editionTreeRegister ({ edition = {}, user_id } = {}) {
+  await assertNoHolidayStarts(childStarts(edition.children))
   const rows = await repo.treeRegister(edition, user_id)
   return handleSpResponse(rows)
 }
@@ -318,6 +353,7 @@ export async function editionUpdate ({ id, edition = {}, user_id = null } = {}) 
     edition_num_id: id || edition.edition_num_id
   }
   await assertSinAlumnosVivos(payloadEdition.edition_num_id, edition.cat_segment_id)
+  await assertNoHolidayStarts([{ label: 'Inicio', date: edition.start_date, edition_id: payloadEdition.edition_num_id }])
   const rows = await repo.update(payloadEdition, user_id)
   return toUpdateDto(rows)
 }
@@ -325,6 +361,7 @@ export async function editionUpdate ({ id, edition = {}, user_id = null } = {}) 
 // UPDATE TREE (padre + hijos). Retorna la fila cruda del SP o el fallback.
 export async function editionTreeUpdate ({ edition = {}, user_id } = {}) {
   await assertSinAlumnosVivos(edition.edition_id, edition.cat_segment_id)
+  await assertNoHolidayStarts(childStarts(edition.children))
   const rows = await repo.treeUpdate(edition, user_id)
   return toSpRowOrFallback(rows)
 }
@@ -746,6 +783,10 @@ export async function bulkUpdateWhatsapp (items) {
     if (!item.abbreviation || !item.start_date || !item.whatsapp_link) continue
 
     const isoDate = formatStartDate(item.start_date)
+    if (!isoDate) {
+      notFound.push(`${item.abbreviation} - ${item.start_date} (fecha inválida)`)
+      continue
+    }
 
     const rowCount = await repo.updateWhatsappLink(
       item.whatsapp_link.trim(),
@@ -828,24 +869,26 @@ export async function classroomGradesGet ({ edition_id } = {}) {
 // procesar → generar PDFs). Mapeo: Examen Parcial = partial_score, Examen
 // Final = final_deliv_score, Promedio final = final_grade, Participación =
 // nº de checks. Odoo decide quién aprueba con su propio filtro.
-export async function classroomOdooCertify ({ edition_id } = {}) {
+// Datos que el boton "Certificar" manda a Odoo: notas guardadas del aula, deuda
+// y el nombre del grupo. Lo comparten la vista previa y la certificacion.
+async function buildCertificationInput (edition_id) {
   const eid = Number(edition_id)
-  if (!Number.isFinite(eid)) return { ok: false, message: 'edition_id invalido' }
+  if (!Number.isFinite(eid)) return { error: 'edition_id invalido' }
 
   const rows = await repo.classroomOdooCertifyData(eid)
-  if (!rows.length) return { ok: false, message: 'Edición no encontrada' }
+  if (!rows.length) return { error: 'Edición no encontrada' }
 
   const { odoo_activation: odooActivation, start_date: startDate } = rows[0]
-  if (!odooActivation?.trim()) return { ok: false, message: 'El programa no tiene configurado odoo_activation' }
-  if (!startDate) return { ok: false, message: 'La edición no tiene fecha de inicio' }
+  if (!odooActivation?.trim()) return { error: 'El programa no tiene configurado odoo_activation' }
+  if (!startDate) return { error: 'La edición no tiene fecha de inicio' }
   const groupName = buildPresentialCourseName({ odooActivation: odooActivation.trim(), startDate })
 
   const grades = []
-  let withoutGrades = 0
+  const withoutGrade = []
   for (const r of rows) {
     if (!r.enrollment_id) continue
     const name = [r.last_name, r.first_name].filter(Boolean).join(' ') || `enrollment ${r.enrollment_id}`
-    if (r.final_grade == null) { withoutGrades++; continue }
+    if (r.final_grade == null) { withoutGrade.push(name); continue }
     const participationChecks = Object.values(r.participation || {}).filter(Boolean).length
     grades.push({
       enrollment_id:   r.enrollment_id,
@@ -862,7 +905,43 @@ export async function classroomOdooCertify ({ edition_id } = {}) {
       final_score:     Number(r.final_grade) || 0
     })
   }
-  if (!grades.length) return { ok: false, message: 'Ningún alumno tiene notas guardadas en el ERP' }
+  if (!grades.length) return { error: 'Ningún alumno tiene notas guardadas en el ERP' }
+  return { groupName, grades, withoutGrade }
+}
+
+// Estado de certificacion de las aulas terminadas (filtro "Por certificar" de
+// Aulas): aprobados del ERP vs certificados en Odoo, una consulta a cada lado.
+const CERTIFICATION_WINDOW_DAYS = 120
+export async function classroomsCertificationStatus () {
+  const rows = await repo.finishedClassroomsWithApproved(CERTIFICATION_WINDOW_DAYS)
+  const withGroup = rows.map((r) => ({
+    ...r,
+    group_name: buildPresentialCourseName({ odooActivation: r.odoo_activation.trim(), startDate: r.start_date })
+  }))
+  const certified = await odooClient.certificatesCountByGroup([...new Set(withGroup.map((r) => r.group_name))])
+  return withGroup.map((r) => {
+    const certs = certified.get(r.group_name) || 0
+    return { edition_num_id: r.edition_num_id, approved: r.approved, certified: certs, status: classroomCertificationStatus({ approved: r.approved, certified: certs }) }
+  })
+}
+
+// Vista previa (solo lee Odoo): quienes se certificarian y por que los demas no.
+export async function classroomOdooCertifyPreview ({ edition_id } = {}) {
+  const input = await buildCertificationInput(edition_id)
+  if (input.error) return { ok: false, message: input.error }
+  const result = await odooClient.previewCertification({ groupName: input.groupName, grades: input.grades })
+  if (!result.success) return { ok: false, message: result.error }
+  return {
+    ok: true,
+    data: { group_name: input.groupName, ...classifyCertificationPreview(input.grades, result.students, input.withoutGrade) }
+  }
+}
+
+export async function classroomOdooCertify ({ edition_id } = {}) {
+  const input = await buildCertificationInput(edition_id)
+  if (input.error) return { ok: false, message: input.error }
+  const { groupName, grades } = input
+  const withoutGrades = input.withoutGrade.length
 
   const result = await odooClient.certifyClassroom({ groupName, grades })
   if (!result.success) return { ok: false, message: result.error }
@@ -1100,6 +1179,21 @@ export async function academicReport ({ edition_id } = {}) {
   return repo.academicReportList({ editionId: Number.isFinite(eid) && eid > 0 ? eid : null })
 }
 
+// Buscador de alumno de la pantalla Aulas: hasta 8 personas con sus aulas
+// (estado, nota, certificado, links, deuda) y cuantos cursos llevo.
+const STUDENT_SEARCH_LIMIT = 8
+export async function academicStudentSearch ({ q } = {}) {
+  const match = parseStudentQuery(q)
+  if (!match) return []
+  const persons = await repo.studentSearch(match, STUDENT_SEARCH_LIMIT)
+  const courses = await repo.studentCourses(persons.map((p) => p.person_id))
+  const today = todayInLima()
+  return persons.map((p) => ({
+    ...p,
+    ...summarizeStudentCourses(courses.filter((c) => c.person_id === p.person_id), today)
+  }))
+}
+
 // Resultados del alumno (aprobados, jalados, certificados) de los ultimos 6 meses.
 export async function academicOutcomes () {
   const alumnos = await repo.academicOutcomeStudents()
@@ -1219,6 +1313,32 @@ export async function classroomAuditRunAi ({
     return { ok: false, message: 'Falta imagen del syllabus' }
   }
 
+  const runKey = `${eid}:${sn}`
+  const existing = (await repo.classroomAuditGet(eid)).find((r) => Number(r.session_number) === sn)
+  const blocked = aiAuditBlockReason({ running: AI_AUDITS_RUNNING.has(runKey), existingReport: existing?.ai_report })
+  if (blocked) return { ok: false, message: blocked, row: existing?.ai_report ? existing : undefined }
+
+  AI_AUDITS_RUNNING.add(runKey)
+  try {
+    return await runAiAuditCall({ eid, sn, transcript_text, syllabus_image, syllabus_filename })
+  } finally {
+    AI_AUDITS_RUNNING.delete(runKey)
+  }
+}
+
+// Gasto del mes en soles, solo informativo. Tipo de cambio configurable
+// (USD_TO_PEN): actualizarlo si se mueve mucho.
+export async function aiAuditSpend () {
+  return aiMonthlySpend(await repo.aiAuditMetadataThisMonth(), {
+    usdToPen: Number(process.env.USD_TO_PEN) || 3.75
+  })
+}
+
+// ponytail: candado en memoria, vale con UN proceso de backend; con varias
+// replicas pasaria a una marca en classroom_audit_rubric.
+const AI_AUDITS_RUNNING = new Set()
+
+async function runAiAuditCall ({ eid, sn, transcript_text, syllabus_image, syllabus_filename }) {
   const aiAuditorUrl = resolveAiAuditorUrl()
 
   // FormData nativa en Node 18+: el proxy reenvia el multipart al FastAPI sin

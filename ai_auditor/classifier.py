@@ -22,6 +22,7 @@ from config import (
 from prompts import CLASSIFIER_INSTRUCTIONS, CLASSIFIER_RESPONSE_SCHEMA
 from transcription import TranscriptSegment, _seconds_to_hms
 from retry import with_retry
+from pricing import add_usage
 
 
 class ClassifierError(RuntimeError):
@@ -96,7 +97,7 @@ def chunk_transcript(
 CLASSIFIER_BATCH_SIZE = 30
 
 
-def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
+def classify_blocks(blocks: list[dict], usage: dict | None = None) -> list[ClassifiedBlock]:
     """Clasifica todos los bloques llamando a Gemini en lotes de CLASSIFIER_BATCH_SIZE.
 
     Para sesiones largas (≥1h), una sola llamada agota max_output_tokens porque
@@ -105,6 +106,9 @@ def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
 
     Lanza ClassifierError si CUALQUIER batch falla — preferimos abortar entero
     que entregar un ratio incompleto que el auditor Pro use como verdad.
+
+    `usage` acumula los tokens de TODAS las llamadas (lotes y re-pedidos): el
+    clasificador cuesta tanto como el auditor y antes no se contaba.
     """
     if not blocks:
         return []
@@ -119,7 +123,7 @@ def classify_blocks(blocks: list[dict]) -> list[ClassifiedBlock]:
         batch_num += 1
         batch = blocks[start:start + CLASSIFIER_BATCH_SIZE]
         try:
-            classified = _classify_one_batch(client, batch, batch_num, total_batches)
+            classified = _classify_one_batch(client, batch, batch_num, total_batches, usage)
         except ClassifierError as e:
             raise ClassifierError(
                 f"Batch {batch_num}/{total_batches} ({len(batch)} bloques, "
@@ -154,6 +158,7 @@ def _normalize_label(raw_label: str | None) -> Label:
 
 def _call_classifier(
     client: "genai.Client", blocks: list[dict], batch_num: int, total_batches: int,
+    usage: dict | None = None,
 ) -> list[dict]:
     """Una llamada a Gemini Flash con reintentos; devuelve la lista cruda de segmentos."""
     blocks_text = "\n\n".join(
@@ -186,6 +191,8 @@ def _call_classifier(
         )
         # Validar contenido, no solo transporte: Gemini a veces responde 200
         # con texto vacío. Lanzar acá hace que with_retry lo reintente.
+        if usage is not None:
+            add_usage(usage, response)  # tambien las vacias: Gemini las cobra
         if not (response.text or "").strip():
             raise EmptyResponseError(_extract_finish_reason(response))
         return response
@@ -228,13 +235,14 @@ def _classify_one_batch(
     blocks: list[dict],
     batch_num: int,
     total_batches: int,
+    usage: dict | None = None,
 ) -> list[ClassifiedBlock]:
     """Clasifica un batch alineando cada etiqueta por el timestamp que Gemini
     devuelve (no por posición): si el modelo omite un bloque, el resto NO se
     corre. Los bloques sin match se re-piden una vez antes de degradar a ADMIN.
     Garantiza len(out) == len(blocks).
     """
-    by_start = _index_by_start(_call_classifier(client, blocks, batch_num, total_batches))
+    by_start = _index_by_start(_call_classifier(client, blocks, batch_num, total_batches, usage))
 
     unmatched = [b for b in blocks if int(round(b["inicio_seg"])) not in by_start]
     if unmatched:
@@ -243,7 +251,7 @@ def _classify_one_batch(
             f"{len(unmatched)}/{len(blocks)} bloques sin match; re-pidiendo."
         )
         retry_index = _index_by_start(
-            _call_classifier(client, unmatched, batch_num, total_batches)
+            _call_classifier(client, unmatched, batch_num, total_batches, usage)
         )
         for key, c in retry_index.items():
             by_start.setdefault(key, c)
