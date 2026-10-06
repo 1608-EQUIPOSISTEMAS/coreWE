@@ -1,25 +1,26 @@
 import { limpiarTextoSlack, recortar } from './slack.text.js'
-import { ACCION_OMITIR, BLOQUE_PREGUNTAS, MAX_ARCHIVOS } from './slack.blocks.js'
+import { leerEstadoDeMensaje, leerPreguntasDeMensaje, MAX_ARCHIVOS } from './slack.blocks.js'
 import { MIME_PERMITIDOS, MAX_BYTES } from '../tickets.files.js'
 
-// La entrevista previa al borrador: reglas puras, sin Slack ni IA.
+// La entrevista previa a crear el ticket: reglas puras, sin Slack ni IA.
 //
 // Un primer DM casi nunca trae todo lo que soporte necesita (donde paso, sobre
 // que alumno o venta, desde cuando). En vez de crear el ticket con lo que haya
-// y que el agente pregunte despues por el ERP, el bot hace hasta MAX_RONDAS
-// rondas de preguntas antes de proponer el borrador.
+// de entrada, el bot hace hasta MAX_RONDAS rondas de preguntas; agotadas esas
+// rondas, o si ya no falta nada, el ticket se crea solo (slack.events.js).
 //
-// El estado de la entrevista NO se guarda en ninguna parte, igual que el
-// borrador: se reconstruye del historial del DM (conversations.history). Cada
-// mensaje de preguntas lleva en el value de su boton { ronda, inicio,
-// preguntas }, que Slack devuelve tal cual; `inicio` es el ts del primer
+// El estado de la entrevista NO se guarda en ninguna parte: se reconstruye del
+// historial del DM (conversations.history). Cada mensaje de preguntas lleva su
+// { ronda, inicio } codificado en el block_id de uno de sus bloques (ver
+// slack.blocks.js), que Slack devuelve tal cual; `inicio` es el ts del primer
 // mensaje del usuario, el ancla desde donde se relee la conversacion.
 
-export const MAX_RONDAS = 2
+export const MAX_RONDAS = 1
 
-// Una entrevista que el usuario dejo colgada media hora ya no es la misma
-// conversacion: lo que escriba despues arranca de cero.
-export const VENTANA_ENTREVISTA_S = 30 * 60
+// Una entrevista que el usuario dejo colgada 5 minutos ya no es la misma
+// conversacion: se cancela el intento (no se crea nada) y lo que escriba
+// despues arranca de cero, como un reporte nuevo.
+export const VENTANA_ENTREVISTA_S = 5 * 60
 
 // Mensajes sueltos que el usuario mando seguidos antes de que el bot contestara
 // ("hola" + el problema, o el problema partido en dos) se leen juntos.
@@ -47,22 +48,10 @@ const esDeLaPersona = m => !esDelBot(m) && m?.user &&
   (!m.subtype || m.subtype === 'file_share') &&
   (!m.thread_ts || m.thread_ts === m.ts)
 
-/** El estado guardado en el boton de un mensaje de preguntas, o null. */
+/** El estado guardado en los bloques de un mensaje de preguntas, o null. */
 export function leerEstadoDePreguntas (mensaje) {
-  if (!mensaje?.blocks?.some(b => b.block_id === BLOQUE_PREGUNTAS)) return null
-  const boton = mensaje.blocks.find(b => b.type === 'actions')?.elements?.find(e => e.action_id === ACCION_OMITIR)
-  return parsearEstado(boton?.value)
-}
-
-export function parsearEstado (value) {
-  try {
-    const { ronda, inicio, preguntas } = JSON.parse(value ?? '')
-    if (!Number.isInteger(ronda) || ronda < 1 || typeof inicio !== 'string') return null
-    const lista = Array.isArray(preguntas) ? preguntas.filter(p => typeof p === 'string') : []
-    return { ronda, inicio, preguntas: lista }
-  } catch {
-    return null
-  }
+  const estado = leerEstadoDeMensaje(mensaje)
+  return estado ? { ...estado, preguntas: leerPreguntasDeMensaje(mensaje) } : null
 }
 
 /** Un mensaje de Slack (evento o historial) como turno de la conversacion. */
@@ -186,15 +175,27 @@ export function armarBorrador (turnos, titulo) {
   }
 }
 
+/** Si el usuario ya adjunto alguna imagen en la conversacion. */
+export function tieneImagenes (turnos) {
+  return delUsuario(turnos).some(t => t.archivos?.length)
+}
+
+/** Si el usuario ya compartio algun enlace en la conversacion. */
+export function tieneEnlaces (turnos) {
+  return delUsuario(turnos).some(t => t.enlaces?.length)
+}
+
 /**
- * La conversacion como la lee la IA. Solo texto y cantidades: los enlaces y
- * nombres de archivo no le aportan para decidir que falta.
+ * La conversacion como la lee la IA. Solo texto y cantidades: las URLs y
+ * nombres de archivo no le aportan para decidir que falta. Lo que si importa es
+ * que sepa que los enlaces YA estan: en el texto solo queda su etiqueta ("la
+ * base de Control de cuentas"), y sin el aviso los pide de nuevo.
  */
 export function conversacionParaIa (turnos) {
   return turnos.map(t => {
     if (t.rol === 'bot') return `PREGUNTAS DEL BOT:\n${t.preguntas.map(p => `- ${p}`).join('\n')}`
     const extras = [
-      t.enlaces?.length ? `${t.enlaces.length} enlace(s)` : '',
+      t.enlaces?.length ? `ya compartio ${t.enlaces.length} enlace(s) en este mensaje` : '',
       t.archivos?.length ? `${t.archivos.length} imagen(es) adjunta(s)` : ''
     ].filter(Boolean).join(', ')
     return `USUARIO:\n${t.texto || '(sin texto)'}${extras ? `\n[${extras}]` : ''}`

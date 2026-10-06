@@ -1,84 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { bloquesDeBorrador, leerBorrador, ACCION_CREAR, ACCION_DESCARTAR } from '../slack.blocks.js'
+import { bloquesDePreguntas, leerEstadoDeMensaje, leerPreguntasDeMensaje } from '../slack.blocks.js'
 
-const BORRADOR = {
-  titulo: 'No carga el reporte de matrículas',
-  problema: 'Desde ayer entro al reporte y se queda cargando para siempre.',
-  enlaces: ['https://erp.test/reportes']
-}
-
-describe('bloquesDeBorrador', () => {
-  it('ofrece los dos botones', () => {
-    const acciones = bloquesDeBorrador(BORRADOR).blocks.find(b => b.type === 'actions')
-    expect(acciones.elements.map(e => e.action_id)).toEqual([ACCION_CREAR, ACCION_DESCARTAR])
+describe('bloquesDePreguntas', () => {
+  it('no trae botones: el ticket ya no se confirma con uno', () => {
+    const mensaje = bloquesDePreguntas({ preguntas: ['¿En qué módulo?'], ronda: 1, inicio: '100.1' })
+    expect(mensaje.blocks.some(b => b.type === 'actions')).toBe(false)
   })
 
-  it('sin enlaces no arma el bloque de enlace', () => {
-    const bloques = bloquesDeBorrador({ ...BORRADOR, enlaces: [] }).blocks
-    expect(bloques.some(b => b.block_id === 'tk_enlace')).toBe(false)
+  it('el estado viaja sin boton y se relee igual', () => {
+    const mensaje = bloquesDePreguntas({ preguntas: ['¿En qué módulo?', '¿Desde cuándo?'], ronda: 2, inicio: '100.1' })
+    expect(leerEstadoDeMensaje(mensaje)).toEqual({ ronda: 2, inicio: '100.1' })
+    expect(leerPreguntasDeMensaje(mensaje)).toEqual(['¿En qué módulo?', '¿Desde cuándo?'])
   })
 
-  it('el texto de respaldo nombra el título, que es lo que se ve en la notificación', () => {
-    expect(bloquesDeBorrador(BORRADOR).text).toContain('No carga el reporte de matrículas')
+  it('sobrevive a los caracteres que Slack escapa en las preguntas', () => {
+    const mensaje = bloquesDePreguntas({ preguntas: ['¿Sale <NullPointer> al guardar?'], ronda: 1, inicio: '1.1' })
+    expect(leerPreguntasDeMensaje(mensaje)).toEqual(['¿Sale <NullPointer> al guardar?'])
   })
 })
 
-describe('leerBorrador', () => {
-  // La ida y vuelta es lo unico que sostiene el diseno sin estado: si esto se
-  // rompe, el boton "Crear ticket" deja de encontrar lo que iba a crear.
-  it('recupera lo mismo que se escribió en los bloques', () => {
-    expect(leerBorrador(bloquesDeBorrador(BORRADOR).blocks)).toEqual({
-      titulo: BORRADOR.titulo,
-      problema: BORRADOR.problema,
-      link: 'https://erp.test/reportes',
-      archivos: []
-    })
+describe('leerEstadoDeMensaje', () => {
+  it('un mensaje con otra forma (de una version anterior) devuelve null', () => {
+    expect(leerEstadoDeMensaje({ blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'hola' } }] })).toBeNull()
+    expect(leerEstadoDeMensaje(undefined)).toBeNull()
   })
+})
 
-  it('conserva todos los enlaces, uno por línea', () => {
-    const enlaces = ['https://a.test/1', 'https://b.test/2']
-    expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, enlaces }).blocks).link)
-      .toBe('https://a.test/1\nhttps://b.test/2')
-  })
-
-  it('desenvuelve el enlace si Slack lo devuelve como entidad', () => {
-    const bloques = bloquesDeBorrador(BORRADOR).blocks
-    bloques.find(b => b.block_id === 'tk_enlace').text.text = '*Enlace:*\n<https://erp.test/reportes?x=1|reporte>'
-    expect(leerBorrador(bloques).link).toBe('https://erp.test/reportes?x=1')
-  })
-
-  it('si Slack autoenlaza algo del texto, la problemática llega sin la URL y no suma enlaces rotos', () => {
-    const bloques = bloquesDeBorrador(BORRADOR).blocks
-    bloques.find(b => b.block_id === 'tk_problema').text.text =
-      '*Problemática:*\nVentas desincronizadas <http://docs.google.com/spreadsheets/d/1sOV|docs.google.com/spreadsheets/d/1sOV>'
-    const leido = leerBorrador(bloques)
-    expect(leido.problema).toBe('Ventas desincronizadas')
-    expect(leido.link).toBe('https://erp.test/reportes')
-  })
-
-  it('los ids de los adjuntos viajan en el botón Crear', () => {
-    const archivos = [{ id: 'F1', nombre: 'captura.png' }, { id: 'F2', nombre: 'otra.jpg' }]
-    expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, archivos }).blocks).archivos).toEqual(['F1', 'F2'])
-  })
-
-  it('sobrevive a un problema con saltos de línea', () => {
-    const problema = 'Pasa esto:\n- primero falla A\n- después falla B'
-    const leido = leerBorrador(bloquesDeBorrador({ ...BORRADOR, problema }).blocks)
-    expect(leido.problema).toBe(problema)
-  })
-
-  it('sobrevive a los caracteres que Slack escapa', () => {
-    const problema = 'Sale el error <NullPointer> al guardar A & B'
-    const leido = leerBorrador(bloquesDeBorrador({ ...BORRADOR, problema }).blocks)
-    expect(leido.problema).toBe(problema)
-  })
-
-  it('sin enlace devuelve link null', () => {
-    expect(leerBorrador(bloquesDeBorrador({ ...BORRADOR, enlaces: [] }).blocks).link).toBeNull()
-  })
-
-  it('un mensaje con otra forma (de una versión anterior) devuelve null', () => {
-    expect(leerBorrador([{ type: 'section', text: { type: 'mrkdwn', text: 'hola' } }])).toBeNull()
-    expect(leerBorrador(undefined)).toBeNull()
+describe('leerPreguntasDeMensaje', () => {
+  it('sin el bloque de preguntas devuelve lista vacia', () => {
+    expect(leerPreguntasDeMensaje({ blocks: [] })).toEqual([])
   })
 })

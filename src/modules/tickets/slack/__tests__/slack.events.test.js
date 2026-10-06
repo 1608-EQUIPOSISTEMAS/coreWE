@@ -14,7 +14,7 @@ vi.mock('../../../../shared/adapters/slack/tickets-slack.adapter.js', () => ({ p
 vi.mock('../slack.ai.js', () => ({ interpretarConversacion: interpretarMensaje }))
 
 const { eventsHandler, esDmDePersona, yaProcesado } = await import('../slack.events.js')
-const { bloquesDePreguntas } = await import('../slack.blocks.js')
+const { bloquesDePreguntas, leerEstadoDeMensaje } = await import('../slack.blocks.js')
 
 const replyDoble = () => {
   const reply = { payload: null }
@@ -37,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'El ERP no carga', ticketRef: null, preguntas: [] })
   leerHistorialDm.mockResolvedValue([])
+  createTicketFromSlack.mockResolvedValue({ ticket_id: 1, title: 'El ERP no carga' })
 })
 
 describe('esDmDePersona', () => {
@@ -61,15 +62,14 @@ describe('esDmDePersona', () => {
     expect(esDmDePersona(evento({ subtype: 'file_share', files, text: '' }))).toBe(true)
   })
 
-  it('las imágenes viajan al borrador para adjuntarse al ticket', async () => {
+  it('las imágenes viajan al ticket que se crea', async () => {
     const files = [
       { id: 'F1', name: 'captura.png', mimetype: 'image/png', size: 1000 },
       { id: 'F2', name: 'video.mp4', mimetype: 'video/mp4', size: 1000 }
     ]
     eventsHandler({ body: callback(evento({ subtype: 'file_share', files })), headers: {} }, replyDoble())
-    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
-    const boton = postearMensaje.mock.calls.at(-1)[1].blocks.find(b => b.type === 'actions').elements[0]
-    expect(JSON.parse(boton.value).archivos).toEqual(['F1'])
+    await vi.waitFor(() => expect(createTicketFromSlack).toHaveBeenCalled())
+    expect(createTicketFromSlack.mock.calls[0][0].archivosSlack).toEqual(['F1'])
   })
 
   it('solo imágenes, sin descripción: pide que cuente qué pasó', async () => {
@@ -141,13 +141,14 @@ describe('eventsHandler', () => {
     expect(interpretarMensaje).toHaveBeenCalledTimes(1)
   })
 
-  it('con intención TICKET propone el borrador con botones', async () => {
+  it('con intención TICKET y sin preguntas pendientes crea el ticket directo, sin botones', async () => {
     eventsHandler({ body: callback(), headers: {} }, replyDoble())
 
     await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    expect(createTicketFromSlack).toHaveBeenCalled()
     const [canal, payload] = postearMensaje.mock.calls[0]
     expect(canal).toBe('D1')
-    expect(payload.blocks.some(b => b.type === 'actions')).toBe(true)
+    expect(payload.blocks.some(b => b.type === 'actions')).toBe(false)
   })
 
   it('con intención OTRO manda a comentar dentro del ERP, sin crear nada', async () => {
@@ -229,10 +230,8 @@ describe('eventsHandler', () => {
   })
 })
 
-describe('entrevista antes del borrador', () => {
-  const botonDe = payload => payload.blocks.find(b => b.type === 'actions').elements[0]
-
-  it('si al reporte le falta contexto, pregunta en vez de proponer el borrador', async () => {
+describe('entrevista antes de crear el ticket', () => {
+  it('si al reporte le falta contexto, pregunta en vez de crear el ticket', async () => {
     interpretarMensaje.mockResolvedValue({
       intencion: 'TICKET', titulo: 'No carga', ticketRef: null, preguntas: ['¿En qué módulo?', '¿Desde cuándo?']
     })
@@ -241,13 +240,13 @@ describe('entrevista antes del borrador', () => {
 
     await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
     const payload = postearMensaje.mock.calls[0][1]
+    expect(createTicketFromSlack).not.toHaveBeenCalled()
+    expect(payload.blocks.some(b => b.type === 'actions')).toBe(false)
     expect(payload.blocks.find(b => b.block_id === 'tk_preguntas').text.text).toMatch(/1\. ¿En qué módulo\?\n2\. ¿Desde cuándo\?/)
-    expect(JSON.parse(botonDe(payload).value)).toEqual({
-      ronda: 1, inicio: '1.1', preguntas: ['¿En qué módulo?', '¿Desde cuándo?']
-    })
+    expect(leerEstadoDeMensaje(payload)).toEqual({ ronda: 1, inicio: '1.1' })
   })
 
-  it('la respuesta se lee junto con el mensaje inicial y termina en el borrador', async () => {
+  it('la respuesta se lee junto con el mensaje inicial y el ticket se crea con ambos', async () => {
     const ahora = Math.floor(Date.now() / 1000)
     leerHistorialDm.mockResolvedValue([
       { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿Qué alumno?'], ronda: 1, inicio: `${ahora - 60}.1` }) },
@@ -256,13 +255,15 @@ describe('entrevista antes del borrador', () => {
 
     eventsHandler({ body: callback(evento({ ts: `${ahora}.3`, text: 'el 4521' })), headers: {} }, replyDoble())
 
-    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+    await vi.waitFor(() => expect(createTicketFromSlack).toHaveBeenCalled())
     const turnos = interpretarMensaje.mock.calls[0][0]
     expect(turnos.map(t => t.rol)).toEqual(['usuario', 'bot', 'usuario'])
-    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: true })
+    // MAX_RONDAS es 1: la ronda que ya se hizo agota las preguntas, y esta
+    // respuesta va directo al ticket, no a una segunda ronda.
+    expect(interpretarMensaje.mock.calls[0][1]).toEqual({ permitirPreguntas: false })
 
-    const problema = postearMensaje.mock.calls[0][1].blocks.find(b => b.block_id === 'tk_problema').text.text
-    expect(problema).toMatch(/no puedo matricular a un alumno\n\nP: ¿Qué alumno\?\nR: el 4521/)
+    expect(createTicketFromSlack.mock.calls[0][0].problema)
+      .toMatch(/no puedo matricular a un alumno\n\nP: ¿Qué alumno\?\nR: el 4521/)
   })
 
   it('dentro de la entrevista una respuesta corta no se rechaza por corta', async () => {
@@ -275,14 +276,14 @@ describe('entrevista antes del borrador', () => {
 
     eventsHandler({ body: callback(evento({ ts: `${ahora}.3`, text: 'no' })), headers: {} }, replyDoble())
 
-    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
-    expect(postearMensaje.mock.calls[0][1].blocks.some(b => b.block_id === 'tk_titulo')).toBe(true)
+    await vi.waitFor(() => expect(createTicketFromSlack).toHaveBeenCalled())
+    expect(createTicketFromSlack.mock.calls[0][0].titulo).toBe('Reporte de cobranza no carga')
   })
 
   it('agotadas las rondas, ya no permite preguntar', async () => {
     const ahora = Math.floor(Date.now() / 1000)
     leerHistorialDm.mockResolvedValue([
-      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿x?'], ronda: 2, inicio: `${ahora - 90}.1` }) },
+      { type: 'message', bot_id: 'B1', ts: `${ahora - 30}.2`, ...bloquesDePreguntas({ preguntas: ['¿x?'], ronda: 1, inicio: `${ahora - 90}.1` }) },
       { type: 'message', user: 'U1', ts: `${ahora - 90}.1`, text: 'el reporte de cobranza no carga' }
     ])
 
@@ -332,14 +333,14 @@ describe('creación automática', () => {
     expect(payload.blocks.some(b => b.type === 'actions')).toBe(false)
   })
 
-  it('incompleto y sin preguntas pendientes, sigue ofreciendo el borrador', async () => {
+  it('incompleto pero sin preguntas pendientes, igual crea el ticket con lo que haya', async () => {
     interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticketRef: null, preguntas: [], completo: false })
 
     eventsHandler({ body: callback(), headers: {} }, replyDoble())
 
     await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
-    expect(createTicketFromSlack).not.toHaveBeenCalled()
-    expect(postearMensaje.mock.calls[0][1].blocks.some(b => b.type === 'actions')).toBe(true)
+    expect(createTicketFromSlack).toHaveBeenCalled()
+    expect(postearMensaje.mock.calls[0][1].blocks.some(b => b.type === 'actions')).toBe(false)
   })
 
   it('si crear falla por dominio (sin cuenta en el ERP), lo dice tal cual', async () => {

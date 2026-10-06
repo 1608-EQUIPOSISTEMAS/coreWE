@@ -5,7 +5,10 @@ const geminiConfigurado = vi.fn(() => true)
 
 vi.mock('../../../../shared/adapters/ai/gemini.adapter.js', () => ({ generarJson, geminiConfigurado }))
 
-const { interpretarMensaje, interpretarConversacion } = await import('../slack.ai.js')
+const { interpretarMensaje, interpretarConversacion, PREGUNTA_CAPTURA } = await import('../slack.ai.js')
+
+// Un mensaje con una imagen adjunta: sin ella, la captura se pide siempre.
+const conImagen = texto => interpretarConversacion([{ rol: 'usuario', texto, archivos: [{ id: 'F1' }] }])
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -17,7 +20,7 @@ describe('interpretarMensaje', () => {
   it('devuelve lo que clasificó el modelo', async () => {
     generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'No carga el reporte', ticket_ref: 0 })
 
-    expect(await interpretarMensaje('desde ayer el reporte no carga')).toEqual({
+    expect(await conImagen('desde ayer el reporte no carga')).toEqual({
       intencion: 'TICKET', titulo: 'No carga el reporte', ticketRef: null, preguntas: [], completo: false, porIa: true
     })
   })
@@ -29,13 +32,38 @@ describe('interpretarMensaje', () => {
       ticket_ref: 0,
       preguntas: ['¿En qué módulo?', '  ¿En  qué módulo?', '¿Desde cuándo?', 'ok', '¿Qué alumno?', '¿Captura?']
     })
-    const r = await interpretarMensaje('el reporte no carga')
+    const r = await conImagen('el reporte no carga')
     expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?'])
   })
 
-  it('completo solo si el modelo lo afirma y no quedan preguntas', async () => {
+  it('sin imagen adjunta siempre pide la captura, con su texto fijo', async () => {
+    generarJson.mockResolvedValue({
+      intencion: 'TICKET', titulo: 'x', ticket_ref: 0, completo: true,
+      preguntas: ['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?', '¿Puedes enviar una captura?']
+    })
+    const r = await interpretarMensaje('el reporte no carga')
+    expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', PREGUNTA_CAPTURA])
+    expect(r.completo).toBe(false)
+
     generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [], completo: true })
-    expect((await interpretarMensaje('el reporte no carga desde ayer, a todos')).completo).toBe(true)
+    expect((await interpretarMensaje('el reporte no carga')).preguntas).toEqual([PREGUNTA_CAPTURA])
+  })
+
+  it('si ya compartió enlaces, no se los vuelve a pedir', async () => {
+    generarJson.mockResolvedValue({
+      intencion: 'TICKET', titulo: 'x', ticket_ref: 0,
+      preguntas: ['¿Ocurre en otros periodos?', '¿Podrías compartir los enlaces a las hojas de cálculo?']
+    })
+    const r = await interpretarConversacion([
+      { rol: 'usuario', texto: 'no cuadra la base de Control de cuentas', enlaces: ['https://docs.google.com/x'], archivos: [{ id: 'F1' }] }
+    ])
+    expect(r.preguntas).toEqual(['¿Ocurre en otros periodos?'])
+    expect(generarJson.mock.calls[0][0].texto).toMatch(/ya compartio 1 enlace/)
+  })
+
+  it('completo solo si el modelo lo afirma, hay imagen y no quedan preguntas', async () => {
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [], completo: true })
+    expect((await conImagen('el reporte no carga desde ayer, a todos')).completo).toBe(true)
 
     generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: ['¿Desde cuándo?'], completo: true })
     expect((await interpretarMensaje('el reporte no carga')).completo).toBe(false)
