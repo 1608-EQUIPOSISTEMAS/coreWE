@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import * as usecases from './tickets.usecases.js'
 import { readMultipart, attachmentPath, DOCUMENTO_MULTIPART } from './tickets.files.js'
-import { toTicketDto, toCommentDto, toAssigneeDto, toActivityDto, toDocumentDto } from './tickets.dto.js'
+import { toTicketDto, toCommentDto, toAssigneeDto, toActivityDto, toDocumentDto, contentDisposition } from './tickets.dto.js'
 
 // Unico lugar que sabe de HTTP. Traduce request -> caso de uso y resultado -> reply.
 //
@@ -77,7 +77,7 @@ export async function commentCreateHandler (req, reply) {
   const { campos, archivos } = await readMultipart(req)
   const data = await usecases.addComment({
     ...quien(req),
-    ticketId: Number(campos.ticket_id),
+    ticketId: campos.ticket_id,
     cuerpo: campos.cuerpo,
     archivos
   })
@@ -109,10 +109,9 @@ async function enviarArchivo (reply, archivo) {
   const ruta = await attachmentPath(archivo.stored_name)
 
   // El nombre original solo viaja en la cabecera; en disco el archivo es un UUID.
-  const nombre = archivo.original_name.replace(/["\\]/g, '')
   return reply
     .type(archivo.mime_type)
-    .header('Content-Disposition', `inline; filename="${encodeURIComponent(nombre)}"`)
+    .header('Content-Disposition', contentDisposition(archivo.original_name))
     .send(createReadStream(ruta))
 }
 

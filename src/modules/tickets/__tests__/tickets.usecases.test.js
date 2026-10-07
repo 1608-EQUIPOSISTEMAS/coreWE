@@ -15,6 +15,10 @@ const repo = {
   findActiveUserByEmail: vi.fn(),
   unassignedOlderThan: vi.fn(),
   reassign: vi.fn(),
+  updateStatus: vi.fn(),
+  claim: vi.fn(),
+  assignableById: vi.fn(),
+  attachmentsOf: vi.fn(async () => []),
   list: vi.fn(async () => [])
 }
 
@@ -42,7 +46,10 @@ const slack = {
 vi.mock('../tickets.repository.js', () => ({ ticketsRepository: repo }))
 vi.mock('../../../shared/adapters/slack/tickets-slack.adapter.js', () => slack)
 
-const { createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack, setTicketsPorts } = await import('../tickets.usecases.js')
+const {
+  createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack, setTicketsPorts,
+  changeStatus, reassign, reopenTicket, listTickets, addComment
+} = await import('../tickets.usecases.js')
 
 const publicarCambio = vi.fn().mockResolvedValue(undefined)
 setTicketsPorts({ publicarCambio })
@@ -165,7 +172,8 @@ describe('runAutoAssignSweep', () => {
     const asignados = await runAutoAssignSweep(AHORA)
 
     expect(asignados).toBe(1)
-    expect(repo.reassign).toHaveBeenCalledWith(1, 7)
+    // Queda en la bitacora como asignacion del sistema.
+    expect(repo.reassign).toHaveBeenCalledWith(1, 7, { kind: 'ASIGNADO', toUserId: 7, detail: 'AUTOMATICO' })
     expect(slack.notificarTicketEscalado).toHaveBeenCalled()
     // A quien reporto se le dice "asignado", no "reasignado": no tenia dueño.
     expect(slack.avisarTicketReasignado).toHaveBeenCalledWith(expect.anything(), expect.any(String), { primeraAsignacion: true })
@@ -306,6 +314,80 @@ describe('runSlaSweep · alertas', () => {
     await runSlaSweep(AHORA)
 
     expect(repo.overdueClocks).not.toHaveBeenCalled()
+  })
+})
+
+describe('listTickets · búsqueda', () => {
+  it('escapa los comodines y busca también por número de ticket', async () => {
+    await listTickets({ roles: ['ADMIN'], userId: 9, busqueda: ' #00042 ' })
+    expect(repo.list).toHaveBeenCalledWith(expect.anything(), { busqueda: '#00042', busquedaId: 42, orden: 'sla' })
+
+    await listTickets({ roles: ['ADMIN'], userId: 9, busqueda: '50%' })
+    expect(repo.list).toHaveBeenLastCalledWith(expect.anything(), { busqueda: '50\\%', busquedaId: null, orden: 'sla' })
+  })
+})
+
+describe('addComment', () => {
+  it('un ticket_id inválido es 400 y no consulta la BD', async () => {
+    await expect(addComment({ roles: ['ADMIN'], userId: 9, ticketId: 'abc', cuerpo: 'hola' }))
+      .rejects.toMatchObject({ statusCode: 400 })
+    expect(repo.detail).not.toHaveBeenCalled()
+  })
+})
+
+describe('un dueño a la vez', () => {
+  const ADMIN = ['ADMIN']
+
+  it('tomar un ticket que ya atiende otro agente responde 409 con su nombre y no toca nada', async () => {
+    repo.detail.mockResolvedValue(ticketFila({ assigned_to_id: 99, asignado: 'Fernando' }))
+
+    await expect(changeStatus({ roles: ADMIN, userId: 42, ticketId: 1, estado: 'EN_PROGRESO' }))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/ya lo atiende Fernando/) })
+    expect(repo.claim).not.toHaveBeenCalled()
+    expect(repo.updateStatus).not.toHaveBeenCalled()
+  })
+
+  it('el dueño lo toma y queda TOMADO en la bitacora con su actor', async () => {
+    repo.detail.mockResolvedValue(ticketFila({ assigned_to_id: 99 }))
+
+    await changeStatus({ roles: ADMIN, userId: 99, ticketId: 1, estado: 'EN_PROGRESO' })
+
+    expect(repo.updateStatus).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'EN_PROGRESO' }), { kind: 'TOMADO', actorId: 99 })
+  })
+
+  it('otro agente no puede reasignar un ticket con dueño', async () => {
+    repo.detail.mockResolvedValue(ticketFila({ assigned_to_id: 99, asignado: 'Fernando' }))
+    repo.assignableById.mockResolvedValue({ user_id: 42, active: 'Y', es_agente: true, carga_activa: 0 })
+
+    await expect(reassign({ roles: ADMIN, userId: 42, ticketId: 1, nuevoAsignadoId: 42 }))
+      .rejects.toMatchObject({ statusCode: 403 })
+    expect(repo.reassign).not.toHaveBeenCalled()
+  })
+
+  it('el dueño reasigna y queda REASIGNADO de el al nuevo', async () => {
+    repo.detail.mockResolvedValue(ticketFila({ assigned_to_id: 99, status: 'EN_PROGRESO' }))
+    repo.assignableById.mockResolvedValue({ user_id: 42, active: 'Y', es_agente: true, carga_activa: 0 })
+
+    await reassign({ roles: ADMIN, userId: 99, ticketId: 1, nuevoAsignadoId: 42 })
+
+    expect(repo.reassign).toHaveBeenCalledWith(1, 42, { kind: 'REASIGNADO', actorId: 99, fromUserId: 99, toUserId: 42 })
+  })
+})
+
+describe('reopenTicket', () => {
+  it('reabrir uno que cerro el manual le da un plazo de respuesta nuevo y lo deja REABIERTO en la bitacora', async () => {
+    const manual = new Date('2026-01-01T14:00:00Z')
+    repo.detail.mockResolvedValue(ticketFila({
+      status: 'CERRADO', assigned_to_id: null, created_by_id: 10, priority: 'ALTA',
+      first_response_at: manual, resolved_at: manual, manual_answer: 'RESUELTO', manual_answered_at: manual
+    }))
+
+    await reopenTicket({ roles: ['COMERCIAL'], userId: 10, ticketId: 1 })
+
+    const [, cambios, evento] = repo.updateStatus.mock.calls[0]
+    expect(cambios).toMatchObject({ status: 'ABIERTO', first_response_at: null, resolved_at: null })
+    expect(cambios.first_response_due_at).toBeInstanceOf(Date)
+    expect(evento).toEqual({ kind: 'REABIERTO', actorId: 10 })
   })
 })
 

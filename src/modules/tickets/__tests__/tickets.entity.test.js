@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import { ForbiddenError } from '../../../shared/errors.js'
 import {
   ticketScopeFor, canRead, assertCanRead, assertCanManage, nextStatus, pickAgent,
   assertReassignable, validateTicketInput, validateComment,
   computeDueDates, formatTicketCode, withSla, applyFilter, buildKpis,
-  canChangeStatusOf, canReopenOf, reopenByReporter, validateDocumentInput
+  canChangeStatusOf, canReopenOf, reopenByReporter, validateDocumentInput,
+  respondioElManual, assertNoEsDeOtro, canReassignOf, eventoDeTransicion,
+  ticketIdDeBusqueda, escaparLike, parseTicketId
 } from '../tickets.entity.js'
 
 const AHORA = new Date('2026-01-01T12:00:00Z')
@@ -131,9 +134,35 @@ describe('reabrir desde quien reporto', () => {
       .toEqual({ status: 'EN_PROGRESO', first_response_at: AHORA, resolved_at: null })
   })
 
-  it('sin agente (lo cerró el manual antes del reparto) vuelve a la cola como ABIERTO', () => {
-    expect(reopenByReporter(cerrado({ assigned_to_id: null }), 10))
-      .toEqual({ status: 'ABIERTO', first_response_at: AHORA, resolved_at: null })
+  // Jueves 10:00 Lima: 15 min habiles de respuesta vencen a las 10:15.
+  const REABRE = new Date('2026-01-01T15:00:00Z')
+  const PLAZOS = { first_response_minutes: 15, resolution_minutes: 240 }
+  const porManual = (o = {}) => cerrado({
+    manual_answer: 'RESUELTO', manual_answered_at: AHORA, first_response_at: AHORA, ...o
+  })
+
+  it('sin agente (lo cerró el manual antes del reparto): ABIERTO, sin primera respuesta y plazo nuevo', () => {
+    expect(reopenByReporter(porManual({ assigned_to_id: null }), 10, REABRE, PLAZOS)).toEqual({
+      status: 'ABIERTO',
+      first_response_at: null,
+      resolved_at: null,
+      first_response_due_at: new Date('2026-01-01T15:15:00Z')
+    })
+  })
+
+  it('con agente pero cerrado por el manual: tampoco cuenta como respondido', () => {
+    expect(reopenByReporter(porManual(), 10, REABRE, PLAZOS))
+      .toMatchObject({ status: 'ABIERTO', first_response_at: null })
+  })
+
+  it('un "No, sigo necesitando ayuda" no es respuesta del manual', () => {
+    expect(respondioElManual(porManual({ manual_answer: 'NO_RESUELTO' }))).toBe(false)
+    expect(reopenByReporter(porManual({ manual_answer: 'NO_RESUELTO' }), 10, REABRE, PLAZOS))
+      .toEqual({ status: 'EN_PROGRESO', first_response_at: AHORA, resolved_at: null })
+  })
+
+  it('el agente que reabre un ticket cerrado por el manual da la primera respuesta ahora', () => {
+    expect(nextStatus(porManual(), 99, 'EN_PROGRESO', REABRE).first_response_at).toBe(REABRE)
   })
 
   it('otro usuario no puede, aunque sea el agente asignado', () => {
@@ -226,26 +255,68 @@ describe('pickAgent', () => {
 describe('assertReassignable', () => {
   const destino = (o = {}) => ({ user_id: 7, active: 'Y', es_agente: true, carga_activa: 0, ...o })
 
+  // ticket() lo atiende el 99: es el unico que puede soltarlo.
   it('acepta un destino valido', () => {
-    expect(assertReassignable(ticket(), destino(), 7)).toBe(true)
+    expect(assertReassignable(ticket(), destino(), 7, 99)).toBe(true)
+  })
+
+  it('sin dueño, cualquier agente puede asignarlo', () => {
+    expect(assertReassignable(ticket({ assigned_to_id: null }), destino(), 7, 42)).toBe(true)
+  })
+
+  it('con dueño, otro agente no se lo puede llevar ni pasarlo a un tercero', () => {
+    const delOtro = ticket({ asignado: 'Fernando' })
+    expect(() => assertReassignable(delOtro, destino({ user_id: 42 }), 42, 42)).toThrow(/Solo Fernando/)
+    expect(() => assertReassignable(delOtro, destino(), 7, 42)).toThrow(ForbiddenError)
   })
 
   it('rechaza un ticket cerrado', () => {
-    expect(() => assertReassignable(ticket({ status: 'CERRADO' }), destino(), 7)).toThrow(/cerrado/i)
+    expect(() => assertReassignable(ticket({ status: 'CERRADO' }), destino(), 7, 99)).toThrow(/cerrado/i)
   })
 
   it('rechaza reasignar al mismo', () => {
-    expect(() => assertReassignable(ticket({ assigned_to_id: 7 }), destino(), 7)).toThrow(/ya está asignado/i)
+    expect(() => assertReassignable(ticket({ assigned_to_id: 7 }), destino(), 7, 7)).toThrow(/ya está asignado/i)
   })
 
   it('rechaza a un usuario desactivado o que no es agente', () => {
-    expect(() => assertReassignable(ticket(), destino({ active: 'N' }), 7)).toThrow(/no puede recibir/i)
-    expect(() => assertReassignable(ticket(), destino({ es_agente: false }), 7)).toThrow(/no puede recibir/i)
-    expect(() => assertReassignable(ticket(), null, 7)).toThrow(/no puede recibir/i)
+    expect(() => assertReassignable(ticket(), destino({ active: 'N' }), 7, 99)).toThrow(/no puede recibir/i)
+    expect(() => assertReassignable(ticket(), destino({ es_agente: false }), 7, 99)).toThrow(/no puede recibir/i)
+    expect(() => assertReassignable(ticket(), null, 7, 99)).toThrow(/no puede recibir/i)
   })
 
   it('rechaza a quien ya tiene tickets activos', () => {
-    expect(() => assertReassignable(ticket(), destino({ carga_activa: 1 }), 7)).toThrow(/activos/i)
+    expect(() => assertReassignable(ticket(), destino({ carga_activa: 1 }), 7, 99)).toThrow(/activos/i)
+  })
+})
+
+describe('un dueño a la vez', () => {
+  const admin = { canManage: true }
+
+  it('si lo atiende otro agente, 409 con su nombre (no un 403 generico)', () => {
+    const delOtro = ticket({ assigned_to_id: 99, asignado: 'Fernando' })
+    expect(() => assertNoEsDeOtro(delOtro, 42)).toThrow(/ya lo atiende Fernando/)
+    try { assertNoEsDeOtro(delOtro, 42) } catch (err) { expect(err.statusCode).toBe(409) }
+  })
+
+  it('el dueño o un ticket sin dueño pasan', () => {
+    expect(assertNoEsDeOtro(ticket(), 99)).toBeTruthy()
+    expect(assertNoEsDeOtro(ticket({ assigned_to_id: null }), 42)).toBeTruthy()
+  })
+
+  it('reasignar: sin dueño cualquier agente, con dueño solo el dueño, cerrado nadie', () => {
+    expect(canReassignOf(ticket({ assigned_to_id: null }), admin, 42)).toBe(true)
+    expect(canReassignOf(ticket(), admin, 99)).toBe(true)
+    expect(canReassignOf(ticket(), admin, 42)).toBe(false)
+    expect(canReassignOf(ticket({ status: 'CERRADO' }), admin, 99)).toBe(false)
+    expect(canReassignOf(ticket(), { canManage: false }, 99)).toBe(false)
+  })
+})
+
+describe('eventoDeTransicion', () => {
+  it('nombra el evento de la bitacora de cada cambio de estado', () => {
+    expect(eventoDeTransicion('ABIERTO', 'EN_PROGRESO')).toBe('TOMADO')
+    expect(eventoDeTransicion('EN_PROGRESO', 'CERRADO')).toBe('RESUELTO')
+    expect(eventoDeTransicion('CERRADO', 'EN_PROGRESO')).toBe('REABIERTO')
   })
 })
 
@@ -317,6 +388,32 @@ describe('computeDueDates', () => {
   })
 })
 
+describe('búsqueda y ids', () => {
+  it('reconoce un número de ticket con o sin ceros y #', () => {
+    expect(ticketIdDeBusqueda('42')).toBe(42)
+    expect(ticketIdDeBusqueda('00042')).toBe(42)
+    expect(ticketIdDeBusqueda(' #00042 ')).toBe(42)
+  })
+
+  it('texto, cero o un número fuera de rango no son un id', () => {
+    expect(ticketIdDeBusqueda('no abre el ERP')).toBeNull()
+    expect(ticketIdDeBusqueda('0')).toBeNull()
+    expect(ticketIdDeBusqueda('9999999999')).toBeNull()
+    expect(ticketIdDeBusqueda('')).toBeNull()
+  })
+
+  it('los comodines de LIKE se buscan como texto', () => {
+    expect(escaparLike('50%_off\\')).toBe('50\\%\\_off\\\\')
+  })
+
+  it('parseTicketId: 400 para vacío, texto, cero, decimal o fuera de int4', () => {
+    expect(parseTicketId('15')).toBe(15)
+    for (const malo of [undefined, '', 'abc', '0', '1.5', '-3', '9999999999']) {
+      expect(() => parseTicketId(malo)).toThrow(/ticket_id inválido/)
+    }
+  })
+})
+
 describe('formatTicketCode', () => {
   it('rellena a cinco digitos y no recorta los mas grandes', () => {
     expect(formatTicketCode(42)).toBe('00042')
@@ -342,6 +439,13 @@ describe('applyFilter y buildKpis', () => {
     expect(applyFilter(todos, 'MIOS', 99).map(t => t.ticket_id)).toEqual([1, 2])
   })
 
+  it('MIOS deja fuera los resueltos: el chip y la lista cuadran', () => {
+    const resuelto = withSla(ticket({ ticket_id: 5, status: 'CERRADO', first_response_at: AHORA, resolved_at: AHORA }), AHORA)
+    const conResuelto = [...todos, resuelto]
+    expect(applyFilter(conResuelto, 'MIOS', 99).map(t => t.ticket_id)).toEqual([1, 2])
+    expect(buildKpis(conResuelto, 99).misAsignados).toBe(2)
+  })
+
   it('SIN_ASIGNAR trae los huerfanos', () => {
     expect(applyFilter(todos, 'SIN_ASIGNAR', 99).map(t => t.ticket_id)).toEqual([3])
   })
@@ -354,11 +458,13 @@ describe('applyFilter y buildKpis', () => {
     expect(buildKpis(todos, 99)).toEqual({ total: 3, misAsignados: 2, sinAsignar: 1, porAsignar: 1, porVencer: 0, vencidos: 1 })
   })
 
-  it('porAsignar deja fuera a los huerfanos que ya no estan abiertos', () => {
+  it('un CERRADO sin agente (cerrado por el manual) no cuenta ni se lista como sin asignar', () => {
     const cerrado = withSla(ticket({ ticket_id: 4, assigned_to_id: null, status: 'CERRADO' }), AHORA)
-    const kpis = buildKpis([...todos, cerrado], 99)
-    expect(kpis.sinAsignar).toBe(2)
+    const conCerrado = [...todos, cerrado]
+    const kpis = buildKpis(conCerrado, 99)
+    expect(kpis.sinAsignar).toBe(1)
     expect(kpis.porAsignar).toBe(1)
+    expect(applyFilter(conCerrado, 'SIN_ASIGNAR', 99).map(t => t.ticket_id)).toEqual([3])
   })
 })
 

@@ -51,6 +51,20 @@ const AGENTES_SQL = `
     JOIN public.rol r ON r.rol_id = ur.rol_id
    WHERE u.active = 'Y' AND r.alias = 'ADMIN'`
 
+// Bitacora de la pestaña "Actividad" (ticket_events). Se escribe en la misma
+// transaccion que el cambio que registra: o quedan los dos, o ninguno.
+// evento = { kind, actorId, fromUserId, toUserId, detail }; actorId null = el
+// sistema (reparto automatico, escalamiento, manual de Slack).
+async function registrarEvento (client, ticketId, evento) {
+  if (!evento) return
+  await client.query(`
+    INSERT INTO public.ticket_events (ticket_id, kind, actor_id, from_user_id, to_user_id, detail)
+    VALUES ($1,$2,$3,$4,$5,$6)`, [
+    ticketId, evento.kind, evento.actorId ?? null, evento.fromUserId ?? null,
+    evento.toUserId ?? null, evento.detail ?? null
+  ])
+}
+
 export class TicketsRepository {
   constructor (db = pool) {
     this.db = db
@@ -62,22 +76,32 @@ export class TicketsRepository {
   //
   // LIMIT 500 alcanza de sobra para soporte interno (decenas de tickets al mes)
   // y evita traer el historico completo a memoria el ano que viene.
-  async list ({ areaRoles = null, userId = null }, { busqueda = null, orden = 'sla' } = {}) {
+  //
+  // busqueda llega ya escapada (escaparLike: % y _ son texto, no comodines) y
+  // busquedaId es el numero de ticket si lo buscado parecia un codigo.
+  //
+  // Orden 'sla': primero lo vivo, por el plazo que esta corriendo (respuesta
+  // si nadie respondio, si no resolucion); los resueltos al final, del mas
+  // nuevo al mas viejo. Antes LEAST de los dos plazos subia los cerrados, que
+  // tienen los vencimientos mas viejos, al tope de la bandeja.
+  async list ({ areaRoles = null, userId = null }, { busqueda = null, busquedaId = null, orden = 'sla' } = {}) {
     const { rows } = await this.db.query(`
       SELECT ${TICKET_SELECT}
       ${TICKET_JOINS}
        WHERE t.active = 'Y'
          AND (${SCOPE_SQL})
          AND ($3::text IS NULL
+              OR t.ticket_id = $5::int
               OR t.title ILIKE '%' || $3 || '%'
               OR t.problem ILIKE '%' || $3 || '%'
               OR cu.name ILIKE '%' || $3 || '%')
        ORDER BY
-         CASE WHEN $4 = 'sla' THEN LEAST(
-           COALESCE(t.first_response_due_at, 'infinity'::timestamptz),
-           COALESCE(t.resolution_due_at,     'infinity'::timestamptz)) END ASC NULLS LAST,
+         CASE WHEN $4 = 'sla' THEN t.status = 'CERRADO' END ASC,
+         CASE WHEN $4 = 'sla' AND t.status <> 'CERRADO' THEN
+           CASE WHEN t.first_response_at IS NULL THEN t.first_response_due_at ELSE t.resolution_due_at END
+         END ASC NULLS LAST,
          t.ticket_id DESC
-       LIMIT 500`, [areaRoles, userId, busqueda || null, orden])
+       LIMIT 500`, [areaRoles, userId, busqueda || null, orden, busquedaId])
     return rows
   }
 
@@ -203,21 +227,36 @@ export class TicketsRepository {
   // SET directo, sin COALESCE: nextStatus ya manda el valor final de
   // resolved_at en los tres casos (null al tomar, ahora al resolver, null de
   // nuevo al reabrir). Con COALESCE no se podia limpiar una resolucion previa.
-  async updateStatus (ticketId, { status, first_response_at: firstResponseAt, resolved_at: resolvedAt = null }) {
-    await this.db.query(`
-      UPDATE public.tickets
-         SET status = $2,
-             first_response_at = $3,
-             resolved_at = $4,
-             modification_date = now()
-       WHERE ticket_id = $1`, [ticketId, status, firstResponseAt, resolvedAt])
+  //
+  // first_response_due_at es opcional: solo lo manda reabrir un ticket que
+  // habia "respondido" el manual (plazo de respuesta nuevo desde ahora). En ese
+  // caso el aviso de respuesta vencida se rearma.
+  async updateStatus (ticketId, {
+    status, first_response_at: firstResponseAt, resolved_at: resolvedAt = null,
+    first_response_due_at: firstResponseDueAt = null
+  }, evento = null) {
+    await withTransaction(async (client) => {
+      await client.query(`
+        UPDATE public.tickets
+           SET status = $2,
+               first_response_at = $3,
+               resolved_at = $4,
+               first_response_due_at = COALESCE($5::timestamptz, first_response_due_at),
+               response_alert_sent_at = CASE WHEN $5::timestamptz IS NULL THEN response_alert_sent_at END,
+               modification_date = now()
+         WHERE ticket_id = $1`, [ticketId, status, firstResponseAt, resolvedAt, firstResponseDueAt])
+      await registrarEvento(client, ticketId, evento)
+    })
   }
 
-  async reassign (ticketId, nuevoAsignadoId) {
-    await this.db.query(`
-      UPDATE public.tickets
-         SET assigned_to_id = $2, modification_date = now()
-       WHERE ticket_id = $1`, [ticketId, nuevoAsignadoId])
+  async reassign (ticketId, nuevoAsignadoId, evento = null) {
+    await withTransaction(async (client) => {
+      await client.query(`
+        UPDATE public.tickets
+           SET assigned_to_id = $2, modification_date = now()
+         WHERE ticket_id = $1`, [ticketId, nuevoAsignadoId])
+      await registrarEvento(client, ticketId, evento)
+    })
   }
 
   /**
@@ -284,23 +323,19 @@ export class TicketsRepository {
   // ── Actividad ────────────────────────────────────────────────────────────
 
   /**
-   * Linea de tiempo del ticket, derivada de lo que ya guarda el sistema: las
-   * marcas de la fila (creacion, toma, resolucion, escalamiento, alertas del
-   * SLA) + los comentarios. Sin tabla propia: es una lectura, no un registro.
-   *
-   * Tomar y resolver exigen ser el agente asignado (nextStatus), por eso el
-   * actor de esas marcas es el asignado. ASIGNADO solo se infiere mientras el
-   * ticket sigue ABIERTO y no escalado: ahi la ultima modificacion de la fila
-   * es, por fuerza, la asignacion (manual o del reparto automatico).
+   * Linea de tiempo del ticket. Los cambios de dueño y de estado (asignado,
+   * reasignado, escalado, tomado, resuelto, reabierto) salen de la bitacora
+   * ticket_events, que conserva cada uno con su actor: derivarlos de la fila
+   * los perdia en cuanto el ticket se reabria o cambiaba de agente. El resto
+   * (creacion, alertas del SLA, manual, comentarios) sigue saliendo de lo que
+   * ya guarda la fila, que no se pisa.
    */
   async activity (ticketId) {
     const { rows } = await this.db.query(`
       WITH t AS (
-        SELECT t.*, cu.name AS creador, au.name AS asignado, eu.name AS escalado_desde
+        SELECT t.*, cu.name AS creador
           FROM public.tickets t
           JOIN public.users cu ON cu.user_id = t.created_by_id
-          LEFT JOIN public.users au ON au.user_id = t.assigned_to_id
-          LEFT JOIN public.users eu ON eu.user_id = t.escalated_from_id
          WHERE t.ticket_id = $1
       )
       SELECT * FROM (
@@ -308,33 +343,19 @@ export class TicketsRepository {
                creador AS actor, NULL AS de_usuario, NULL AS a_usuario, NULL AS detalle
           FROM t
         UNION ALL
-        SELECT 'asignado', 'ASIGNADO', modification_date, NULL, NULL, asignado, NULL
-          FROM t
-         WHERE status = 'ABIERTO' AND assigned_to_id IS NOT NULL
-           AND escalated_at IS NULL AND modification_date IS NOT NULL
-        UNION ALL
-        SELECT 'escalado', 'ESCALADO', escalated_at, NULL, escalado_desde, asignado, NULL
-          FROM t WHERE escalated_at IS NOT NULL
+        SELECT 'e' || e.ticket_event_id, e.kind, e.registration_date,
+               ac.name, fu.name, tu.name, e.detail
+          FROM public.ticket_events e
+          LEFT JOIN public.users ac ON ac.user_id = e.actor_id
+          LEFT JOIN public.users fu ON fu.user_id = e.from_user_id
+          LEFT JOIN public.users tu ON tu.user_id = e.to_user_id
+         WHERE e.ticket_id = $1
         UNION ALL
         SELECT 'alerta-respuesta', 'ALERTA_SLA', response_alert_sent_at, NULL, NULL, NULL, 'respuesta'
           FROM t WHERE response_alert_sent_at IS NOT NULL
         UNION ALL
         SELECT 'alerta-resolucion', 'ALERTA_SLA', resolution_alert_sent_at, NULL, NULL, NULL, 'resolucion'
           FROM t WHERE resolution_alert_sent_at IS NOT NULL
-        UNION ALL
-        SELECT 'tomado', 'TOMADO', first_response_at, asignado, NULL, NULL, NULL
-          FROM t WHERE first_response_at IS NOT NULL
-           -- El cierre por el manual tambien sella la primera respuesta, pero
-           -- ningun agente lo tomo: ese instante ya lo cuenta MANUAL_RESPUESTA.
-           AND NOT (manual_answer IN ('RESUELTO', 'SIN_RESPUESTA')
-                    AND first_response_at = manual_answered_at)
-        UNION ALL
-        SELECT 'resuelto', 'RESUELTO', resolved_at,
-               -- Lo cerro el manual (mismo instante que la respuesta), no el agente.
-               CASE WHEN manual_answer IN ('RESUELTO', 'SIN_RESPUESTA') AND resolved_at = manual_answered_at
-                    THEN 'Sistema' ELSE asignado END,
-               NULL, NULL, NULL
-          FROM t WHERE resolved_at IS NOT NULL
         UNION ALL
         SELECT 'manual', 'MANUAL_ENVIADO', manual_sent_at, NULL, NULL, NULL,
                (SELECT d.title FROM public.ticket_documents d WHERE d.ticket_document_id = t.manual_document_id)
@@ -427,10 +448,16 @@ export class TicketsRepository {
   }
 
   async applyEscalation (ticketId, nuevoAsignadoId, anteriorId, ahora) {
-    await this.db.query(`
-      UPDATE public.tickets
-         SET assigned_to_id = $2, escalated_from_id = $3, escalated_at = $4, modification_date = now()
-       WHERE ticket_id = $1 AND escalated_at IS NULL`, [ticketId, nuevoAsignadoId, anteriorId, ahora])
+    await withTransaction(async (client) => {
+      const { rowCount } = await client.query(`
+        UPDATE public.tickets
+           SET assigned_to_id = $2, escalated_from_id = $3, escalated_at = $4, modification_date = now()
+         WHERE ticket_id = $1 AND escalated_at IS NULL`, [ticketId, nuevoAsignadoId, anteriorId, ahora])
+      // Si otra corrida ya lo escalo, no hubo cambio que registrar.
+      if (rowCount) {
+        await registrarEvento(client, ticketId, { kind: 'ESCALADO', fromUserId: anteriorId, toUserId: nuevoAsignadoId })
+      }
+    })
   }
 
   /**
@@ -526,18 +553,26 @@ export class TicketsRepository {
    * ya no habia pregunta pendiente.
    */
   async resolveByManual (ticketId, answer, ahora) {
+    // El RESUELTO de la bitacora va en la misma sentencia (CTE), y solo si este
+    // UPDATE fue el que lo cerro: si ya estaba CERRADO, ese evento ya existe.
     const { rows } = await this.db.query(`
-      UPDATE public.tickets t
-         SET manual_answer = $2,
-             manual_answered_at = $3,
-             status = 'CERRADO',
-             first_response_at = COALESCE(t.first_response_at, $3),
-             resolved_at = CASE WHEN p.previo = 'CERRADO' THEN t.resolved_at ELSE $3 END,
-             modification_date = now()
-        FROM (SELECT status AS previo FROM public.tickets WHERE ticket_id = $1 FOR UPDATE) p
-       WHERE t.ticket_id = $1 AND t.active = 'Y'
-         AND t.manual_answer IS NULL AND t.manual_deadline_at IS NOT NULL
-      RETURNING p.previo`, [ticketId, answer, ahora])
+      WITH cerrado AS (
+        UPDATE public.tickets t
+           SET manual_answer = $2,
+               manual_answered_at = $3,
+               status = 'CERRADO',
+               first_response_at = COALESCE(t.first_response_at, $3),
+               resolved_at = CASE WHEN p.previo = 'CERRADO' THEN t.resolved_at ELSE $3 END,
+               modification_date = now()
+          FROM (SELECT status AS previo FROM public.tickets WHERE ticket_id = $1 FOR UPDATE) p
+         WHERE t.ticket_id = $1 AND t.active = 'Y'
+           AND t.manual_answer IS NULL AND t.manual_deadline_at IS NOT NULL
+        RETURNING t.ticket_id, p.previo
+      ), evento AS (
+        INSERT INTO public.ticket_events (ticket_id, kind, detail, registration_date)
+        SELECT ticket_id, 'RESUELTO', 'MANUAL', $3 FROM cerrado WHERE previo <> 'CERRADO'
+      )
+      SELECT previo FROM cerrado`, [ticketId, answer, ahora])
     return rows[0]?.previo ?? null
   }
 

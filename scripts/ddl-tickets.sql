@@ -250,3 +250,29 @@ CREATE INDEX IF NOT EXISTS tickets_manual_pendiente_idx
 -- por los documentos previos; las altas nuevas la exigen (validateDocumentInput).
 ALTER TABLE public.ticket_documents
   ADD COLUMN IF NOT EXISTS description varchar(1000);
+
+-- ── Bitacora de la pestana "Actividad" ──────────────────────────────────────
+--
+-- Cambios de dueno y de estado, uno por fila y con su actor. Antes se derivaban
+-- de las marcas de la fila (first_response_at, resolved_at, assigned_to_id...),
+-- que se pisan al reabrir o reasignar: la historia se perdia. actor_id NULL =
+-- el sistema (reparto automatico, escalamiento por SLA, manual de Slack).
+-- detail: AUTOMATICO (ASIGNADO por el cron) o MANUAL (RESUELTO por el manual).
+CREATE TABLE IF NOT EXISTS public.ticket_events (
+  ticket_event_id   serial PRIMARY KEY,
+  ticket_id         integer     NOT NULL REFERENCES public.tickets(ticket_id) ON DELETE CASCADE,
+  kind              varchar(16) NOT NULL,
+  actor_id          integer REFERENCES public.users(user_id),
+  from_user_id      integer REFERENCES public.users(user_id),
+  to_user_id        integer REFERENCES public.users(user_id),
+  detail            varchar(32),
+  registration_date timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT ticket_events_kind_chk
+    CHECK (kind IN ('ASIGNADO', 'REASIGNADO', 'ESCALADO', 'TOMADO', 'RESUELTO', 'REABIERTO'))
+);
+
+CREATE INDEX IF NOT EXISTS ticket_events_ticket_idx
+  ON public.ticket_events (ticket_id, registration_date);
+
+COMMENT ON TABLE public.ticket_events IS
+  'Bitacora de cambios de dueno y estado de cada ticket (pestana Actividad). Se escribe en la misma transaccion que el cambio.';

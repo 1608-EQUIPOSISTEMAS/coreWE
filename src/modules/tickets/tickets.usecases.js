@@ -3,10 +3,10 @@ import { clasificarPrioridad, plazosSla } from './tickets.priority.js'
 import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
   nextStatus, pickAgent, assertReassignable, isTakeable, canChangeStatusOf,
-  canReopenOf, reopenByReporter, areaRolesOf,
+  canReopenOf, reopenByReporter, areaRolesOf, assertNoEsDeOtro, canReassignOf, eventoDeTransicion,
   validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
-  ESTADOS_ACTIVOS, validateDocumentInput
+  ESTADOS_ACTIVOS, validateDocumentInput, parseTicketId, ticketIdDeBusqueda, escaparLike
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
@@ -48,7 +48,9 @@ export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS'
   const scope = ticketScopeFor({ roles, userId })
   const ahora = new Date()
 
-  const rows = (await repo.list(scope, { busqueda, orden })).map(r => ({
+  const texto = String(busqueda ?? '').trim()
+  const consulta = { busqueda: texto ? escaparLike(texto) : null, busquedaId: ticketIdDeBusqueda(texto), orden }
+  const rows = (await repo.list(scope, consulta)).map(r => ({
     ...withSla(r, ahora),
     // Por fila: la bandeja ofrece "Tomar" sin entrar al detalle.
     canChangeStatus: canChangeStatusOf(r, scope, userId)
@@ -94,6 +96,8 @@ async function conDetalle (ticket, scope, userId, ahora = new Date()) {
     // Mover el estado exige ser el agente asignado (o tomar uno sin dueño),
     // no solo ser ADMIN.
     canChangeStatus: canChangeStatusOf(ticket, scope, userId),
+    // Con dueño, solo el dueño lo pasa a otro agente.
+    canReassign: canReassignOf(ticket, scope, userId),
     // Quien reporto puede reabrir lo suyo sin ser ADMIN.
     canReopen: canReopenOf(ticket, userId)
   }
@@ -266,6 +270,8 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
 
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
+  // Un dueño a la vez: si lo atiende otro, 409 con su nombre (no un 403).
+  assertNoEsDeOtro(ticket, userId)
 
   // Se lee ANTES del update: despues de guardar el estado previo ya no esta.
   const reabriendo = ticket.status === 'CERRADO' && estado === 'EN_PROGRESO'
@@ -280,7 +286,7 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   if (reclamando && !(await repo.claim(ticketId, userId))) {
     throw new DomainError('Otro agente acaba de tomar este ticket', { statusCode: 409, code: 'TICKET_YA_TOMADO' })
   }
-  await repo.updateStatus(ticketId, cambios)
+  await repo.updateStatus(ticketId, cambios, { kind: eventoDeTransicion(ticket.status, estado), actorId: userId })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -319,7 +325,10 @@ export async function reopenTicket ({ roles = [], userId = null, ticketId }) {
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
 
-  await repo.updateStatus(ticketId, reopenByReporter(ticket, userId))
+  // Los plazos de su prioridad: si lo habia "respondido" el manual, el reloj
+  // de respuesta vuelve a correr desde ahora (ver reopenByReporter).
+  const cambios = reopenByReporter(ticket, userId, new Date(), plazosSla(ticket.priority))
+  await repo.updateStatus(ticketId, cambios, { kind: 'REABIERTO', actorId: userId })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -340,10 +349,15 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
 
   const destino = await repo.assignableById(nuevoAsignadoId)
-  assertReassignable(ticket, destino, nuevoAsignadoId)
+  assertReassignable(ticket, destino, nuevoAsignadoId, userId)
 
   const anterior = ticket.asignado ?? 'sin asignar'
-  await repo.reassign(ticketId, nuevoAsignadoId)
+  await repo.reassign(ticketId, nuevoAsignadoId, {
+    kind: ticket.assigned_to_id ? 'REASIGNADO' : 'ASIGNADO',
+    actorId: userId,
+    fromUserId: ticket.assigned_to_id,
+    toUserId: nuevoAsignadoId
+  })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -359,8 +373,17 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
 
 // ── Comentarios ────────────────────────────────────────────────────────────
 
-export async function addComment ({ roles = [], userId = null, ticketId, cuerpo, archivos = [] }) {
+export async function addComment ({ roles = [], userId = null, ticketId: ticketIdCrudo, cuerpo, archivos = [] }) {
   const scope = ticketScopeFor({ roles, userId })
+  // Llega como texto del multipart (sin schema AJV): validarlo aca evita el
+  // 500 "invalid input syntax for type integer" de un id vacio o NaN.
+  let ticketId
+  try {
+    ticketId = parseTicketId(ticketIdCrudo)
+  } catch (err) {
+    await removeAttachments(archivos.map(a => a.stored_name))
+    throw err
+  }
   const ticket = await repo.detail(ticketId)
   if (!ticket) {
     await removeAttachments(archivos.map(a => a.stored_name))
@@ -409,7 +432,7 @@ export async function runAutoAssignSweep (ahora = new Date()) {
       continue
     }
 
-    await repo.reassign(ticket.ticket_id, nuevo)
+    await repo.reassign(ticket.ticket_id, nuevo, { kind: 'ASIGNADO', toUserId: nuevo, detail: 'AUTOMATICO' })
     asignados++
     avisarCambio(ticket.ticket_id)
 
