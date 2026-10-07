@@ -16,6 +16,8 @@ const repo = {
   unassignedOlderThan: vi.fn(),
   reassign: vi.fn(),
   updateStatus: vi.fn(),
+  createComment: vi.fn(),
+  comments: vi.fn(async () => []),
   claim: vi.fn(),
   assignableById: vi.fn(),
   attachmentsOf: vi.fn(async () => []),
@@ -324,6 +326,34 @@ describe('listTickets · búsqueda', () => {
 
     await listTickets({ roles: ['ADMIN'], userId: 9, busqueda: '50%' })
     expect(repo.list).toHaveBeenLastCalledWith(expect.anything(), { busqueda: '50\\%', busquedaId: null, orden: 'sla' })
+  })
+})
+
+describe('addComment · aviso por DM', () => {
+  const hiloCon = (id, autor) => [{ ticket_comment_id: id, autor, body: 'x' }]
+
+  beforeEach(() => {
+    // Ticket del 10, lo atiende Fernando (99).
+    repo.detail.mockResolvedValue(ticketFila({ created_by_id: 10, assigned_to_id: 99, asignado: 'Fernando' }))
+    repo.createComment.mockResolvedValue(77)
+  })
+
+  it('si comenta otro admin, el DM dice SU nombre, no el del agente asignado', async () => {
+    repo.comments.mockResolvedValue(hiloCon(77, 'Isma'))
+    await addComment({ roles: ['ADMIN'], userId: 64, ticketId: '1', cuerpo: 'Lo reviso yo' })
+    expect(slack.avisarComentarioNuevo).toHaveBeenCalledWith(expect.anything(), 'Isma', 'Lo reviso yo')
+  })
+
+  it('si comenta el líder del área, el DM lo nombra a él, no a "Soporte"', async () => {
+    repo.comments.mockResolvedValue(hiloCon(77, 'Arleth'))
+    await addComment({ roles: ['LIDER_COMERCIAL'], userId: 2, ticketId: '1', cuerpo: 'Ya lo vi' })
+    expect(slack.avisarComentarioNuevo).toHaveBeenCalledWith(expect.anything(), 'Arleth', 'Ya lo vi')
+  })
+
+  it('lo que escribe el propio solicitante no se replica en su DM', async () => {
+    repo.comments.mockResolvedValue(hiloCon(77, 'Camilo'))
+    await addComment({ roles: ['COMERCIAL'], userId: 10, ticketId: '1', cuerpo: 'Sigue igual' })
+    expect(slack.avisarComentarioNuevo).not.toHaveBeenCalled()
   })
 })
 

@@ -390,24 +390,29 @@ export async function addComment ({ roles = [], userId = null, ticketId: ticketI
     throw new NotFoundError('Ticket no encontrado')
   }
 
+  let texto, comentarioId
   try {
     assertCanComment(ticket, scope, userId)
-    const texto = validateComment(cuerpo)
-    await repo.createComment(ticketId, userId, texto, archivos)
-    avisarCambio(ticketId)
-
-    // Los comentarios del propio solicitante no se replican en su DM: ya los
-    // escribio el.
-    if (ticket.created_by_id !== userId) {
-      const autor = scope.canManage ? (ticket.asignado ?? 'Soporte') : 'Soporte'
-      void slack.avisarComentarioNuevo(ticket, autor, texto)
-    }
+    texto = validateComment(cuerpo)
+    comentarioId = await repo.createComment(ticketId, userId, texto, archivos)
   } catch (err) {
     await removeAttachments(archivos.map(a => a.stored_name))
     throw err
   }
+  avisarCambio(ticketId)
 
-  return repo.comments(ticketId)
+  const hilo = await repo.comments(ticketId)
+
+  // Los comentarios del propio solicitante no se replican en su DM: ya los
+  // escribio el. El DM nombra a QUIEN escribio (sale del hilo recien leido):
+  // antes decia el agente asignado aunque comentara otro admin, y "Soporte"
+  // cuando comentaba el lider del area.
+  if (ticket.created_by_id !== userId) {
+    const autor = hilo.find(c => c.ticket_comment_id === comentarioId)?.autor ?? 'Soporte'
+    void slack.avisarComentarioNuevo(ticket, autor, texto)
+  }
+
+  return hilo
 }
 
 // ── Reparto automatico diferido (lo llama tickets-autoassign.cron.js) ──────
