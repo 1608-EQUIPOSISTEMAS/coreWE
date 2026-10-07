@@ -45,7 +45,10 @@ export const importerPorts = {
   // cat_payment_medium, bank_account_id, transaction_code }], initialPaymentDate,
   // userId }) -> { applied: [n], already: [n], skipped: [{ n, reason }], notImported? }.
   // Marca pagadas las cuotas cobradas segun la hoja FICO (idempotente).
-  applyInstallmentPayments: null
+  applyInstallmentPayments: null,
+  // ({ enrollmentId, registrationDate: 'YYYY-MM-DD', userId }) -> { updated }.
+  // Fija la fecha de inscripcion de la hoja FICO (padre + hijas); el alta sella NOW().
+  setImportedRegistrationDate: null
 }
 
 export function setImporterPorts (ports = {}) {

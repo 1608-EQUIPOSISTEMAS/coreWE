@@ -26,11 +26,17 @@ const H = {
   payment_medium: ['medio de pago'],
   transaction_code: ['n° operacion', 'n operacion', 'numero operacion'],
   payment_date: ['f. pago', 'f pago'],
+  // Fecha de inscripcion (venta). El SP de alta sella NOW(); commitRow la corrige
+  // despues. Sin esta columna se cae a F. PAGO (ver resolveRow).
+  registration_date: ['f. inscripcion', 'f inscripcion', 'f. insc', 'f. insc.', 'f insc', 'fecha inscripcion',
+    'fecha de inscripcion', 'fecha insc', 'fecha insc.', 'f. registro', 'f registro', 'fecha registro', 'fecha de registro'],
   down_payment: ['inicial'],
   ingreso: ['ingreso'],
   saldo: ['saldo'],
   // Observaciones libres. Solo se lee para detectar la GIFT CARD (ver ingest).
   obs: ['obs', 'observacion', 'observaciones'],
+  // Columna K "MOD_MATRICULA". Valor "R" = fila que NO se importa (ver ingest).
+  enrollment_mode: ['mod_ matricula', 'mod_matricula', 'mod matricula', 'mod. matricula'],
   // Columna J: tipo de membresia (WE BLACK / WE GOLD / ...). Con valor = el
   // alumno es miembro y el curso es beneficio (precio 0 legitimo); vacia = no.
   member_type: ['tip_member', 'tip member', 'tipo de miembro', 'tipo miembro', 'membresia'],
@@ -78,9 +84,9 @@ function ingest (wb) {
     cn[n] = findCol(idx, ['c' + n])
   }
 
-  // Detalle de pago por cuota (pestaña "Cuota INS-N"). null = el workbook no la
-  // trae (CSV de una sola pestaña): las cuotas cobradas se registran igual, con
-  // el medio/cuenta de la fila.
+  // Detalle de pago por cuota (pestaña "Cuota INS-N"). Es la UNICA fuente del
+  // pago de las cuotas: null = el workbook no la trae y las filas con cuotas
+  // cobradas quedan en error (no se toma el medio/cuenta de "INS - N").
   const cuotaWs = findInstallmentSheet(wb, ws)
   const detailIndex = cuotaWs ? indexInstallmentDetail(cuotaWs) : null
 
@@ -91,6 +97,9 @@ function ingest (wb) {
     if (!documento) return // sin DNI no es una inscripcion (filas de relleno/totales)
 
     const get = (key) => col[key] ? cellText(row.getCell(col[key]).value) : ''
+    // MOD_MATRICULA "R" = se excluye de la importacion (solo "R" exacto; "RP",
+    // "ACT" o vacia se importan).
+    if (normText(get('enrollment_mode')) === 'r') return
     // GIFT CARD: la hoja NO la resta del precio (es un regalo, no un descuento),
     // asi que deja un SALDO residual por su valor que el alumno no debe. Solo se
     // ignora el saldo cuando CABE en la tarjeta ("GIF CARD S/50" con saldo 43);
@@ -145,15 +154,26 @@ function ingest (wb) {
 
     // Enlaza cada cuota cobrada con su detalle de pago. Los montos de ambas
     // pestañas deben coincidir: si no, es la hoja la que esta mal y se avisa en
-    // vez de adivinar cual vale.
+    // vez de adivinar cual vale. Cuota cobrada sin detalle = error: el pago de
+    // una cuota sale SOLO de "Cuota INS - N", nunca de la fila de "INS - N".
     const installmentErrors = []
     const detail = detailIndex
       ? findInstallmentDetail(detailIndex, get('course_code'), get('edition'), get('email'), get('full_name'), installments)
       : null
+    const hasPaid = installments.some(i => i.paid)
+    if (hasPaid && !detailIndex) {
+      installmentErrors.push('Hay cuotas cobradas pero no se encontro la pestaña "Cuota INS - N" para su detalle de pago.')
+    } else if (hasPaid && !detail) {
+      installmentErrors.push('Cuotas cobradas sin fila en "Cuota INS - N" (no coincide COD + ED + correo/nombre, o hay varias filas y ninguna cuadra en montos).')
+    }
     if (detail) {
       for (const inst of installments) {
+        if (!inst.paid) continue
         const d = detail.get(inst.installment_number)
-        if (!inst.paid || !d) continue
+        if (!d) {
+          installmentErrors.push(`Cuota ${inst.installment_number}: cobrada en "INS - N" pero sin monto en "Cuota INS - N".`)
+          continue
+        }
         if (Math.abs(d.amount - inst.amount) > 0.01) {
           installmentErrors.push(`Cuota ${inst.installment_number}: "Cuota INS - N" dice ${d.amount} y "INS - N" dice ${inst.amount}.`)
           continue
@@ -182,6 +202,7 @@ function ingest (wb) {
         payment_medium: get('payment_medium'),
         transaction_code: get('transaction_code'),
         payment_date: get('payment_date'),
+        registration_date: get('registration_date'),
         down_payment: num(get('down_payment')),
         total_amount: total,
         // Lo efectivamente cobrado segun la hoja. No lo usa el alta (el SP crea
@@ -265,7 +286,7 @@ function indexInstallmentDetail (ws) {
     })
   }
   const first = (name) => headers.indexOf(name)
-  const idCol = { cod: first('cod'), ed: first('ed'), email: first('correo'), name: first('nombres y apellidos') }
+  const idCol = { cod: first('cod'), ed: first('ed'), email: first('correo'), name: first('nombres y apellidos'), currency: first('moneda') }
 
   // El encabezado repite MEDIO DE PAGO/ENTIDAD... en cada bloque, asi que cada
   // campo se busca DENTRO del bloque de su FCn (hasta el siguiente FC). La
@@ -300,7 +321,8 @@ function indexInstallmentDetail (ws) {
         payment_medium: text(b.medium),
         business_entity: text(b.business),
         financial_entity: text(b.financial),
-        transaction_code: text(b.operation)
+        transaction_code: text(b.operation),
+        currency: text(idCol.currency) // MONEDA de esta pestaña: desambigua la cuenta
       })
     }
     const keys = [
@@ -381,6 +403,9 @@ async function resolveRow (raw, ctx, installments = []) {
     saved_money: raw.down_payment || 0,
     transaction_code: raw.transaction_code || null,
     payment_date: normalizeDate(raw.payment_date),
+    // Fecha real de la venta: F. INSCRIPCION o, si la hoja no la trae, F. PAGO
+    // (la inicial se paga el dia de la inscripcion). null = se queda la del alta.
+    registration_date: normalizeDate(raw.registration_date) || normalizeDate(raw.payment_date),
     observations: isMembershipBenefit
       ? `Importacion masiva FICO (hoja) - beneficio de membresia ${memberType}`
       : isScholarship
@@ -473,7 +498,16 @@ async function resolveRow (raw, ctx, installments = []) {
   errors.push(...(raw._installment_errors || []))
   const paid = schedule.filter(c => c.paid && Number(c.amount) > 0)
   if (paid.length > 0) {
-    data.installment_payments = paid.map(c => installmentPayment(c, raw, cat, ctx, beId))
+    data.installment_payments = paid.map(c => installmentPayment(c, c.payment || {}, c.payment?.currency, cat, ctx))
+  } else if (raw.payment_way === 'contado' && Number(raw.total_amount) > 0 &&
+             Number(raw.ingreso) >= Number(raw.total_amount) - 0.01) {
+    // Contado SALDADO: el SP crea una sola cuota (numero 1) sellada con NOW() y sin
+    // fila en payments. Se registra el pago con el medio/cuenta de la fila y la
+    // cuota vence el dia del pago (F. PAGO, o F. INSCRIPCION si no hay).
+    const fecha = raw.payment_date || raw.registration_date
+    const fila = { payment_date: fecha, payment_medium: raw.payment_medium, business_entity: raw.business_entity, financial_entity: raw.financial_entity }
+    const pago = installmentPayment({ installment_number: 1, amount: Number(raw.total_amount), due_date: fecha }, fila, raw.currency, cat, ctx)
+    data.installment_payments = [{ ...pago, due_date: normalizeDate(fecha) }]
   }
 
   // --- ED -> edicion + programa via puerto -----------------------------------
@@ -611,28 +645,20 @@ function matchBankAccount (accounts, bankText, businessEntityId, currencyRaw) {
   return candidates.length === 1 ? Number(candidates[0].account_id) : null
 }
 
-// Pago de una cuota cobrada. Con detalle de "Cuota INS - N" usa el de esa cuota;
-// sin detalle, el medio/empresa/banco de la fila (los de la inicial: el alumno
-// suele pagar todo por la misma via) y sin N° de operacion. Mercado Pago llega en
-// la columna ENTIDAD FINANCIERA con MEDIO vacio: de ahi sale el medio, y como no
-// es un banco no resuelve cuenta.
-//
-// Detalle con fecha y monto pero SIN medio/empresa/banco (bloque en blanco) =
-// mismo caso que sin detalle: se toman los de la fila.
-function installmentPayment (inst, raw, cat, ctx, rowBusinessEntityId) {
-  const d = inst.payment || {}
-  const blank = !d.payment_medium && !d.business_entity && !d.financial_entity
-  const src = blank
-    ? { ...d, payment_medium: raw.payment_medium, business_entity: raw.business_entity, financial_entity: raw.financial_entity }
-    : d
-  const businessEntityId = matchBusinessEntity(cat, src.business_entity) || rowBusinessEntityId || null
+// Pago de una cuota. `src` = de donde sale el pago: para las cuotas cobradas, SU
+// bloque de "Cuota INS - N" (nunca la fila de "INS - N"; un bloque sin medio/
+// empresa/banco se registra sin ellos); para el contado saldado, la fila. Mercado
+// Pago llega en la columna ENTIDAD FINANCIERA con MEDIO vacio: de ahi sale el
+// medio, y como no es un banco no resuelve cuenta.
+function installmentPayment (inst, src, currency, cat, ctx) {
+  const businessEntityId = matchBusinessEntity(cat, src.business_entity)
   return {
     installment_number: Number(inst.installment_number),
     amount: Number(inst.amount),
-    payment_date: normalizeDate(src.payment_date || inst.due_date),
+    payment_date: normalizeDate(src.payment_date),
     cat_payment_medium: catByText(cat, 'we_payment_medium', src.payment_medium) ||
       catByText(cat, 'we_payment_medium', src.financial_entity),
-    bank_account_id: matchBankAccount(ctx?.bankAccounts || [], bankNameFor(src.financial_entity), businessEntityId, raw.currency),
+    bank_account_id: matchBankAccount(ctx?.bankAccounts || [], bankNameFor(src.financial_entity), businessEntityId, currency),
     transaction_code: src.transaction_code || null
   }
 }
@@ -808,6 +834,7 @@ async function commitRow (data, { userId }) {
   // completa las inscripciones que se importaron antes con las cuotas pendientes
   // (el puerto es idempotente y solo toca inscripciones de importacion masiva).
   const pay = await applyPayments(parentId, data, userId)
+  await applyRegistrationDate(parentId, data, userId)
 
   if (resp?.result === 1 && resp.enrollment_id) {
     // Si fallaron hijas, el paquete no tiene estructura o alguna cuota cobrada no
@@ -855,6 +882,18 @@ async function applyPayments (enrollmentId, data, userId) {
     parts.push(` ADVERTENCIA: cuota(s) cobrada(s) sin registrar: ${r.skipped.map(s => `cuota ${s.n} (${s.reason})`).join('; ')}.`)
   }
   return { note: parts.join(''), failed: r.skipped.length > 0 }
+}
+
+// El SP de alta sella registration_date con NOW(): se alinea con la fecha de la
+// hoja (padre + hijas). Tambien sobre el duplicado, para corregir imports previos.
+// Un fallo aqui no invalida la fila (la inscripcion y sus pagos ya estan bien).
+async function applyRegistrationDate (enrollmentId, data, userId) {
+  if (!enrollmentId || !data.registration_date || !importerPorts.setImportedRegistrationDate) return
+  try {
+    await importerPorts.setImportedRegistrationDate({ enrollmentId, registrationDate: data.registration_date, userId })
+  } catch (err) {
+    console.error('[importer] No se pudo fijar la fecha de inscripcion', enrollmentId, err.message)
+  }
 }
 
 // Inscripcion de la MEMBRESIA (WE BLACK/GOLD/...) a partir de la fila de curso ya
