@@ -37,7 +37,16 @@ const truncar = (texto, limite = LIMITE_TEXTO_BLOQUE) =>
   (texto.length > limite ? `${texto.slice(0, limite - 1)}…` : texto)
 
 const codigo = n => String(n ?? '').padStart(5, '0')
-const fechaPe = d => new Date(d).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' })
+// Hora de Lima explicita: el contenedor corre en UTC y sin timeZone las horas
+// salian 5 h adelantadas. Mismo criterio que HORARIO_HABIL de sla-clock.
+const fechaPe = d => new Date(d).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Lima' })
+
+// Texto del usuario (titulo, cuerpo de un comentario) y nombres: Slack lee
+// `<!channel>`, `<!here>` o `<@U123>` como menciones, asi que un titulo asi
+// notificaba al canal entero. Se escapan &, < y > (los unicos que Slack
+// interpreta) en la entrada de cada aviso publico, no en cada plantilla.
+const esc = texto => (texto == null ? texto : String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+const seguro = t => ({ ...t, title: esc(t.title), asignado: esc(t.asignado) })
 
 export const slackWebhookConfigurado = () => Boolean(process.env.SLACK_WEBHOOK_URL)
 export const slackBotConfigurado = () => Boolean(process.env.SLACK_BOT_TOKEN)
@@ -214,35 +223,35 @@ function payloadEscalado (t, agenteAnterior, motivo) {
 // ── Notificaciones al canal ────────────────────────────────────────────────
 
 export function notificarTicketCreado (ticket) {
-  return enviarWebhook(payloadCreado(ticket), `ticket #${ticket.ticket_id} (creado)`)
+  return enviarWebhook(payloadCreado(seguro(ticket)), `ticket #${ticket.ticket_id} (creado)`)
 }
 
 export function notificarTicketCerrado (ticket) {
-  return enviarWebhook(payloadCerrado(ticket), `ticket #${ticket.ticket_id} (cerrado)`)
+  return enviarWebhook(payloadCerrado(seguro(ticket)), `ticket #${ticket.ticket_id} (cerrado)`)
 }
 
 export function notificarEsperandoAsignacion (ticket, minutos) {
-  return enviarWebhook(payloadEsperandoAsignacion(ticket, minutos), `ticket #${ticket.ticket_id} (esperando asignación)`)
+  return enviarWebhook(payloadEsperandoAsignacion(seguro(ticket), minutos), `ticket #${ticket.ticket_id} (esperando asignación)`)
 }
 
 export function notificarTicketTomado (ticket, agente) {
-  return enviarWebhook(payloadTomado(ticket, agente), `ticket #${ticket.ticket_id} (tomado)`)
+  return enviarWebhook(payloadTomado(seguro(ticket), esc(agente)), `ticket #${ticket.ticket_id} (tomado)`)
 }
 
 // `reabiertoPor` ya viene rotulado desde el usecase ("Nombre (solicitante)" o
 // "Nombre (admin)"): el adaptador no sabe de roles.
 export function notificarTicketReabierto (ticket, reabiertoPor) {
-  return enviarWebhook(payloadReabierto(ticket, reabiertoPor), `ticket #${ticket.ticket_id} (reabierto)`)
+  return enviarWebhook(payloadReabierto(seguro(ticket), esc(reabiertoPor)), `ticket #${ticket.ticket_id} (reabierto)`)
 }
 
 export function notificarSlaIncumplido (ticket, reloj, venceEn) {
-  return enviarWebhook(payloadSla(ticket, reloj, venceEn), `sla ${reloj} #${ticket.ticket_id}`)
+  return enviarWebhook(payloadSla(seguro(ticket), reloj, venceEn), `sla ${reloj} #${ticket.ticket_id}`)
 }
 
 // Se avisa por nombre y no con @mencion: el ERP no guarda un mapeo
 // usuario -> ID de Slack, solo el email.
 export function notificarTicketEscalado (ticket, agenteAnterior, motivo) {
-  return enviarWebhook(payloadEscalado(ticket, agenteAnterior, motivo), `escalamiento #${ticket.ticket_id}`)
+  return enviarWebhook(payloadEscalado(seguro(ticket), esc(agenteAnterior), esc(motivo)), `escalamiento #${ticket.ticket_id}`)
 }
 
 // ── Web API ────────────────────────────────────────────────────────────────
@@ -535,7 +544,7 @@ export function construirMensajeDeApertura (ticket, abiertos = []) {
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Prioridad:*\n${emoji} ${ticket.priority}` },
-        { type: 'mrkdwn', text: `*Asignado a:*\n${ticket.asignado ?? 'sin asignar'}` }
+        { type: 'mrkdwn', text: `*Asignado a:*\n${esc(ticket.asignado) ?? 'sin asignar'}` }
       ]
     }
   ]
@@ -616,7 +625,7 @@ async function avisarAlSolicitante (ticket, texto, blocks) {
 
 /** Primera senal de vida que espera el solicitante: alguien tomo el ticket. */
 export function avisarTicketTomado (ticket, agente) {
-  const texto = `👀 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" está siendo revisado por *${agente}*.`
+  const texto = `👀 Tu ticket #${codigo(ticket.ticket_id)} "${esc(ticket.title)}" está siendo revisado por *${esc(agente)}*.`
   return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
 }
 
@@ -627,13 +636,13 @@ export function avisarTicketTomado (ticket, agente) {
  */
 export function avisarTicketReasignado (ticket, agente, { primeraAsignacion = false } = {}) {
   const accion = primeraAsignacion ? 'fue asignado a' : 'fue reasignado a'
-  const texto = `🔄 Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" ${accion} *${agente}*, quien lo revisará.`
+  const texto = `🔄 Tu ticket #${codigo(ticket.ticket_id)} "${esc(ticket.title)}" ${accion} *${esc(agente)}*, quien lo revisará.`
   return avisarAlSolicitante(ticket, texto, [{ type: 'section', text: { type: 'mrkdwn', text: texto } }])
 }
 
 /** Confirmacion de cierre para quien reporto. Devuelve si llego. */
 export async function avisarTicketResuelto (ticket, agente) {
-  const texto = `✅ Tu ticket #${codigo(ticket.ticket_id)} "${ticket.title}" fue resuelto por *${agente}*.`
+  const texto = `✅ Tu ticket #${codigo(ticket.ticket_id)} "${esc(ticket.title)}" fue resuelto por *${esc(agente)}*.`
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: texto } }]
   const urlDetalle = enlaceAlTicket(ticket.ticket_id)
   blocks.push({
@@ -649,9 +658,10 @@ export async function avisarTicketResuelto (ticket, agente) {
 
 /** Replica en el DM lo que escribieron en el ticket. */
 export function avisarComentarioNuevo (ticket, autor, cuerpo) {
-  const encabezado = `💬 *${autor}* comentó en tu ticket #${codigo(ticket.ticket_id)}:`
-  return avisarEnDm(ticket, `${encabezado} ${cuerpo}`, [
+  const encabezado = `💬 *${esc(autor)}* comentó en tu ticket #${codigo(ticket.ticket_id)}:`
+  const texto = esc(cuerpo)
+  return avisarEnDm(ticket, `${encabezado} ${texto}`, [
     { type: 'section', text: { type: 'mrkdwn', text: encabezado } },
-    { type: 'section', text: { type: 'mrkdwn', text: `>${truncar(cuerpo).replace(/\n/g, '\n>')}` } }
+    { type: 'section', text: { type: 'mrkdwn', text: `>${truncar(texto).replace(/\n/g, '\n>')}` } }
   ])
 }

@@ -6,7 +6,7 @@ import {
   canReopenOf, reopenByReporter, areaRolesOf, assertNoEsDeOtro, canReassignOf, eventoDeTransicion,
   validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
-  ESTADOS_ACTIVOS, validateDocumentInput, parseTicketId, ticketIdDeBusqueda, escaparLike
+  ESTADOS_ACTIVOS, validateDocumentInput, parseTicketId, ticketIdDeBusqueda, escaparLike, ID_MAX
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
@@ -429,25 +429,43 @@ export async function runAutoAssignSweep (ahora = new Date()) {
 
   let asignados = 0
   for (const ticket of pendientes) {
-    const nuevo = pickAgent(await repo.agentCandidates())
-    if (nuevo === null) {
-      // Sin agentes: se reintenta en la proxima corrida, por si alguien se
-      // activa mientras tanto.
-      console.warn(`[tickets-autoassign] ticket #${formatTicketCode(ticket.ticket_id)} sigue sin agentes disponibles`)
-      continue
-    }
-
-    await repo.reassign(ticket.ticket_id, nuevo, { kind: 'ASIGNADO', toUserId: nuevo, detail: 'AUTOMATICO' })
-    asignados++
-    avisarCambio(ticket.ticket_id)
-
-    const actualizado = await repo.detail(ticket.ticket_id)
-    // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
-    // noticia (el ticket tiene dueño), sin importar por que camino llego.
-    void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
-    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', { primeraAsignacion: true })
+    if (await aislado('[tickets-autoassign]', ticket.ticket_id, () => asignarUno(ticket))) asignados++
   }
   return asignados
+}
+
+async function asignarUno (ticket) {
+  const nuevo = pickAgent(await repo.agentCandidates())
+  if (nuevo === null) {
+    // Sin agentes: se reintenta en la proxima corrida, por si alguien se
+    // activa mientras tanto.
+    console.warn(`[tickets-autoassign] ticket #${formatTicketCode(ticket.ticket_id)} sigue sin agentes disponibles`)
+    return false
+  }
+
+  await repo.reassign(ticket.ticket_id, nuevo, { kind: 'ASIGNADO', toUserId: nuevo, detail: 'AUTOMATICO' })
+  avisarCambio(ticket.ticket_id)
+
+  const actualizado = await repo.detail(ticket.ticket_id)
+  // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
+  // noticia (el ticket tiene dueño), sin importar por que camino llego.
+  void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
+  void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', { primeraAsignacion: true })
+  return true
+}
+
+/**
+ * Corre el trabajo de UN ticket del barrido sin dejar que su error frene a los
+ * demas: se loguea y la proxima corrida lo reintenta. Antes un solo ticket con
+ * problemas (o un corte de la BD a mitad) dejaba sin procesar el resto.
+ */
+async function aislado (etiqueta, ticketId, trabajo) {
+  try {
+    return await trabajo()
+  } catch (err) {
+    console.error(`${etiqueta} ticket #${formatTicketCode(ticketId)}: ${err.message}`)
+    return false
+  }
 }
 
 // ── Barrido del SLA (lo llama el cron) ─────────────────────────────────────
@@ -467,12 +485,16 @@ export async function runAutoAssignSweep (ahora = new Date()) {
 export async function runSlaSweep (ahora = new Date()) {
   const resultado = { escalados: 0, alertas: 0 }
 
+  // Cada pasada por su lado: que falle el escalamiento (la consulta de
+  // candidatos, por ejemplo) no puede dejar sin enviar las alertas.
   if (process.env.TICKETS_SLA_ESCALATION !== 'false') {
     resultado.escalados = await barrerEscalamientos(ahora)
+      .catch(err => { console.error('[tickets-sla] escalamiento:', err.message); return 0 })
   }
   // Sin webhook no hay a donde avisar: recorrer la BD para nada.
   if (slack.slackWebhookConfigurado()) {
     resultado.alertas = await barrerAlertas(ahora)
+      .catch(err => { console.error('[tickets-sla] alertas:', err.message); return 0 })
   }
 
   return resultado
@@ -484,51 +506,61 @@ async function barrerEscalamientos (ahora) {
 
   let escalados = 0
   for (const ticket of candidatos) {
-    const reloj = evaluarReloj(ticket.first_response_due_at, ticket.first_response_at, ticket.registration_date, ahora)
-    if (reloj.estado !== 'POR_VENCER' && reloj.estado !== 'VENCIDO') continue
-
-    const nuevo = pickAgent(await repo.agentCandidates(), ticket.assigned_to_id)
-    if (nuevo === null) {
-      // Un solo agente en el sistema: no hay a quien pasarselo. Se loguea y se
-      // reintenta en la proxima corrida, por si alguien mas entra de guardia.
-      console.warn(`[tickets-sla] ticket #${formatTicketCode(ticket.ticket_id)} sin otro agente disponible para escalar`)
-      continue
-    }
-
-    // El nombre del agente anterior se lee ANTES del update: despues la fila ya
-    // tiene al nuevo y el aviso diria que se lo reasignaron a si mismo.
-    const anterior = (await repo.detail(ticket.ticket_id))?.asignado ?? 'sin asignar'
-    await repo.applyEscalation(ticket.ticket_id, nuevo, ticket.assigned_to_id, ahora)
-    escalados++
-    avisarCambio(ticket.ticket_id)
-
-    const actualizado = await repo.detail(ticket.ticket_id)
-    void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')
-    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte')
+    if (await aislado('[tickets-sla]', ticket.ticket_id, () => escalarUno(ticket, ahora))) escalados++
   }
   return escalados
+}
+
+async function escalarUno (ticket, ahora) {
+  const reloj = evaluarReloj(ticket.first_response_due_at, ticket.first_response_at, ticket.registration_date, ahora)
+  if (reloj.estado !== 'POR_VENCER' && reloj.estado !== 'VENCIDO') return false
+
+  const nuevo = pickAgent(await repo.agentCandidates(), ticket.assigned_to_id)
+  if (nuevo === null) {
+    // Un solo agente en el sistema: no hay a quien pasarselo. Se loguea y se
+    // reintenta en la proxima corrida, por si alguien mas entra de guardia.
+    console.warn(`[tickets-sla] ticket #${formatTicketCode(ticket.ticket_id)} sin otro agente disponible para escalar`)
+    return false
+  }
+
+  // El nombre del agente anterior se lee ANTES del update: despues la fila ya
+  // tiene al nuevo y el aviso diria que se lo reasignaron a si mismo.
+  const anterior = (await repo.detail(ticket.ticket_id))?.asignado ?? 'sin asignar'
+  await repo.applyEscalation(ticket.ticket_id, nuevo, ticket.assigned_to_id, ahora)
+  avisarCambio(ticket.ticket_id)
+
+  const actualizado = await repo.detail(ticket.ticket_id)
+  void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')
+  void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte')
+  return true
 }
 
 async function barrerAlertas (ahora) {
   const pendientes = await repo.overdueClocks(ahora)
   let enviadas = 0
-
   for (const ticket of pendientes) {
-    const relojes = [
-      { nombre: 'respuesta', vence: ticket.first_response_due_at, cumplido: ticket.first_response_at, avisado: ticket.response_alert_sent_at },
-      { nombre: 'resolucion', vence: ticket.resolution_due_at, cumplido: ticket.resolved_at, avisado: ticket.resolution_alert_sent_at }
-    ]
+    enviadas += await aislado('[tickets-sla] alerta', ticket.ticket_id, () => alertarUno(ticket, ahora)) || 0
+  }
+  return enviadas
+}
 
-    for (const reloj of relojes) {
-      if (!reloj.vence || reloj.cumplido || reloj.avisado) continue
-      if (new Date(reloj.vence) >= ahora) continue
+/** Avisa los relojes vencidos de un ticket. Devuelve cuantos avisos salieron. */
+async function alertarUno (ticket, ahora) {
+  const relojes = [
+    { nombre: 'respuesta', vence: ticket.first_response_due_at, cumplido: ticket.first_response_at, avisado: ticket.response_alert_sent_at },
+    { nombre: 'resolucion', vence: ticket.resolution_due_at, cumplido: ticket.resolved_at, avisado: ticket.resolution_alert_sent_at }
+  ]
 
-      const llego = await slack.notificarSlaIncumplido(ticket, reloj.nombre, reloj.vence)
-      if (!llego) continue
+  let enviadas = 0
+  for (const reloj of relojes) {
+    if (!reloj.vence || reloj.cumplido || reloj.avisado) continue
+    if (new Date(reloj.vence) >= ahora) continue
 
-      await repo.sealAlert(ticket.ticket_id, reloj.nombre, ahora)
-      enviadas++
-    }
+    const llego = await slack.notificarSlaIncumplido(ticket, reloj.nombre, reloj.vence)
+    if (!llego) continue
+
+    await repo.sealAlert(ticket.ticket_id, reloj.nombre, ahora)
+    enviadas++
   }
   return enviadas
 }
@@ -602,7 +634,11 @@ export async function consultarAvanceDesdeSlack ({ slackUserId, ticketRef = null
   const ahora = new Date()
 
   if (ticketRef) {
-    const fila = await repo.detail(ticketRef)
+    // Lo extrae la IA: un 2.5 o un numero gigante hacian fallar la consulta y
+    // el usuario recibia un error en vez de "no lo encontre".
+    const id = Number(ticketRef)
+    if (!Number.isInteger(id) || id < 1 || id > ID_MAX) return { ticket: null, activos: [] }
+    const fila = await repo.detail(id)
     // Mismo criterio que canRead para un scope OWN, escrito aca porque el
     // usuario de Slack no llega con sus roles cargados.
     if (!fila || fila.created_by_id !== usuario.user_id) return { ticket: null, activos: [] }

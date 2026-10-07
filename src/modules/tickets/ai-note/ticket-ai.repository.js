@@ -3,7 +3,10 @@ import { pool } from '../../../shared/db/pool.js'
 export async function fetchNote (ticketId, db = pool) {
   const { rows } = await db.query(`
     SELECT ticket_id, fingerprint, payload, model,
-           to_char(generated_at, 'YYYY-MM-DD HH24:MI') AS generated_at
+           -- generated_at es la hora local de la sesion (LOCALTIMESTAMP), y la
+           -- BD corre en UTC: se pasa a Lima o "Generado el" salia 5 h adelantado.
+           to_char((generated_at AT TIME ZONE current_setting('TimeZone')) AT TIME ZONE 'America/Lima',
+                   'YYYY-MM-DD HH24:MI') AS generated_at
       FROM public.ai_ticket_notes WHERE ticket_id = $1`, [ticketId])
   return rows[0] ?? null
 }

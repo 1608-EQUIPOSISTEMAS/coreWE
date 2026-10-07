@@ -211,10 +211,10 @@ async function textoDeAvance (slackUserId, ticketRef) {
 
   if (ticket) {
     const lineas = [
-      `*Ticket #${formatTicketCode(ticket.ticket_id)}* — ${ticket.title}`,
+      `*Ticket #${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}`,
       `*Estado:* ${ESTADO_LEGIBLE[ticket.status] ?? ticket.status}`,
       `*Prioridad:* ${ticket.priority}`,
-      `*Atiende:* ${ticket.asignado ?? 'aún sin asignar'}`
+      `*Atiende:* ${escaparSlack(ticket.asignado ?? 'aún sin asignar')}`
     ]
     if (ticket.comentarios > 0) {
       lineas.push(`*Comentarios:* ${ticket.comentarios} (se leen y responden en el ERP)`)

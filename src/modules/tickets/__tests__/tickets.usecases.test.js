@@ -50,7 +50,7 @@ vi.mock('../../../shared/adapters/slack/tickets-slack.adapter.js', () => slack)
 
 const {
   createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack, setTicketsPorts,
-  changeStatus, reassign, reopenTicket, listTickets, addComment
+  changeStatus, reassign, reopenTicket, listTickets, addComment, consultarAvanceDesdeSlack
 } = await import('../tickets.usecases.js')
 
 const publicarCambio = vi.fn().mockResolvedValue(undefined)
@@ -191,6 +191,21 @@ describe('runAutoAssignSweep', () => {
     expect(repo.reassign).not.toHaveBeenCalled()
   })
 
+  it('si falla un ticket, los demás de la corrida se reparten igual', async () => {
+    repo.unassignedOlderThan.mockResolvedValue([
+      ticketFila({ ticket_id: 1, assigned_to_id: null }),
+      ticketFila({ ticket_id: 2, assigned_to_id: null })
+    ])
+    repo.agentCandidates.mockResolvedValue([agente(7)])
+    repo.reassign.mockRejectedValueOnce(new Error('conexión perdida'))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    expect(await runAutoAssignSweep(AHORA)).toBe(1)
+    expect(repo.reassign).toHaveBeenCalledTimes(2)
+    expect(repo.reassign).toHaveBeenLastCalledWith(2, 7, expect.anything())
+    errorLog.mockRestore()
+  })
+
   it('sin candidatos vencidos no consulta agentes', async () => {
     repo.unassignedOlderThan.mockResolvedValue([])
 
@@ -310,6 +325,29 @@ describe('runSlaSweep · alertas', () => {
     expect(repo.sealAlert).toHaveBeenCalledWith(1, 'resolucion', AHORA)
   })
 
+  it('si un aviso revienta, los demás tickets se avisan igual', async () => {
+    repo.overdueClocks.mockResolvedValue([
+      ticketFila({ ticket_id: 1, first_response_due_at: hace(1) }),
+      ticketFila({ ticket_id: 2, first_response_due_at: hace(1) })
+    ])
+    slack.notificarSlaIncumplido.mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(true)
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    expect((await runSlaSweep(AHORA)).alertas).toBe(1)
+    expect(repo.sealAlert).toHaveBeenCalledWith(2, 'respuesta', AHORA)
+    errorLog.mockRestore()
+  })
+
+  it('si falla el escalamiento, las alertas salen igual', async () => {
+    repo.escalationCandidates.mockRejectedValue(new Error('pg caido'))
+    repo.overdueClocks.mockResolvedValue([ticketFila({ first_response_due_at: hace(1) })])
+    slack.notificarSlaIncumplido.mockResolvedValue(true)
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    expect(await runSlaSweep(AHORA)).toEqual({ escalados: 0, alertas: 1 })
+    errorLog.mockRestore()
+  })
+
   it('sin webhook no recorre la BD para nada', async () => {
     slack.slackWebhookConfigurado.mockReturnValue(false)
 
@@ -418,6 +456,18 @@ describe('reopenTicket', () => {
     expect(cambios).toMatchObject({ status: 'ABIERTO', first_response_at: null, resolved_at: null })
     expect(cambios.first_response_due_at).toBeInstanceOf(Date)
     expect(evento).toEqual({ kind: 'REABIERTO', actorId: 10 })
+  })
+})
+
+describe('consultarAvanceDesdeSlack', () => {
+  it('un número de ticket inválido (decimal o fuera de rango) es "no encontrado", sin ir a la BD', async () => {
+    slack.obtenerEmailDeUsuarioSlack.mockResolvedValue('ana@we.edu.pe')
+    repo.findActiveUserByEmail.mockResolvedValue({ user_id: 55 })
+
+    for (const ref of [2.5, 9999999999]) {
+      expect(await consultarAvanceDesdeSlack({ slackUserId: 'U1', ticketRef: ref })).toEqual({ ticket: null, activos: [] })
+    }
+    expect(repo.detail).not.toHaveBeenCalled()
   })
 })
 
