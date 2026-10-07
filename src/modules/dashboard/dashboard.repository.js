@@ -343,15 +343,52 @@ export class DashboardRepository {
     return rows
   }
 
-  // Filas de un mes de v_dashboard_ventas_canal (todos los asesores: el filtro
-  // por asesor se aplica en el entity para que la lista de asesores no se vacie).
-  async ventasCanal ({ year, month }) {
-    const { rows } = await this.db.query(
-      `SELECT cod_asesor, asesor_nombre, asesor_alias, semana_mes,
-              to_char(fecha_desde, 'YYYY-MM-DD') AS fecha_desde,
-              to_char(fecha_hasta, 'YYYY-MM-DD') AS fecha_hasta, rows_data
-         FROM public.v_dashboard_ventas_canal
-        WHERE anio = $1 AND mes_num = $2`, [year, month])
+  // Consultas (por fecha de registro) y ventas (por pay_date) del rango, por
+  // asesor que registro el lead, dia, tipo de cliente y canal. Es la misma
+  // clasificacion de v_dashboard_ventas_canal, pero por DIA: las semanas las arma
+  // el entity (la vista las cortaba en dia/7). Todos los asesores: el filtro por
+  // asesor va en el entity para que la lista no se vacie.
+  async ventasCanal ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH clasificado AS (
+        SELECT l.user_registration_id AS cod_asesor,
+               CASE
+                 WHEN l.membership_moment_id IS NOT NULL THEN 'MEMBERS'
+                 WHEN mom.alias = 'we_moment_new' THEN 'NEW'
+                 WHEN mom.alias = 'we_moment_lead' THEN 'LDS'
+                 WHEN mom.alias = 'we_moment_cwd' THEN 'CWE'
+                 ELSE 'MEMBERS' END AS tipo_cliente,
+               CASE
+                 WHEN l.cat_type_strategy IS NOT NULL THEN 'com'
+                 WHEN ch.alias = 'we_social_media_linkedin' THEN 'lk'
+                 WHEN ch.alias = 'we_social_media_instagram' THEN 'ig'
+                 WHEN ch.alias IN ('we_social_media_facebook', 'we_social_media_estados') THEN 'fb'
+                 WHEN ch.alias LIKE '%web%' THEN 'web'
+                 WHEN ch.alias LIKE '%bot%' OR ch.alias LIKE '%chat%' THEN 'bot'
+                 WHEN ch.alias LIKE '%cotiz%' OR ch.alias LIKE '%quot%' THEN 'cot'
+                 ELSE 'other' END AS canal_key,
+               l.registration_date::date AS registro, l.pay_date::date AS pago
+          FROM public.leads l
+          LEFT JOIN public.catalog ch ON ch.catalog_id = l.cat_channel
+          LEFT JOIN public.catalog mom ON mom.catalog_id = l.cat_client_moment
+         WHERE l.active = 'Y' AND l.registration_date IS NOT NULL
+           AND l.cat_status_lead <> ALL (ARRAY[3136, 2367, 2574, 2368])
+           AND (l.registration_date >= $1::date OR l.pay_date >= $1::date)
+      ),
+      por_dia AS (
+        SELECT cod_asesor, tipo_cliente, canal_key, registro AS dia, COUNT(*) AS c, 0 AS v
+          FROM clasificado WHERE registro BETWEEN $1::date AND $2::date GROUP BY 1, 2, 3, 4
+        UNION ALL
+        SELECT cod_asesor, tipo_cliente, canal_key, pago, 0, COUNT(*)
+          FROM clasificado WHERE pago BETWEEN $1::date AND $2::date GROUP BY 1, 2, 3, 4
+      )
+      SELECT d.cod_asesor, TRIM(p.first_name || ' ' || COALESCE(p.last_name, '')) AS asesor_nombre,
+             u.alias AS asesor_alias, to_char(d.dia, 'YYYY-MM-DD') AS dia, d.tipo_cliente, d.canal_key,
+             SUM(d.c)::int AS c, SUM(d.v)::int AS v
+        FROM por_dia d
+        JOIN public.users u ON u.user_id = d.cod_asesor
+        JOIN public.persons p ON p.person_id = u.person_id
+       GROUP BY 1, 2, 3, 4, 5, 6`, [from, to])
     return rows
   }
 

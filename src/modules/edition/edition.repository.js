@@ -1785,6 +1785,10 @@ export class EditionRepository {
     -- movia a todo el salon al mes de la ultima correccion.
     ALTER TABLE public.classroom_student_grades
       ADD COLUMN IF NOT EXISTS graded_at TIMESTAMPTZ;
+    -- Checklist manual de Academica: el alumno ya entro al grupo de WhatsApp
+    -- del aula (07/10/26). No entra en ninguna nota.
+    ALTER TABLE public.classroom_student_grades
+      ADD COLUMN IF NOT EXISTS in_whatsapp_group BOOLEAN NOT NULL DEFAULT false;
   `)
     this._gradesTableReady = true
   }
@@ -2106,7 +2110,7 @@ CROSS JOIN LATERAL (
     SELECT enrollment_id, tests, participation, partial_criteria, final_criteria,
            test_score, participation_score, partial_score, final_deliv_score,
            final_grade, group_number, tracking_code, observation,
-           odoo_cert_code, odoo_cert_at,
+           odoo_cert_code, odoo_cert_at, in_whatsapp_group,
            updated_by, updated_at
       FROM public.classroom_student_grades
      WHERE program_edition_id = $1
@@ -2263,10 +2267,11 @@ CROSS JOIN LATERAL (
           (program_edition_id, enrollment_id, tests, participation,
            partial_criteria, final_criteria, test_score, participation_score,
            partial_score, final_deliv_score, final_grade,
-           group_number, tracking_code, observation, updated_by, updated_at, graded_at)
+           group_number, tracking_code, observation, updated_by, updated_at, graded_at,
+           in_whatsapp_group)
         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb,
                 $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(),
-                CASE WHEN $16 THEN NOW() END)
+                CASE WHEN $16 THEN NOW() END, $17)
         ON CONFLICT (enrollment_id) DO UPDATE
            SET tests = EXCLUDED.tests,
                participation = EXCLUDED.participation,
@@ -2280,13 +2285,14 @@ CROSS JOIN LATERAL (
                group_number = EXCLUDED.group_number,
                tracking_code = EXCLUDED.tracking_code,
                observation = EXCLUDED.observation,
+               in_whatsapp_group = EXCLUDED.in_whatsapp_group,
                updated_by = EXCLUDED.updated_by,
                updated_at = NOW(),
                graded_at = COALESCE(public.classroom_student_grades.graded_at, EXCLUDED.graded_at)
         RETURNING enrollment_id, tests, participation, partial_criteria,
                   final_criteria, test_score, participation_score, partial_score,
                   final_deliv_score, final_grade, group_number, tracking_code,
-                  observation, updated_by, updated_at
+                  observation, in_whatsapp_group, updated_by, updated_at
       `, [
           eid, it.enrollment_id,
           JSON.stringify(it.tests), JSON.stringify(it.participation),
@@ -2294,7 +2300,8 @@ CROSS JOIN LATERAL (
           it.test_score, it.participation_score, it.partial_score,
           it.final_deliv_score, it.final_grade,
           it.group_number, it.tracking_code, it.observation, uid,
-          it.has_final_grade === true
+          it.has_final_grade === true,
+          it.in_whatsapp_group === true
         ])
         saved.push(rows[0])
       }

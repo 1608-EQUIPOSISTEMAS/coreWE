@@ -53,6 +53,19 @@ export const SALE_DATES_CTES = `
       FROM public.payments WHERE active = 'Y' GROUP BY enrollment_id
   )`
 export const SALE_DATE = 'COALESCE(lo.pay_date, fp.dia, e.registration_date::date)'
+// Linea del plan: Online = programa (o consulta) de modalidad Online, membresias
+// incluidas; En Vivo = todo lo demas (En Vivo, Presencial y lo que no dice).
+const ONLINE_MODALITY = 2623
+const IN_LINE = (modality, param) => `((COALESCE(${modality}, 0) = ${ONLINE_MODALITY}) = ($${param}::text = 'ONLINE'))`
+const MEMBERSHIP = { PLUS: 168, GOLD: 169, PLAT: 170, BLACK: 167 }
+const SPECIALIZATION_TYPE = 2504
+// Producto online del Sheet: Gold y Plat van juntas; curso, minicurso y lo demas = CURSOS.
+const ONLINE_PRODUCT = `CASE
+    WHEN p.program_id = ${MEMBERSHIP.PLUS} THEN 'PLUS'
+    WHEN p.program_id IN (${MEMBERSHIP.GOLD}, ${MEMBERSHIP.PLAT}) THEN 'GOLD_PLAT'
+    WHEN p.program_id = ${MEMBERSHIP.BLACK} THEN 'BLACK'
+    WHEN p.cat_type_program = ${SPECIALIZATION_TYPE} THEN 'ESPECIALIZACIONES'
+    ELSE 'CURSOS' END`
 const SALE_JOINS = `
       JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
       JOIN public.programs p ON p.program_id = pv.program_id
@@ -82,7 +95,7 @@ export const planComercialRepository = {
   db: pool,
 
   // Las semanas cargadas del rango, cada una con el objetivo de sus asesores.
-  async planWeeks ({ from, to }) {
+  async planWeeks ({ from, to, line }) {
     const { rows } = await this.db.query(`
       SELECT to_char(w.month_start, 'YYYY-MM-DD') AS month_start, w.week_label,
              to_char(w.date_start, 'YYYY-MM-DD') AS date_start,
@@ -92,9 +105,9 @@ export const planComercialRepository = {
                         FILTER (WHERE a.seller_agent_id IS NOT NULL), '{}'::jsonb) AS asesores
         FROM public.commercial_plan_weeks w
         LEFT JOIN public.commercial_plan_agent_weeks a ON a.plan_week_id = w.plan_week_id
-       WHERE w.date_start <= $2::date AND w.date_end >= $1::date
+       WHERE w.date_start <= $2::date AND w.date_end >= $1::date AND w.line = $3
        GROUP BY w.plan_week_id
-       ORDER BY w.date_start`, [from, to])
+       ORDER BY w.date_start`, [from, to, line])
     return rows
   },
 
@@ -121,27 +134,30 @@ export const planComercialRepository = {
   // Quien vendio lo dice agent_origin antes que seller_agent_id: la venta web y
   // la de convenios casi nunca traen vendedor (jul-sep 2026: 249 WEB y 117 B2B).
   // La web se le cuenta a la cuenta WEB para que tenga su fila y su objetivo.
-  async dailyActuals ({ from, to }) {
-    const range = [from, to]
+  async dailyActuals ({ from, to, line }) {
+    const range = [from, to, line]
+    const programOf = `
+          JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+          JOIN public.programs p ON p.program_id = pv.program_id`
     const [ventas, ingresos, consultas] = await Promise.all([
       this.db.query(`
         SELECT to_char(e.registration_date, 'YYYY-MM-DD') AS dia,
                CASE WHEN e.agent_origin = 'WEB' THEN web.user_id ELSE e.seller_agent_id END AS seller_agent_id,
                (e.agent_origin = 'B2B' OR e.b2b_contract_id IS NOT NULL) AS b2b, COUNT(*)::int AS n
           FROM public.enrollments e
-          LEFT JOIN public.users web ON UPPER(web.alias) = 'WEB'
-         WHERE ${IS_SALE}
+          LEFT JOIN public.users web ON UPPER(web.alias) = 'WEB' ${programOf}
+         WHERE ${IS_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
            AND e.registration_date >= $1::date AND e.registration_date < $2::date + 1
          GROUP BY 1, 2, 3`, range),
       // Ingreso = lo cobrado ese dia (inicial y cuotas) de las ventas del ERP.
       this.db.query(`
-        SELECT to_char(p.payment_date, 'YYYY-MM-DD') AS dia,
-               (e.cat_currency = ${USD}) AS usd, SUM(p.amount)::float8 AS monto
-          FROM public.payments p
-          JOIN public.enrollments e ON e.enrollment_id = p.enrollment_id
-         WHERE ${IS_SALE}
-           AND p.active = 'Y'
-           AND p.payment_date >= $1::date AND p.payment_date < $2::date + 1
+        SELECT to_char(pay.payment_date, 'YYYY-MM-DD') AS dia,
+               (e.cat_currency = ${USD}) AS usd, SUM(pay.amount)::float8 AS monto
+          FROM public.payments pay
+          JOIN public.enrollments e ON e.enrollment_id = pay.enrollment_id ${programOf}
+         WHERE ${IS_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
+           AND pay.active = 'Y'
+           AND pay.payment_date >= $1::date AND pay.payment_date < $2::date + 1
          GROUP BY 1, 2`, range),
       this.db.query(`
         SELECT to_char(l.registration_date, 'YYYY-MM-DD') AS dia,
@@ -150,6 +166,7 @@ export const planComercialRepository = {
           LEFT JOIN public.catalog c ON c.catalog_id = l.cat_status_lead
          WHERE l.registration_date >= $1::date AND l.registration_date < $2::date + 1
            AND COALESCE(c.alias, '') NOT IN ${LEAD_DISCARDED}
+           AND ${IN_LINE('l.cat_program_modality', 3)}
          GROUP BY 1, 2`, range)
     ])
     return { ventas: ventas.rows, ingresos: ingresos.rows, consultas: consultas.rows }
@@ -157,15 +174,17 @@ export const planComercialRepository = {
 
   // Guarda el mes entero de una vez: las semanas por su fecha de inicio y los
   // asesores reemplazados completos, asi borrar una celda borra ese objetivo.
-  async saveMonth ({ weeks, userId }) {
+  // `productos` (solo Online) = [{ product, target_vacancies }] del mes, tambien
+  // reemplazados completos.
+  async saveMonth ({ monthStart, line, weeks, productos = null, userId }) {
     return withTransaction(async (client) => {
       for (const w of weeks) {
         const { rows: [{ plan_week_id: id }] } = await client.query(`
           INSERT INTO public.commercial_plan_weeks
                  (month_start, week_label, date_start, date_end,
-                  target_vacancies, target_revenue, user_modification_id)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          ON CONFLICT (date_start) DO UPDATE
+                  target_vacancies, target_revenue, user_modification_id, line)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (line, date_start) DO UPDATE
              SET week_label = EXCLUDED.week_label, date_end = EXCLUDED.date_end,
                  target_vacancies = EXCLUDED.target_vacancies,
                  target_revenue = EXCLUDED.target_revenue,
@@ -173,7 +192,7 @@ export const planComercialRepository = {
                  modification_date = LOCALTIMESTAMP
           RETURNING plan_week_id`,
         [w.month_start, w.week_label, w.date_start, w.date_end,
-          w.target_vacancies, w.target_revenue, userId])
+          w.target_vacancies, w.target_revenue, userId, line])
 
         await client.query('DELETE FROM public.commercial_plan_agent_weeks WHERE plan_week_id = $1', [id])
         if (w.asesores.length) {
@@ -184,8 +203,94 @@ export const planComercialRepository = {
           [id, JSON.stringify(w.asesores)])
         }
       }
+      if (productos) {
+        await client.query('DELETE FROM public.commercial_plan_product_months WHERE month_start = $1', [monthStart])
+        await client.query(`
+          INSERT INTO public.commercial_plan_product_months (month_start, product, target_vacancies, user_modification_id)
+          SELECT $1, x.product, x.target_vacancies, $3
+            FROM jsonb_to_recordset($2::jsonb) AS x(product text, target_vacancies int)`,
+        [monthStart, JSON.stringify(productos), userId])
+      }
       return { saved: weeks.length }
     })
+  },
+
+  // Reporte Anual (Sheet "6. Reporte General"): ventas por mes de F. PAGO y por
+  // asesor. Venta = la del Informe Comercial (pagada, aprobada por FICO, sin B2B,
+  // eventos ni destinos de RP/CC) MAS la importacion masiva: sin ella el ERP no
+  // tiene historia antes de abril de 2026 y la curva entre anos no existe.
+  // La venta web va a la cuenta WEB aunque traiga asesor ("WEB-AE30" es web).
+  async salesByMonthAndSeller ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
+      venta AS (
+        SELECT ${SALE_DATE} AS f_pago,
+               CASE WHEN e.agent_origin = 'WEB' THEN web.user_id ELSE e.seller_agent_id END AS seller_id
+          FROM public.enrollments e ${SALE_JOINS}
+          LEFT JOIN public.users web ON UPPER(web.alias) = 'WEB'
+         WHERE ${PURCHASE}
+           AND e.cat_fico_status = $3 AND COALESCE(e.total_amount, 0) > 0
+      )
+      SELECT to_char(v.f_pago, 'YYYY-MM') AS mes, v.seller_id, u.alias, u.name, COUNT(*)::int AS n
+        FROM venta v
+        LEFT JOIN public.users u ON u.user_id = v.seller_id
+       WHERE v.f_pago BETWEEN $1::date AND $2::date
+       GROUP BY 1, 2, 3, 4`, [from, to, CHECKED])
+    return rows
+  },
+
+  // Reporte de Estrategias: consultas registradas y consultas pagadas en el
+  // rango, por estrategia (leads.cat_type_strategy) y programa. La venta hereda
+  // la estrategia de su consulta: enrollments no la guarda.
+  async strategyLeads ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH consulta AS (
+        SELECT st.description AS estrategia, COALESCE(pv.abbreviation, 'Sin programa') AS programa,
+               l.registration_date::date AS registro,
+               CASE WHEN l.pay_date <= CURRENT_DATE THEN l.pay_date::date END AS pago
+          FROM public.leads l
+          JOIN public.catalog st ON st.catalog_id = l.cat_type_strategy
+          LEFT JOIN public.program_versions pv ON pv.program_version_id = l.program_version_id
+         WHERE l.active = 'Y'
+           AND COALESCE(l.cat_status_lead, 0) <> ALL($3::int[])
+           AND (l.registration_date >= $1::date OR l.pay_date >= $1::date)
+      )
+      SELECT estrategia, programa,
+             COUNT(*) FILTER (WHERE registro BETWEEN $1::date AND $2::date)::int AS consultas,
+             COUNT(*) FILTER (WHERE pago BETWEEN $1::date AND $2::date)::int AS ventas
+        FROM consulta
+       GROUP BY 1, 2
+      HAVING COUNT(*) FILTER (WHERE registro BETWEEN $1::date AND $2::date) > 0
+          OR COUNT(*) FILTER (WHERE pago BETWEEN $1::date AND $2::date) > 0`, [from, to, LEAD_DISCARDED_IDS])
+    return rows
+  },
+
+  // Objetivos por producto online de los meses del rango.
+  async productGoals ({ from, to }) {
+    const { rows } = await this.db.query(`
+      SELECT to_char(month_start, 'YYYY-MM-DD') AS month_start, product, target_vacancies
+        FROM public.commercial_plan_product_months
+       WHERE month_start BETWEEN date_trunc('month', $1::date) AND $2::date`, [from, to])
+    return rows
+  },
+
+  // Ventas online por dia, producto, canal (Mkt/Com/WEB/Otros) y tipo de cliente
+  // (NEW/LDS/CWE del lead). Misma venta que el resto del plan: IS_SALE por fecha
+  // de registro, sin convenios.
+  async productSales ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${SALE_DATES_CTES}
+      SELECT to_char(e.registration_date, 'YYYY-MM-DD') AS dia, ${ONLINE_PRODUCT} AS product,
+             ${SALE_CHANNEL} AS canal, cm.variable_2 AS tipo, COUNT(*)::int AS n
+        FROM public.enrollments e ${SALE_JOINS}
+        LEFT JOIN public.vw_r_prospectos pr ON pr.vacio_obligatorio = lo.lead_id::varchar
+        LEFT JOIN public.leads l ON l.lead_id = lo.lead_id
+        LEFT JOIN public.catalog cm ON cm.catalog_id = l.cat_client_moment
+       WHERE ${IS_SALE} AND p.cat_model_modality = ${ONLINE_MODALITY}
+         AND COALESCE(e.agent_origin, '') <> 'B2B' AND e.b2b_contract_id IS NULL
+         AND e.registration_date >= $1::date AND e.registration_date < $2::date + 1
+       GROUP BY 1, 2, 3, 4`, [from, to])
+    return rows
   },
 
   // ── Informe Comercial ───────────────────────────────────────────────────────
@@ -285,14 +390,14 @@ export const planComercialRepository = {
     return rows
   },
 
-  // Semanas del Plan Comercial con objetivo de vacantes que tocan el rango.
+  // Semanas del Plan Comercial En Vivo con objetivo de vacantes que tocan el rango.
   async reportSalesGoals ({ from, to }) {
     const { rows } = await this.db.query(`
       SELECT to_char(month_start, 'YYYY-MM') AS mes,
              to_char(date_start, 'YYYY-MM-DD') AS date_start,
              to_char(date_end, 'YYYY-MM-DD') AS date_end, target_vacancies AS meta
         FROM public.commercial_plan_weeks
-       WHERE target_vacancies IS NOT NULL
+       WHERE target_vacancies IS NOT NULL AND line = 'VIVO'
          AND date_start <= $2::date AND date_end >= $1::date`, [from, to])
     return rows
   },
@@ -327,6 +432,54 @@ export const planComercialRepository = {
         FROM primera pr
        WHERE NOT pr.importada AND pr.f_pago BETWEEN $1::date AND $2::date
        GROUP BY 1`, [from, to])
+    return rows
+  },
+
+  // Re-compra: ventas por dia de F. PAGO y cuantas son de un cliente que ya
+  // habia comprado (CWE). Ya compro = tiene una compra anterior en el ERP o su
+  // telefono figura como comunidad en `consolidated` (compradores previos al ERP)
+  // desde antes. Sin limite de tiempo (decision del usuario, 07/10/26).
+  // A diferencia de PAID_SALE, la importacion masiva SI es venta aqui: enero a
+  // marzo de 2026 solo existen importados y su F. PAGO es la real.
+  async repurchaseSales ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
+      compra AS (
+        SELECT c.person_id, ${SALE_DATE} AS f_pago,
+               (e.cat_fico_status = $3 AND COALESCE(e.total_amount, 0) > 0) AS venta
+          FROM public.enrollments e ${SALE_JOINS}
+          JOIN public.customers c ON c.customer_id = e.customer_id
+         WHERE ${PURCHASE}
+           AND (COALESCE(e.total_amount, 0) > 0 OR COALESCE(e.notes, '') LIKE '%masiva FICO%')
+      ),
+      -- Los telefonos se comparan por sus 9 ultimos digitos: consolidated mezcla
+      -- 9, 11 (51...) y 12 (+51...) caracteres.
+      historico AS (
+        SELECT RIGHT(regexp_replace(co.phone, '\\D', '', 'g'), 9) AS tel, MIN(co.formateddate) AS desde
+          FROM public.consolidated co
+          JOIN public.catalog k ON k.catalog_id = co.cat_client_moment AND k.alias = 'we_moment_cwd'
+         GROUP BY 1
+      ),
+      cliente_desde AS (
+        SELECT pc.person_id, MIN(h.desde) AS desde
+          FROM public.person_contacts pc
+          JOIN public.catalog k ON k.catalog_id = pc.cat_way_contact AND k.alias = 'we_way_contact_phone'
+          JOIN historico h ON h.tel = RIGHT(regexp_replace(pc.value, '\\D', '', 'g'), 9)
+         WHERE pc.active = 'Y'
+         GROUP BY 1
+      ),
+      marcada AS (
+        SELECT cp.f_pago, cp.venta,
+               cp.f_pago > MIN(cp.f_pago) OVER (PARTITION BY cp.person_id)
+                 OR COALESCE(cd.desde < cp.f_pago, false) AS cwe
+          FROM compra cp
+          LEFT JOIN cliente_desde cd ON cd.person_id = cp.person_id
+      )
+      SELECT to_char(f_pago, 'YYYY-MM-DD') AS dia, COUNT(*)::int AS ventas,
+             COUNT(*) FILTER (WHERE cwe)::int AS cwe
+        FROM marcada
+       WHERE venta AND f_pago BETWEEN $1::date AND $2::date
+       GROUP BY 1`, [from, to, CHECKED])
     return rows
   },
 

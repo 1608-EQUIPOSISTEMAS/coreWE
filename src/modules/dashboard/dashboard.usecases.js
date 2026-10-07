@@ -1,6 +1,7 @@
 import { dashboardRepository } from './dashboard.repository.js'
 import { ForbiddenError } from '../../shared/errors.js'
 import { teamScopeFor, aggregateVentasCanal } from './dashboard.entity.js'
+import { planWeeksOfMonth, lastDayOfMonth } from '../plancomercial/plancomercial.entity.js'
 import { AUDITED_TABLES } from '../audit/audit.entity.js'
 import { areaResults, myTicketReports, orgTicketReports } from './results/results.usecases.js'
 import {
@@ -223,9 +224,11 @@ export async function detailLeads (payload = {}) {
 }
 
 // Comercial > Marketing - Gestión: consultas y ventas por canal y tipo de cliente.
+// Mismas semanas que el Plan Comercial, para que S37 diga lo mismo en ambos.
 export async function ventasCanalList ({ year, month, advisor = null } = {}) {
-  const rows = await repo.ventasCanal({ year, month })
-  return { year, month, ...aggregateVentasCanal(rows, advisor) }
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const rows = await repo.ventasCanal({ from: monthStart, to: lastDayOfMonth(monthStart) })
+  return { year, month, ...aggregateVentasCanal(rows, advisor, planWeeksOfMonth(monthStart)) }
 }
 
 export async function detailSales (payload = {}) {

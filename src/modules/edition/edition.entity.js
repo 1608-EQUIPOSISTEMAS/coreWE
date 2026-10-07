@@ -351,7 +351,8 @@ export function sanitizeGradeItem (item = {}) {
     final_criteria: sanitizeCriteria(item.final_criteria, GRADE_RULES.FINAL_CRITERIA_WEIGHTS),
     group_number: Number.isInteger(groupNumber) && groupNumber > 0 ? groupNumber : null,
     tracking_code: trackingCode || null,
-    observation: observation || null
+    observation: observation || null,
+    in_whatsapp_group: item.in_whatsapp_group === true
   }
 }
 
