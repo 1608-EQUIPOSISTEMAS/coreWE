@@ -84,9 +84,8 @@ function ingest (wb) {
     cn[n] = findCol(idx, ['c' + n])
   }
 
-  // Detalle de pago por cuota (pestaña "Cuota INS-N"). Es la UNICA fuente del
-  // pago de las cuotas: null = el workbook no la trae y las filas con cuotas
-  // cobradas quedan en error (no se toma el medio/cuenta de "INS - N").
+  // Detalle de pago por cuota (pestaña "Cuota INS-N"): 1ra fuente del pago de
+  // las cuotas. null = el workbook no la trae: se cae a la fila de "INS - N".
   const cuotaWs = findInstallmentSheet(wb, ws)
   const detailIndex = cuotaWs ? indexInstallmentDetail(cuotaWs) : null
 
@@ -154,26 +153,17 @@ function ingest (wb) {
 
     // Enlaza cada cuota cobrada con su detalle de pago. Los montos de ambas
     // pestañas deben coincidir: si no, es la hoja la que esta mal y se avisa en
-    // vez de adivinar cual vale. Cuota cobrada sin detalle = error: el pago de
-    // una cuota sale SOLO de "Cuota INS - N", nunca de la fila de "INS - N".
+    // vez de adivinar cual vale. El pago de una cuota sale PRIMERO de "Cuota
+    // INS - N"; solo si ahi no hay detalle (sin pestaña, sin fila del alumno o
+    // sin esa cuota) se cae a la fila de "INS - N" (ver installmentPayment).
     const installmentErrors = []
     const detail = detailIndex
       ? findInstallmentDetail(detailIndex, get('course_code'), get('edition'), get('email'), get('full_name'), installments)
       : null
-    const hasPaid = installments.some(i => i.paid)
-    if (hasPaid && !detailIndex) {
-      installmentErrors.push('Hay cuotas cobradas pero no se encontro la pestaña "Cuota INS - N" para su detalle de pago.')
-    } else if (hasPaid && !detail) {
-      installmentErrors.push('Cuotas cobradas sin fila en "Cuota INS - N" (no coincide COD + ED + correo/nombre, o hay varias filas y ninguna cuadra en montos).')
-    }
     if (detail) {
       for (const inst of installments) {
-        if (!inst.paid) continue
         const d = detail.get(inst.installment_number)
-        if (!d) {
-          installmentErrors.push(`Cuota ${inst.installment_number}: cobrada en "INS - N" pero sin monto en "Cuota INS - N".`)
-          continue
-        }
+        if (!inst.paid || !d) continue
         if (Math.abs(d.amount - inst.amount) > 0.01) {
           installmentErrors.push(`Cuota ${inst.installment_number}: "Cuota INS - N" dice ${d.amount} y "INS - N" dice ${inst.amount}.`)
           continue
@@ -498,7 +488,10 @@ async function resolveRow (raw, ctx, installments = []) {
   errors.push(...(raw._installment_errors || []))
   const paid = schedule.filter(c => c.paid && Number(c.amount) > 0)
   if (paid.length > 0) {
-    data.installment_payments = paid.map(c => installmentPayment(c, c.payment || {}, c.payment?.currency, cat, ctx))
+    data.installment_payments = paid.map(c => {
+      const { src, currency } = installmentSource(c, raw)
+      return installmentPayment(c, src, currency, cat, ctx)
+    })
   } else if (raw.payment_way === 'contado' && Number(raw.total_amount) > 0 &&
              Number(raw.ingreso) >= Number(raw.total_amount) - 0.01) {
     // Contado SALDADO: el SP crea una sola cuota (numero 1) sellada con NOW() y sin
@@ -645,11 +638,32 @@ function matchBankAccount (accounts, bankText, businessEntityId, currencyRaw) {
   return candidates.length === 1 ? Number(candidates[0].account_id) : null
 }
 
-// Pago de una cuota. `src` = de donde sale el pago: para las cuotas cobradas, SU
-// bloque de "Cuota INS - N" (nunca la fila de "INS - N"; un bloque sin medio/
-// empresa/banco se registra sin ellos); para el contado saldado, la fila. Mercado
-// Pago llega en la columna ENTIDAD FINANCIERA con MEDIO vacio: de ahi sale el
-// medio, y como no es un banco no resuelve cuenta.
+// De donde sale el pago de una cuota cobrada. 1ra opcion: SU bloque de "Cuota
+// INS - N" (medio, empresa, banco, N° operacion, fecha y MONEDA de esa pestaña).
+// 2da opcion, solo si ahi no hay detalle (sin pestaña, sin fila del alumno, sin
+// esa cuota, o bloque con fecha/monto pero sin medio/empresa/banco): el medio/
+// empresa/banco/moneda de la fila de "INS - N", sin N° de operacion (el de la
+// fila es el de la inicial). La fecha: la del bloque si la hay, si no FCn.
+function installmentSource (inst, raw) {
+  const d = inst.payment
+  if (d && (d.payment_medium || d.business_entity || d.financial_entity)) {
+    return { src: d, currency: d.currency || raw.currency }
+  }
+  return {
+    src: {
+      payment_date: d?.payment_date || inst.due_date,
+      payment_medium: raw.payment_medium,
+      business_entity: raw.business_entity,
+      financial_entity: raw.financial_entity
+    },
+    currency: raw.currency
+  }
+}
+
+// Pago de una cuota a partir de su fuente `src` (installmentSource para las
+// cuotas; la fila para el contado saldado). Mercado Pago llega en la columna
+// ENTIDAD FINANCIERA con MEDIO vacio: de ahi sale el medio, y como no es un
+// banco no resuelve cuenta.
 function installmentPayment (inst, src, currency, cat, ctx) {
   const businessEntityId = matchBusinessEntity(cat, src.business_entity)
   return {

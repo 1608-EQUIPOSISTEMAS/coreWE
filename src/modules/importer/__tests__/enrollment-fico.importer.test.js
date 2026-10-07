@@ -639,12 +639,12 @@ describe('enrollment-fico ingest — pestaña "Cuota INS - N"', () => {
     expect(enrollmentFicoImporter.ingest(wb).rows[0].raw._installment_errors[0]).toMatch(/Cuota 2.*"INS - N" no/)
   })
 
-  it('sin pestaña de cuotas y con cuotas cobradas -> error (el pago no sale de "INS - N")', () => {
+  it('sin pestaña de cuotas: marca las cobradas sin detalle y sin error (cae a "INS - N")', () => {
     const { raw } = enrollmentFicoImporter.ingest(hojaFico([
       ['555', 'Z Z', 'E31', 'IA-CZ-03', '', 100, '1/2/2026', 50, '', '', 0, 150]
     ])).rows[0]
     expect(raw._installments[0]).toEqual({ installment_number: 1, amount: 50, due_date: '1/2/2026', paid: true })
-    expect(raw._installment_errors[0]).toMatch(/no se encontro la pestaña "Cuota INS - N"/)
+    expect(raw._installment_errors).toEqual([])
   })
 
   it('sin pestaña de cuotas y sin cuotas cobradas -> sin error', () => {
@@ -654,23 +654,25 @@ describe('enrollment-fico ingest — pestaña "Cuota INS - N"', () => {
     expect(raw._installment_errors).toEqual([])
   })
 
-  it('alumno sin fila en "Cuota INS - N" -> error, no toma el pago de "INS - N"', () => {
+  it('alumno sin fila en "Cuota INS - N" -> sin detalle y sin error (cae a "INS - N")', () => {
     const wb = hojaFicoConCuotas(
       [['777', 'SIN DETALLE', 'sd@x.com', 'E72', 'EX-CZ-06', 80, '5/2/2026', 60, '', '', 0, 140, 'YAPE', 'WE Educacion', 'BCP']],
       [[1, 'EX-CZ-06', 'E72', 'OTRO ALUMNO', 'otro@x.com', '5/2/2026', '60,00', 'YAPE', '', 'BCP', '']]
     )
     const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
-    expect(raw._installment_errors[0]).toMatch(/sin fila en "Cuota INS - N"/)
+    expect(raw._installment_errors).toEqual([])
     expect(raw._installments[0].payment).toBeUndefined()
   })
 
-  it('cuota cobrada en "INS - N" sin monto en su bloque de "Cuota INS - N" -> error', () => {
+  it('cuota cobrada en "INS - N" sin monto en su bloque de "Cuota INS - N" -> esa cuota sin detalle, sin error', () => {
     const wb = hojaFicoConCuotas(
       [['888', 'W W', 'w@x.com', 'E72', 'EX-CZ-06', 0, '5/2/2026', 60, '5/3/2026', 70, 0, 130]],
       [[1, 'EX-CZ-06', 'E72', 'W W', 'w@x.com', '5/2/2026', '60,00', 'YAPE', '', 'BCP', '']]
     )
-    expect(enrollmentFicoImporter.ingest(wb).rows[0].raw._installment_errors).toEqual(
-      [expect.stringMatching(/Cuota 2: cobrada en "INS - N" pero sin monto/)])
+    const { raw } = enrollmentFicoImporter.ingest(wb).rows[0]
+    expect(raw._installment_errors).toEqual([])
+    expect(raw._installments[0].payment).toMatchObject({ amount: 60, payment_medium: 'YAPE' })
+    expect(raw._installments[1].payment).toBeUndefined()
   })
 })
 
@@ -714,6 +716,14 @@ describe('enrollment-fico resolveRow — pagos de cuotas cobradas', () => {
     ])
   })
 
+  it('con detalle en "Cuota INS - N" ignora el medio/banco de la fila de "INS - N" (caso 19630)', async () => {
+    const { data } = await enrollmentFicoImporter.resolveRow({ ...base,
+      payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP', transaction_code: '8402318',
+      _installments: [{ installment_number: 1, amount: 291, due_date: '30/7/2025', paid: true,
+        payment: { amount: 291, payment_date: '30/7/2025', payment_medium: '', business_entity: '', financial_entity: 'Mercado Pago', transaction_code: '', currency: 'PEN' } }] }, ctxPagos, [])
+    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2025-07-30', cat_payment_medium: 3256, bank_account_id: null, transaction_code: null })
+  })
+
   it('Mercado Pago en ENTIDAD FINANCIERA con MEDIO vacio -> medio Mercado Pago, sin cuenta', async () => {
     const { data } = await enrollmentFicoImporter.resolveRow({ ...base, _installments: [
       { installment_number: 1, amount: 100, due_date: '6/2/2026', paid: true,
@@ -722,11 +732,11 @@ describe('enrollment-fico resolveRow — pagos de cuotas cobradas', () => {
     expect(data.installment_payments[0]).toMatchObject({ cat_payment_medium: 3256, bank_account_id: null, transaction_code: null })
   })
 
-  it('sin detalle: NO usa fecha/medio/empresa/banco de la fila de "INS - N"', async () => {
+  it('sin detalle en "Cuota INS - N": 2da opcion medio/empresa/banco de la fila, fecha FCn, sin N° operacion', async () => {
     const { data } = await enrollmentFicoImporter.resolveRow({ ...base,
-      payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP',
+      payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP', transaction_code: '8402318',
       _installments: [{ installment_number: 1, amount: 50, due_date: '1/2/2026', paid: true }] }, ctxPagos, [])
-    expect(data.installment_payments[0]).toMatchObject({ payment_date: null, cat_payment_medium: null, bank_account_id: null })
+    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2026-02-01', cat_payment_medium: 3205, bank_account_id: 6, transaction_code: null })
   })
 
   it('ENTIDAD FINANCIERA "Detracción" -> cuenta BN de la empresa', async () => {
@@ -738,12 +748,12 @@ describe('enrollment-fico resolveRow — pagos de cuotas cobradas', () => {
     expect(data.installment_payments[0].bank_account_id).toBe(11)
   })
 
-  it('detalle con fecha pero bloque en blanco -> sin medio/cuenta (no los toma de la fila), fecha del detalle', async () => {
+  it('detalle con fecha pero bloque en blanco -> medio/cuenta de la fila, fecha del detalle', async () => {
     const { data } = await enrollmentFicoImporter.resolveRow({ ...base,
       payment_medium: 'YAPE', business_entity: 'WE Educacion', financial_entity: 'BCP',
       _installments: [{ installment_number: 1, amount: 275, due_date: '1/1/2026', paid: true,
         payment: { amount: 275, payment_date: '31/10/2025', payment_medium: '', business_entity: '', financial_entity: '', transaction_code: '' } }] }, ctxPagos, [])
-    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2025-10-31', cat_payment_medium: null, bank_account_id: null })
+    expect(data.installment_payments[0]).toMatchObject({ payment_date: '2025-10-31', cat_payment_medium: 3205, bank_account_id: 6 })
   })
 
   it('contado saldado -> pago de la cuota 1 por el total, vence el dia del pago', async () => {
