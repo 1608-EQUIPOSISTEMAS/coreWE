@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const consultarAvanceDesdeSlack = vi.fn()
 const createTicketFromSlack = vi.fn()
+const resolverUsuarioDeSlack = vi.fn()
 const postearMensaje = vi.fn()
 const interpretarMensaje = vi.fn()
 const leerHistorialDm = vi.fn()
@@ -9,7 +10,7 @@ const leerHistorialDm = vi.fn()
 // Sin la espera anti-rafaga: cada test procesa su mensaje en el acto.
 process.env.TICKETS_SLACK_ESPERA_MS = '0'
 
-vi.mock('../../tickets.usecases.js', () => ({ consultarAvanceDesdeSlack, createTicketFromSlack }))
+vi.mock('../../tickets.usecases.js', () => ({ consultarAvanceDesdeSlack, createTicketFromSlack, resolverUsuarioDeSlack }))
 vi.mock('../../../../shared/adapters/slack/tickets-slack.adapter.js', () => ({ postearMensaje, leerHistorialDm }))
 vi.mock('../slack.ai.js', () => ({ interpretarConversacion: interpretarMensaje }))
 
@@ -38,6 +39,7 @@ beforeEach(() => {
   interpretarMensaje.mockResolvedValue({ intencion: 'TICKET', titulo: 'El ERP no carga', ticketRef: null, preguntas: [] })
   leerHistorialDm.mockResolvedValue([])
   createTicketFromSlack.mockResolvedValue({ ticket_id: 1, title: 'El ERP no carga' })
+  resolverUsuarioDeSlack.mockResolvedValue({ user_id: 55, roles: ['COMERCIAL'] })
 })
 
 describe('esDmDePersona', () => {
@@ -353,5 +355,19 @@ describe('creación automática', () => {
 
     await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
     expect(ultimoTexto()).toMatch(/cuenta activa/)
+  })
+})
+
+describe('acceso al módulo TICKETS', () => {
+  it('sin el módulo corta antes de la IA y le dice por qué', async () => {
+    const err = Object.assign(new Error('Tu rol no tiene habilitado el módulo de Tickets.'), { expose: true })
+    resolverUsuarioDeSlack.mockRejectedValue(err)
+
+    eventsHandler({ body: callback(), headers: {} }, replyDoble())
+    await vi.waitFor(() => expect(postearMensaje).toHaveBeenCalled())
+
+    expect(ultimoTexto()).toMatch(/módulo de Tickets/)
+    expect(interpretarMensaje).not.toHaveBeenCalled()
+    expect(createTicketFromSlack).not.toHaveBeenCalled()
   })
 })

@@ -47,6 +47,9 @@ const slack = {
 
 vi.mock('../tickets.repository.js', () => ({ ticketsRepository: repo }))
 vi.mock('../../../shared/adapters/slack/tickets-slack.adapter.js', () => slack)
+// La matriz de Roles y Permisos: por defecto el rol tiene TICKETS.
+const userHasModule = vi.fn(async () => true)
+vi.mock('../../../shared/security/module-access.js', () => ({ userHasModule }))
 
 const {
   createTicket, runSlaSweep, runAutoAssignSweep, createTicketFromSlack, setTicketsPorts,
@@ -485,6 +488,17 @@ describe('createTicketFromSlack', () => {
 
     await expect(createTicketFromSlack({ slackUserId: 'U1', ...VALIDO }))
       .rejects.toThrow(/nadie@we\.edu\.pe/)
+  })
+
+  it('si su rol no tiene el módulo TICKETS no crea nada', async () => {
+    slack.obtenerEmailDeUsuarioSlack.mockResolvedValue('ana@we.edu.pe')
+    repo.findActiveUserByEmail.mockResolvedValue({ user_id: 55, name: 'Ana', roles: ['FICO'] })
+    userHasModule.mockResolvedValueOnce(false)
+
+    await expect(createTicketFromSlack({ slackUserId: 'U1', ...VALIDO }))
+      .rejects.toThrow(/módulo de Tickets/)
+    expect(userHasModule).toHaveBeenCalledWith(['FICO'], 'TICKETS')
+    expect(repo.create).not.toHaveBeenCalled()
   })
 
   it('con match crea el ticket a nombre de esa persona y abre el hilo', async () => {

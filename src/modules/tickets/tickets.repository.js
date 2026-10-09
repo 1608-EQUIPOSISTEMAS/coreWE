@@ -600,7 +600,11 @@ export class TicketsRepository {
 
   async findActiveUserByEmail (email) {
     const { rows } = await this.db.query(`
-      SELECT u.user_id, u.name, u.alias, u.email
+      SELECT u.user_id, u.name, u.alias, u.email,
+             COALESCE((SELECT array_agg(r.alias)
+                         FROM public.user_roles ur
+                         JOIN public.rol r ON r.rol_id = ur.rol_id
+                        WHERE ur.user_id = u.user_id), ARRAY[]::text[]) AS roles
         FROM public.users u
        WHERE u.active = 'Y' AND lower(u.email) = lower($1)
        LIMIT 1`, [email])

@@ -10,6 +10,7 @@ import {
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
+import { userHasModule } from '../../shared/security/module-access.js'
 import { removeAttachments, guardarAdjunto, MAX_FILES, MAX_BYTES } from './tickets.files.js'
 import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
 import { startTicketNote, getTicketNote } from './ai-note/ticket-ai.usecases.js'
@@ -613,6 +614,13 @@ export async function resolverUsuarioDeSlack (slackUserId) {
   const usuario = await repo.findActiveUserByEmail(email)
   if (!usuario) {
     throw new DomainError(`No encontramos una cuenta activa del ERP con el correo ${email}. Crea el ticket desde el ERP o avisa a soporte.`)
+  }
+
+  // Mismo gate que ALL_TICKETS_INTERNO en las rutas web: Slack no pasa por
+  // authenticate, asi que sin esto un rol con TICKETS desactivado en Roles y
+  // Permisos seguia creando y consultando tickets por DM.
+  if (!(await userHasModule(usuario.roles ?? [], 'TICKETS'))) {
+    throw new DomainError('Tu rol no tiene habilitado el módulo de Tickets. Si lo necesitas, pídele acceso a tu líder o a soporte.')
   }
 
   return usuario
