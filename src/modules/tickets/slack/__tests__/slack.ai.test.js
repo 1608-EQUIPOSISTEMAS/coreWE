@@ -36,13 +36,13 @@ describe('interpretarMensaje', () => {
     expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?'])
   })
 
-  it('sin imagen adjunta siempre pide la captura, con su texto fijo', async () => {
+  it('sin imagen adjunta pide la captura con su texto fijo, sin quitarle lugar a las de la guía', async () => {
     generarJson.mockResolvedValue({
       intencion: 'TICKET', titulo: 'x', ticket_ref: 0, completo: true,
-      preguntas: ['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?', '¿Puedes enviar una captura?']
+      preguntas: ['¿Puedes enviar una captura?', '¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?']
     })
     const r = await interpretarMensaje('el reporte no carga')
-    expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', PREGUNTA_CAPTURA])
+    expect(r.preguntas).toEqual(['¿En qué módulo?', '¿Desde cuándo?', '¿Qué alumno?', PREGUNTA_CAPTURA])
     expect(r.completo).toBe(false)
 
     generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [], completo: true })
@@ -99,6 +99,16 @@ describe('interpretarMensaje', () => {
     const { texto } = generarJson.mock.calls[0][0]
     expect(texto).toMatch(/no puedo matricular[\s\S]*¿Qué alumno\?[\s\S]*el código 123/)
     expect(texto).toMatch(/1 imagen/)
+  })
+
+  it('las preguntas salen solo de guia-preguntas.md, sin sus comentarios HTML', async () => {
+    generarJson.mockResolvedValue({ intencion: 'TICKET', titulo: 'x', ticket_ref: 0, preguntas: [] })
+    await interpretarMensaje('no carga el reporte')
+    const { instruccion } = generarJson.mock.calls[0][0]
+    expect(instruccion).toContain('GUIA PARA PROPONER PREGUNTAS')
+    expect(instruccion).toContain('Analiza el mensaje del usuario')
+    expect(instruccion).not.toContain('Reglas para preguntar')
+    expect(instruccion).not.toContain('<!--')
   })
 
   it('el 0 de ticket_ref significa "ninguno"', async () => {
