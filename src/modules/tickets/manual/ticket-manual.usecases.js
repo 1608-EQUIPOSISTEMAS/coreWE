@@ -40,12 +40,21 @@ const deps = (o = {}) => ({
 export async function ofrecerManual (ticket, canal, opciones = {}) {
   const { repo, slack, ia, iaLista, leerArchivo } = deps(opciones)
   const ahora = opciones.ahora ?? (() => new Date())
+  // Cada salida sin manual deja su motivo en el log: antes eran todas silenciosas
+  // y el ticket #16 no dejo rastro de por que no se le ofrecio nada.
+  const sinManual = motivo => {
+    console.info(`[tickets][manual] ticket #${ticket.ticket_id}: sin manual (${motivo})`)
+    return null
+  }
 
   try {
-    if (!canal || !manualHabilitado(opciones.env) || !iaLista() || !slack.slackBotConfigurado()) return null
+    if (!canal) return sinManual('sin DM de Slack')
+    if (!manualHabilitado(opciones.env)) return sinManual('TICKETS_MANUAL_DISABLED')
+    if (!iaLista()) return sinManual('Gemini sin configurar')
+    if (!slack.slackBotConfigurado()) return sinManual('bot de Slack sin configurar')
 
     const documentos = await repo.listDocuments()
-    if (!documentos.length) return null
+    if (!documentos.length) return sinManual('no hay documentos activos')
 
     const salida = await ia({
       instruccion: INSTRUCCION_MANUAL,
@@ -53,18 +62,19 @@ export async function ofrecerManual (ticket, canal, opciones = {}) {
       schema: SCHEMA_MANUAL,
       maxTokens: 40
     })
+    if (!salida) return sinManual('Gemini no respondio')
     const elegido = elegirDocumento(salida, documentos)
-    if (!elegido) return null
+    if (!elegido) return sinManual(`la IA no eligio ninguno de ${documentos.length} (document_id: ${salida.document_id})`)
 
     if (elegido.kind === 'PDF') {
       const documento = await repo.document(elegido.ticket_document_id)
-      if (!documento?.stored_name) return null
+      if (!documento?.stored_name) return sinManual(`el documento ${elegido.ticket_document_id} no tiene archivo`)
       const subido = await slack.subirArchivoADm(canal, {
         buffer: await leerArchivo(documento.stored_name),
         nombre: documento.original_name || `${documento.title}.pdf`,
         titulo: documento.title
       })
-      if (!subido) return null
+      if (!subido) return sinManual(`fallo la subida del PDF ${elegido.ticket_document_id} a Slack`)
     }
 
     const mensaje = await slack.postearMensaje(canal, bloquesDeManual({
@@ -73,7 +83,7 @@ export async function ofrecerManual (ticket, canal, opciones = {}) {
       minutos: VENTANA_MANUAL_MINUTOS,
       ticketId: ticket.ticket_id
     }))
-    if (!mensaje) return null
+    if (!mensaje) return sinManual('no se pudo postear la pregunta en el DM')
 
     const enviadoEn = ahora()
     await repo.saveManualOffer(ticket.ticket_id, {
