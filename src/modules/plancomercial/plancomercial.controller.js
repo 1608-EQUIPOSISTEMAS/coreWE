@@ -15,6 +15,26 @@ export async function ventasDiariasHandler (req, reply) {
   return reply.send({ ok: true, data })
 }
 
+export async function recompraHandler (req, reply) {
+  const data = await usecases.recompraDelAnio(req.body)
+  return reply.send({ ok: true, data })
+}
+
+export async function productosHandler (req, reply) {
+  const data = await usecases.productosDelMes(req.body)
+  return reply.send({ ok: true, data })
+}
+
+export async function anualHandler (req, reply) {
+  const data = await usecases.anualComercial(req.body)
+  return reply.send({ ok: true, data })
+}
+
+export async function estrategiasHandler (req, reply) {
+  const data = await usecases.estrategiasDelMes(req.body)
+  return reply.send({ ok: true, data })
+}
+
 export async function planHandler (req, reply) {
   const data = await usecases.planDelMes(req.body)
   return reply.send({ ok: true, data })

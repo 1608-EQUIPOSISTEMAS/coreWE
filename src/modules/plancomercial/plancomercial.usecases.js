@@ -8,7 +8,12 @@ import {
   lastDayOfMonth,
   daysOf,
   sumInRange,
-  buildMonthPlan
+  buildMonthPlan,
+  repurchaseOfMonths,
+  productsOfMonth,
+  buildProductGoals,
+  annualReport,
+  strategyReport
 } from './plancomercial.entity.js'
 import { buildCommercialReport, lastMonths } from './commercial-report.entity.js'
 
@@ -30,11 +35,11 @@ function advisorLabel ({ alias, name }) {
 
 // Muestra los meses que ya empezaron y los que ya tienen plan: un mes futuro sin
 // objetivo no le dice nada a nadie.
-export async function objetivosDelAnio ({ year, today = todayInLima() }) {
+export async function objetivosDelAnio ({ year, line, today = todayInLima() }) {
   const months = monthsOfYear(year)
   const from = months[0]
   const to = lastDayOfMonth(months[11])
-  const [planRows, actuals] = await Promise.all([repo.planWeeks({ from, to }), repo.dailyActuals({ from, to })])
+  const [planRows, actuals] = await Promise.all([repo.planWeeks({ from, to, line }), repo.dailyActuals({ from, to, line })])
   const plan = planByStart(planRows)
   const planned = new Set(planRows.map((p) => p.month_start))
 
@@ -78,11 +83,11 @@ const isOther = (listed) => (v) => !v.b2b && !listed.has(v.seller_agent_id)
 
 // ── 3. Objetivos por asesor: un mes ───────────────────────────────────────────
 
-export async function asesoresDelMes ({ month_start: month }) {
+export async function asesoresDelMes ({ month_start: month, line }) {
   const from = month
   const to = lastDayOfMonth(month)
   const [planRows, actuals, advisors] = await Promise.all([
-    repo.planWeeks({ from, to }), repo.dailyActuals({ from, to }), repo.advisors()
+    repo.planWeeks({ from, to, line }), repo.dailyActuals({ from, to, line }), repo.advisors()
   ])
   const plan = planByStart(planRows)
   const listed = advisorsOfPeriod({ advisors, planRows, actuals })
@@ -111,12 +116,12 @@ export async function asesoresDelMes ({ month_start: month }) {
 
 // ── 4. Ventas diarias: las semanas completas que tocan el mes ────────────────
 
-export async function ventasDiarias ({ month_start: month }) {
+export async function ventasDiarias ({ month_start: month, line }) {
   const weeks = fullWeeksTouchingMonth(month)
   const from = weeks[0].date_start
   const to = weeks.at(-1).date_end
   const [planRows, actuals, advisors] = await Promise.all([
-    repo.planWeeks({ from, to }), repo.dailyActuals({ from, to }), repo.advisors()
+    repo.planWeeks({ from, to, line }), repo.dailyActuals({ from, to, line }), repo.advisors()
   ])
   const listed = advisorsOfPeriod({ advisors, planRows, actuals })
 
@@ -148,15 +153,56 @@ export async function ventasDiarias ({ month_start: month }) {
   }
 }
 
+// ── Re-compra: los meses del año que ya empezaron ─────────────────────────────
+
+export async function recompraDelAnio ({ year, today = todayInLima() }) {
+  const months = monthsOfYear(year).filter((m) => m <= monthStartOf(today))
+  if (!months.length) return { year, months: [] }
+  const rows = await repo.repurchaseSales({ from: months[0], to: lastDayOfMonth(months.at(-1)) })
+  return { year, months: repurchaseOfMonths(rows, months) }
+}
+
+// ── Productos online: un mes ─────────────────────────────────────────────────
+
+export async function productosDelMes ({ month_start: month }) {
+  const to = lastDayOfMonth(month)
+  const [sales, goals] = await Promise.all([repo.productSales({ from: month, to }), repo.productGoals({ from: month, to })])
+  return { month_start: month, productos: productsOfMonth(sales, goals) }
+}
+
+// ── Anual: curva entre años y ventas por asesor ──────────────────────────────
+
+// La historia del ERP empieza en sep-2025 (importacion masiva): pedir desde 2024
+// no cuesta nada y deja la curva lista si algun dia se carga ese año.
+const HISTORY_FROM = '2024-01-01'
+
+export async function anualComercial ({ year }) {
+  const rows = await repo.salesByMonthAndSeller({ from: HISTORY_FROM, to: `${year}-12-31` })
+  return annualReport(rows, year)
+}
+
+// ── Estrategias: un mes ──────────────────────────────────────────────────────
+
+export async function estrategiasDelMes ({ month_start: month }) {
+  const rows = await repo.strategyLeads({ from: month, to: lastDayOfMonth(month) })
+  return { month_start: month, ...strategyReport(rows) }
+}
+
 // ── Carga de objetivos ───────────────────────────────────────────────────────
 
-export async function planDelMes ({ month_start: month }) {
-  const [planRows, advisors] = await Promise.all([
-    repo.planWeeks({ from: month, to: lastDayOfMonth(month) }), repo.advisors()
+export async function planDelMes ({ month_start: month, line }) {
+  const to = lastDayOfMonth(month)
+  const [planRows, advisors, goals] = await Promise.all([
+    repo.planWeeks({ from: month, to, line }), repo.advisors(),
+    line === 'ONLINE' ? repo.productGoals({ from: month, to }) : []
   ])
   const plan = planByStart(planRows)
   return {
     month_start: month,
+    line,
+    productos: line === 'ONLINE'
+      ? Object.fromEntries(goals.map((g) => [g.product, g.target_vacancies]))
+      : null,
     asesores: advisors.map((a) => ({ user_id: a.user_id, ...advisorLabel(a) })),
     weeks: planWeeksOfMonth(month).map((w) => {
       const p = plan.get(w.date_start) || {}
@@ -170,10 +216,12 @@ export async function planDelMes ({ month_start: month }) {
   }
 }
 
-export async function guardarPlanDelMes ({ month_start: month, weeks: input, userId }) {
+export async function guardarPlanDelMes ({ month_start: month, line, weeks: input, productos: productInput, userId }) {
   let plan
+  let productos = null
   try {
     plan = buildMonthPlan(month, input)
+    if (line === 'ONLINE') productos = buildProductGoals(productInput)
   } catch (err) {
     if (err instanceof RangeError) throw new DomainError(err.message)
     throw err
@@ -181,7 +229,7 @@ export async function guardarPlanDelMes ({ month_start: month, weeks: input, use
   if (plan.unknown.length) {
     throw new DomainError(`Estas semanas no son del mes ${month}: ${plan.unknown.join(', ')}`)
   }
-  return repo.saveMonth({ weeks: plan.weeks, userId })
+  return repo.saveMonth({ monthStart: month, line, weeks: plan.weeks, productos, userId })
 }
 
 // ── Informe Comercial: objetivos del area, un mes contra los 5 anteriores ─────

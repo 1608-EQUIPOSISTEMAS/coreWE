@@ -271,7 +271,8 @@ export const classroomGradesSaveSchema = {
             final_criteria: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
             group_number: { type: ['integer', 'null'] },
             tracking_code: { type: ['string', 'null'], maxLength: 50 },
-            observation: { type: ['string', 'null'], maxLength: 2000 }
+            observation: { type: ['string', 'null'], maxLength: 2000 },
+            in_whatsapp_group: { type: 'boolean' }
           }
         }
       }

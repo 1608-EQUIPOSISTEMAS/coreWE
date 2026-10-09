@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  sanitizeGradeItem,
   reschedulesToSameDate,
   normalizeActive,
   normalizeActiveForCaller,
@@ -520,5 +521,13 @@ describe('holidayStartErrors (no se inicia en feriado)', () => {
   })
   it('sin fecha no juzga', () => {
     expect(holidayStartErrors([{ label: 'Módulo 1', date: null }], feriados)).toEqual([])
+  })
+})
+
+describe('sanitizeGradeItem: grupo de WhatsApp', () => {
+  it('solo true marca al alumno como dentro del grupo; cualquier otra cosa es false', () => {
+    expect(sanitizeGradeItem({ enrollment_id: 1, in_whatsapp_group: true }).in_whatsapp_group).toBe(true)
+    expect(sanitizeGradeItem({ enrollment_id: 1, in_whatsapp_group: 'true' }).in_whatsapp_group).toBe(false)
+    expect(sanitizeGradeItem({ enrollment_id: 1 }).in_whatsapp_group).toBe(false)
   })
 })

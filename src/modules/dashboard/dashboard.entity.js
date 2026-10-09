@@ -195,55 +195,38 @@ function leaderScope (areaRoles, leaderKey) {
 
 // ── Ventas por canal (Comercial > Marketing - Gestión) ─────────────────────
 // Recuperado el 06/10/26 (se habia borrado con Plan Comercial el 25/09/26).
-// v_dashboard_ventas_canal trae una fila por asesor y semana del mes (dia/7,
-// la 4 absorbe del 22 al fin de mes) con rows_data = [{ type, channels:
-// { lk: { c, v } } }]. c = consultas que ENTRARON esa semana; v = ventas
-// PAGADAS esa semana (pay_date), sean de consultas de esa semana o anteriores.
+// Llegan filas por asesor, dia, tipo de cliente y canal: c = consultas que
+// ENTRARON ese dia; v = ventas PAGADAS ese dia (pay_date), sean de consultas de
+// ese dia o anteriores. Desde el 07/10/26 las semanas son las del Plan
+// Comercial (ISO recortadas al mes) y no dia/7 con la 4 hasta fin de mes.
 export const VENTAS_CANAL_CHANNELS = ['lk', 'ig', 'fb', 'web', 'bot', 'cot', 'com', 'other']
 export const VENTAS_CANAL_TYPES = ['NEW', 'LDS', 'CWE', 'MEMBERS']
 
-// La vista mete del dia 22 al fin de mes en la semana 4, pero su fecha_hasta
-// corta en el 28: las ventas del 29-31 salian en una semana que decia no
-// incluirlas. Se toma el ultimo dia real del mes.
-const LAST_WEEK = 4
-function weekEnd (week, from, to) {
-  if (week !== LAST_WEEK || !from) return to
-  const [y, m] = String(from).split('-').map(Number)
-  return `${y}-${String(m).padStart(2, '0')}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
-}
-
 const emptyChannels = () => Object.fromEntries(VENTAS_CANAL_CHANNELS.map(ch => [ch, { c: 0, v: 0 }]))
 
-// Suma los asesores en una estructura semana → tipo de cliente → canal. advisor
-// filtra por cod_asesor; la lista de asesores sale SIEMPRE de todas las filas
-// del mes (con el filtro puesto el selector no se vacia).
-export function aggregateVentasCanal (rows = [], advisor = null) {
+// Suma los asesores en semana → tipo de cliente → canal. `calendar` = semanas
+// del mes [{ week_label, date_start, date_end }]; salen todas, aun sin datos.
+// advisor filtra por cod_asesor; la lista de asesores sale SIEMPRE de todas las
+// filas del mes (con el filtro puesto el selector no se vacia).
+export function aggregateVentasCanal (rows = [], advisor = null, calendar = []) {
   const advisors = new Map()
-  const weeks = new Map()
+  const weeks = calendar.map((w, i) => ({
+    week: i + 1,
+    label: w.week_label,
+    from: w.date_start,
+    to: w.date_end,
+    rows: Object.fromEntries(VENTAS_CANAL_TYPES.map(t => [t, emptyChannels()]))
+  }))
   for (const r of rows) {
     advisors.set(Number(r.cod_asesor), r.asesor_nombre || r.asesor_alias || `Usuario ${r.cod_asesor}`)
     if (advisor && Number(r.cod_asesor) !== Number(advisor)) continue
-    const week = Number(r.semana_mes)
-    if (!weeks.has(week)) {
-      weeks.set(week, {
-        week,
-        from: r.fecha_desde,
-        to: weekEnd(week, r.fecha_desde, r.fecha_hasta),
-        rows: Object.fromEntries(VENTAS_CANAL_TYPES.map(t => [t, emptyChannels()]))
-      })
-    }
-    const destino = weeks.get(week).rows
-    for (const rd of Array.isArray(r.rows_data) ? r.rows_data : []) {
-      if (!destino[rd.type]) continue
-      for (const [ch, val] of Object.entries(rd.channels || {})) {
-        if (!destino[rd.type][ch]) continue
-        destino[rd.type][ch].c += Number(val?.c || 0)
-        destino[rd.type][ch].v += Number(val?.v || 0)
-      }
-    }
+    const cell = weeks.find(w => r.dia >= w.from && r.dia <= w.to)?.rows[r.tipo_cliente]?.[r.canal_key]
+    if (!cell) continue
+    cell.c += Number(r.c || 0)
+    cell.v += Number(r.v || 0)
   }
   return {
     advisors: [...advisors].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
-    weeks: [...weeks.values()].sort((a, b) => a.week - b.week)
+    weeks
   }
 }

@@ -1,5 +1,5 @@
 import { authenticate, hasRole, ALL_COMERCIAL } from '../../shared/http/auth.middleware.js'
-import { objetivosSchema, monthSchema, savePlanSchema, reportSchema } from './plancomercial.schemas.js'
+import { objetivosSchema, yearSchema, monthSchema, savePlanSchema, reportSchema } from './plancomercial.schemas.js'
 import * as ctrl from './plancomercial.controller.js'
 
 // Los objetivos los fijan el lider comercial y Gerencia; el resto del equipo
@@ -14,6 +14,10 @@ export default async function planComercialRoutes (fastify) {
   fastify.post('/objetivos', { schema: objetivosSchema, preHandler: ALL_COMERCIAL }, ctrl.objetivosHandler)
   fastify.post('/asesores', { schema: monthSchema, preHandler: ALL_COMERCIAL }, ctrl.asesoresHandler)
   fastify.post('/ventas-diarias', { schema: monthSchema, preHandler: ALL_COMERCIAL }, ctrl.ventasDiariasHandler)
+  fastify.post('/recompra', { schema: yearSchema, preHandler: ALL_COMERCIAL }, ctrl.recompraHandler)
+  fastify.post('/productos', { schema: monthSchema, preHandler: ALL_COMERCIAL }, ctrl.productosHandler)
+  fastify.post('/anual', { schema: yearSchema, preHandler: ALL_COMERCIAL }, ctrl.anualHandler)
+  fastify.post('/estrategias', { schema: monthSchema, preHandler: ALL_COMERCIAL }, ctrl.estrategiasHandler)
   fastify.post('/plan', { schema: monthSchema, preHandler: EDITA_OBJETIVOS }, ctrl.planHandler)
   fastify.post('/reporte', { schema: reportSchema, preHandler: VE_INFORME }, ctrl.reporteHandler)
   fastify.post('/plan/save', { schema: savePlanSchema, preHandler: EDITA_OBJETIVOS }, ctrl.savePlanHandler)

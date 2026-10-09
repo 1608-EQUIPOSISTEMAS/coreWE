@@ -1,12 +1,26 @@
 const monthStart = { type: 'string', pattern: '^\\d{4}-(0[1-9]|1[0-2])-01$' }
 const goal = { type: ['number', 'string', 'null'] }
+// Linea del plan: En Vivo (lo de siempre, por defecto) u Online.
+const line = { type: 'string', enum: ['VIVO', 'ONLINE'], default: 'VIVO' }
+
+const year = { type: 'integer', minimum: 2025, maximum: 2100 }
 
 export const objetivosSchema = {
   body: {
     type: 'object',
     additionalProperties: false,
     required: ['year'],
-    properties: { year: { type: 'integer', minimum: 2025, maximum: 2100 } }
+    properties: { year, line }
+  }
+}
+
+// Re-compra y Anual miran a toda la empresa: no tienen linea.
+export const yearSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['year'],
+    properties: { year }
   }
 }
 
@@ -15,7 +29,7 @@ export const monthSchema = {
     type: 'object',
     additionalProperties: false,
     required: ['month_start'],
-    properties: { month_start: monthStart }
+    properties: { month_start: monthStart, line }
   }
 }
 
@@ -28,6 +42,8 @@ export const savePlanSchema = {
     required: ['month_start', 'weeks'],
     properties: {
       month_start: monthStart,
+      line,
+      productos: { type: 'object', additionalProperties: goal },
       weeks: {
         type: 'array',
         maxItems: 6,
