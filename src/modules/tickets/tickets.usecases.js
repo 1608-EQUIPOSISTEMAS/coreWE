@@ -3,13 +3,14 @@ import { clasificarPrioridad, plazosSla } from './tickets.priority.js'
 import {
   ticketScopeFor, assertCanRead, assertCanComment, assertCanManage,
   nextStatus, pickAgent, assertReassignable, isTakeable, canChangeStatusOf,
-  canReopenOf, reopenByReporter, areaRolesOf,
+  canReopenOf, reopenByReporter, areaRolesOf, assertNoEsDeOtro, canReassignOf, eventoDeTransicion,
   validateTicketInput, validateComment,
   computeDueDates, withSla, applyFilter, buildKpis, formatTicketCode, ticketAreaLabel,
-  ESTADOS_ACTIVOS, validateDocumentInput
+  ESTADOS_ACTIVOS, validateDocumentInput, parseTicketId, ticketIdDeBusqueda, escaparLike, ID_MAX
 } from './tickets.entity.js'
 import { evaluarReloj } from '../../shared/sla/sla-clock.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
+import { userHasModule } from '../../shared/security/module-access.js'
 import { removeAttachments, guardarAdjunto, MAX_FILES, MAX_BYTES } from './tickets.files.js'
 import * as slack from '../../shared/adapters/slack/tickets-slack.adapter.js'
 import { startTicketNote, getTicketNote } from './ai-note/ticket-ai.usecases.js'
@@ -48,7 +49,9 @@ export async function listTickets ({ roles = [], userId = null, filtro = 'TODOS'
   const scope = ticketScopeFor({ roles, userId })
   const ahora = new Date()
 
-  const rows = (await repo.list(scope, { busqueda, orden })).map(r => ({
+  const texto = String(busqueda ?? '').trim()
+  const consulta = { busqueda: texto ? escaparLike(texto) : null, busquedaId: ticketIdDeBusqueda(texto), orden }
+  const rows = (await repo.list(scope, consulta)).map(r => ({
     ...withSla(r, ahora),
     // Por fila: la bandeja ofrece "Tomar" sin entrar al detalle.
     canChangeStatus: canChangeStatusOf(r, scope, userId)
@@ -94,6 +97,8 @@ async function conDetalle (ticket, scope, userId, ahora = new Date()) {
     // Mover el estado exige ser el agente asignado (o tomar uno sin dueño),
     // no solo ser ADMIN.
     canChangeStatus: canChangeStatusOf(ticket, scope, userId),
+    // Con dueño, solo el dueño lo pasa a otro agente.
+    canReassign: canReassignOf(ticket, scope, userId),
     // Quien reporto puede reabrir lo suyo sin ser ADMIN.
     canReopen: canReopenOf(ticket, userId)
   }
@@ -266,6 +271,8 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
 
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
+  // Un dueño a la vez: si lo atiende otro, 409 con su nombre (no un 403).
+  assertNoEsDeOtro(ticket, userId)
 
   // Se lee ANTES del update: despues de guardar el estado previo ya no esta.
   const reabriendo = ticket.status === 'CERRADO' && estado === 'EN_PROGRESO'
@@ -280,7 +287,7 @@ export async function changeStatus ({ roles = [], userId = null, ticketId, estad
   if (reclamando && !(await repo.claim(ticketId, userId))) {
     throw new DomainError('Otro agente acaba de tomar este ticket', { statusCode: 409, code: 'TICKET_YA_TOMADO' })
   }
-  await repo.updateStatus(ticketId, cambios)
+  await repo.updateStatus(ticketId, cambios, { kind: eventoDeTransicion(ticket.status, estado), actorId: userId })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -319,7 +326,10 @@ export async function reopenTicket ({ roles = [], userId = null, ticketId }) {
   const ticket = await repo.detail(ticketId)
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
 
-  await repo.updateStatus(ticketId, reopenByReporter(ticket, userId))
+  // Los plazos de su prioridad: si lo habia "respondido" el manual, el reloj
+  // de respuesta vuelve a correr desde ahora (ver reopenByReporter).
+  const cambios = reopenByReporter(ticket, userId, new Date(), plazosSla(ticket.priority))
+  await repo.updateStatus(ticketId, cambios, { kind: 'REABIERTO', actorId: userId })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -340,10 +350,15 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
   if (!ticket) throw new NotFoundError('Ticket no encontrado')
 
   const destino = await repo.assignableById(nuevoAsignadoId)
-  assertReassignable(ticket, destino, nuevoAsignadoId)
+  assertReassignable(ticket, destino, nuevoAsignadoId, userId)
 
   const anterior = ticket.asignado ?? 'sin asignar'
-  await repo.reassign(ticketId, nuevoAsignadoId)
+  await repo.reassign(ticketId, nuevoAsignadoId, {
+    kind: ticket.assigned_to_id ? 'REASIGNADO' : 'ASIGNADO',
+    actorId: userId,
+    fromUserId: ticket.assigned_to_id,
+    toUserId: nuevoAsignadoId
+  })
 
   const actualizado = await repo.detail(ticketId)
   avisarCambio(ticketId)
@@ -359,32 +374,46 @@ export async function reassign ({ roles = [], userId = null, ticketId, nuevoAsig
 
 // ── Comentarios ────────────────────────────────────────────────────────────
 
-export async function addComment ({ roles = [], userId = null, ticketId, cuerpo, archivos = [] }) {
+export async function addComment ({ roles = [], userId = null, ticketId: ticketIdCrudo, cuerpo, archivos = [] }) {
   const scope = ticketScopeFor({ roles, userId })
+  // Llega como texto del multipart (sin schema AJV): validarlo aca evita el
+  // 500 "invalid input syntax for type integer" de un id vacio o NaN.
+  let ticketId
+  try {
+    ticketId = parseTicketId(ticketIdCrudo)
+  } catch (err) {
+    await removeAttachments(archivos.map(a => a.stored_name))
+    throw err
+  }
   const ticket = await repo.detail(ticketId)
   if (!ticket) {
     await removeAttachments(archivos.map(a => a.stored_name))
     throw new NotFoundError('Ticket no encontrado')
   }
 
+  let texto, comentarioId
   try {
     assertCanComment(ticket, scope, userId)
-    const texto = validateComment(cuerpo)
-    await repo.createComment(ticketId, userId, texto, archivos)
-    avisarCambio(ticketId)
-
-    // Los comentarios del propio solicitante no se replican en su DM: ya los
-    // escribio el.
-    if (ticket.created_by_id !== userId) {
-      const autor = scope.canManage ? (ticket.asignado ?? 'Soporte') : 'Soporte'
-      void slack.avisarComentarioNuevo(ticket, autor, texto)
-    }
+    texto = validateComment(cuerpo)
+    comentarioId = await repo.createComment(ticketId, userId, texto, archivos)
   } catch (err) {
     await removeAttachments(archivos.map(a => a.stored_name))
     throw err
   }
+  avisarCambio(ticketId)
 
-  return repo.comments(ticketId)
+  const hilo = await repo.comments(ticketId)
+
+  // Los comentarios del propio solicitante no se replican en su DM: ya los
+  // escribio el. El DM nombra a QUIEN escribio (sale del hilo recien leido):
+  // antes decia el agente asignado aunque comentara otro admin, y "Soporte"
+  // cuando comentaba el lider del area.
+  if (ticket.created_by_id !== userId) {
+    const autor = hilo.find(c => c.ticket_comment_id === comentarioId)?.autor ?? 'Soporte'
+    void slack.avisarComentarioNuevo(ticket, autor, texto)
+  }
+
+  return hilo
 }
 
 // ── Reparto automatico diferido (lo llama tickets-autoassign.cron.js) ──────
@@ -401,25 +430,43 @@ export async function runAutoAssignSweep (ahora = new Date()) {
 
   let asignados = 0
   for (const ticket of pendientes) {
-    const nuevo = pickAgent(await repo.agentCandidates())
-    if (nuevo === null) {
-      // Sin agentes: se reintenta en la proxima corrida, por si alguien se
-      // activa mientras tanto.
-      console.warn(`[tickets-autoassign] ticket #${formatTicketCode(ticket.ticket_id)} sigue sin agentes disponibles`)
-      continue
-    }
-
-    await repo.reassign(ticket.ticket_id, nuevo)
-    asignados++
-    avisarCambio(ticket.ticket_id)
-
-    const actualizado = await repo.detail(ticket.ticket_id)
-    // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
-    // noticia (el ticket tiene dueño), sin importar por que camino llego.
-    void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
-    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', { primeraAsignacion: true })
+    if (await aislado('[tickets-autoassign]', ticket.ticket_id, () => asignarUno(ticket))) asignados++
   }
   return asignados
+}
+
+async function asignarUno (ticket) {
+  const nuevo = pickAgent(await repo.agentCandidates())
+  if (nuevo === null) {
+    // Sin agentes: se reintenta en la proxima corrida, por si alguien se
+    // activa mientras tanto.
+    console.warn(`[tickets-autoassign] ticket #${formatTicketCode(ticket.ticket_id)} sigue sin agentes disponibles`)
+    return false
+  }
+
+  await repo.reassign(ticket.ticket_id, nuevo, { kind: 'ASIGNADO', toUserId: nuevo, detail: 'AUTOMATICO' })
+  avisarCambio(ticket.ticket_id)
+
+  const actualizado = await repo.detail(ticket.ticket_id)
+  // Mismo aviso que el escalamiento por SLA: para quien lo lee es la misma
+  // noticia (el ticket tiene dueño), sin importar por que camino llego.
+  void slack.notificarTicketEscalado(actualizado, 'sin asignar', 'Asignación automática (venció la ventana de gracia)')
+  void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte', { primeraAsignacion: true })
+  return true
+}
+
+/**
+ * Corre el trabajo de UN ticket del barrido sin dejar que su error frene a los
+ * demas: se loguea y la proxima corrida lo reintenta. Antes un solo ticket con
+ * problemas (o un corte de la BD a mitad) dejaba sin procesar el resto.
+ */
+async function aislado (etiqueta, ticketId, trabajo) {
+  try {
+    return await trabajo()
+  } catch (err) {
+    console.error(`${etiqueta} ticket #${formatTicketCode(ticketId)}: ${err.message}`)
+    return false
+  }
 }
 
 // ── Barrido del SLA (lo llama el cron) ─────────────────────────────────────
@@ -439,12 +486,16 @@ export async function runAutoAssignSweep (ahora = new Date()) {
 export async function runSlaSweep (ahora = new Date()) {
   const resultado = { escalados: 0, alertas: 0 }
 
+  // Cada pasada por su lado: que falle el escalamiento (la consulta de
+  // candidatos, por ejemplo) no puede dejar sin enviar las alertas.
   if (process.env.TICKETS_SLA_ESCALATION !== 'false') {
     resultado.escalados = await barrerEscalamientos(ahora)
+      .catch(err => { console.error('[tickets-sla] escalamiento:', err.message); return 0 })
   }
   // Sin webhook no hay a donde avisar: recorrer la BD para nada.
   if (slack.slackWebhookConfigurado()) {
     resultado.alertas = await barrerAlertas(ahora)
+      .catch(err => { console.error('[tickets-sla] alertas:', err.message); return 0 })
   }
 
   return resultado
@@ -456,51 +507,61 @@ async function barrerEscalamientos (ahora) {
 
   let escalados = 0
   for (const ticket of candidatos) {
-    const reloj = evaluarReloj(ticket.first_response_due_at, ticket.first_response_at, ticket.registration_date, ahora)
-    if (reloj.estado !== 'POR_VENCER' && reloj.estado !== 'VENCIDO') continue
-
-    const nuevo = pickAgent(await repo.agentCandidates(), ticket.assigned_to_id)
-    if (nuevo === null) {
-      // Un solo agente en el sistema: no hay a quien pasarselo. Se loguea y se
-      // reintenta en la proxima corrida, por si alguien mas entra de guardia.
-      console.warn(`[tickets-sla] ticket #${formatTicketCode(ticket.ticket_id)} sin otro agente disponible para escalar`)
-      continue
-    }
-
-    // El nombre del agente anterior se lee ANTES del update: despues la fila ya
-    // tiene al nuevo y el aviso diria que se lo reasignaron a si mismo.
-    const anterior = (await repo.detail(ticket.ticket_id))?.asignado ?? 'sin asignar'
-    await repo.applyEscalation(ticket.ticket_id, nuevo, ticket.assigned_to_id, ahora)
-    escalados++
-    avisarCambio(ticket.ticket_id)
-
-    const actualizado = await repo.detail(ticket.ticket_id)
-    void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')
-    void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte')
+    if (await aislado('[tickets-sla]', ticket.ticket_id, () => escalarUno(ticket, ahora))) escalados++
   }
   return escalados
+}
+
+async function escalarUno (ticket, ahora) {
+  const reloj = evaluarReloj(ticket.first_response_due_at, ticket.first_response_at, ticket.registration_date, ahora)
+  if (reloj.estado !== 'POR_VENCER' && reloj.estado !== 'VENCIDO') return false
+
+  const nuevo = pickAgent(await repo.agentCandidates(), ticket.assigned_to_id)
+  if (nuevo === null) {
+    // Un solo agente en el sistema: no hay a quien pasarselo. Se loguea y se
+    // reintenta en la proxima corrida, por si alguien mas entra de guardia.
+    console.warn(`[tickets-sla] ticket #${formatTicketCode(ticket.ticket_id)} sin otro agente disponible para escalar`)
+    return false
+  }
+
+  // El nombre del agente anterior se lee ANTES del update: despues la fila ya
+  // tiene al nuevo y el aviso diria que se lo reasignaron a si mismo.
+  const anterior = (await repo.detail(ticket.ticket_id))?.asignado ?? 'sin asignar'
+  await repo.applyEscalation(ticket.ticket_id, nuevo, ticket.assigned_to_id, ahora)
+  avisarCambio(ticket.ticket_id)
+
+  const actualizado = await repo.detail(ticket.ticket_id)
+  void slack.notificarTicketEscalado(actualizado, anterior, 'Escalamiento automático por SLA')
+  void slack.avisarTicketReasignado(actualizado, actualizado.asignado ?? 'Soporte')
+  return true
 }
 
 async function barrerAlertas (ahora) {
   const pendientes = await repo.overdueClocks(ahora)
   let enviadas = 0
-
   for (const ticket of pendientes) {
-    const relojes = [
-      { nombre: 'respuesta', vence: ticket.first_response_due_at, cumplido: ticket.first_response_at, avisado: ticket.response_alert_sent_at },
-      { nombre: 'resolucion', vence: ticket.resolution_due_at, cumplido: ticket.resolved_at, avisado: ticket.resolution_alert_sent_at }
-    ]
+    enviadas += await aislado('[tickets-sla] alerta', ticket.ticket_id, () => alertarUno(ticket, ahora)) || 0
+  }
+  return enviadas
+}
 
-    for (const reloj of relojes) {
-      if (!reloj.vence || reloj.cumplido || reloj.avisado) continue
-      if (new Date(reloj.vence) >= ahora) continue
+/** Avisa los relojes vencidos de un ticket. Devuelve cuantos avisos salieron. */
+async function alertarUno (ticket, ahora) {
+  const relojes = [
+    { nombre: 'respuesta', vence: ticket.first_response_due_at, cumplido: ticket.first_response_at, avisado: ticket.response_alert_sent_at },
+    { nombre: 'resolucion', vence: ticket.resolution_due_at, cumplido: ticket.resolved_at, avisado: ticket.resolution_alert_sent_at }
+  ]
 
-      const llego = await slack.notificarSlaIncumplido(ticket, reloj.nombre, reloj.vence)
-      if (!llego) continue
+  let enviadas = 0
+  for (const reloj of relojes) {
+    if (!reloj.vence || reloj.cumplido || reloj.avisado) continue
+    if (new Date(reloj.vence) >= ahora) continue
 
-      await repo.sealAlert(ticket.ticket_id, reloj.nombre, ahora)
-      enviadas++
-    }
+    const llego = await slack.notificarSlaIncumplido(ticket, reloj.nombre, reloj.vence)
+    if (!llego) continue
+
+    await repo.sealAlert(ticket.ticket_id, reloj.nombre, ahora)
+    enviadas++
   }
   return enviadas
 }
@@ -555,6 +616,13 @@ export async function resolverUsuarioDeSlack (slackUserId) {
     throw new DomainError(`No encontramos una cuenta activa del ERP con el correo ${email}. Crea el ticket desde el ERP o avisa a soporte.`)
   }
 
+  // Mismo gate que ALL_TICKETS_INTERNO en las rutas web: Slack no pasa por
+  // authenticate, asi que sin esto un rol con TICKETS desactivado en Roles y
+  // Permisos seguia creando y consultando tickets por DM.
+  if (!(await userHasModule(usuario.roles ?? [], 'TICKETS'))) {
+    throw new DomainError('Tu rol no tiene habilitado el módulo de Tickets. Si lo necesitas, pídele acceso a tu líder o a soporte.')
+  }
+
   return usuario
 }
 
@@ -574,7 +642,11 @@ export async function consultarAvanceDesdeSlack ({ slackUserId, ticketRef = null
   const ahora = new Date()
 
   if (ticketRef) {
-    const fila = await repo.detail(ticketRef)
+    // Lo extrae la IA: un 2.5 o un numero gigante hacian fallar la consulta y
+    // el usuario recibia un error en vez de "no lo encontre".
+    const id = Number(ticketRef)
+    if (!Number.isInteger(id) || id < 1 || id > ID_MAX) return { ticket: null, activos: [] }
+    const fila = await repo.detail(id)
     // Mismo criterio que canRead para un scope OWN, escrito aca porque el
     // usuario de Slack no llega con sus roles cargados.
     if (!fila || fila.created_by_id !== usuario.user_id) return { ticket: null, activos: [] }

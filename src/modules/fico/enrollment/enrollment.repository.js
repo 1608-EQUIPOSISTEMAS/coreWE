@@ -482,11 +482,9 @@ export class EnrollmentRepository {
 
       const { rows: insts } = await client.query(`
         SELECT pi.installment_id, pi.installment_number, pi.amount,
-               COALESCE(cs.alias IN ('we_inst_paid', 'we_payment_status_paid'), false) AS paid,
                EXISTS (SELECT 1 FROM payments p
                         WHERE p.installment_id = pi.installment_id AND p.active = 'Y') AS has_payment
           FROM payment_installments pi
-          LEFT JOIN catalog cs ON cs.catalog_id = pi.cat_status
          WHERE pi.enrollment_id = $1`, [enrollmentId])
       const byNumber = new Map(insts.map(i => [Number(i.installment_number), i]))
 
@@ -504,7 +502,9 @@ export class EnrollmentRepository {
         const n = Number(p.installment_number)
         const inst = byNumber.get(n)
         if (!inst) { out.skipped.push({ n, reason: 'no existe en la inscripcion' }); continue }
-        if (inst.paid || inst.has_payment) { out.already.push(n); continue }
+        // Ya registrada = tiene pago activo. Una cuota "pagada" SIN fila en payments
+        // (el contado del SP sale con el estado viejo 2471) se completa igual.
+        if (inst.has_payment) { out.already.push(n); continue }
         if (Math.abs(Number(inst.amount) - Number(p.amount)) > 0.01) {
           out.skipped.push({ n, reason: `monto en sistema ${inst.amount} y en la hoja ${p.amount}` })
           continue
@@ -512,9 +512,10 @@ export class EnrollmentRepository {
         await client.query(`
           UPDATE payment_installments
              SET cat_status = (SELECT catalog_id FROM catalog WHERE alias = 'we_inst_paid'),
-                 notes = $2
+                 notes = $2,
+                 due_date = COALESCE($3::date, due_date)
            WHERE installment_id = $1`,
-        [inst.installment_id, `Cuota ${n} - Pagada (importacion hoja FICO)`])
+        [inst.installment_id, `Cuota ${n} - Pagada (importacion hoja FICO)`, p.due_date || null])
         await client.query(`
           INSERT INTO payments (enrollment_id, installment_id, amount, payment_date, transaction_code,
             cat_method_payment, cat_payment_type, cat_settlement_status,
@@ -538,6 +539,33 @@ export class EnrollmentRepository {
       }
     })
     return out
+  }
+
+  // Importacion hoja FICO: el SP de alta sella registration_date con NOW(); se
+  // alinea con la fecha de inscripcion de la hoja, en el padre y sus hijas. Solo
+  // toca inscripciones de importacion masiva e idempotente (no re-escribe si ya
+  // coincide el dia), asi un re-import corrige las importadas antes.
+  async setImportedRegistrationDate ({ enrollmentId, registrationDate, userId }) {
+    let updated = []
+    await withTransaction(async client => {
+      const { rows } = await client.query(`
+        UPDATE enrollments
+           SET registration_date = $2::date
+         WHERE (enrollment_id = $1 OR parent_enrollment_id = $1)
+           AND notes LIKE '%masiva FICO%'
+           AND registration_date::date IS DISTINCT FROM $2::date
+        RETURNING enrollment_id`, [enrollmentId, registrationDate])
+      updated = rows.map(r => Number(r.enrollment_id))
+      if (updated.length) {
+        await client.query(`
+          INSERT INTO enrollment_audit_log (enrollment_id, action, performed_by, justificacion, changes)
+          VALUES ($1, 'data_correction', $2, $3, $4)`,
+        [enrollmentId, userId,
+          'Importacion hoja FICO: fecha de inscripcion segun la hoja (el alta sella la fecha de importacion).',
+          JSON.stringify({ registration_date: registrationDate, enrollments: updated })])
+      }
+    })
+    return { updated }
   }
 
   // Versiones de los programas-membresia (WE BLACK/GOLD/PLAT/PLUS) con su

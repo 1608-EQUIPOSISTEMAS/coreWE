@@ -11,9 +11,11 @@
 //      sello se escribe SOLO si Slack confirmo, asi que un webhook caido deja el
 //      aviso pendiente para la proxima corrida en vez de darlo por enviado.
 //
-// Cadencia: cada 5 minutos. El plazo mas corto configurable es de 1 hora
-// (ALTA), asi que 5 minutos da resolucion de sobra sin castigar la BD; las tres
-// consultas del barrido van por indices parciales sobre lo que puede cambiar.
+// Cadencia: cada minuto. El plazo mas corto es la primera respuesta de ALTA,
+// 15 minutos (criterios-prioridad.md): el escalamiento toca al 80 %, el minuto
+// 12, y con la cadencia anterior de 5 min podia llegar al 17, ya vencido. Las
+// consultas del barrido van por indices parciales sobre lo que puede cambiar,
+// asi que correrlo cada minuto no castiga la BD.
 //
 // TICKETS_SLA_DISABLED=true   apaga el cron entero.
 // TICKETS_SLA_ESCALATION=false apaga solo el escalamiento (las alertas siguen).
@@ -25,7 +27,7 @@
 import cron from 'node-cron'
 import { runSlaSweep } from '../modules/tickets/tickets.usecases.js'
 
-const SCHEDULE = '*/5 * * * *'
+const SCHEDULE = '* * * * *'
 let _running = false
 
 async function sweep () {
@@ -50,7 +52,7 @@ if (process.env.TICKETS_SLA_DISABLED === 'true') {
   console.log('[tickets-sla] DESHABILITADO via TICKETS_SLA_DISABLED=true')
 } else {
   cron.schedule(SCHEDULE, sweep, { timezone: 'America/Lima' })
-  console.log('[tickets-sla] Programado cada 5 min (TZ America/Lima)')
+  console.log('[tickets-sla] Programado cada minuto (TZ America/Lima)')
 }
 
 // Exportado para poder dispararlo a mano desde un script de diagnostico.

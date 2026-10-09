@@ -6,6 +6,9 @@
 // validateComment) y tickets.files, que ademas las comparte el bot de Slack por
 // DM, que tampoco pasa por AJV.
 
+// Tope de un integer de Postgres: un id mayor responde 400 aca, no 500 en la BD.
+const ID_MAX = 2147483647
+
 const TAG = ['Tickets']
 
 const ok = (dataSchema = { type: 'object', additionalProperties: true }) => ({
@@ -38,7 +41,7 @@ export const detailSchema = {
   body: {
     type: 'object',
     required: ['ticket_id'],
-    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
+    properties: { ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX }, user_id: { type: 'integer' } },
     additionalProperties: false
   },
   response: ok()
@@ -50,7 +53,7 @@ export const commentsSchema = {
   body: {
     type: 'object',
     required: ['ticket_id'],
-    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
+    properties: { ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX }, user_id: { type: 'integer' } },
     additionalProperties: false
   },
   response: ok({ type: 'array' })
@@ -62,7 +65,7 @@ export const activitySchema = {
   body: {
     type: 'object',
     required: ['ticket_id'],
-    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
+    properties: { ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX }, user_id: { type: 'integer' } },
     additionalProperties: false
   },
   response: ok({ type: 'array' })
@@ -75,7 +78,7 @@ export const statusSchema = {
     type: 'object',
     required: ['ticket_id', 'estado'],
     properties: {
-      ticket_id: { type: 'integer', minimum: 1 },
+      ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX },
       // ABIERTO no esta: es el estado inicial, no un destino.
       estado: { type: 'string', enum: ['EN_PROGRESO', 'CERRADO'] },
       user_id: { type: 'integer' }
@@ -91,7 +94,7 @@ export const reopenSchema = {
   body: {
     type: 'object',
     required: ['ticket_id'],
-    properties: { ticket_id: { type: 'integer', minimum: 1 }, user_id: { type: 'integer' } },
+    properties: { ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX }, user_id: { type: 'integer' } },
     additionalProperties: false
   },
   response: ok()
@@ -111,8 +114,8 @@ export const reassignSchema = {
     type: 'object',
     required: ['ticket_id', 'asignado_a_id'],
     properties: {
-      ticket_id: { type: 'integer', minimum: 1 },
-      asignado_a_id: { type: 'integer', minimum: 1 },
+      ticket_id: { type: 'integer', minimum: 1, maximum: ID_MAX },
+      asignado_a_id: { type: 'integer', minimum: 1, maximum: ID_MAX },
       user_id: { type: 'integer' }
     },
     additionalProperties: false
@@ -127,7 +130,7 @@ export const attachmentSchema = {
   params: {
     type: 'object',
     required: ['attachmentId'],
-    properties: { attachmentId: { type: 'integer', minimum: 1 } }
+    properties: { attachmentId: { type: 'integer', minimum: 1, maximum: ID_MAX } }
   }
 }
 
@@ -144,6 +147,6 @@ export const documentFileSchema = {
   params: {
     type: 'object',
     required: ['documentId'],
-    properties: { documentId: { type: 'integer', minimum: 1 } }
+    properties: { documentId: { type: 'integer', minimum: 1, maximum: ID_MAX } }
   }
 }

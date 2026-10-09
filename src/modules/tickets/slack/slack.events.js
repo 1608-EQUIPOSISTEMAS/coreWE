@@ -1,4 +1,4 @@
-import { consultarAvanceDesdeSlack, createTicketFromSlack } from '../tickets.usecases.js'
+import { consultarAvanceDesdeSlack, createTicketFromSlack, resolverUsuarioDeSlack } from '../tickets.usecases.js'
 import { escaparSlack } from './slack.text.js'
 import { formatTicketCode } from '../tickets.entity.js'
 import { postearMensaje, leerHistorialDm } from '../../../shared/adapters/slack/tickets-slack.adapter.js'
@@ -128,6 +128,16 @@ export function eventsHandler (req, reply) {
 async function procesarDm (evento) {
   const canal = evento.channel
 
+  // Quien no tiene el modulo TICKETS no entra ni a la entrevista: se corta
+  // antes de gastar IA y de hacerle preguntas para un ticket que no podra crear.
+  // createTicketFromSlack y consultarAvanceDesdeSlack lo vuelven a comprobar.
+  try {
+    await resolverUsuarioDeSlack(evento.user)
+  } catch (err) {
+    await postearMensaje(canal, bloquesDeTextoPlano(mensajeDeError(err, '[tickets-slack] DM')))
+    return
+  }
+
   // Lo que el usuario escribio antes en este DM: las respuestas a una ronda de
   // preguntas en curso, o mensajes sueltos que todavia no tuvieron respuesta.
   // Sin historial (falta el scope, Slack caido) se sigue solo con este mensaje.
@@ -211,10 +221,10 @@ async function textoDeAvance (slackUserId, ticketRef) {
 
   if (ticket) {
     const lineas = [
-      `*Ticket #${formatTicketCode(ticket.ticket_id)}* — ${ticket.title}`,
+      `*Ticket #${formatTicketCode(ticket.ticket_id)}* — ${escaparSlack(ticket.title)}`,
       `*Estado:* ${ESTADO_LEGIBLE[ticket.status] ?? ticket.status}`,
       `*Prioridad:* ${ticket.priority}`,
-      `*Atiende:* ${ticket.asignado ?? 'aún sin asignar'}`
+      `*Atiende:* ${escaparSlack(ticket.asignado ?? 'aún sin asignar')}`
     ]
     if (ticket.comentarios > 0) {
       lineas.push(`*Comentarios:* ${ticket.comentarios} (se leen y responden en el ERP)`)

@@ -114,7 +114,8 @@ export async function interpretarConversacion (turnos = [], { permitirPreguntas 
   // que el schema lo pida no garantiza que lo cumpla.
   const intencion = INTENCIONES.includes(salida.intencion) ? salida.intencion : 'TICKET'
   const titulo = recortar(String(salida.titulo ?? '').replace(/\s+/g, ' ').trim(), TITULO_MAX)
-  const refIa = Number.isFinite(Number(salida.ticket_ref)) ? Number(salida.ticket_ref) : 0
+  // Entero o nada: un 2.5 no es un numero de ticket.
+  const refIa = Number.isInteger(Number(salida.ticket_ref)) ? Number(salida.ticket_ref) : 0
   const conImagen = tieneImagenes(turnos)
   const preguntas = intencion === 'TICKET' && permitirPreguntas
     ? completarPreguntas(limpiarPreguntas(salida.preguntas), { conImagen, conEnlaces: tieneEnlaces(turnos) })

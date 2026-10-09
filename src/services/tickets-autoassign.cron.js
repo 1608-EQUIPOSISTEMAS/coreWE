@@ -28,15 +28,21 @@ async function sweep () {
   if (_running) return
   _running = true
   const t0 = Date.now()
+  // Dos trabajos independientes, cada uno con su try: antes un fallo del
+  // reparto saltaba el cierre por manual de ese minuto.
   try {
     const asignados = await runAutoAssignSweep()
     if (asignados) console.log(`[tickets-autoassign] ${asignados} ticket(s) asignado(s) tras la ventana de gracia`)
+  } catch (err) {
+    console.error(`[tickets-autoassign] FALLO tras ${Date.now() - t0}ms:`, err.message)
+  }
+  try {
     // Mismo minuto de resolucion: el plazo del manual (7 min) tambien se mide
-    // en minutos. Un fallo aca no frena el reparto, que ya corrio.
+    // en minutos.
     const cerrados = await runManualSweep()
     if (cerrados) console.log(`[tickets-manual] ${cerrados} ticket(s) dado(s) por resuelto(s) por el manual, sin respuesta`)
   } catch (err) {
-    console.error(`[tickets-autoassign] FALLO tras ${Date.now() - t0}ms:`, err.message)
+    console.error(`[tickets-manual] FALLO tras ${Date.now() - t0}ms:`, err.message)
   } finally {
     _running = false
   }

@@ -3,7 +3,9 @@ import { ticketRoleLabel, separarEnlaces } from './tickets.entity.js'
 // La BD habla snake_case; el frontend, camelCase. Este es el unico lugar que
 // traduce, para que ni el repositorio invente alias ni el .vue lea columnas.
 
-const persona = (nombre, alias) => (nombre ? { nombre, alias } : null)
+// El id viaja para que el front compare personas (agente actual en el selector
+// de reasignacion, aviso de "asignado automaticamente"); el nombre no es unico.
+const persona = (nombre, alias, id = null) => (nombre ? { id, nombre, alias } : null)
 
 /** Fila de la bandeja y cabecera del detalle. */
 export function toTicketDto (t) {
@@ -18,12 +20,12 @@ export function toTicketDto (t) {
     enlaces: separarEnlaces(t.link),
     prioridad: t.priority,
     estado: t.status,
-    creadoPor: persona(t.creador, t.creador_alias),
+    creadoPor: persona(t.creador, t.creador_alias, t.created_by_id),
     // La columna se llama "Área" pero en realidad muestra el rol de quien creo
     // el ticket (más específico que el área: distingue "Líder Comercial" de
     // "Comercial"). No se guarda: se deriva en cada consulta.
     area: ticketRoleLabel(t.creador_roles),
-    asignadoA: persona(t.asignado, t.asignado_alias),
+    asignadoA: persona(t.asignado, t.asignado_alias, t.assigned_to_id),
     creadoEn: t.registration_date,
     comentarios: t.comentarios ?? 0,
     // En el listado es un conteo; en el detalle, la lista para poder pintarlos.
@@ -35,6 +37,7 @@ export function toTicketDto (t) {
     ...(t.canManage !== undefined ? { canManage: t.canManage } : {}),
     ...(t.canChangeStatus !== undefined ? { canChangeStatus: t.canChangeStatus } : {}),
     ...(t.canReopen !== undefined ? { canReopen: t.canReopen } : {}),
+    ...(t.canReassign !== undefined ? { canReassign: t.canReassign } : {}),
     // Solo al resolver: si la confirmacion le llego por Slack a quien reporto.
     ...(t.avisoSlack !== undefined && t.avisoSlack !== null ? { avisoSlack: t.avisoSlack } : {})
   }
@@ -52,7 +55,7 @@ export function toCommentDto (c) {
   return {
     id: c.ticket_comment_id,
     cuerpo: c.body,
-    autor: persona(c.autor, c.autor_alias),
+    autor: persona(c.autor, c.autor_alias, c.author_id),
     autorId: c.author_id,
     creadoEn: c.registration_date,
     adjuntos: c.adjuntos ?? []
@@ -74,6 +77,20 @@ export function toActivityDto (e) {
 
 export function toAssigneeDto (u) {
   return { id: u.user_id, nombre: u.name }
+}
+
+/**
+ * Content-Disposition de una descarga (RFC 6266). `filename="..."` no admite
+ * percent-encoding (el navegador mostraba "captura%20%C3%B1and%C3%BA.png"):
+ * va un respaldo ASCII sin tildes, y el nombre real en `filename*` UTF-8.
+ */
+export function contentDisposition (nombre) {
+  const original = String(nombre || 'archivo')
+  const ascii = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]|["\\]/g, '_')
+  // encodeURIComponent deja ' ( ) * sin codificar, y en filename* no van.
+  const utf8 = encodeURIComponent(original).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  return `inline; filename="${ascii}"; filename*=UTF-8''${utf8}`
 }
 
 /** Fila de la lista de documentos. stored_name nunca sale: es la ruta en disco. */

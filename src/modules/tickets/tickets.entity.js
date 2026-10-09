@@ -29,6 +29,38 @@ export function formatTicketCode (ticketId) {
   return String(ticketId ?? '').padStart(5, '0')
 }
 
+// Tope de un integer de Postgres: un id mas grande no existe, y mandarlo a la
+// consulta revienta con "out of range" (500) en vez de un 400/404.
+export const ID_MAX = 2147483647
+
+/**
+ * Un id de ticket que llega como texto (campos multipart): entero de 1 a
+ * ID_MAX o 400. Number('') es 0 y Number('abc') es NaN: ninguno pasa.
+ */
+export function parseTicketId (valor) {
+  const id = Number(String(valor ?? '').trim())
+  if (!Number.isInteger(id) || id < 1 || id > ID_MAX) {
+    throw new DomainError('ticket_id inválido')
+  }
+  return id
+}
+
+/**
+ * Si lo buscado es un numero de ticket ("42", "00042", "#00042"), su id; si
+ * no, null. Asi el buscador encuentra por codigo, como promete el placeholder.
+ */
+export function ticketIdDeBusqueda (busqueda) {
+  const m = /^#?\s*(\d{1,10})$/.exec(String(busqueda ?? '').trim())
+  if (!m) return null
+  const id = Number(m[1])
+  return id >= 1 && id <= ID_MAX ? id : null
+}
+
+/** Escapa los comodines de LIKE (% y _) y el escape mismo: se busca texto literal. */
+export function escaparLike (texto) {
+  return String(texto ?? '').replace(/[\\%_]/g, '\\$&')
+}
+
 // ── Alcance de lectura ─────────────────────────────────────────────────────
 //
 // Sustituye el catalogo de permisos del sistema origen (ticket:leer:todos,
@@ -130,21 +162,66 @@ export function canReopenOf (ticket, userId) {
   return Boolean(ticket) && ticket.status === 'CERRADO' && ticket.created_by_id === userId
 }
 
-// Campos a actualizar al reabrir desde quien reporto. Mismo efecto que el
-// reabrir del agente en nextStatus: la resolucion anterior deja de valer y la
-// primera respuesta se conserva.
-export function reopenByReporter (ticket, userId) {
+// ¿La primera respuesta la "dio" el manual de Slack al cerrar el ticket, y no
+// un agente? resolveByManual sella first_response_at con el mismo instante que
+// manual_answered_at. Un "No, sigo necesitando ayuda" no cierra ni sella nada.
+export function respondioElManual (ticket) {
+  if (!ticket?.first_response_at || !ticket.manual_answered_at) return false
+  if (!['RESUELTO', 'SIN_RESPUESTA'].includes(ticket.manual_answer)) return false
+  return new Date(ticket.first_response_at).getTime() === new Date(ticket.manual_answered_at).getTime()
+}
+
+// Campos a actualizar al reabrir desde quien reporto. La resolucion anterior
+// deja de valer.
+//
+// Si la "respuesta" fue el manual, ningun agente lo atendio todavia: vuelve a
+// ABIERTO (sin tomar), sin primera respuesta y con un plazo de respuesta nuevo
+// que corre desde ahora. Conservar la del manual lo daba por respondido (y por
+// eso nunca se escalaba); conservar el plazo viejo lo daba por vencido y lo
+// escalaba al minuto. Si lo atendio un agente, vuelve a EN_PROGRESO con el.
+export function reopenByReporter (ticket, userId, ahora = new Date(), plazos = null) {
   if (!ticket || ticket.created_by_id !== userId) {
     throw new ForbiddenError('Solo quien reportó el ticket puede reabrirlo')
   }
   if (ticket.status !== 'CERRADO') {
     throw new DomainError('Solo se puede reabrir un ticket resuelto')
   }
-  // Un ticket que cerro el manual de Slack antes del reparto no tiene agente:
-  // vuelve a la cola (ABIERTO) para que el reparto automatico lo asigne, en
-  // vez de quedar EN_PROGRESO sin nadie que lo atienda.
-  const status = ticket.assigned_to_id ? 'EN_PROGRESO' : 'ABIERTO'
-  return { status, first_response_at: ticket.first_response_at, resolved_at: null }
+  if (respondioElManual(ticket) || !ticket.assigned_to_id) {
+    return {
+      status: 'ABIERTO',
+      first_response_at: null,
+      resolved_at: null,
+      ...(plazos ? { first_response_due_at: sumarMinutosHabiles(ahora, plazos.first_response_minutes) } : {})
+    }
+  }
+  return { status: 'EN_PROGRESO', first_response_at: ticket.first_response_at, resolved_at: null }
+}
+
+// Un ticket tiene UN dueño a la vez. Si ya lo atiende otro agente, nadie mas
+// lo toma ni lo mueve: solo ese agente puede pasarselo a otro (reassign). Se
+// responde 409 con el nombre del dueño, no un 403 generico: no es que falte
+// permiso, es que el ticket ya tiene quien lo atienda.
+export function assertNoEsDeOtro (ticket, userId) {
+  if (ticket.assigned_to_id != null && ticket.assigned_to_id !== userId) {
+    const dueno = ticket.asignado ?? 'otro agente'
+    throw new DomainError(
+      `Este ticket ya lo atiende ${dueno}. Solo ${dueno} puede reasignártelo.`,
+      { statusCode: 409, code: 'TICKET_YA_TOMADO' })
+  }
+  return ticket
+}
+
+// ¿Puede ESTE usuario reasignar ESTE ticket? Sin dueño (ventana de gracia),
+// cualquier agente; con dueño, solo el dueño. Cerrado, nadie.
+export function canReassignOf (ticket, scope, userId) {
+  if (!scope.canManage || !ticket || ticket.status === 'CERRADO') return false
+  return ticket.assigned_to_id == null || ticket.assigned_to_id === userId
+}
+
+// El evento de la bitacora (ticket_events) que deja cada transicion de estado.
+export function eventoDeTransicion (estadoPrevio, nuevoEstado) {
+  if (estadoPrevio === 'CERRADO') return 'REABIERTO'
+  return nuevoEstado === 'CERRADO' ? 'RESUELTO' : 'TOMADO'
 }
 
 // ── Transiciones ───────────────────────────────────────────────────────────
@@ -165,9 +242,11 @@ export function nextStatus (ticket, agentId, nuevoEstado, ahora = new Date()) {
 
   // Reabrir (CERRADO -> EN_PROGRESO): la resolucion anterior ya no vale, asi
   // que resolved_at se destraba a null. first_response_at no se toca: la
-  // primera respuesta ya paso y reabrir no la borra.
+  // primera respuesta ya paso y reabrir no la borra. Salvo que la haya sellado
+  // el manual: entonces la primera respuesta real del agente es ahora.
   if (ticket.status === 'CERRADO' && nuevoEstado === 'EN_PROGRESO') {
-    return { status: nuevoEstado, first_response_at: ticket.first_response_at, resolved_at: null }
+    const primeraRespuesta = respondioElManual(ticket) ? ahora : ticket.first_response_at
+    return { status: nuevoEstado, first_response_at: primeraRespuesta, resolved_at: null }
   }
 
   // El ?? no pisa una marca existente. Hoy TRANSICIONES_VALIDAS ya impide
@@ -209,9 +288,15 @@ export function pickAgent (candidatos = [], excluirId = null) {
 
 // Reasignacion manual. A diferencia del reparto automatico no elige por carga
 // (quien la pide ya decidio a quien), pero sostiene las mismas invariantes.
-export function assertReassignable (ticket, destino, nuevoAsignadoId) {
+//
+// actorId: quien la pide. Con dueño, solo el dueño suelta el ticket; ningun
+// otro agente se lo puede llevar (ni pasarselo a un tercero).
+export function assertReassignable (ticket, destino, nuevoAsignadoId, actorId) {
   if (ticket.status === 'CERRADO') {
     throw new DomainError('No se puede reasignar un ticket cerrado')
+  }
+  if (ticket.assigned_to_id != null && ticket.assigned_to_id !== actorId) {
+    throw new ForbiddenError(`Solo ${ticket.asignado ?? 'el agente que lo atiende'} puede reasignar este ticket`)
   }
   if (ticket.assigned_to_id === nuevoAsignadoId) {
     throw new DomainError('El ticket ya está asignado a ese usuario')
@@ -306,14 +391,19 @@ export function withSla (row, ahora = new Date()) {
 
 export const FILTROS = ['TODOS', 'MIOS', 'SIN_ASIGNAR', 'POR_VENCER', 'VENCIDOS']
 
+// Sin dueño Y todavia vivo. Un CERRADO sin agente (lo cerro el manual de Slack
+// antes del reparto) no espera a nadie: no va en "Sin asignar".
+const esHuerfano = t => !t.assigned_to_id && ESTADOS_ACTIVOS.includes(t.status)
+
 /**
  * Filtro y orden de la bandeja, en JS y no en SQL: POR_VENCER depende del
  * umbral de sla-clock y reimplementarlo en la consulta duplicaria la regla.
  */
 export function applyFilter (tickets = [], filtro = 'TODOS', userId = null) {
   switch (filtro) {
-    case 'MIOS': return tickets.filter(t => t.assigned_to_id === userId)
-    case 'SIN_ASIGNAR': return tickets.filter(t => !t.assigned_to_id)
+    // Solo lo vivo: es la cola de trabajo del agente, igual que su KPI.
+    case 'MIOS': return tickets.filter(t => t.assigned_to_id === userId && ESTADOS_ACTIVOS.includes(t.status))
+    case 'SIN_ASIGNAR': return tickets.filter(esHuerfano)
     case 'POR_VENCER': return tickets.filter(t => t.riesgo.porVencer && !t.riesgo.vencido)
     case 'VENCIDOS': return tickets.filter(t => t.riesgo.vencido)
     default: return tickets
@@ -324,8 +414,10 @@ export function applyFilter (tickets = [], filtro = 'TODOS', userId = null) {
 export function buildKpis (tickets = [], userId = null) {
   return {
     total: tickets.length,
+    // Mismo criterio que applyFilter('MIOS').
     misAsignados: tickets.filter(t => t.assigned_to_id === userId && ESTADOS_ACTIVOS.includes(t.status)).length,
-    sinAsignar: tickets.filter(t => !t.assigned_to_id).length,
+    // Mismo criterio que applyFilter('SIN_ASIGNAR'): chip y lista cuadran.
+    sinAsignar: tickets.filter(esHuerfano).length,
     // Sin chip: los que todavia puede repartir tickets-autoassign (mismo
     // criterio que unassignedOlderThan). El front refresca mientras sea > 0.
     porAsignar: tickets.filter(t => !t.assigned_to_id && t.status === 'ABIERTO').length,

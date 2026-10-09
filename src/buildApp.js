@@ -85,7 +85,9 @@ setImporterPorts({
   listBankAccounts: () => enrollmentRepository.bankAccountList(),
   listCurrencies: () => enrollmentRepository.currencyList(),
   // Cuotas cobradas de la hoja FICO: pagadas + fila en payments.
-  applyInstallmentPayments: (args) => enrollmentRepository.applyImportedInstallmentPayments(args)
+  applyInstallmentPayments: (args) => enrollmentRepository.applyImportedInstallmentPayments(args),
+  // Fecha de inscripcion real de la hoja FICO (el alta sella NOW()).
+  setImportedRegistrationDate: (args) => enrollmentRepository.setImportedRegistrationDate(args)
 })
 
 // Construye y configura la instancia Fastify sin arrancarla. Permite levantar
