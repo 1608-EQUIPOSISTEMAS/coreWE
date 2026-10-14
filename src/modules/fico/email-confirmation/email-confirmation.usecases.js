@@ -47,8 +47,7 @@ const deps = {
   sendFicoEmail: email.sendFicoEmail,
   generateCronogramaPdf,
   getEnrollmentOdoo,
-  enrollInOdoo: async () => { throw new Error('enrollInOdoo no inyectado en email-confirmation.usecases') },
-  createMembershipOdooUser: async () => { throw new Error('createMembershipOdooUser no inyectado en email-confirmation.usecases') }
+  enrollInOdoo: async () => { throw new Error('enrollInOdoo no inyectado en email-confirmation.usecases') }
 }
 
 // Punto de inyeccion para el orquestador (cablear deps cruzados) y para tests.
@@ -222,6 +221,13 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
   }
 }
 
+// El ERP ya no crea la cuenta Odoo de la membresia (ver membership.usecases):
+// el area la crea a mano con el correo que registro el alumno. Las membresias
+// viejas que si tienen cuenta conservan su login real.
+function membershipCampusLogin (data) {
+  return data.odoo_email || data.origin_email
+}
+
 export async function previewMembershipEmail ({ enrollmentId, overrideEditionId = null, overrideProgramVersionId = null, activationDate = null }) {
   const editionId = overrideEditionId || null
   const data = await repo.findMembershipDataForPreview(enrollmentId, editionId, overrideProgramVersionId)
@@ -235,10 +241,6 @@ export async function previewMembershipEmail ({ enrollmentId, overrideEditionId 
   const fechaAct = formatCalendarDate(startDate)
   const fechaRenov = formatCalendarDate(addMonthsCalendar(startDate, MEMBERSHIP_DURATION_MONTHS))
 
-  const firstName = firstWord(data.first_name)
-  const lastName = firstWord(data.last_name)
-  const odooEmail = data.odoo_email || synthesizeOdooEmail(firstName, lastName)
-
   let installmentsHTML = ''
   if (!isSinglePayment(data.payment_plan_alias)) {
     const instRows = await repo.findInstallments(enrollmentId)
@@ -250,7 +252,7 @@ export async function previewMembershipEmail ({ enrollmentId, overrideEditionId 
   const htmlBody = buildMembresiaHTML({
     studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programName: data.program_name,
-    email: odooEmail,
+    email: membershipCampusLogin(data),
     password: MEMBERSHIP_DEFAULT_PASSWORD,
     isNew: isFirstSend,
     duracion: `${MEMBERSHIP_DURATION_MONTHS} meses`,
@@ -519,36 +521,11 @@ async function sendMembershipEmailInner ({ enrollmentId, cc, skipIfSentAfter }) 
     return { success: true, skipped: true, message: 'El correo ya salio por otro camino' }
   }
 
-  let data = await repo.findMembershipDataForSend(enrollmentId)
+  const data = await repo.findMembershipDataForSend(enrollmentId)
   if (!data) return { success: false, error: 'Inscripcion no encontrada' }
 
   const toEmail = data.origin_email
   if (!toEmail) return { success: false, error: 'Sin correo registrado' }
-
-  // La bienvenida ya NO espera a la fecha de activacion: sale el dia de la
-  // inscripcion con las credenciales del campus y la fecha en que arranca el
-  // acceso. Por eso solo se crea el usuario en Odoo; los cursos los abre despues
-  // el job 'membership_activation'.
-  if (!data.odoo_user_id) {
-    console.log(`[sendMembershipEmail] enrollment ${enrollmentId}: sin odoo_user_id, creando el usuario en Odoo`)
-    const odooRes = await deps.createMembershipOdooUser({ enrollmentId })
-    if (!odooRes?.success) {
-      const errMsg = odooRes?.error || 'fallo desconocido al crear usuario en Odoo'
-      console.error(`[sendMembershipEmail] No se pudo crear user en Odoo para enrollment ${enrollmentId}: ${errMsg}`)
-      return {
-        success: false,
-        error: `No se creo usuario en Odoo (${errMsg}). El correo NO fue enviado para evitar entregar credenciales falsas.`
-      }
-    }
-    data = (await repo.findMembershipDataForSend(enrollmentId)) || data
-  }
-
-  if (!data.odoo_email) {
-    return {
-      success: false,
-      error: 'No se pudo determinar odoo_email tras la inscripcion. Email no enviado.'
-    }
-  }
 
   const startDate = resolveSendActivationStart({
     persistedDate: data.membership_activation_date,
@@ -569,7 +546,7 @@ async function sendMembershipEmailInner ({ enrollmentId, cc, skipIfSentAfter }) 
   const htmlBody = buildMembresiaHTML({
     studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
     programName: data.program_name,
-    email: data.odoo_email,
+    email: membershipCampusLogin(data),
     password: MEMBERSHIP_DEFAULT_PASSWORD,
     isNew: isFirstSend,
     duracion: `${MEMBERSHIP_DURATION_MONTHS} meses`,

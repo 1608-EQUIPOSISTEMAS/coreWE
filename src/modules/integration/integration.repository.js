@@ -384,6 +384,13 @@ export class IntegrationRepository {
     return r.rows || []
   }
 
+  // Contador que suben los triggers de scripts/planeamiento-sheet-autosync.sql.
+  async getPlaneamientoChangeVersion () {
+    const { rows: [r] } = await this.db.query(
+      'SELECT CASE WHEN is_called THEN last_value ELSE 0 END AS v FROM public.planeamiento_sheet_change_seq')
+    return Number(r.v)
+  }
+
   async getProspectos () {
     const r = await this.db.query(`SELECT * FROM public.vw_r_prospectos`)
     return r.rows || []

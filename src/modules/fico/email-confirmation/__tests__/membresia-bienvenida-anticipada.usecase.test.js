@@ -3,10 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Pedido de FICO (sept/26): el socio recibe la bienvenida el dia que se inscribe,
 // aunque haya elegido activar meses despues. Antes el correo y la activacion eran
 // el mismo job diferido, asi que el alumno no sabia nada hasta la fecha elegida.
-//
-// La contraparte esta en membership.usecases: el usuario Odoo se crea SIN cursos
-// (createMembershipOdooUser), para que las credenciales del correo sean reales
-// pero el acceso siga empezando en la fecha de activacion.
 
 const repo = {
   hasSuccessfulSendSince: vi.fn().mockResolvedValue(false),
@@ -25,7 +21,6 @@ vi.mock('../email-confirmation.repository.js', () => ({
 const { sendMembershipEmail, configureEmailDeps } = await import('../email-confirmation.usecases.js')
 
 const sendEmail = vi.fn()
-const createMembershipOdooUser = vi.fn()
 
 const ACTIVACION_FUTURA = {
   enrollment_id: 71,
@@ -46,8 +41,7 @@ beforeEach(() => {
   repo.hasSuccessfulSendSince.mockResolvedValue(false)
   repo.hasPriorSuccessfulSend.mockResolvedValue(false)
   sendEmail.mockResolvedValue({ success: true, messageId: 'msg-1' })
-  createMembershipOdooUser.mockResolvedValue({ success: true, odoo_user_id: 12 })
-  configureEmailDeps({ sendEmail, createMembershipOdooUser })
+  configureEmailDeps({ sendEmail })
 })
 
 describe('bienvenida de membresia con activacion futura', () => {
@@ -65,26 +59,21 @@ describe('bienvenida de membresia con activacion futura', () => {
     expect(sendEmail.mock.calls[0][0].htmlBody).toContain('01/03/2027')
   })
 
-  // Sin usuario en Odoo las credenciales del correo serian inventadas. Se crea la
-  // cuenta, pero SIN cursos: abrirlos aqui adelantaria la activacion.
-  it('crea el usuario Odoo sin abrirle los cursos', async () => {
-    repo.findMembershipDataForSend
-      .mockResolvedValueOnce({ ...ACTIVACION_FUTURA, odoo_user_id: null })
-      .mockResolvedValue({ ...ACTIVACION_FUTURA })
-
-    await sendMembershipEmail({ enrollmentId: 71 })
-
-    expect(createMembershipOdooUser).toHaveBeenCalledWith({ enrollmentId: 71 })
-    expect(sendEmail).toHaveBeenCalledTimes(1)
-  })
-
-  it('no manda credenciales falsas si el alta en Odoo falla', async () => {
-    repo.findMembershipDataForSend.mockResolvedValue({ ...ACTIVACION_FUTURA, odoo_user_id: null })
-    createMembershipOdooUser.mockResolvedValue({ success: false, error: 'Odoo caido' })
+  // El ERP ya no crea la cuenta Odoo (14/10/26): el usuario del campus es el
+  // correo que registro el alumno, y el area crea la cuenta a mano con el.
+  it('sin cuenta Odoo usa el correo registrado como usuario', async () => {
+    repo.findMembershipDataForSend.mockResolvedValue({ ...ACTIVACION_FUTURA, odoo_user_id: null, odoo_email: null })
 
     const res = await sendMembershipEmail({ enrollmentId: 71 })
 
-    expect(res.success).toBe(false)
-    expect(sendEmail).not.toHaveBeenCalled()
+    expect(res.success).toBe(true)
+    expect(sendEmail.mock.calls[0][0].htmlBody).toContain('ana@example.com')
+    expect(sendEmail.mock.calls[0][0].htmlBody).not.toContain('diaz.ana@we.com')
+  })
+
+  it('una membresia vieja con cuenta Odoo conserva su login real', async () => {
+    await sendMembershipEmail({ enrollmentId: 71 })
+
+    expect(sendEmail.mock.calls[0][0].htmlBody).toContain('diaz.ana@we.com')
   })
 })
