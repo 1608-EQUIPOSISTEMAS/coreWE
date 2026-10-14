@@ -1,7 +1,7 @@
 import { authenticate, hasRole, ADMIN_ONLY } from '../../../shared/http/auth.middleware.js'
 import * as ctrl from './enrollment.controller.js'
 import {
-  enrollmentRegisterSchema, enrollmentListSchema, jobStatusSchema, kpisDailySchema,
+  enrollmentRegisterSchema, enrollmentListSchema, jobStatusSchema, kpisDailySchema, paymentMovementsSchema,
   paymentDetailGetSchema, enrollmentUpdateSchema, availableEditionsSchema, programPriceSchema,
   retireEnrollmentSchema, deleteEnrollmentSchema, enrollmentFlagsSchema, editStudentSchema,
   changeModalitySchema, editSellerAgentSchema, courseChangeSchema, reprogramEditionSchema,
@@ -26,6 +26,7 @@ export default async function enrollmentRoutes (fastify) {
   fastify.get('/enrollmentadvisors', ctrl.enrollmentAdvisorsHandler)
   fastify.get('/job-status/:enrollmentId', { schema: jobStatusSchema }, ctrl.jobStatusHandler)
   fastify.get('/kpisdaily', { schema: kpisDailySchema }, ctrl.kpisDailyHandler)
+  fastify.get('/paymentmovements', { schema: paymentMovementsSchema }, ctrl.paymentMovementsHandler)
   fastify.get('/bankaccounts', ctrl.bankAccountsHandler)
   fastify.post('/paymentdetailget', { schema: paymentDetailGetSchema }, ctrl.paymentDetailGetHandler)
   fastify.post('/enrollmentupdate', { schema: enrollmentUpdateSchema }, ctrl.enrollmentUpdateHandler)

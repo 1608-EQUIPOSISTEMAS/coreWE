@@ -23,6 +23,11 @@ export async function enrollmentListHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function paymentMovementsHandler (req, reply) {
+  const data = await usecases.paymentMovements({ from: req.query.from, to: req.query.to })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function enrollmentAdvisorsHandler (req, reply) {
   const data = await usecases.enrollmentAdvisorsList()
   return reply.code(200).send({ ok: true, data })

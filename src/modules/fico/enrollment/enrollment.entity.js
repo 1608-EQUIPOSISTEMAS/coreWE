@@ -462,3 +462,41 @@ export function buildCourseChangeNewInstallments ({ requested = [], paidNow = 0,
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .map((c, i) => ({ ...c, number: lastNumber + i + 1 }))
 }
+
+// --- Movimientos de caja (filtro F. pago del listado) ----------------------
+// FICO cuadra el ingreso del dia contra el banco con el formato de la hoja
+// "Ingresos operativos": una fila por PAGO, no por venta. Estas reglas fijan
+// las etiquetas de esa hoja a partir del catalogo de payments.
+
+// El tipo sale del ORDEN del pago dentro de la venta, no de cat_payment_type:
+// en los datos las cuotas 2..9 vienen casi siempre como "Pago Unico" (single).
+// El primer pago es el inicial: PT si la venta es al contado (single), PP si
+// abre un plan de cuotas. Los siguientes son CUOTA. Certificado, reasignacion
+// y diferencia de CC son ingresos sueltos (ADICIONAL) y no cuentan como primero.
+export const EXTRA_PAYMENT_ALIASES = [
+  'we_payment_type_certificate',
+  'we_payment_type_reassignment',
+  'we_payment_type_course_change_diff'
+]
+
+export function paymentMovementType ({ paymentTypeAlias, isFirstPayment }) {
+  if (EXTRA_PAYMENT_ALIASES.includes(paymentTypeAlias)) return 'ADICIONAL'
+  if (!isFirstPayment) return 'CUOTA'
+  return paymentTypeAlias === 'we_payment_type_single' ? 'PT' : 'PP'
+}
+
+// La linea de negocio sale del programa (EN VIVO / ONLINE / FUNDACION), salvo
+// que la venta entre por convenio: ahi la hoja la cuenta en B2B.
+export function movementBusinessLine ({ agentOrigin, programLine }) {
+  if (agentOrigin === 'B2B') return 'B2B'
+  return (programLine || '').toUpperCase()
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+export function assertMovementRange ({ from, to }) {
+  if (!ISO_DATE.test(from || '') || !ISO_DATE.test(to || '')) {
+    throw new DomainError('El rango de F. pago requiere from y to en formato YYYY-MM-DD')
+  }
+  if (from > to) throw new DomainError('En el rango de F. pago, "desde" no puede ser posterior a "hasta"')
+}

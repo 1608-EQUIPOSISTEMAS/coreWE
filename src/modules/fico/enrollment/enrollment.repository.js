@@ -8,7 +8,7 @@ import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
 import { getEnrollmentOdoo, getProgramPrice as queryProgramPrice } from '../../../utils/fico-queries.sql.js'
 import { buildOdooEmailBase } from '../../../utils/fico-odoo.helper.js'
-import { MEMBERSHIP_ACTIVATION_WINDOW_MONTHS } from './enrollment.entity.js'
+import { MEMBERSHIP_ACTIVATION_WINDOW_MONTHS, EXTRA_PAYMENT_ALIASES } from './enrollment.entity.js'
 
 // Efectos cruzados que todavia viven en el service legacy porque pertenecen a
 // otros subdominios (audit, confirmacion, hijos, membresia, odoo, MV refresh,
@@ -79,6 +79,79 @@ export class EnrollmentRepository {
     // de evento (VIP/GENERAL/...), los cursos del paquete (CURSO n / FI n) y la
     // etiqueta CUENTA PERSONAL.
     await Promise.all([attachEventCategory(rows, pool), attachChildCourses(rows, pool), attachPersonalAccount(rows, pool)])
+    return rows
+  }
+
+  // Una fila por pago cobrado en [from, to] (formato "Ingresos operativos").
+  // El PRIMER pago de la venta (menor installment_number, misma regla que
+  // sp_fico_enrollment_list) es el inicial y se fecha por el comprobante
+  // (leads.pay_date): en ~5% de las ventas payments.payment_date guarda el dia
+  // en que FICO lo registro y el ingreso caeria un dia tarde. Cuotas y
+  // adicionales llevan su propia fecha. Los hijos SEG pago-cero se omiten: no
+  // son caja y un paquete llenaria el dia de ceros.
+  // Primero se ordena y filtra solo payments (liviano); los datos del alumno y
+  // del programa se cruzan despues, solo para los pagos del rango.
+  async listPaymentMovements ({ from, to }) {
+    const { rows } = await this.db.query(`
+      WITH ranked AS (
+        SELECT p.payment_id, p.enrollment_id, p.payment_date, ct.alias AS payment_type_alias,
+               ct.alias = ANY($3::text[]) AS is_extra,
+               ROW_NUMBER() OVER (
+                 PARTITION BY p.enrollment_id, ct.alias = ANY($3::text[])
+                 ORDER BY pi.installment_number NULLS LAST, p.payment_date, p.payment_id
+               ) = 1 AS is_first_rank
+          FROM public.payments p
+          LEFT JOIN public."catalog" ct ON ct.catalog_id = p.cat_payment_type
+          LEFT JOIN public.payment_installments pi ON pi.installment_id = p.installment_id
+         WHERE p.active = 'Y'
+      ), dated AS (
+        SELECT r.*, (r.is_first_rank AND NOT r.is_extra) AS is_first_payment,
+               CASE WHEN r.is_first_rank AND NOT r.is_extra
+                    THEN COALESCE(l.pay_date::date, r.payment_date::date)
+                    ELSE r.payment_date::date END AS paid_on
+          FROM ranked r
+          LEFT JOIN public.leads l ON l.enrollment_id = r.enrollment_id
+      )
+      SELECT
+        d.payment_id,
+        e.enrollment_id,
+        to_char(d.paid_on, 'YYYY-MM-DD')                   AS paid_on,
+        d.payment_type_alias,
+        d.is_first_payment,
+        TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS student_full_name,
+        ${STUDENT_PHONE_SQL}                               AS phone,
+        ${STUDENT_EMAIL_SQL}                               AS email,
+        e.agent_origin,
+        c_line.description                                 AS program_line,
+        c_type.description                                 AS program_type,
+        c_cat.description                                  AS product_line,
+        pv.abbreviation                                    AS program_name,
+        pv.version_code,
+        CASE c_curr.alias WHEN 'we_currency_dollars' THEN 'USD' ELSE 'PEN' END AS currency,
+        p.amount,
+        cm.description                                     AS payment_method,
+        cb.description                                     AS business_entity,
+        ba.bank_name                                       AS bank_name,
+        p.transaction_code
+      FROM dated d
+      JOIN public.payments p              ON p.payment_id = d.payment_id
+      JOIN public.enrollments e           ON e.enrollment_id = d.enrollment_id AND e.active = 'Y'
+      JOIN public.customers cust          ON cust.customer_id = e.customer_id
+      JOIN public.persons per             ON per.person_id = cust.person_id
+      LEFT JOIN public.leads l            ON l.enrollment_id = e.enrollment_id
+      LEFT JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+      LEFT JOIN public.programs pg        ON pg.program_id = pv.program_id
+      LEFT JOIN public."catalog" c_line   ON c_line.catalog_id = pg.cat_business_line_id
+      LEFT JOIN public."catalog" c_cat    ON c_cat.catalog_id = pg.cat_category
+      LEFT JOIN public."catalog" c_type   ON c_type.catalog_id = pg.cat_type_program
+      LEFT JOIN public."catalog" c_curr   ON c_curr.catalog_id = e.cat_currency
+      LEFT JOIN public."catalog" cm       ON cm.catalog_id = p.cat_method_payment
+      LEFT JOIN public.bank_accounts ba   ON ba.account_id = p.settled_in_account_id
+      LEFT JOIN public."catalog" cb       ON cb.catalog_id = ba.business_entity_catalog_id
+      WHERE d.paid_on BETWEEN $1::date AND $2::date
+        AND NOT (p.amount = 0 AND e.parent_enrollment_id IS NOT NULL)
+      ORDER BY d.paid_on, d.payment_id
+    `, [from, to, EXTRA_PAYMENT_ALIASES])
     return rows
   }
 

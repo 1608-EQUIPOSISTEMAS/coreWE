@@ -56,6 +56,17 @@ export const jobStatusSchema = {
   }
 }
 
+export const paymentMovementsSchema = {
+  querystring: {
+    type: 'object',
+    required: ['from', 'to'],
+    properties: {
+      from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }
+    }
+  }
+}
+
 export const kpisDailySchema = {
   querystring: {
     type: 'object',
