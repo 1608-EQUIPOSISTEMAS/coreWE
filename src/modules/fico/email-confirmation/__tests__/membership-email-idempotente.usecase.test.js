@@ -40,7 +40,7 @@ beforeEach(() => {
   repo.findMembershipDataForSend.mockResolvedValue({ ...DATOS_COMPLETOS })
   repo.hasPriorSuccessfulSend.mockResolvedValue(false)
   sendEmail.mockResolvedValue({ success: true, messageId: 'msg-1' })
-  configureEmailDeps({ sendEmail, createMembershipOdooUser: vi.fn() })
+  configureEmailDeps({ sendEmail })
 })
 
 describe('sendMembershipEmail con skipIfSentAfter', () => {

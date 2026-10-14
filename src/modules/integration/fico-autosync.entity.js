@@ -21,6 +21,10 @@ export const AUTOSYNC = {
   runTimeoutMs: 5 * MIN
 }
 
+// El Planeamiento usa las mismas reglas de calma/tope, pero sin corrida horaria
+// de seguridad: su contador ve TODO lo que lee la hoja (no lee otros Sheets).
+export const PLANEAMIENTO_AUTOSYNC = { ...AUTOSYNC, safetyEveryMs: Infinity }
+
 // Perú no tiene horario de verano: UTC-5 fijo.
 const limaHour = (now) => new Date(now - 5 * 60 * MIN).getUTCHours()
 

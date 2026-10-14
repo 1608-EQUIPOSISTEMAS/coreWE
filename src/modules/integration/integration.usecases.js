@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { integrationRepository, IntegrationRepository } from './integration.repository.js'
 import { ficoAutosyncRepository } from './fico-autosync.repository.js'
-import { AUTOSYNC, observeChanges, decideAutoSync, shouldAlertFailures } from './fico-autosync.entity.js'
+import { AUTOSYNC, PLANEAMIENTO_AUTOSYNC, observeChanges, decideAutoSync, shouldAlertFailures } from './fico-autosync.entity.js'
 import { syncPool } from '../../shared/db/pool.js'
 import { slack } from '../../shared/adapters/slack/slack.adapter.js'
 import { editionRepository } from '../edition/edition.repository.js'
@@ -101,6 +101,9 @@ export async function syncScheduleToSheet () {
   const sheetName = 'PLANEAMIENTO'
 
   const rows = await repo.getScheduleReport()
+  if (rows.length === 0) {
+    return { ok: true, message: 'El reporte de ediciones salió vacío. No se actualizó el Sheet.', rows_generated: 0 }
+  }
   const headers = Object.keys(rows[0])
   const values = rows.map(row => serializeSheetRow(row, headers))
 
@@ -111,6 +114,27 @@ export async function syncScheduleToSheet () {
     rows_generated: rows.length,
     sheet_updated_cells: updatedCells
   }
+}
+
+// Una vuelta del vigilante del Planeamiento (services/sheets-autosync.cron.js).
+// El estado vive en memoria del cron: syncedVersion arranca en -1, así que al
+// levantar el backend se sincroniza una vez.
+export async function planeamientoAutosyncTick (state, now = Date.now()) {
+  const version = await repo.getPlaneamientoChangeVersion()
+  const next = { ...state, ...observeChanges(state, { version, syncedVersion: state.syncedVersion, now }) }
+  const decision = decideAutoSync({
+    state: next, now, lastRunAt: state.lastRunAt, lastOkAt: state.lastOkAt, cfg: PLANEAMIENTO_AUTOSYNC
+  })
+  if (!decision.run) return next
+
+  try {
+    await syncScheduleToSheet()
+  } catch (err) {
+    // Google o la BD fallaron: se reintenta pasado minGapMs, el cambio sigue pendiente.
+    console.error('[planeamiento-autosync] corrida fallida:', err.message)
+    return { ...next, lastRunAt: now }
+  }
+  return { ...next, lastRunAt: now, lastOkAt: now, syncedVersion: version, pendingSince: null }
 }
 
 // Sobreescribe la hoja "3. SYSTEM" con la vista vw_r_prospectos.

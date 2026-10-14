@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AUTOSYNC, observeChanges, decideAutoSync, shouldAlertFailures, buildReplacement, columnWidth } from '../fico-autosync.entity.js'
+import { AUTOSYNC, PLANEAMIENTO_AUTOSYNC, observeChanges, decideAutoSync, shouldAlertFailures, buildReplacement, columnWidth } from '../fico-autosync.entity.js'
 
 const MIN = 60_000
 // 2026-10-01 10:00 en Lima (15:00 UTC): horario de oficina.
@@ -84,5 +84,19 @@ describe('buildReplacement', () => {
 
   it('columnWidth: T=20, AE=31, BV=74', () => {
     expect(['T', 'AE', 'BV'].map(columnWidth)).toEqual([20, 31, 74])
+  })
+})
+
+describe('PLANEAMIENTO_AUTOSYNC', () => {
+  it('no hace corrida de seguridad: sin cambios no sincroniza nunca', () => {
+    const state = { version: 4, changedAt: null, pendingSince: null }
+    const lastOkAt = T0 - 10 * 60 * MIN
+    expect(decideAutoSync({ state, now: T0, lastOkAt, cfg: PLANEAMIENTO_AUTOSYNC })).toEqual({ run: false })
+  })
+
+  it('al arrancar (syncedVersion -1) sincroniza tras el minuto de calma', () => {
+    const s = observeChanges({ version: null, changedAt: null, pendingSince: null }, { version: 0, syncedVersion: -1, now: T0 })
+    expect(decideAutoSync({ state: s, now: T0, cfg: PLANEAMIENTO_AUTOSYNC })).toEqual({ run: false })
+    expect(decideAutoSync({ state: s, now: T0 + MIN, cfg: PLANEAMIENTO_AUTOSYNC })).toEqual({ run: true, trigger: 'changes' })
   })
 })
