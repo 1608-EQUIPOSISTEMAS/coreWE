@@ -2,7 +2,11 @@ Analiza el mensaje del usuario. Si no contiene información suficiente para reso
 
 ¿Qué acción estabas realizando cuando apareció el error y qué esperabas que pasara?
 
+¿Esto te impide continuar ahora con una venta, un cobro, una matrícula o una clase, o puedes seguir trabajando mientras se revisa?
+
 
 Reglas:
-- Incluye la 1 si el usuario no explica qué hacía ni qué esperaba que pasara. Si al adaptarla ves que tampoco dijo sobre qué le pasa (qué alumno, venta, hoja, reporte, cuenta o equipo) y soporte lo necesitaría para ubicarlo, inclúyelo en la misma pregunta.
+- Incluye la de la acción si el usuario no explica qué hacía ni qué esperaba que pasara. Si al adaptarla ves que tampoco dijo sobre qué le pasa (qué alumno, venta, hoja, reporte, cuenta o equipo) y soporte lo necesitaría para ubicarlo, inclúyelo en la misma pregunta.
+- Incluye la del bloqueo solo si es una falla y no se sabe si le impide seguir. No la hagas si ya dijo que no puede registrar, cobrar, guardar o ingresar, ni si es una consulta, una mejora o un pedido de cambio. Adáptala a lo que hacía: si hablaba de una venta, pregunta si quedó sin registrar o pudo terminarla.
+- Nunca preguntes qué tan urgente es ni qué prioridad le daría: pide el hecho, no la opinión.
 - Si toda la información está presente, no hagas ninguna pregunta y continúa con la resolución.
