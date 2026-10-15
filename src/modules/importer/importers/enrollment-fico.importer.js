@@ -35,8 +35,11 @@ const H = {
   saldo: ['saldo'],
   // Observaciones libres. Solo se lee para detectar la GIFT CARD (ver ingest).
   obs: ['obs', 'observacion', 'observaciones'],
-  // Columna K "MOD_MATRICULA". Valor "R" = fila que NO se importa (ver ingest).
-  enrollment_mode: ['mod_ matricula', 'mod_matricula', 'mod matricula', 'mod. matricula'],
+  // Estado de la fila: ACT / R / RP / CC. Valor "R" = fila que NO se importa (ver
+  // ingest). Hojas 2025: columna K "MOD_MATRICULA". Hojas 2026: "ESTADO ALUMNO"
+  // (col J); ahi MOD_MATRICULA no existe. Sin este alias las R de 2026 se
+  // importaban. Ojo: "EST_ALUMNO" de 2025 es otra cosa (REGULAR/NA/FLEXIBLE).
+  enrollment_mode: ['mod_ matricula', 'mod_matricula', 'mod matricula', 'mod. matricula', 'estado alumno'],
   // Columna J: tipo de membresia (WE BLACK / WE GOLD / ...). Con valor = el
   // alumno es miembro y el curso es beneficio (precio 0 legitimo); vacia = no.
   member_type: ['tip_member', 'tip member', 'tipo de miembro', 'tipo miembro', 'membresia'],
@@ -68,7 +71,9 @@ const columns = [
 // --- Ingesta a medida: workbook -> { rows } --------------------------------
 // Lee la pestaña de inscripciones, empareja por encabezado y emite filas con
 // claves limpias + un array `_installments` (cronograma reconstruido de FCn/Cn).
-function ingest (wb) {
+// includeExcluded: emite tambien las filas MOD_MATRICULA "R" (marcadas excluded).
+// Solo lo pide la conciliacion FICO, que verifica que no esten activas en la BD.
+function ingest (wb, { includeExcluded = false } = {}) {
   const ws = findInscriptionSheet(wb)
   if (!ws) throw new Error('No se encontro la pestaña de inscripciones (con columna DNI).')
 
@@ -98,7 +103,8 @@ function ingest (wb) {
     const get = (key) => col[key] ? cellText(row.getCell(col[key]).value) : ''
     // MOD_MATRICULA "R" = se excluye de la importacion (solo "R" exacto; "RP",
     // "ACT" o vacia se importan).
-    if (normText(get('enrollment_mode')) === 'r') return
+    const excluded = normText(get('enrollment_mode')) === 'r'
+    if (excluded && !includeExcluded) return
     // GIFT CARD: la hoja NO la resta del precio (es un regalo, no un descuento),
     // asi que deja un SALDO residual por su valor que el alumno no debe. Solo se
     // ignora el saldo cuando CABE en la tarjeta ("GIF CARD S/50" con saldo 43);
@@ -198,6 +204,11 @@ function ingest (wb) {
         // Lo efectivamente cobrado segun la hoja. No lo usa el alta (el SP crea
         // las cuotas pendientes), pero si el marcado posterior de cuotas pagadas.
         ingreso: num(get('ingreso')),
+        // Deuda segun la hoja, ya sin el residuo de GIFT CARD (= total - ingreso).
+        saldo,
+        enrollment_mode: get('enrollment_mode'), // ACT / RP / CC / R (col K)
+        obs: get('obs'), // "VIENE DE UN RP", "PARA ESP. PYTHON"...: lo lee la conciliacion
+        excluded,
         member_type: get('member_type'), // WE BLACK / WE GOLD / '' (col J)
         agent_code: get('agent_code'),    // codigo del asesor (col AS)
         business_entity: get('business_entity'), // ENTIDAD EMPRESA (razon social)

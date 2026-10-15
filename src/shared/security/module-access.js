@@ -102,6 +102,41 @@ export async function submodulesForRoles (roles = [], db = pool) {
   return grouped
 }
 
+// Roles con acceso a un submódulo (rol_submodule_permission), con el mismo TTL
+// que los módulos. Clave "MODULO:SUB" en un cache aparte.
+const subCache = new Map()
+
+async function grantedSubAliases (moduleCode, subCode, db = pool) {
+  const key = `${moduleCode}:${subCode}`
+  const hit = subCache.get(key)
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.aliases
+
+  const { rows } = await db.query(
+    `SELECT r.alias
+     FROM public.rol_submodule_permission ps
+     JOIN public.rol r ON r.rol_id = ps.rol_id
+     JOIN public.submodules s ON s.submodule_id = ps.submodule_id
+     JOIN public.modules m ON m.module_id = s.module_id
+     WHERE m.code = $1 AND s.code = $2 AND ps.can_access
+       AND s.active = 'Y' AND m.active = 'Y'`,
+    [moduleCode, subCode]
+  )
+  const aliases = new Set(rows.map(r => r.alias))
+  subCache.set(key, { at: Date.now(), aliases })
+  return aliases
+}
+
+// ¿Alguno de los roles del usuario tiene el submódulo? Para módulos donde cada
+// submódulo es un permiso distinto (ej. Importación: importar escribe datos,
+// conciliar solo lee). ADMIN = todos, igual que userHasModule.
+export async function userHasSubmodule (roles = [], moduleCode, subCode) {
+  if (!roles.length) return false
+  if (roles.includes('ADMIN')) return true
+  const aliases = await grantedSubAliases(moduleCode, subCode)
+  return roles.some(role => aliases.has(role))
+}
+
 export function clearModuleAccessCache () {
   cache.clear()
+  subCache.clear()
 }
