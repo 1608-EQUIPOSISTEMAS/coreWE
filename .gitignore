@@ -73,3 +73,6 @@ scripts/
 
 # Transcripts reales para comparar modelos de la IA (datos personales, Ley 29733)
 ai_auditor/pruebas/
+
+# Planes de trabajo locales
+docs/plans/

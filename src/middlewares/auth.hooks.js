@@ -1,4 +1,4 @@
-import { userHasModule } from '../shared/security/module-access.js'
+import { userHasModule, userHasSubmodule } from '../shared/security/module-access.js'
 
 export async function authenticate (request, reply) {
   try {
@@ -38,6 +38,21 @@ export function hasModuleOrRole (moduleCodes, allowedRoles) {
     return reply.code(403).send({
       ok: false,
       message: `Acceso denegado. Se requiere uno de estos roles: ${allowedRoles.join(', ')} o permiso al módulo en Configuración.`
+    })
+  }
+}
+
+// Gate de unión a nivel SUBMÓDULO: pasa si el rol está en la lista fija O si la
+// matriz (rol_submodule_permission) otorga ese submódulo. Para módulos cuyos
+// submódulos son permisos distintos, donde abrir el módulo no basta.
+export function hasSubmoduleOrRole (moduleCode, submoduleCode, allowedRoles) {
+  return async function (request, reply) {
+    const { roles = [] } = request.user
+    if (allowedRoles.some(role => roles.includes(role))) return
+    if (await userHasSubmodule(roles, moduleCode, submoduleCode)) return
+    return reply.code(403).send({
+      ok: false,
+      message: 'Acceso denegado. Pide el permiso en Configuración > Roles y Permisos.'
     })
   }
 }

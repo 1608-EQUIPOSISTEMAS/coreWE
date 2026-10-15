@@ -411,6 +411,37 @@ function hojaFico (filas) {
   return wb
 }
 
+describe('enrollment-fico ingest — columna de estado segun el año de la hoja', () => {
+  const hoja = (encabezados, filas) => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('1. INS - N')
+    ws.addRow(encabezados)
+    for (const f of filas) ws.addRow(f)
+    return wb
+  }
+
+  it('2025: MOD_MATRICULA "R" no se importa; EST_ALUMNO no es el estado', () => {
+    const { rows } = enrollmentFicoImporter.ingest(hoja(
+      ['DNI', 'NOMBRES Y APELLIDOS', 'EST_ALUMNO', 'MOD_MATRICULA', 'ED', 'COD', 'INGRESO'],
+      [['1', 'A A', 'REGULAR', 'R', 'E65', 'BI-EZ-01', 652], ['2', 'B B', 'NA', 'RP', 'E65', 'BI-EZ-01', 652]]))
+    expect(rows.map(r => [r.raw.document_number, r.raw.enrollment_mode])).toEqual([['2', 'RP']])
+  })
+
+  it('2026: el estado viene en ESTADO ALUMNO (no hay MOD_MATRICULA)', () => {
+    const wb = hoja(
+      ['DNI', 'NOMBRES Y APELLIDOS', 'ESTADO ALUMNO', 'MODALIDAD', 'TIPO ALUMNO', 'OBS', 'ED', 'COD', 'INGRESO'],
+      [['1', 'A A', 'R', '', 'REGULAR', '', 'E65', 'BI-EZ-01', 652],
+        ['2', 'B B', 'RP', '', 'REGULAR', '', 'E66', 'BI-EZ-01', 250],
+        ['3', 'C C', 'ACT', 'FLEX', '', 'VIENE DE UNA RP', 'E66', 'BI-EZ-01', 0]])
+    const { rows } = enrollmentFicoImporter.ingest(wb)
+    expect(rows.map(r => [r.raw.document_number, r.raw.enrollment_mode])).toEqual([['2', 'RP'], ['3', 'ACT']])
+    expect(rows[1].raw.obs).toBe('VIENE DE UNA RP')
+    // La conciliacion las pide todas: la R llega marcada como excluida.
+    const todas = enrollmentFicoImporter.ingest(wb, { includeExcluded: true }).rows
+    expect(todas.find(r => r.raw.document_number === '1').raw.excluded).toBe(true)
+  })
+})
+
 describe('enrollment-fico ingest — total y cronograma', () => {
   it('GIFT CARD: el saldo residual es el regalo, no deuda -> total = INGRESO', () => {
     const { rows } = enrollmentFicoImporter.ingest(hojaFico([

@@ -61,6 +61,18 @@ export async function commitUrl (entity, url, userId, jobId) {
   return commitWorkbook(def, await loadGoogleSheet(url, def.companionTabs), userId, jobId)
 }
 
+// Filas normalizadas de un Google Sheet, tal como las ve el importador, sin
+// validar ni escribir. Lo consume la conciliacion FICO (via puerto en buildApp)
+// para comparar la hoja contra la BD con el MISMO parser que importa.
+export async function parseSheetRows (entity, url, opts = {}) {
+  const def = getImporter(entity)
+  if (typeof def.ingest !== 'function') {
+    throw new DomainError(`La entidad "${entity}" no tiene un parser de hoja.`)
+  }
+  const { rows } = await def.ingest(await loadGoogleSheet(url, def.companionTabs), opts)
+  return rows
+}
+
 // --- Nucleo comun (a partir de un workbook) --------------------------------
 
 // Valida fila por fila (obligatorios genericos + resolucion de dominio) sin
