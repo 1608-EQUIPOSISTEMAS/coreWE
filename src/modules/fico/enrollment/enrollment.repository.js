@@ -1162,10 +1162,12 @@ export class EnrollmentRepository {
         JOIN users   u     ON u.user_id     = l.user_registration_id
         JOIN persons per_u ON per_u.person_id = u.person_id
         LEFT JOIN catalog c_sta ON c_sta.catalog_id = l.cat_status_lead
+       -- B2B tambien atiende consultas que terminan comprando por la web
+       -- (caso venta 22754): su consulta es tan valida como la de Comercial.
        WHERE EXISTS (
                SELECT 1 FROM user_roles ur JOIN rol r ON r.rol_id = ur.rol_id
                 WHERE ur.user_id = u.user_id
-                  AND UPPER(r.alias) IN ('COMERCIAL', 'LIDER_COMERCIAL')
+                  AND UPPER(r.alias) IN ('COMERCIAL', 'LIDER_COMERCIAL', 'B2B', 'LIDER_B2B')
              )
          -- Una consulta borrada o anulada no prueba nada: administrativamente
          -- ya no existe. Desestimada si cuenta (el asesor atendio y se rindio,
