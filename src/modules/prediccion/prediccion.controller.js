@@ -27,3 +27,13 @@ export async function medicionHandler (req, reply) {
   const data = await bandeja.medicion()
   return reply.send({ ok: true, data })
 }
+
+export async function programasHandler (req, reply) {
+  const data = await usecases.programasVendibles()
+  return reply.send({ ok: true, data })
+}
+
+export async function manualHandler (req, reply) {
+  const data = await usecases.manualDelPrograma({ programId: req.body.program_id })
+  return reply.send({ ok: true, data })
+}

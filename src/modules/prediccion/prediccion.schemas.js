@@ -30,3 +30,12 @@ export const resultadoSchema = {
     }
   }
 }
+
+export const manualSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['program_id'],
+    properties: { program_id: { type: 'integer', minimum: 1 } }
+  }
+}

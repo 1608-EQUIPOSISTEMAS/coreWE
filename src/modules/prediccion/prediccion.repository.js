@@ -157,4 +157,54 @@ async function offerDetails (programIds, today) {
   return rows
 }
 
-export const prediccionRepository = { phoneKeyOf, historyOf, nameOf, inquiryConversion, coPurchases, programsByIds, offerDetails }
+// Los NUEVOS (sin compra previa) que consultaron el programa, contados una vez
+// por telefono en su primera consulta ya madura, y su primera compra del ERP
+// dentro de la ventana: cuantos, que tan rapido y QUE compraron.
+const FIRST_INQUIRY_OF_NEWCOMERS = `
+  WITH q AS (
+    SELECT DISTINCT ON (h.phone_key) h.phone_key, h.event_date AS consulted_on
+      FROM public.mv_commercial_history h
+     WHERE h.source = 'ERP_LEAD' AND h.program_id = $1 AND h.event_date <= $2::date - $3::int
+       AND NOT EXISTS (SELECT 1 FROM public.mv_commercial_history c
+                        WHERE c.phone_key = h.phone_key AND c.event_type = 'COMPRA' AND c.event_date < h.event_date)
+     ORDER BY h.phone_key, h.event_date),
+  b AS (
+    SELECT q.phone_key, f.program_id, f.event_date - q.consulted_on AS dias
+      FROM q CROSS JOIN LATERAL (
+        SELECT c.program_id, c.event_date FROM public.mv_commercial_history c
+         WHERE c.phone_key = q.phone_key AND c.source = 'ERP_ENROLLMENT'
+           AND c.event_date BETWEEN q.consulted_on AND q.consulted_on + $3::int
+         ORDER BY c.event_date LIMIT 1) f)`
+
+async function programPlaybook (programId, today, windowDays) {
+  const params = [programId, today, windowDays]
+  const [{ rows: [stats] }, { rows: destinations }] = await Promise.all([
+    pool.query(`${FIRST_INQUIRY_OF_NEWCOMERS}
+      SELECT (SELECT COUNT(*) FROM q)::int AS consultaron, COUNT(*)::int AS compraron,
+             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dias) AS mediana_dias,
+             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY dias) AS p90_dias
+        FROM b`, params),
+    pool.query(`${FIRST_INQUIRY_OF_NEWCOMERS}
+      SELECT b.program_id, p.program_name, COALESCE(p.is_membership, false) AS is_membership, COUNT(*)::int AS compradores
+        FROM b JOIN public.programs p ON p.program_id = b.program_id
+       GROUP BY 1, 2, 3 ORDER BY 4 DESC, 2`, params)
+  ])
+  return { stats, destinations }
+}
+
+// Lo que el asesor puede elegir como "lo que esta pidiendo": todo programa
+// activo que no sea membresia, TOP primero (lo que mas conviene vender).
+async function sellablePrograms () {
+  const { rows } = await pool.query(
+    `SELECT p.program_id, p.program_name, COALESCE(t.tier, 'BAJO') AS tier,
+            CASE p.cat_model_modality WHEN 2622 THEN 'Presencial' WHEN 2623 THEN 'Online' ELSE 'En vivo' END AS modalidad
+       FROM public.programs p
+       LEFT JOIN public.pred_program_tier t ON t.program_id = p.program_id
+      WHERE p.active = 'Y' AND NOT COALESCE(p.is_membership, false)
+      ORDER BY CASE COALESCE(t.tier, 'BAJO') WHEN 'TOP' THEN 1 WHEN 'NUEVO' THEN 2 WHEN 'NORMAL' THEN 3 ELSE 4 END, p.program_name`)
+  return rows
+}
+
+export const prediccionRepository = {
+  phoneKeyOf, historyOf, nameOf, inquiryConversion, coPurchases, programsByIds, offerDetails, programPlaybook, sellablePrograms
+}

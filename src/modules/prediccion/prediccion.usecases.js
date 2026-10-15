@@ -1,6 +1,7 @@
 import { prediccionRepository as repo } from './prediccion.repository.js'
-import { DomainError } from '../../shared/errors.js'
-import { summarizeHistory, buildOffers } from './prediccion.entity.js'
+import { DomainError, NotFoundError } from '../../shared/errors.js'
+import { summarizeHistory, buildOffers, CONVERSION_WINDOW_DAYS } from './prediccion.entity.js'
+import { buildPlaybook } from './playbook.entity.js'
 import { purchaseOutlook } from './outlook.entity.js'
 
 // Hoy en Lima: el servidor corre en UTC y a las 19:00 de Lima ya seria manana.
@@ -41,4 +42,17 @@ export async function fichaDelCliente ({ phone, today = todayInLima() }) {
     ofertas: buildOffers({ history, inquiries, coPurchases, programs, details }),
     lead_id: lastErpLeadId(history)
   }
+}
+
+export const programasVendibles = () => repo.sellablePrograms()
+
+// Manual de venta de un programa: lo que el asesor necesita con un numero nuevo.
+export async function manualDelPrograma ({ programId, today = todayInLima() }) {
+  const [program] = await repo.programsByIds([programId])
+  if (!program) throw new NotFoundError('Ese programa no existe.')
+  const [{ stats, destinations }, [detail]] = await Promise.all([
+    repo.programPlaybook(programId, today, CONVERSION_WINDOW_DAYS),
+    repo.offerDetails([programId], today)
+  ])
+  return buildPlaybook({ program, stats, destinations, detail })
 }
