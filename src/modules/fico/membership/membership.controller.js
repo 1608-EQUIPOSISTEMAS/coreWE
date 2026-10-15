@@ -12,3 +12,7 @@ export async function updateMembershipActivationDateHandler (req, reply) {
   })
   return reply.code(200).send({ ok: true, data })
 }
+
+export async function listMembershipExpiriesHandler (req, reply) {
+  return reply.send({ ok: true, data: await usecases.listMembershipExpiries() })
+}

@@ -92,3 +92,54 @@ export function assertReschedulable ({ found, isMembershipProgram, alreadyActiva
     throw new DomainError(`La nueva fecha excede la ventana permitida (${MEMBERSHIP_ACTIVATION_WINDOW_MONTHS} meses)`)
   }
 }
+
+// ── Vencimientos de membresia ──────────────────────────────────────────────
+// La membresia da un año de beneficio desde su arranque (lo calcula SQL). FICO
+// llama a los socios un mes antes de que venza para saber si renuevan o se les
+// retira: esa es la ventana de "por vencer". La vista solo avisa; el retiro lo
+// hace el area a mano.
+export const RENEWAL_NOTICE_DAYS = 30
+
+const DAY_MS = 86400000
+const toUtcMs = (ymd) => {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return Date.UTC(y, m - 1, d)
+}
+const daysBetween = (fromYmd, toYmd) => Math.round((toUtcMs(toYmd) - toUtcMs(fromYmd)) / DAY_MS)
+
+export function expiryStatus (daysToExpiry) {
+  if (daysToExpiry < 0) return 'expired'
+  if (daysToExpiry <= RENEWAL_NOTICE_DAYS) return 'expiring'
+  return 'active'
+}
+
+// Una membresia nueva renueva a la anterior si se compra cuando esta ya entro
+// en la ventana de aviso o despues de vencer. Comprada antes (PLUS → BLACK a
+// mitad de año) es un cambio de tier, no una renovacion: los cursos son los
+// mismos en todos los tiers, asi que el socio no cambia nada.
+export function isRenewal (previous, next) {
+  return daysBetween(previous.expiry_date, next.start_date) >= -RENEWAL_NOTICE_DAYS
+}
+
+// Agrupa las membresias por persona: la vigente es la de arranque mas reciente
+// y las anteriores solo cuentan como renovaciones. Devuelve una fila por socio,
+// las mas proximas a vencer primero, y los totales por estado.
+export function buildMembershipExpiries (rows, today) {
+  const byPerson = new Map()
+  for (const r of rows) byPerson.set(r.person_id, [...(byPerson.get(r.person_id) || []), r])
+  const items = [...byPerson.values()].map(memberships => {
+    const ordered = memberships.toSorted((a, b) => a.start_date.localeCompare(b.start_date))
+    const current = ordered.at(-1)
+    const renewals = ordered.slice(1).filter((m, i) => isRenewal(ordered[i], m)).length
+    const daysToExpiry = daysBetween(today, current.expiry_date)
+    return { ...current, days_to_expiry: daysToExpiry, status: expiryStatus(daysToExpiry), renewals }
+  })
+  items.sort((a, b) => a.expiry_date.localeCompare(b.expiry_date))
+
+  const kpis = { total: items.length, active: 0, expiring: 0, expired: 0, renewed: 0 }
+  for (const it of items) {
+    kpis[it.status]++
+    if (it.renewals > 0) kpis.renewed++
+  }
+  return { today, items, kpis }
+}

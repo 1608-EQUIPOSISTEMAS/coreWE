@@ -7,7 +7,8 @@ import {
   isMembership,
   validateActivationDateFormat,
   classifyActivation,
-  assertReschedulable
+  assertReschedulable,
+  buildMembershipExpiries
 } from './membership.entity.js'
 import { toRescheduleDto } from './membership.dto.js'
 
@@ -108,4 +109,11 @@ export async function createMembershipOdooUser () {
 
 export async function enrollMembershipInOdoo () {
   return ODOO_SKIPPED
+}
+
+// Socios de membresia con su vencimiento y estado (vigente / por vencer /
+// vencida) para que FICO llame a tiempo a los que deben renovar.
+export async function listMembershipExpiries () {
+  const rows = await repo.listMembershipStarts()
+  return buildMembershipExpiries(rows, rows[0]?.today)
 }

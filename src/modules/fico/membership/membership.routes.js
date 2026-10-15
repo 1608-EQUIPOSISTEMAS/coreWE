@@ -1,4 +1,4 @@
-import { authenticate } from '../../../shared/http/auth.middleware.js'
+import { authenticate, hasRole } from '../../../shared/http/auth.middleware.js'
 import { updateMembershipActivationDateSchema } from './membership.schemas.js'
 import * as ctrl from './membership.controller.js'
 
@@ -10,4 +10,9 @@ export default async function membershipRoutes (fastify) {
     preHandler: [authenticate],
     schema: updateMembershipActivationDateSchema
   }, ctrl.updateMembershipActivationDateHandler)
+
+  // Expone el contacto de todos los socios: solo FICO y quien decide.
+  fastify.get('/membresias/vencimientos', {
+    preHandler: [authenticate, hasRole(['ADMIN', 'FICO', 'LIDER_FICO', 'GERENCIA'])]
+  }, ctrl.listMembershipExpiriesHandler)
 }

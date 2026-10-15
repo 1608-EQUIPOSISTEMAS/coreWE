@@ -1,5 +1,6 @@
 import { pool } from '../../../shared/db/pool.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
+import { MEMBERSHIP_START_SQL } from '../../../utils/membership-start.sql.js'
 
 // Persistencia del subdominio membership. Envuelve pool.query con las queries
 // movidas VERBATIM desde fico.service.js (mismas columnas, mismos parametros,
@@ -46,6 +47,38 @@ export class MembershipRepository {
         $1::date                                                                                            AS activation_date
     `, [rawDate, String(windowMonths)])
     return rows?.[0] || null
+  }
+
+  // Una fila por membresia confirmada por FICO, con su arranque, para la vista
+  // de Vencimientos. Mismo universo que la hoja "5. Membresias" (sin filtrar la
+  // importacion masiva: todas dan beneficio). person_id agrupa las renovaciones
+  // de un mismo socio. Fechas como YYYY-MM-DD y el "hoy" en TZ Lima.
+  async listMembershipStarts () {
+    const { rows } = await this.db.query(`
+      SELECT
+        e.enrollment_id,
+        per.person_id,
+        TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
+        per.document_number,
+        ${STUDENT_PHONE_SQL} AS phone,
+        ${STUDENT_EMAIL_SQL} AS email,
+        COALESCE(pv.abbreviation, pv.version_code, '')                         AS tier,
+        to_char(inicio.f, 'YYYY-MM-DD')                                        AS start_date,
+        to_char(inicio.f + INTERVAL '1 year', 'YYYY-MM-DD')                    AS expiry_date,
+        to_char((NOW() AT TIME ZONE 'America/Lima')::date, 'YYYY-MM-DD')       AS today
+      FROM public.enrollments e
+      JOIN public."catalog" cf ON cf.catalog_id = e.cat_fico_status
+                              AND cf.alias = 'we_enrollment_status_checked'
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per    ON per.person_id    = cust.person_id
+      JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+      JOIN public.programs prog       ON prog.program_id = pv.program_id
+                                     AND prog.is_membership = true
+      LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
+      LEFT JOIN LATERAL (SELECT ${MEMBERSHIP_START_SQL} AS f) inicio ON TRUE
+      WHERE e.active = 'Y'
+    `)
+    return rows || []
   }
 
   // Persiste la nueva fecha de activacion en el enrollment.
