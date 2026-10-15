@@ -22,7 +22,10 @@ import {
   courseChangeAmountDifference,
   assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
-  MEMBERSHIP_ACTIVATION_WINDOW_MONTHS
+  MEMBERSHIP_ACTIVATION_WINDOW_MONTHS,
+  paymentMovementType,
+  movementBusinessLine,
+  assertMovementRange
 } from './enrollment.entity.js'
 import { toEnrollmentListDto, toPaymentDetailDto } from './enrollment.dto.js'
 
@@ -37,6 +40,18 @@ const repo = enrollmentRepository
 export async function enrollmentList (payload = {}) {
   const rows = await repo.listEnrollments(payload)
   return toEnrollmentListDto(rows, payload)
+}
+
+// Movimientos de caja del rango F. pago: lo que FICO cuadra contra el banco.
+export async function paymentMovements ({ from, to }) {
+  assertMovementRange({ from, to })
+  const rows = await repo.listPaymentMovements({ from, to })
+  return rows.map(({ payment_type_alias: paymentTypeAlias, is_first_payment: isFirstPayment, agent_origin: agentOrigin, program_line: programLine, ...m }) => ({
+    ...m,
+    amount: Number(m.amount),
+    business_line: movementBusinessLine({ agentOrigin, programLine }),
+    movement_type: paymentMovementType({ paymentTypeAlias, isFirstPayment })
+  }))
 }
 
 export async function refreshEnrollmentList () {
