@@ -8,8 +8,11 @@ import {
   validateActivationDateFormat,
   classifyActivation,
   assertReschedulable,
-  buildMembershipExpiries
+  buildMembershipExpiries,
+  resolveMembershipChannels
 } from './membership.entity.js'
+import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
+import { buildOdooNameParts, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
 import { toRescheduleDto } from './membership.dto.js'
 
 // Orquestacion del subdominio membership. No contiene SQL (delega en el
@@ -89,26 +92,107 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
   return toRescheduleDto({ job, activationDate: classification.activationDate })
 }
 
-// Pedido de FICO (14/10/26): el ERP NO toca Odoo en las membresias. La alta
+// Pedido de FICO (14/10/26): el ERP NO crea el usuario Odoo del socio. La alta
 // automatica dejaba socios a medias (el curso aparecia en su campus pero no
 // estaba inscrito como participante y Odoo lo botaba al entrar a la clase), y
-// el area prefiere crear usuario e inscripcion a mano. Ambos jobs
-// ('membership_welcome' step account, 'membership_activation' step odoo) y el
-// preCheck de enrollInOdoo siguen llamando aca: devolver success los cierra
-// limpio sin reintentos. El correo de bienvenida usa el correo registrado.
-const ODOO_SKIPPED = Object.freeze({
-  success: true,
-  skipped: true,
-  odoo_user_id: null,
-  message: 'Membresia: el ERP no crea usuario ni inscribe cursos en Odoo (manual)'
-})
-
+// el area prefiere crear la cuenta a mano. El job 'membership_welcome' (step
+// account) sigue llamando aca: devolver success lo cierra limpio sin reintentos.
+// El correo de bienvenida usa el correo registrado.
 export async function createMembershipOdooUser () {
-  return ODOO_SKIPPED
+  return {
+    success: true,
+    skipped: true,
+    odoo_user_id: null,
+    message: 'Membresia: el ERP no crea el usuario Odoo (lo crea el area a mano)'
+  }
 }
 
-export async function enrollMembershipInOdoo () {
-  return ODOO_SKIPPED
+// Activacion (15/10/26): los cursos del catalogo SI los abre el ERP, pero solo
+// sobre una cuenta Odoo que ya exista. Sin cuenta devuelve error: el job
+// 'membership_activation' reintenta con backoff y, agotado, queda 'failed' para
+// que FICO lo relance cuando el area haya creado el usuario. Contrato
+// no-lanzante: el worker decide los reintentos.
+export async function enrollMembershipInOdoo ({ enrollmentId }) {
+  try {
+    return await activateMembershipCourses(enrollmentId)
+  } catch (err) {
+    console.error('[enrollMembershipInOdoo] Throw inesperado:', err.message, err.stack)
+    return { success: false, error: `enrollMembershipInOdoo: ${err.message}`, odoo_user_id: null }
+  }
+}
+
+async function activateMembershipCourses (enrollmentId) {
+  const data = await repo.findEnrollmentForOdoo(enrollmentId)
+  if (!data) throw new Error('Inscripcion no encontrada')
+
+  // Diferida: el job encolado la procesa al llegar la fecha.
+  if (data.is_deferred) {
+    return {
+      success: true,
+      deferred: true,
+      scheduled_for: data.membership_activation_date,
+      odoo_user_id: null,
+      message: 'Activacion diferida — job en cola la procesara al llegar la fecha'
+    }
+  }
+
+  const login = await resolveOdooLogin({
+    prevOdooUserId: await repo.findPreviousOdooUserByDocument(data.document_number),
+    documentNumber: data.document_number,
+    originEmail: data.origin_email,
+    createEmail: null
+  })
+  if (!login) {
+    return {
+      success: false,
+      odoo_user_id: null,
+      error: `El socio (DNI ${data.document_number || '-'}, ${data.origin_email || 'sin correo'}) no tiene usuario en Odoo: el area debe crearlo y relanzar la activacion`
+    }
+  }
+
+  const [publishedChannels, configuredIds] = await Promise.all([
+    odoo.listOnlineChannels(),
+    repo.findMembershipCourseIds()
+  ])
+  const { channels, usedFallback } = resolveMembershipChannels(publishedChannels, configuredIds)
+  if (usedFallback) {
+    console.warn(`[enrollMembershipInOdoo] enrollment ${enrollmentId}: sin catalogo de membresia configurado, se inscribe en los ${channels.length} cursos publicados`)
+  }
+
+  const { names, surnames } = buildOdooNameParts({
+    firstName: data.first_name,
+    lastName: data.last_name,
+    motherLastName: data.mother_last_name
+  })
+  // searchEmail = createEmail = login existente: el adapter encuentra la cuenta
+  // y nunca llega a su rama de alta (password null por lo mismo).
+  const result = await odoo.enrollInAllOnlineCourses({
+    searchEmail: login,
+    createEmail: login,
+    fullName: `${surnames} ${names}`.trim(),
+    password: null,
+    phone: data.origin_phone,
+    documentNumber: data.document_number,
+    names,
+    surnames,
+    channels
+  })
+
+  if (result.success) {
+    await repo.saveOdooCredentials({
+      enrollmentId,
+      odooUserId: result.odoo_user_id,
+      odooEmail: result.odoo_login || login,
+      odooPassword: null
+    })
+  }
+
+  return {
+    ...result,
+    course_search: usedFallback
+      ? `Todos los cursos online (${channels.length}) — catalogo sin configurar`
+      : `Catalogo de membresia (${channels.length} cursos)`
+  }
 }
 
 // Socios de membresia con su vencimiento y estado (vigente / por vencer /
