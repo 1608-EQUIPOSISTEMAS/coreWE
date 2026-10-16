@@ -327,11 +327,16 @@ export function reconcile ({ rows = [], enrollments = [], related = [], activeEd
   const moveRowByOrigin = new Map() // origen (enrollment_id) -> referencia de la fila RP/CC
   const results = []
   for (const [key, group] of sheetByKey) {
-    // Vigentes primero: la fila activa se compara con la inscripcion vigente.
-    const db = [...(dbByKey.get(key) || [])].sort((a, b) => Number(isCurrent(b)) - Number(isCurrent(a)))
-    db.forEach(e => used.add(e.enrollment_id))
     const importable = group.filter(r => !isExcluded(r.raw))
     const excluded = group.filter(r => isExcluded(r.raw))
+    // Vigentes primero: la fila activa se compara con la inscripcion vigente. Entre
+    // duplicadas, la que MAS se parece a la fila (menos diferencias): esa se
+    // conserva y las otras son las sobrantes que la correccion propone anular.
+    const ref = importable[0]?.raw
+    const score = (e) => ref ? compareRow(ref, e, { structure }).length : 0
+    const db = [...(dbByKey.get(key) || [])].sort((a, b) =>
+      Number(isCurrent(b)) - Number(isCurrent(a)) || score(a) - score(b) || a.enrollment_id - b.enrollment_id)
+    db.forEach(e => used.add(e.enrollment_id))
 
     importable.forEach((r, i) => {
       const e = db[i]
@@ -354,7 +359,7 @@ export function reconcile ({ rows = [], enrollments = [], related = [], activeEd
           severity: vigentes.length ? 'error' : 'warning'
         })
       }
-      results.push(rowResult(r, e, findings))
+      results.push(rowResult(r, e, findings, { db, kind: 'importable' }))
     })
 
     if (!importable.length) {
@@ -370,7 +375,7 @@ export function reconcile ({ rows = [], enrollments = [], related = [], activeEd
             severity: vigentes.length ? 'error' : 'warning'
           })
         }
-        results.push(rowResult(r, vigentes[0] || db[0] || null, findings))
+        results.push(rowResult(r, vigentes[0] || db[0] || null, findings, { db, kind: 'excluded' }))
       }
     }
   }
@@ -431,8 +436,11 @@ export function reconcile ({ rows = [], enrollments = [], related = [], activeEd
   }
 }
 
-function rowResult (r, e, findings) {
+// `_ctx` es interno (no sale en el DTO): la fila de la hoja, la inscripcion con
+// la que se comparo y todas las de su clave. Lo usan las correcciones (Fase 3).
+function rowResult (r, e, findings, { db = [], kind } = {}) {
   return {
+    _ctx: { raw: r.raw, enrollment: e || null, db, kind },
     row_number: r.rowNumber,
     sheet: r.sheet ?? null,
     enrollment_id: e?.enrollment_id ?? null,
