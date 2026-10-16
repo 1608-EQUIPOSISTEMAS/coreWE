@@ -1,6 +1,7 @@
 import { pool, withTransaction } from '../../shared/db/pool.js'
 import { IS_SALE } from '../dashboard/results/comercial.repository.js'
 import { RP_LINK_CTE } from '../integration/integration.repository.js'
+import { isComercialUserSql } from '../../shared/organigrama.js'
 
 // Plan Comercial: los objetivos cargados y los logros diarios contra los que se
 // comparan. Las fechas salen como texto para que ni el driver ni la zona horaria
@@ -220,6 +221,8 @@ export const planComercialRepository = {
   // eventos ni destinos de RP/CC) MAS la importacion masiva: sin ella el ERP no
   // tiene historia antes de abril de 2026 y la curva entre anos no existe.
   // La venta web va a la cuenta WEB aunque traiga asesor ("WEB-AE30" es web).
+  // Solo el equipo Comercial (y la fila WEB) tiene fila propia: lo vendido por
+  // otro rol cae en "Otros" (seller_id NULL), asi el total del año no cambia.
   async salesByMonthAndSeller ({ from, to }) {
     const { rows } = await this.db.query(`
       WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES},
@@ -231,9 +234,10 @@ export const planComercialRepository = {
          WHERE ${PURCHASE}
            AND e.cat_fico_status = $3 AND COALESCE(e.total_amount, 0) > 0
       )
-      SELECT to_char(v.f_pago, 'YYYY-MM') AS mes, v.seller_id, u.alias, u.name, COUNT(*)::int AS n
+      SELECT to_char(v.f_pago, 'YYYY-MM') AS mes, u.user_id AS seller_id, u.alias, u.name, COUNT(*)::int AS n
         FROM venta v
         LEFT JOIN public.users u ON u.user_id = v.seller_id
+                                AND (UPPER(u.alias) = 'WEB' OR ${isComercialUserSql('u.user_id')})
        WHERE v.f_pago BETWEEN $1::date AND $2::date
        GROUP BY 1, 2, 3, 4`, [from, to, CHECKED])
     return rows

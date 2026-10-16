@@ -2,6 +2,7 @@ import { pool } from '../../shared/db/pool.js'
 import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { attachEventCategory } from '../../shared/event-category.js'
 import { saveLooseInscriptionFields } from '../../utils/inscription-loose-fields.js'
+import { stampB2bOriginFromAdvisor } from '../../utils/b2b-origin-stamp.js'
 
 // Persistencia del dominio comercial. Envuelve los stored procedures
 // sp_comercial_* y el SQL directo de leads, inscripciones y busquedas que el
@@ -129,6 +130,7 @@ export class ComercialRepository {
     // y el flag de copia requerida). Ver utils/inscription-loose-fields.js.
     if (res.result === 1 && res.enrollment_id) {
       await saveLooseInscriptionFields(this.db, res.enrollment_id, payload?.inscription || {})
+      await stampB2bOriginFromAdvisor(this.db, { enrollmentId: res.enrollment_id, userId: user_id })
     }
     return res
   }

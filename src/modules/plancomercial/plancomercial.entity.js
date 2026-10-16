@@ -168,7 +168,8 @@ const twelveZeros = () => Array.from({ length: 12 }, () => 0)
 // `rows` = [{ mes: 'YYYY-MM', seller_id, alias, name, n }] de varios años.
 // curva = un arreglo de 12 meses por año con datos; asesores = los que vendieron
 // en `year`, de mayor a menor, con su participacion sobre el total del año (una
-// venta sin asesor va a "Sin asesor", asi el total es el total real).
+// venta sin asesor, o de alguien fuera de Comercial, va a "Otros", asi el total
+// es el total real).
 export function annualReport (rows, year) {
   const curvas = new Map()
   const asesores = new Map()
@@ -181,7 +182,7 @@ export function annualReport (rows, year) {
     total[m - 1] += r.n
     const key = r.seller_id ?? 'sin'
     if (!asesores.has(key)) {
-      asesores.set(key, { id: r.seller_id ?? null, alias: r.alias ?? null, nombre: r.name || r.alias || 'Sin asesor', meses: twelveZeros() })
+      asesores.set(key, { id: r.seller_id ?? null, alias: r.alias ?? null, nombre: r.seller_id ? (r.name || r.alias) : 'Otros (sin asesor de Comercial)', meses: twelveZeros() })
     }
     asesores.get(key).meses[m - 1] += r.n
   }

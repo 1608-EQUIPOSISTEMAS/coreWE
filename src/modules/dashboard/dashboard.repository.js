@@ -1,4 +1,5 @@
 import { pool } from '../../shared/db/pool.js'
+import { isComercialUserSql } from '../../shared/organigrama.js'
 
 // Persistencia del dominio dashboard. Envuelve el SQL dinamico contra las vistas
 // de reporteria (v_dashboard_*) y la tabla sales_targets. Devuelve filas crudas;
@@ -153,6 +154,7 @@ export class DashboardRepository {
     SELECT * FROM public.v_dashboard_comercial
     WHERE year_period = $1
       AND modality    = $2
+      AND ${isComercialUserSql('cod_asesor')}
   `
 
     if (date_start && date_end) {
@@ -328,7 +330,7 @@ export class DashboardRepository {
   }
 
   async detailLeads ({ cod_asesor, date, size, offset }) {
-    let sql = `SELECT * FROM public.v_dashboard_detail_leads WHERE fecha_registro = $1`
+    let sql = `SELECT * FROM public.v_dashboard_detail_leads WHERE fecha_registro = $1 AND ${isComercialUserSql('cod_asesor')}`
     const params = [date]
 
     if (cod_asesor && cod_asesor !== 'ALL') {
@@ -346,8 +348,10 @@ export class DashboardRepository {
   // Consultas (por fecha de registro) y ventas (por pay_date) del rango, por
   // asesor que registro el lead, dia, tipo de cliente y canal. Es la misma
   // clasificacion de v_dashboard_ventas_canal, pero por DIA: las semanas las arma
-  // el entity (la vista las cortaba en dia/7). Todos los asesores: el filtro por
-  // asesor va en el entity para que la lista no se vacie.
+  // el entity (la vista las cortaba en dia/7). Solo el equipo Comercial
+  // (COMERCIAL o LIDER_COMERCIAL): Fundacion, B2B o ADMIN registran leads pero
+  // no son de este reporte (pedido del usuario 16/10/26). El filtro por asesor va
+  // en el entity para que la lista no se vacie.
   async ventasCanal ({ from, to }) {
     const { rows } = await this.db.query(`
       WITH clasificado AS (
@@ -388,12 +392,13 @@ export class DashboardRepository {
         FROM por_dia d
         JOIN public.users u ON u.user_id = d.cod_asesor
         JOIN public.persons p ON p.person_id = u.person_id
+       WHERE ${isComercialUserSql('u.user_id')}
        GROUP BY 1, 2, 3, 4, 5, 6`, [from, to])
     return rows
   }
 
   async detailSales ({ cod_asesor, date, size, offset }) {
-    let sql = `SELECT * FROM public.v_dashboard_detail_sales WHERE fecha_venta = $1`
+    let sql = `SELECT * FROM public.v_dashboard_detail_sales WHERE fecha_venta = $1 AND ${isComercialUserSql('cod_asesor')}`
     const params = [date]
 
     if (cod_asesor && cod_asesor !== 'ALL') {

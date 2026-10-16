@@ -171,9 +171,9 @@ describe('annualReport', () => {
     expect(r.curva[0].meses[9]).toBe(7)
   })
 
-  it('solo el año pedido en asesores; sin asesor suma al total y la participacion cierra en 100%', () => {
+  it('solo el año pedido en asesores; lo de fuera de Comercial suma al total como Otros y la participacion cierra en 100%', () => {
     const r = annualReport(rows, 2026)
-    expect(r.asesores.map((a) => [a.nombre, a.total])).toEqual([['GRECIA', 5], ['Sin asesor', 4], ['WEB', 1]])
+    expect(r.asesores.map((a) => [a.nombre, a.total])).toEqual([['GRECIA', 5], ['Otros (sin asesor de Comercial)', 4], ['WEB', 1]])
     expect(r.asesores[0].participacion).toBe(0.5)
     expect(r.asesores.reduce((s, a) => s + a.participacion, 0)).toBeCloseTo(1)
     expect(r.total.slice(0, 3)).toEqual([4, 6, 0])

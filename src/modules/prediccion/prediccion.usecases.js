@@ -3,6 +3,7 @@ import { DomainError, NotFoundError } from '../../shared/errors.js'
 import { summarizeHistory, buildOffers, CONVERSION_WINDOW_DAYS } from './prediccion.entity.js'
 import { buildPlaybook } from './playbook.entity.js'
 import { purchaseOutlook } from './outlook.entity.js'
+import { bandejaRepository } from './bandeja.repository.js'
 
 // Hoy en Lima: el servidor corre en UTC y a las 19:00 de Lima ya seria manana.
 const todayInLima = () => new Date(Date.now() - 5 * 3_600_000).toISOString().slice(0, 10)
@@ -21,14 +22,16 @@ export async function fichaDelCliente ({ phone, today = todayInLima() }) {
 
   const history = await repo.historyOf(phoneKey)
   if (!history.length) {
-    return { phone_key: phoneKey, nombre: null, resumen: summarizeHistory([], today), pronostico: null, historial: [], ofertas: [], lead_id: null }
+    return { phone_key: phoneKey, nombre: null, resumen: summarizeHistory([], today), pronostico: null, historial: [], llamadas: [], ofertas: [], lead_id: null }
   }
 
   const consultedIds = uniqueIds(history.filter((e) => e.event_type === 'CONSULTA').map((e) => e.program_id))
-  const [nombre, inquiries, coPurchases] = await Promise.all([
+  const [nombre, inquiries, coPurchases, llamadas] = await Promise.all([
     repo.nameOf(phoneKey),
     repo.inquiryConversion(consultedIds),
-    repo.coPurchases(phoneKey)
+    repo.coPurchases(phoneKey),
+    // Lo que ya dijo en Llamar hoy: el asesor no vuelve a preguntar lo mismo.
+    bandejaRepository.callLogOf(phoneKey)
   ])
   const candidateIds = uniqueIds([...consultedIds, ...coPurchases.flatMap((r) => [r.from_program, r.to_program])])
   const [programs, details] = await Promise.all([repo.programsByIds(candidateIds), repo.offerDetails(candidateIds, today)])
@@ -39,6 +42,7 @@ export async function fichaDelCliente ({ phone, today = todayInLima() }) {
     resumen: summarizeHistory(history, today),
     pronostico: purchaseOutlook(history, today),
     historial: history,
+    llamadas,
     ofertas: buildOffers({ history, inquiries, coPurchases, programs, details }),
     lead_id: lastErpLeadId(history)
   }

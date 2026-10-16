@@ -22,6 +22,13 @@ export const AREA_OF_LEADER = {
   LIDER_B2B: ['B2B', 'LIDER_B2B']
 }
 
+// Los reportes de Comercial cuentan y listan SOLO al equipo Comercial (regla
+// del usuario, 16/10/26): Fundacion, B2B o ADMIN registran leads o venden, pero
+// no son de esos reportes. `column` = la columna con el user_id.
+export const isComercialUserSql = (column) => `EXISTS (
+  SELECT 1 FROM public.user_roles ur JOIN public.rol r ON r.rol_id = ur.rol_id
+   WHERE ur.user_id = ${column} AND UPPER(r.alias) IN (${AREA_OF_LEADER.LIDER_COMERCIAL.map((a) => `'${a}'`).join(', ')}))`
+
 // Nombre legible de cada area. Vive junto a AREA_OF_LEADER por la misma razon:
 // es el mismo mapa (rol -> area), no un detalle de quien lo usa.
 export const AREA_LABEL = {

@@ -25,9 +25,17 @@ export const resultadoSchema = {
     required: ['assignment_id', 'outcome'],
     properties: {
       assignment_id: { type: 'integer', minimum: 1 },
-      outcome: { type: 'string', enum: ['CONTESTO', 'NO_INTERESA', 'NO_CONTESTA', 'NUMERO_ERRADO'] },
-      reason: { type: ['string', 'null'], enum: ['PRECIO', 'HORARIO', 'FECHA', 'LO_PENSARA', 'OTRO_PROGRAMA', 'COMPETENCIA', 'SIN_INTERES', null] }
+      outcome: { type: 'string', enum: ['INSCRITO', 'LO_PIENSO', 'CARO', 'NO_CONTESTA', 'OTRO_PROGRAMA', 'NO_INTERESA', 'NUMERO_ERRADO'] }
     }
+  }
+}
+
+export const seguimientoSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['followup_id'],
+    properties: { followup_id: { type: 'integer', minimum: 1 } }
   }
 }
 

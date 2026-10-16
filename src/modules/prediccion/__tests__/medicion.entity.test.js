@@ -21,7 +21,7 @@ describe('buildMeasurement', () => {
   it('compara llamados contra control dentro del mismo segmento y saca el lift', () => {
     const [nueve] = buildMeasurement([fila(false, 9, 400, 60), fila(true, 9, 100, 5)])
     expect(nueve).toMatchObject({
-      segmento: 'Cliente, consultó 2+ veces',
+      segmento: 'Alta · cliente que volvió',
       llamados: { n: 400, compraron: 60, tasa: 15 },
       control: { n: 100, compraron: 5, tasa: 5 },
       lift: 3,
@@ -58,14 +58,15 @@ describe('buildMeasurement', () => {
 })
 
 describe('controlWithinReach', () => {
-  const c = (phone_key, rank) => ({ phone_key, rank })
+  // position = lugar en el ranking (0 = el mejor).
+  const c = (phone_key, position) => ({ phone_key, position })
 
   it('el control solo entra hasta donde llego el cupo de los llamados', () => {
-    const out = controlWithinReach({ control: [c('a', 9), c('b', 4.4), c('z', 2.2)], assigned: [c('x', 9), c('y', 4.4)] })
+    const out = controlWithinReach({ control: [c('a', 0), c('b', 3), c('z', 7)], assigned: [c('x', 1), c('y', 4)] })
     expect(out.map((x) => x.phone_key)).toEqual(['a', 'b'])
   })
 
   it('si no se asigno a nadie no hay control (no hay contra que comparar)', () => {
-    expect(controlWithinReach({ control: [c('a', 9)], assigned: [] })).toEqual([])
+    expect(controlWithinReach({ control: [c('a', 0)], assigned: [] })).toEqual([])
   })
 })

@@ -18,7 +18,11 @@ const Z_95 = 1.96
 
 const rate = (bought, n) => (n ? Math.round((1000 * bought) / n) / 10 : null)
 
-const SEGMENT_LABEL = { 9: 'Cliente, consultó 2+ veces', 4.4: 'Cliente, consultó 1 vez' }
+// Una probabilidad esperada por segmento (outlook.entity.js expectedProbability).
+const SEGMENT_LABEL = {
+  9: 'Alta · cliente que volvió', 5.2: 'Alta · consulta de la semana',
+  4.4: 'Media · cliente que volvió', 4.1: 'Media · consulta de la semana'
+}
 
 // ¿La diferencia entre dos proporciones supera lo que el azar daria al 95%?
 export function differsBeyondChance (a, b) {

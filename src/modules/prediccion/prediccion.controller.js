@@ -13,8 +13,13 @@ export async function bandejaHandler (req, reply) {
 
 export async function resultadoHandler (req, reply) {
   const data = await bandeja.registrarResultado({
-    assignmentId: req.body.assignment_id, outcome: req.body.outcome, reason: req.body.reason ?? null, requester: req.user
+    assignmentId: req.body.assignment_id, outcome: req.body.outcome, requester: req.user
   })
+  return reply.send({ ok: true, data })
+}
+
+export async function seguimientoHandler (req, reply) {
+  const data = await bandeja.marcarSeguimiento({ followupId: req.body.followup_id, requester: req.user })
   return reply.send({ ok: true, data })
 }
 

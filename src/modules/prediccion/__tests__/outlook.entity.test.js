@@ -13,8 +13,17 @@ describe('purchaseOutlook', () => {
   it('cliente que volvio a consultar 2 veces hace 59 dias: 9%, igual que la bandeja', () => {
     const o = purchaseOutlook(villa, '2026-10-15')
     expect(o).toMatchObject({ segment: 'VOLVIO', probability: RETURNING_CLIENT_PROBABILITY.repeated, days: 59, inquiries: 2 })
-    const [enBandeja] = rankCandidates([{ phone_key: 'x', inquiries: o.inquiries, tier: 'NORMAL' }])
-    expect(enBandeja.probability).toBe(o.probability)
+    const [enBandeja] = rankCandidates([{ phone_key: 'x', inquiries: o.inquiries, tier: 'NORMAL', is_client: o.isClient, days: o.days, consulted_on: '2026-08-17' }])
+    expect(enBandeja).toMatchObject({ probability: o.probability, level: o.level })
+    expect(o).toMatchObject({ level: 'ALTA', callable: true })
+  })
+
+  it('nuevo que consulto 2 veces en la semana: MEDIA y va a Llamar hoy', () => {
+    expect(purchaseOutlook([lead(88, '2026-10-14'), lead(88, '2026-10-10')], '2026-10-15')).toMatchObject({ level: 'MEDIA', callable: true })
+  })
+
+  it('nuevo con 1 consulta: BAJA, a la cadencia', () => {
+    expect(purchaseOutlook([lead(88, '2026-10-14')], '2026-10-15')).toMatchObject({ level: 'BAJA', callable: false })
   })
 
   it('consulta de menos de 15 dias es caliente: es el momento de cerrar, sin %', () => {

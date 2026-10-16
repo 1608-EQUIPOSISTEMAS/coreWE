@@ -126,6 +126,7 @@ async function programsByIds (programIds) {
 const SOLES = 3041
 const PROFESSIONAL = 3086
 const STUDENT = 3087
+const INSTALLMENTS = 2467
 
 async function offerDetails (programIds, today) {
   if (!programIds.length) return []
@@ -169,9 +170,9 @@ const FIRST_INQUIRY_OF_NEWCOMERS = `
                         WHERE c.phone_key = h.phone_key AND c.event_type = 'COMPRA' AND c.event_date < h.event_date)
      ORDER BY h.phone_key, h.event_date),
   b AS (
-    SELECT q.phone_key, f.program_id, f.event_date - q.consulted_on AS dias
+    SELECT q.phone_key, f.program_id, f.source_id AS enrollment_id, f.event_date - q.consulted_on AS dias
       FROM q CROSS JOIN LATERAL (
-        SELECT c.program_id, c.event_date FROM public.mv_commercial_history c
+        SELECT c.program_id, c.event_date, c.source_id FROM public.mv_commercial_history c
          WHERE c.phone_key = q.phone_key AND c.source = 'ERP_ENROLLMENT'
            AND c.event_date BETWEEN q.consulted_on AND q.consulted_on + $3::int
          ORDER BY c.event_date LIMIT 1) f)`
@@ -182,8 +183,13 @@ async function programPlaybook (programId, today, windowDays) {
     pool.query(`${FIRST_INQUIRY_OF_NEWCOMERS}
       SELECT (SELECT COUNT(*) FROM q)::int AS consultaron, COUNT(*)::int AS compraron,
              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY dias) AS mediana_dias,
-             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY dias) AS p90_dias
-        FROM b`, params),
+             PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY dias) AS p90_dias,
+             COUNT(*) FILTER (WHERE dias = 0)::int AS dia_0,
+             COUNT(*) FILTER (WHERE dias BETWEEN 1 AND 3)::int AS dias_1_3,
+             COUNT(*) FILTER (WHERE dias BETWEEN 4 AND 14)::int AS dias_4_14,
+             COUNT(*) FILTER (WHERE e.cat_payment_plan = $4)::int AS en_cuotas,
+             COUNT(*) FILTER (WHERE e.cat_profile_id = $5)::int AS estudiantes
+        FROM b LEFT JOIN public.enrollments e ON e.enrollment_id = b.enrollment_id`, [...params, INSTALLMENTS, STUDENT]),
     pool.query(`${FIRST_INQUIRY_OF_NEWCOMERS}
       SELECT b.program_id, p.program_name, COALESCE(p.is_membership, false) AS is_membership, COUNT(*)::int AS compradores
         FROM b JOIN public.programs p ON p.program_id = b.program_id
