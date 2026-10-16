@@ -6,3 +6,8 @@ export async function reconcileSheetHandler (req, reply) {
   const data = await usecases.reconcileFicoSheets({ urls: req.body.urls })
   return reply.code(200).send({ ok: true, data })
 }
+
+export async function applyFixesHandler (req, reply) {
+  const data = await usecases.applyReconciliationFixes({ urls: req.body.urls, fixes: req.body.fixes, userId: req.user?.id })
+  return reply.code(200).send({ ok: true, data })
+}

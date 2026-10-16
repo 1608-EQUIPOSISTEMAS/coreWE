@@ -38,7 +38,7 @@ import ticketsRoutes from './modules/tickets/tickets.routes.js'
 import planComercialRoutes from './modules/plancomercial/plancomercial.routes.js'
 import prediccionRoutes from './modules/prediccion/prediccion.routes.js'
 import { setImporterPorts } from './modules/importer/importer.ports.js'
-import { ficoEnrollmentRegister } from './modules/fico/enrollment/enrollment.usecases.js'
+import { ficoEnrollmentRegister, retireEnrollment as ficoRetireEnrollment } from './modules/fico/enrollment/enrollment.usecases.js'
 import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
 import { getCatalog } from './modules/catalog/catalog.usecases.js'
 import { listProgramVersions } from './modules/program/program.usecases.js'
@@ -88,7 +88,10 @@ setImporterPorts({
   // Cuotas cobradas de la hoja FICO: pagadas + fila en payments.
   applyInstallmentPayments: (args) => enrollmentRepository.applyImportedInstallmentPayments(args),
   // Fecha de inscripcion real de la hoja FICO (el alta sella NOW()).
-  setImportedRegistrationDate: (args) => enrollmentRepository.setImportedRegistrationDate(args)
+  setImportedRegistrationDate: (args) => enrollmentRepository.setImportedRegistrationDate(args),
+  // Correcciones de la conciliacion: retiro normal de FICO y refresco de la MV.
+  retireEnrollment: ficoRetireEnrollment,
+  refreshEnrollmentMv: (reason) => enrollmentRepository.refreshMv(reason)
 })
 
 // Construye y configura la instancia Fastify sin arrancarla. Permite levantar
