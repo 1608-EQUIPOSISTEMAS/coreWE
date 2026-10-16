@@ -48,7 +48,14 @@ export const importerPorts = {
   applyInstallmentPayments: null,
   // ({ enrollmentId, registrationDate: 'YYYY-MM-DD', userId }) -> { updated }.
   // Fija la fecha de inscripcion de la hoja FICO (padre + hijas); el alta sella NOW().
-  setImportedRegistrationDate: null
+  setImportedRegistrationDate: null,
+  // ({ enrollmentId, reason, hasRefund, refundAmount, justificacion, userId }) -> { result }.
+  // Retiro normal de FICO (hijas, cuotas pendientes, Odoo, aviso). Lo usa la
+  // correccion de la conciliacion para una fila R que sigue vigente.
+  retireEnrollment: null,
+  // (reason) -> void. Refresca la MV del reporte FICO tras una correccion
+  // (sin esto el panel FICO no ve el cambio hasta el cron).
+  refreshEnrollmentMv: () => {}
 }
 
 export function setImporterPorts (ports = {}) {

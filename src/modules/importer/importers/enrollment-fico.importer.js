@@ -688,6 +688,21 @@ function installmentPayment (inst, src, currency, cat, ctx) {
   }
 }
 
+// Pago de la FILA de "INS - N" (la inicial): medio, cuenta, fecha y N° de
+// operacion, con la misma resolucion que las cuotas (Mercado Pago en ENTIDAD
+// FINANCIERA, detraccion, empresa + moneda). Lo usa la conciliacion para
+// registrar una reserva cobrada que quedo sin pago.
+export function rowPaymentDetail (raw, ctx) {
+  const src = {
+    payment_date: raw.payment_date,
+    payment_medium: raw.payment_medium,
+    business_entity: raw.business_entity,
+    financial_entity: raw.financial_entity,
+    transaction_code: raw.transaction_code
+  }
+  return installmentPayment({ installment_number: 0, amount: num(raw.down_payment) }, src, raw.currency, ctx?.catalog || {}, ctx)
+}
+
 // "Detraccion" en ENTIDAD FINANCIERA = deposito a la cuenta de detracciones, que
 // es la del Banco de la Nacion (BN) de la empresa.
 function bankNameFor (financialEntity) {
@@ -815,34 +830,7 @@ async function commitRow (data, { userId }) {
   // se liga al padre si estaba suelta); cualquier otro valor o excepcion es un FALLO REAL que antes se tragaba en
   // silencio (por eso aparecian padres sin hijas). Ahora se cuenta y se reporta.
   const parentId = resp?.enrollment_id || resp?.duplicate_info?.enrollment_id
-  const childFails = []
-  if (parentId && Array.isArray(data.child_editions) && data.child_editions.length) {
-    for (const child of data.child_editions) {
-      try {
-        const cresp = await importerPorts.registerEnrollment({
-          data: childInscription(data, child, parentId), userId, skipFollowup: true
-        })
-        if (cresp?.result === 2) {
-          // La hija YA existia en esa aula (import previo como curso suelto, o
-          // registro manual): el duplicado no la liga al padre, asi que antes
-          // quedaba suelta. Se liga aqui; si ya tiene OTRO padre no se toca y se avisa.
-          const childId = cresp?.duplicate_info?.enrollment_id
-          const link = childId
-            ? await importerPorts.linkChildToParent({ childEnrollmentId: childId, parentEnrollmentId: parentId })
-            : null
-          if (!link) {
-            childFails.push(`aula ${child.edition_id}: duplicada sin id, no se pudo ligar al padre`)
-          } else if (!link.linked && Number(link.currentParentId) !== Number(parentId)) {
-            childFails.push(`aula ${child.edition_id}: la inscripcion ${childId} ya pertenece al padre ${link.currentParentId}`)
-          }
-        } else if (cresp?.result !== 1) {
-          childFails.push(`aula ${child.edition_id}: ${cresp?.message || 'sin exito'}`)
-        }
-      } catch (err) {
-        childFails.push(`aula ${child.edition_id}: ${err.message}`)
-      }
-    }
-  }
+  const childFails = parentId ? await ensureChildren(parentId, data, data.child_editions, userId) : []
   // Paquete SIN estructura: la edicion es un paquete (diploma/espec/PEE) pero no
   // tiene aulas hijas en edition_structure, asi que no se creo NINGUNA. Antes esto
   // pasaba en silencio (padre creado, cero hijas) => se avisa para que no vuelva a
@@ -887,6 +875,40 @@ async function commitRow (data, { userId }) {
   return { ok: false, message: `${resp?.message || 'El registro no devolvio exito'}${childNote}` }
 }
 
+// Crea (o liga, si ya existian sueltas) las inscripciones hijas del paquete en
+// las aulas `children` [{ edition_id, version_id }]. Devuelve los fallos como
+// texto. Lo usan commitRow y la correccion "Crear aulas hijas" de la conciliacion.
+export async function ensureChildren (parentId, data, children, userId) {
+  const childFails = []
+  if (!parentId || !Array.isArray(children) || !children.length) return childFails
+  for (const child of children) {
+    try {
+      const cresp = await importerPorts.registerEnrollment({
+        data: childInscription(data, child, parentId), userId, skipFollowup: true
+      })
+      if (cresp?.result === 2) {
+        // La hija YA existia en esa aula (import previo como curso suelto, o
+        // registro manual): el duplicado no la liga al padre, asi que antes
+        // quedaba suelta. Se liga aqui; si ya tiene OTRO padre no se toca y se avisa.
+        const childId = cresp?.duplicate_info?.enrollment_id
+        const link = childId
+          ? await importerPorts.linkChildToParent({ childEnrollmentId: childId, parentEnrollmentId: parentId })
+          : null
+        if (!link) {
+          childFails.push(`aula ${child.edition_id}: duplicada sin id, no se pudo ligar al padre`)
+        } else if (!link.linked && Number(link.currentParentId) !== Number(parentId)) {
+          childFails.push(`aula ${child.edition_id}: la inscripcion ${childId} ya pertenece al padre ${link.currentParentId}`)
+        }
+      } else if (cresp?.result !== 1) {
+        childFails.push(`aula ${child.edition_id}: ${cresp?.message || 'sin exito'}`)
+      }
+    } catch (err) {
+      childFails.push(`aula ${child.edition_id}: ${err.message}`)
+    }
+  }
+  return childFails
+}
+
 // Registra como pagadas las cuotas cobradas de la fila (y alinea la fecha de la
 // reserva con F. PAGO). Devuelve { note, failed } para el mensaje de la fila.
 async function applyPayments (enrollmentId, data, userId) {
@@ -925,7 +947,7 @@ async function applyRegistrationDate (enrollmentId, data, userId) {
 // resuelta. Reusa identidad + modalidad/moneda/perfil. Sin edicion, precio 0 (via
 // is_membership_benefit = pago cero, opcion A: migracion sin pago). is_membership
 // del programa la marca como miembro; el dedup evita duplicarla en re-runs.
-function membershipInscription (data) {
+export function membershipInscription (data) {
   return {
     document_number: data.document_number,
     first_name: data.first_name,
