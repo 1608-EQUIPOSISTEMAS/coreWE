@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // mano (15/10/26). Si esto se rompe, o vuelven los socios a medias o el socio
 // se queda sin cursos.
 
-const odoo = { enrollInAllOnlineCourses: vi.fn(), listOnlineChannels: vi.fn() }
+const odoo = { enrollInAllOnlineCourses: vi.fn(), listOnlineChannels: vi.fn(), searchUserByEmail: vi.fn() }
 const repo = {
   findEnrollmentForOdoo: vi.fn(),
   findPreviousOdooUserByDocument: vi.fn(),
@@ -33,14 +33,31 @@ beforeEach(() => {
   repo.findPreviousOdooUserByDocument.mockResolvedValue(null)
   repo.findMembershipCourseIds.mockResolvedValue([1])
   odoo.listOnlineChannels.mockResolvedValue([{ id: 1, name: 'Excel' }, { id: 2, name: 'SAP' }])
+  odoo.searchUserByEmail.mockImplementation(async login => ({ id: 47438, login }))
   odoo.enrollInAllOnlineCourses.mockResolvedValue({ success: true, odoo_user_id: 9, odoo_login: 'ana@gmail.com' })
 })
 
 describe('membresia: usuario manual, cursos automaticos', () => {
-  it('el alta del usuario no toca Odoo y cierra el job en success', async () => {
+  it('sin cuenta previa la bienvenida no crea usuario y cierra el job en success', async () => {
+    helper.resolveOdooLogin.mockResolvedValue(null)
+
     const res = await createMembershipOdooUser({ enrollmentId: 71 })
 
     expect(res).toMatchObject({ success: true, skipped: true, odoo_user_id: null })
+    expect(repo.saveOdooCredentials).not.toHaveBeenCalled()
+    expect(odoo.enrollInAllOnlineCourses).not.toHaveBeenCalled()
+  })
+
+  // Caso Yeremy (enrollment 23070): alumno de SAP con cuenta .weeducacion; el
+  // correo de bienvenida le daba su gmail como usuario del campus.
+  it('con cuenta previa la bienvenida guarda su login para el correo, sin crear nada', async () => {
+    helper.resolveOdooLogin.mockResolvedValue('jimenez.yeremy@weeducacion.edu.pe')
+
+    const res = await createMembershipOdooUser({ enrollmentId: 71 })
+
+    expect(res).toMatchObject({ success: true, odoo_user_id: 47438 })
+    expect(repo.saveOdooCredentials).toHaveBeenCalledWith(
+      { enrollmentId: 71, odooUserId: 47438, odooEmail: 'jimenez.yeremy@weeducacion.edu.pe', odooPassword: null })
     expect(odoo.enrollInAllOnlineCourses).not.toHaveBeenCalled()
   })
 

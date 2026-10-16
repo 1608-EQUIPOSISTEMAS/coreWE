@@ -95,16 +95,39 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
 // Pedido de FICO (14/10/26): el ERP NO crea el usuario Odoo del socio. La alta
 // automatica dejaba socios a medias (el curso aparecia en su campus pero no
 // estaba inscrito como participante y Odoo lo botaba al entrar a la clase), y
-// el area prefiere crear la cuenta a mano. El job 'membership_welcome' (step
-// account) sigue llamando aca: devolver success lo cierra limpio sin reintentos.
-// El correo de bienvenida usa el correo registrado.
-export async function createMembershipOdooUser () {
-  return {
-    success: true,
-    skipped: true,
-    odoo_user_id: null,
-    message: 'Membresia: el ERP no crea el usuario Odoo (lo crea el area a mano)'
+// el area prefiere crear la cuenta a mano. Si el socio YA tiene cuenta (alumno
+// de un curso previo) se guarda su login, para que el correo de bienvenida le
+// de su usuario .weeducacion y no el correo personal. Sin cuenta cierra en
+// success igual: el correo cae al correo registrado (membershipCampusLogin).
+// Job worker: 'membership_welcome', step 'account'.
+export async function createMembershipOdooUser ({ enrollmentId }) {
+  try {
+    const data = await repo.findEnrollmentForOdoo(enrollmentId)
+    if (!data) throw new Error('Inscripcion no encontrada')
+    const account = await findExistingOdooAccount(data)
+    if (!account) {
+      return { success: true, skipped: true, odoo_user_id: null, message: 'Sin cuenta Odoo: la crea el area a mano' }
+    }
+    await repo.saveOdooCredentials({ enrollmentId, odooUserId: account.id, odooEmail: account.login, odooPassword: null })
+    return { success: true, reused: true, odoo_user_id: account.id, odoo_login: account.login }
+  } catch (err) {
+    console.error('[createMembershipOdooUser] Throw inesperado:', err.message, err.stack)
+    return { success: false, error: `createMembershipOdooUser: ${err.message}`, odoo_user_id: null }
   }
+}
+
+// Cuenta Odoo que el socio ya tiene, o null. Nunca crea: misma cadena que el
+// sync de cursos (user previo -> DNI en Odoo -> correo real).
+async function findExistingOdooAccount (data) {
+  const login = await resolveOdooLogin({
+    prevOdooUserId: await repo.findPreviousOdooUserByDocument(data.document_number),
+    documentNumber: data.document_number,
+    originEmail: data.origin_email,
+    createEmail: null
+  })
+  if (!login) return null
+  const user = await odoo.searchUserByEmail(login)
+  return user ? { id: user.id, login: user.login } : null
 }
 
 // Activacion (15/10/26): los cursos del catalogo SI los abre el ERP, pero solo
@@ -136,13 +159,8 @@ async function activateMembershipCourses (enrollmentId) {
     }
   }
 
-  const login = await resolveOdooLogin({
-    prevOdooUserId: await repo.findPreviousOdooUserByDocument(data.document_number),
-    documentNumber: data.document_number,
-    originEmail: data.origin_email,
-    createEmail: null
-  })
-  if (!login) {
+  const account = await findExistingOdooAccount(data)
+  if (!account) {
     return {
       success: false,
       odoo_user_id: null,
@@ -167,8 +185,8 @@ async function activateMembershipCourses (enrollmentId) {
   // searchEmail = createEmail = login existente: el adapter encuentra la cuenta
   // y nunca llega a su rama de alta (password null por lo mismo).
   const result = await odoo.enrollInAllOnlineCourses({
-    searchEmail: login,
-    createEmail: login,
+    searchEmail: account.login,
+    createEmail: account.login,
     fullName: `${surnames} ${names}`.trim(),
     password: null,
     phone: data.origin_phone,
@@ -182,7 +200,7 @@ async function activateMembershipCourses (enrollmentId) {
     await repo.saveOdooCredentials({
       enrollmentId,
       odooUserId: result.odoo_user_id,
-      odooEmail: result.odoo_login || login,
+      odooEmail: result.odoo_login || account.login,
       odooPassword: null
     })
   }
