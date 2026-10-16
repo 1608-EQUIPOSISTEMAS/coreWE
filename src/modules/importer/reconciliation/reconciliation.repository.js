@@ -1,6 +1,6 @@
 import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { DomainError } from '../../../shared/errors.js'
-import { NOT_CURRENT_STATUSES, INSTALLMENT_PAID_STATUSES, INSTALLMENT_VOID_STATUSES } from './reconciliation.entity.js'
+import { NOT_CURRENT_STATUSES, INSTALLMENT_PAID_STATUSES, INSTALLMENT_VOID_STATUSES, missingPaymentData } from './reconciliation.entity.js'
 
 // Persistencia de la conciliacion hoja FICO <-> BD.
 //   - Lecturas: una query por concepto para toda la hoja, no por fila.
@@ -18,13 +18,16 @@ const MOVE_LINK_SQL = `
   COALESCE(e.notes, '') LIKE '%masiva FICO%' AS imported`
 
 // Cuotas de la inscripcion `e` con sus pagos activos: la conciliacion compara
-// montos y estados, y la correccion del plan decide con los pagos de cada cuota.
+// montos, estados y los datos de cada pago (cuenta, medio, N° de operacion), y
+// las correcciones deciden con los pagos de cada cuota.
 const INSTALLMENTS_JSON_SQL = `
   COALESCE((SELECT json_agg(json_build_object(
               'installment_id', pi.installment_id, 'n', pi.installment_number, 'amount', pi.amount::float8,
               'status', pi.cat_status, 'due_date', to_char(pi.due_date, 'YYYY-MM-DD'),
               'has_payment', EXISTS (SELECT 1 FROM payments x WHERE x.installment_id = pi.installment_id AND x.active = 'Y'),
-              'payments', COALESCE((SELECT json_agg(json_build_object('payment_id', x.payment_id, 'amount', x.amount::float8) ORDER BY x.payment_id)
+              'payments', COALESCE((SELECT json_agg(json_build_object('payment_id', x.payment_id, 'amount', x.amount::float8,
+                                      'account_id', x.settled_in_account_id, 'medium', x.cat_method_payment, 'operation', x.transaction_code)
+                                      ORDER BY x.payment_id)
                                       FROM payments x WHERE x.installment_id = pi.installment_id AND x.active = 'Y'), '[]'::json))
               ORDER BY pi.installment_number, pi.installment_id)
               FROM payment_installments pi WHERE pi.enrollment_id = e.enrollment_id), '[]'::json)`
@@ -227,6 +230,37 @@ export class ReconciliationRepository {
         `Conciliacion hoja FICO: ${plan.kind === 'payments' ? 'pagos de cuotas cobradas segun la hoja' : 'plan de cuotas y pagos segun la hoja'}.`,
         { ops: plan.ops }, plan.changes.join(' '))
       return { ...plan, applied: true }
+    })
+  }
+
+  // Completa en los pagos los datos que estan vacios y la hoja si trae (cuenta,
+  // medio, N° de operacion). Se recalcula con la inscripcion bloqueada y solo
+  // escribe sobre NULL: lo que alguien ya cargo a mano no se pisa.
+  //   detailOf: (n) -> detalle de pago de la hoja ya resuelto (ver missingPaymentData).
+  async fillPaymentData ({ enrollmentId, userId, detailOf }) {
+    return withTransaction(async client => {
+      await lockImported(client, enrollmentId)
+      const { rows: [state] } = await client.query(
+        `SELECT ${INSTALLMENTS_JSON_SQL} AS installments FROM enrollments e WHERE e.enrollment_id = $1`, [enrollmentId])
+      const insts = (state.installments || []).filter(i => !INSTALLMENT_VOID_STATUSES.includes(Number(i.status)))
+      const missing = missingPaymentData(insts, detailOf)
+      if (!missing.length) return { applied: false, changes: [] }
+
+      for (const m of missing) {
+        await expectOne(client.query(`
+          UPDATE payments
+             SET settled_in_account_id = COALESCE(settled_in_account_id, $3),
+                 cat_method_payment = COALESCE(cat_method_payment, $4),
+                 transaction_code = COALESCE(NULLIF(TRIM(transaction_code), ''), $5)
+           WHERE payment_id = $1 AND enrollment_id = $2 AND active = 'Y'`,
+        [m.payment_id, enrollmentId, m.set.account_id ?? null, m.set.medium ?? null, m.set.operation ?? null]),
+        `el pago de la cuota ${m.n}`)
+      }
+      const changes = missing.map(m => `Pago de la cuota ${m.n}: ${m.labels.join(', ')}.`)
+      await audit(client, enrollmentId, 'data_correction', userId,
+        'Conciliacion hoja FICO: datos de pago vacios completados segun la hoja.',
+        { payments: missing.map(m => ({ payment_id: m.payment_id, n: m.n, ...m.set })) }, changes.join(' '))
+      return { applied: true, changes }
     })
   }
 

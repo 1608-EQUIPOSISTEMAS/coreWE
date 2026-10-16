@@ -173,6 +173,14 @@ describe('proposeFixes', () => {
     expect(f.blocked).toMatch(/IV27/)
   })
 
+  it('pago sin cuenta: completar datos de pago (bajo riesgo), una linea por pago', () => {
+    const r = row(['PAYMENT_DATA_MISSING'])
+    r.findings[0].sheet = [{ n: 1, account_id: 6, labels: ['cuenta BCP PEN 193-9285511-0-38 (WE EDUCACION EJECUTIVA S.A.C.)'] }]
+    const [f] = proposeFixes(r)
+    expect(f).toMatchObject({ action: 'payment_data', risk: 'low', blocked: null })
+    expect(f.changes).toEqual(['Pago de la cuota 1: cuenta BCP PEN 193-9285511-0-38 (WE EDUCACION EJECUTIVA S.A.C.).'])
+  })
+
   it('fila sin inscripcion: importar la fila', () => {
     expect(proposeFixes(row(['MISSING_IN_DB'], null)).map(f => f.action)).toEqual(['import_row'])
   })

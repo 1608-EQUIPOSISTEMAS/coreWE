@@ -29,6 +29,7 @@ export const FIX_ACTIONS = {
   registration_date: { label: 'Corregir fecha', risk: 'low' },
   agent: { label: 'Corregir asesor', risk: 'low' },
   payments: { label: 'Registrar pagos', risk: 'low' },
+  payment_data: { label: 'Completar datos de pago', risk: 'low' },
   plan: { label: 'Rehacer plan según hoja', risk: 'high' },
   children: { label: 'Crear aulas hijas', risk: 'high' },
   membership: { label: 'Asignar membresía', risk: 'high' },
@@ -318,6 +319,16 @@ export function proposeFixes (row, { structure = new Map(), related = [], agents
         }))
       }
     }
+  }
+
+  if (codes.has('PAYMENT_DATA_MISSING')) {
+    const f = row.findings.find(x => x.code === 'PAYMENT_DATA_MISSING')
+    out.push(fix('payment_data', {
+      codes: ['PAYMENT_DATA_MISSING'],
+      description: 'Completa en los pagos ya registrados la cuenta bancaria (de ella sale la entidad empresa), el medio y el N° de operación que están vacíos, con los de la hoja. No cambia montos ni pisa datos ya cargados.',
+      changes: (f.sheet || []).map(m => `Pago de la cuota ${m.n}: ${m.labels.join(', ')}.`),
+      blocked: isImported(e) ? null : notImported
+    }))
   }
 
   if (codes.has('CHILDREN_MISMATCH') && e.program_edition_id) {
