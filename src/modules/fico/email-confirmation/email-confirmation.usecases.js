@@ -222,8 +222,8 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
 }
 
 // El ERP ya no crea la cuenta Odoo de la membresia (ver membership.usecases):
-// el area la crea a mano con el correo que registro el alumno. Las membresias
-// viejas que si tienen cuenta conservan su login real.
+// si el socio ya tenia una, el step 'account' guarda su login en odoo_email;
+// si no, el area la crea a mano con el correo que registro el alumno.
 function membershipCampusLogin (data) {
   return data.odoo_email || data.origin_email
 }

@@ -51,3 +51,13 @@ describe('NOT_FICO_OPERATOR', () => {
     expect(sql).toContain(NOT_FICO_OPERATOR('u_pt'))
   })
 })
+
+describe('hoja "7. Convenios": match WEB de un asesor de convenios', () => {
+  // 22754: FICO hizo el match WEB con NY12 y la venta quedo 'WEB - NY12', sin
+  // ninguna marca B2B, fuera de la hoja. El rol del vendedor la tiene que meter.
+  it('cuenta como B2B la venta WEB cuyo vendedor tiene rol de convenios', async () => {
+    const sql = (await sqlDe('getFicoConvenios')).replace(/\s+/g, ' ')
+    expect(sql).toContain("(e.agent_origin) = 'WEB' AND EXISTS")
+    expect(sql).toContain("ur.user_id = (e.seller_agent_id) AND r.alias IN ('B2B', 'LIDER_B2B')")
+  })
+})

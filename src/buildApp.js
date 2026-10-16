@@ -36,6 +36,7 @@ import reprogramacionRoutes from './modules/reprogramacion/reprogramacion.routes
 import ticketsAlumnosRoutes from './modules/tickets-alumnos/tickets-alumnos.routes.js'
 import ticketsRoutes from './modules/tickets/tickets.routes.js'
 import planComercialRoutes from './modules/plancomercial/plancomercial.routes.js'
+import prediccionRoutes from './modules/prediccion/prediccion.routes.js'
 import { setImporterPorts } from './modules/importer/importer.ports.js'
 import { ficoEnrollmentRegister, retireEnrollment as ficoRetireEnrollment } from './modules/fico/enrollment/enrollment.usecases.js'
 import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
@@ -262,6 +263,7 @@ export async function buildApp (opts = {}) {
   await app.register(ticketsAlumnosRoutes, { prefix: '/api/tickets-alumnos' })
   await app.register(ticketsRoutes, { prefix: '/api/tickets' })
   await app.register(planComercialRoutes, { prefix: '/api/plan-comercial' })
+  await app.register(prediccionRoutes, { prefix: '/api/prediccion' })
 
   app.get('/health', async () => ({ ok: true }))
 

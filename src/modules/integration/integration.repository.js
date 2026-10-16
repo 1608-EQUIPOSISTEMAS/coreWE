@@ -4,6 +4,8 @@ import path from 'path'
 import { WebClient } from '@slack/web-api'
 import { ALIAS } from '../../utils/catalog-aliases.js'
 import { buildReplacement, columnWidth } from './fico-autosync.entity.js'
+import { MEMBERSHIP_START_SQL } from '../../utils/membership-start.sql.js'
+import { isWebMatchByB2bAdvisorSql } from '../../utils/b2b-web-match.sql.js'
 
 // Capa de infraestructura del modulo integration. Centraliza el acceso a la
 // base de datos, a Google Sheets y a Slack para que los usecases no instancien
@@ -127,6 +129,7 @@ export const excludeHeld = (ids) => ids.length === 0
          AND COALESCE(e.parent_enrollment_id, 0) NOT IN (${ids.join(', ')})`
 
 export const EXCLUDE_HELD = excludeHeld(HELD_ENROLLMENT_IDS)
+
 
 // Una venta con Orden de Servicio / de Compra la aprueba FICO sin cobrar, porque
 // la empresa deposita semanas despues (`markCheckedWithoutPayment` en
@@ -320,11 +323,15 @@ export const NOT_FICO_OPERATOR = (u) => `(
 // se colaba en esta hoja solo por el doctype (07/09/26: 16699 y 16700 de AE30,
 // con lead b2b='N' y sin contrato). Los otros tres marcadores son explicitos:
 // alguien decidio que la venta es de convenio, ahi el asesor no manda.
+//
+// El match WEB de un asesor de convenios mira e.seller_agent_id directo y no
+// `u`, que llega nulo cuando el JOIN filtra operadores FICO.
 // Asume en el scope los alias `e` (enrollments), `l` (leads), `u` (asesor de la
 // venta) y `ag_token` (asesor del token de pago, que gana sobre `u`).
 export const IS_B2B = `
          AND (
            e.agent_origin = 'B2B'
+           OR ${isWebMatchByB2bAdvisorSql({ origin: 'e.agent_origin', sellerId: 'e.seller_agent_id' })}
            OR e.b2b_contract_id IS NOT NULL
            OR l.b2b = 'Y'
            OR (e.cat_b2b_doctype IS NOT NULL
@@ -983,16 +990,7 @@ export class IntegrationRepository {
     JOIN public.programs prog       ON prog.program_id = pv.program_id
                                    AND prog.is_membership = true
     LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
-    LEFT JOIN LATERAL (
-      SELECT COALESCE(
-        e.membership_activation_date,
-        l.pay_date,
-        (SELECT py.payment_date::date FROM public.payments py
-          WHERE py.enrollment_id = e.enrollment_id AND py.active = 'Y'
-          ORDER BY py.payment_date ASC LIMIT 1),
-        e.registration_date::date
-      ) AS f
-    ) inicio ON TRUE
+    LEFT JOIN LATERAL (SELECT ${MEMBERSHIP_START_SQL} AS f) inicio ON TRUE
     WHERE e.active = 'Y'
       ${EXCLUDE_HELD}
     ORDER BY inicio.f DESC, per.last_name

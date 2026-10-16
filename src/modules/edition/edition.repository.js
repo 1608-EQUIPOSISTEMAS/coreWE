@@ -3,6 +3,7 @@ import { callProcedureReturningRows } from '../../shared/db/sp.js'
 import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
 import { accountProvidersSql, studentPersonalAccount } from '../../shared/personal-account.js'
 import { FECHA_CORTE_RUBRICA, rubricaDe, GRADE_RULES } from './edition.entity.js'
+import { isWebMatchByB2bAdvisorSql } from '../../utils/b2b-web-match.sql.js'
 
 // Los unicos estados de lead que negocio considera una CONSULTA. Cualquier otro
 // (Eliminado, Cerrado, Desestimado, Indiferente, Prox. Inicio, Inscrito,
@@ -54,8 +55,9 @@ export const hasAnyGradeSql = (g) => `(${anyNumber(`${g}.tests`)}
       OR ${anyNumber(`${g}.partial_criteria`)}
       OR ${anyNumber(`${g}.final_criteria`)})`
 
-export const isB2bSaleSql = ({ doctype, origin, advisor }) => `
+export const isB2bSaleSql = ({ doctype, origin, advisor, sellerId }) => `
            (COALESCE(${origin}, '') ILIKE '%b2b%'
+            OR ${isWebMatchByB2bAdvisorSql({ origin, sellerId })}
             OR ((${doctype}) IS NOT NULL
                 AND ((${advisor}) IS NULL OR (${advisor}) IN ('NY12','JF39'))))`
 
@@ -795,13 +797,13 @@ export class EditionRepository {
               -- de un comercial lo es: documento no es convenio).
               -- Prioridad: socio manda > B2B > BECA > SEG.
               WHEN mem.is_member THEN 'MEMB'
-              WHEN ${isB2bSaleSql({ doctype: 'par.cat_b2b_doctype', origin: 'par.agent_origin', advisor: 'upar.alias' })} THEN 'B2B'
+              WHEN ${isB2bSaleSql({ doctype: 'par.cat_b2b_doctype', origin: 'par.agent_origin', advisor: 'upar.alias', sellerId: 'upar.user_id' })} THEN 'B2B'
               WHEN bec.is_beca THEN 'BECA'
               ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
           WHEN mem.is_member THEN 'MEMB'
-          WHEN ${isB2bSaleSql({ doctype: 'e.cat_b2b_doctype', origin: 'e.agent_origin', advisor: 'ua.alias' })} THEN 'B2B'
+          WHEN ${isB2bSaleSql({ doctype: 'e.cat_b2b_doctype', origin: 'e.agent_origin', advisor: 'ua.alias', sellerId: 'ua.user_id' })} THEN 'B2B'
           WHEN bec.is_beca THEN 'BECA'
           ELSE 'VENTAS'
         END AS comm_bucket,
@@ -1001,7 +1003,8 @@ export class EditionRepository {
            (${isB2bSaleSql({
              doctype: 'COALESCE(e.cat_b2b_doctype, e_sold.cat_b2b_doctype)',
              origin: 'COALESCE(e_sold.agent_origin, e.agent_origin)',
-             advisor: 'usold.alias'
+             advisor: 'usold.alias',
+             sellerId: 'usold.user_id'
            })}) AS is_b2b,
            -- BECA: la venta (enrollment vendido) va en total 0 y no trae ni
            -- documento ni canal B2B ni membresia. Espejo del LATERAL bec del
@@ -2418,7 +2421,8 @@ CROSS JOIN LATERAL (
        AND (${isB2bSaleSql({
          doctype: 'COALESCE(e.cat_b2b_doctype, es.cat_b2b_doctype)',
          origin: 'COALESCE(es.agent_origin, e.agent_origin)',
-         advisor: 'usold.alias'
+         advisor: 'usold.alias',
+         sellerId: 'usold.user_id'
        })})
        AND (cts.alias IS NULL OR cts.alias NOT IN (
               'we_enrollment_status_retired',
