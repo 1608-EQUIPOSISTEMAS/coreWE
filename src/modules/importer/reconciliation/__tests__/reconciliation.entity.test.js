@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { reconcile, compareRow, compareMoveOrigin, mergeSheets, agentCodeOf, isoDate, rowKey, enrollmentKey } from '../reconciliation.entity.js'
+import { reconcile, compareRow, compareMoveOrigin, mergeSheets, agentCodeOf, isoDate, rowKey, enrollmentKey, missingPaymentData } from '../reconciliation.entity.js'
 
 // Fila del importador (raw de ingest) y su inscripcion en BD, con los valores de
 // un caso "sano" de la hoja BI-EZ-01: contado de 640 saldado, en E63.
@@ -320,5 +320,41 @@ describe('varias hojas del mismo programa (una por año)', () => {
     const suelta = enrollment({ move_origin_id: null })
     const r = reconcile({ rows: [{ rowNumber: 113, raw: raw({ obs: 'VIENDE DE UNA RP' }) }], enrollments: [suelta], related: [suelta], ...ctx })
     expect(r.rows[0].findings[0].code).toBe('MOVE_SPLIT_IMPORT')
+  })
+})
+
+// Caso real BI-EZ-02 fila 114 (#4064): contado de 522 con el pago registrado sin
+// cuenta (ni entidad empresa); la hoja trae WE Educación / BCP / PEN.
+describe('datos de pago vacios que la hoja si trae', () => {
+  const detalle = { bank_account_id: 6, cat_payment_medium: 3203, transaction_code: '3783568', account_label: 'BCP PEN 193-9285511-0-38 (WE EDUCACION EJECUTIVA S.A.C.)', medium_label: 'Transferencia' }
+  const pagada = (pago) => [{ installment_id: 4586, n: 1, amount: 640, status: 4454, has_payment: true, payments: [{ payment_id: 3575, amount: 640, ...pago }] }]
+  const detailOf = () => () => detalle // (raw) -> (n) -> detalle
+
+  it('completa solo lo vacio: no pisa medio ni N° de operacion ya cargados', () => {
+    const [m] = missingPaymentData(pagada({ account_id: null, medium: 3203, operation: '3783568' }), () => detalle)
+    expect(m).toMatchObject({ payment_id: 3575, n: 1, set: { account_id: 6 } })
+    expect(m.set).not.toHaveProperty('medium')
+    expect(m.labels).toEqual(['cuenta BCP PEN 193-9285511-0-38 (WE EDUCACION EJECUTIVA S.A.C.)'])
+  })
+
+  it('con la cuenta ya puesta no hay nada que completar', () => {
+    expect(missingPaymentData(pagada({ account_id: 9, medium: 1, operation: 'X' }), () => detalle)).toEqual([])
+  })
+
+  it('una cuota con varios pagos no se toca: no se sabe a cual va el dato', () => {
+    const insts = [{ n: 1, amount: 640, status: 4454, payments: [{ payment_id: 1, account_id: null }, { payment_id: 2, account_id: null }] }]
+    expect(missingPaymentData(insts, () => detalle)).toEqual([])
+  })
+
+  it('la hoja sin cuenta (banco no reconocido) no propone nada', () => {
+    expect(missingPaymentData(pagada({ account_id: null, medium: 1, operation: 'X' }), () => ({ bank_account_id: null }))).toEqual([])
+  })
+
+  it('compareRow lo reporta como advertencia; sin detalle de la hoja no revisa', () => {
+    const e = enrollment({ installments: pagada({ account_id: null, medium: 3203, operation: '3783568' }) })
+    const [f] = compareRow(raw(), e, { structure: ctx.structure, paymentDetailOf: detailOf })
+    expect(f).toMatchObject({ code: 'PAYMENT_DATA_MISSING', severity: 'warning' })
+    expect(f.message).toMatch(/cuota 1 \(cuenta BCP PEN/)
+    expect(compareRow(raw(), e, { structure: ctx.structure })).toEqual([])
   })
 })

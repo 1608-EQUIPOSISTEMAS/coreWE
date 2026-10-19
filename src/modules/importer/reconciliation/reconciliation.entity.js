@@ -31,6 +31,7 @@ export const FINDINGS = {
   PENDING_MISMATCH: 'error',
   INSTALLMENTS_MISSING: 'error',
   PAID_WITHOUT_PAYMENT: 'warning',
+  PAYMENT_DATA_MISSING: 'warning',
   CHILDREN_MISMATCH: 'error',
   MEMBERSHIP_MISSING: 'error',
   AGENT_MISMATCH: 'warning',
@@ -151,10 +152,56 @@ function childrenFinding (e, structure) {
     expected.map(c => c.label), actual.map(c => c.label))
 }
 
+// Datos de pago que la BD tiene vacios y la hoja si trae: cuenta (de ella sale la
+// entidad empresa), medio y N° de operacion. Solo cuotas con UN pago activo: con
+// varios no se sabe a cual corresponde el dato de la hoja. Nunca pisa un valor.
+//   installments: cuotas no anuladas con payments [{ payment_id, account_id,
+//   medium, operation }]; detailOf: (n) -> { bank_account_id, cat_payment_medium,
+//   transaction_code, account_label?, medium_label? } | null.
+// Devuelve [{ payment_id, n, set: { account_id?, medium?, operation? }, labels }].
+export function missingPaymentData (installments = [], detailOf = null) {
+  if (typeof detailOf !== 'function') return []
+  const out = []
+  for (const i of installments) {
+    const pays = i.payments || []
+    if (pays.length !== 1) continue
+    const p = pays[0]
+    const d = detailOf(Number(i.n))
+    if (!d) continue
+    const set = {}
+    const labels = []
+    if (!p.account_id && d.bank_account_id) {
+      set.account_id = Number(d.bank_account_id)
+      labels.push(`cuenta ${d.account_label || d.bank_account_id}`)
+    }
+    if (!p.medium && d.cat_payment_medium) {
+      set.medium = Number(d.cat_payment_medium)
+      labels.push(`medio ${d.medium_label || d.cat_payment_medium}`)
+    }
+    const op = String(d.transaction_code ?? '').trim()
+    if (!String(p.operation ?? '').trim() && op) {
+      set.operation = op
+      labels.push(`N° operación ${op}`)
+    }
+    if (labels.length) out.push({ payment_id: p.payment_id, n: Number(i.n), set, labels })
+  }
+  return out
+}
+
+function paymentDataFinding (insts, detailOf) {
+  const missing = missingPaymentData(insts, detailOf)
+  if (!missing.length) return null
+  return finding('PAYMENT_DATA_MISSING',
+    `Pagos sin datos que la hoja sí trae: ${missing.map(m => `cuota ${m.n} (${m.labels.join(', ')})`).join('; ')}.`,
+    missing.map(m => ({ n: m.n, ...m.set, labels: m.labels })), null)
+}
+
 // Compara una fila importable contra su inscripcion. Devuelve los hallazgos.
 //   skip: codigos que no aplican a esta fila (ej. el origen de una RP ya no
 //   tiene deuda ni hijas: se fueron al destino por diseño).
-export function compareRow (raw, e, { structure = new Map(), skip = new Set() } = {}) {
+//   paymentDetailOf: (raw) -> (n) -> detalle de pago de la hoja ya resuelto a IDs
+//   (lo arma el caso de uso con el importador); sin el, no se revisan los datos de pago.
+export function compareRow (raw, e, { structure = new Map(), skip = new Set(), paymentDetailOf = null } = {}) {
   const out = []
   const total = round2(raw.total_amount)
   const ingreso = round2(raw.ingreso)
@@ -189,6 +236,8 @@ export function compareRow (raw, e, { structure = new Map(), skip = new Set() } 
       null, sinPago.map(i => ({ n: Number(i.n), amount: round2(i.amount) }))))
   }
 
+  push(paymentDataFinding(insts, paymentDetailOf?.(raw)))
+
   push(childrenFinding(e, structure))
 
   if (String(raw.member_type || '').trim() && !e.membership_program_id) {
@@ -217,7 +266,7 @@ export function compareRow (raw, e, { structure = new Map(), skip = new Set() } 
 // deuda pendiente y sus propias hijas. RP = mismo programa; CC = otro programa
 // (esta en OTRA hoja, por eso el par se arma con el enlace de la BD, no con filas).
 //   related: inscripciones de los alumnos de la hoja en cualquier programa.
-export function compareMoveOrigin (raw, e, { structure = new Map(), related = [] } = {}) {
+export function compareMoveOrigin (raw, e, { structure = new Map(), related = [], paymentDetailOf = null } = {}) {
   const out = []
   const kind = normText(raw.enrollment_mode) // 'rp' | 'cc'
   const KIND = kind.toUpperCase()
@@ -260,7 +309,7 @@ export function compareMoveOrigin (raw, e, { structure = new Map(), related = []
   // destino por diseño; la deuda de la hoja (SALDO) se compara contra el destino.
   const skip = new Set(['PENDING_MISMATCH', 'INSTALLMENTS_MISSING', 'CHILDREN_MISMATCH'])
   if (isCurrent(e)) skip.delete('CHILDREN_MISMATCH')
-  out.push(...compareRow(raw, e, { structure, skip }))
+  out.push(...compareRow(raw, e, { structure, skip, paymentDetailOf }))
   if (destinos.length) {
     const saldo = Math.max(round2(raw.saldo), 0)
     const pendiente = round2(destinos.reduce((s, d) => s + pendingOf(d), 0))
@@ -275,11 +324,11 @@ const isExcluded = (raw) => raw.excluded === true || normText(raw.enrollment_mod
 const isMoveRow = (raw) => ['rp', 'cc'].includes(normText(raw.enrollment_mode))
 
 // Fila ACT (o destino de RP/CC) contra su inscripcion.
-function compareActive (raw, e, { structure, related, moveRefByDni = new Map() }) {
+function compareActive (raw, e, { structure, related, moveRefByDni = new Map(), paymentDetailOf = null }) {
   const out = []
   if (e.move_origin_id) {
     // Destino enlazado: la deuda de la hoja vive en la fila RP/CC del origen.
-    out.push(...compareRow(raw, e, { structure, skip: new Set(['PENDING_MISMATCH', 'INSTALLMENTS_MISSING']) }))
+    out.push(...compareRow(raw, e, { structure, paymentDetailOf, skip: new Set(['PENDING_MISMATCH', 'INSTALLMENTS_MISSING']) }))
     return out
   }
   if (saysComesFromMove(raw.obs) && !isConvalidation(raw.edition)) {
@@ -293,7 +342,7 @@ function compareActive (raw, e, { structure, related, moveRefByDni = new Map() }
       `La hoja dice "${raw.obs}", pero en el sistema es una inscripción suelta sin enlace al origen${pista}: debió crearse con la RP/CC.`,
       raw.obs, null))
   }
-  out.push(...compareRow(raw, e, { structure }))
+  out.push(...compareRow(raw, e, { structure, paymentDetailOf }))
   return out
 }
 
@@ -303,12 +352,13 @@ function compareActive (raw, e, { structure, related, moveRefByDni = new Map() }
 //   related: inscripciones padre de los alumnos de la hoja en cualquier programa.
 //   activeEditions: [{ version_code, global_code }] activas de esas versiones.
 //   structure: Map(program_edition_id -> [{ edition_id, label }] aulas hijas).
-export function reconcile ({ rows = [], enrollments = [], related = [], activeEditions = [], structure = new Map() }) {
+//   paymentDetailOf: (raw) -> (n) -> detalle de pago de la hoja (ver compareRow).
+export function reconcile ({ rows = [], enrollments = [], related = [], activeEditions = [], structure = new Map(), paymentDetailOf = null }) {
   const activeEditionKeys = new Set(activeEditions.map(a => `${normText(a.version_code)}|${normText(a.global_code)}`))
   const scoped = rows.filter(r => inScope(r.raw, activeEditionKeys))
   // Filas RP/CC por alumno: pista del origen para un destino importado suelto.
   const moveRefByDni = new Map(scoped.filter(r => isMoveRow(r.raw)).map(r => [normText(r.raw.document_number), rowRef(r)]))
-  const ctx = { structure, related, moveRefByDni }
+  const ctx = { structure, related, moveRefByDni, paymentDetailOf }
 
   const dbByKey = new Map()
   for (const e of enrollments) {
@@ -333,7 +383,7 @@ export function reconcile ({ rows = [], enrollments = [], related = [], activeEd
     // duplicadas, la que MAS se parece a la fila (menos diferencias): esa se
     // conserva y las otras son las sobrantes que la correccion propone anular.
     const ref = importable[0]?.raw
-    const score = (e) => ref ? compareRow(ref, e, { structure }).length : 0
+    const score = (e) => ref ? compareRow(ref, e, { structure, paymentDetailOf }).length : 0
     const db = [...(dbByKey.get(key) || [])].sort((a, b) =>
       Number(isCurrent(b)) - Number(isCurrent(a)) || score(a) - score(b) || a.enrollment_id - b.enrollment_id)
     db.forEach(e => used.add(e.enrollment_id))

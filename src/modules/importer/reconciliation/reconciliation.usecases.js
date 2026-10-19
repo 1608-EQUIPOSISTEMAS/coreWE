@@ -50,12 +50,45 @@ async function buildReconciliation (urls, { fresh }) {
     repo.enrollmentsByDocuments(documentNumbers),
     importerPorts.listAgents ? importerPorts.listAgents() : []
   ])
-  const structure = await repo.structure(activeEditions.map(a => Number(a.program_edition_id)))
+  const [structure, ctx] = await Promise.all([
+    repo.structure(activeEditions.map(a => Number(a.program_edition_id))),
+    enrollmentFicoImporter.loadContext()
+  ])
   const agentsByAlias = new Map((agents || []).filter(a => a.alias).map(a => [normText(a.alias), Number(a.user_id)]))
 
-  const result = reconcile({ rows, enrollments, related, activeEditions, structure })
+  // Detalle de pago de cada fila (cuenta, medio, N° de operacion por cuota), con
+  // el mismo resolveRow que importa: la entity compara contra los pagos de la BD.
+  const details = new Map()
+  for (const r of rows) details.set(r.raw, await paymentDetailOfRow(r.raw, ctx))
+  const paymentDetailOf = (raw) => details.get(raw) || null
+
+  const result = reconcile({ rows, enrollments, related, activeEditions, structure, paymentDetailOf })
   for (const row of result.rows) row.fixes = proposeFixes(row, { structure, related, agentsByAlias })
-  return { result, structure, sheets, replaced, versionCodes }
+  return { result, structure, sheets, replaced, versionCodes, ctx, paymentDetailOf }
+}
+
+// (n) -> pago de la cuota n segun la hoja, con etiquetas legibles de la cuenta
+// (banco, moneda, numero y entidad empresa) y del medio para el detalle.
+async function paymentDetailOfRow (raw, ctx) {
+  const { data } = await enrollmentFicoImporter.resolveRow(raw, ctx)
+  const detailOf = paymentDetailFrom(data, rowPaymentDetail(raw, ctx))
+  return (n) => {
+    const d = detailOf(n)
+    return d && { ...d, account_label: accountLabel(ctx, d.bank_account_id), medium_label: catalogLabel(ctx, 'we_payment_medium', d.cat_payment_medium) }
+  }
+}
+
+function catalogLabel (ctx, group, id) {
+  if (!id) return null
+  const hit = (ctx.catalog?.[group] || []).find(e => Number(e.catalogo_id ?? e.id) === Number(id))
+  return hit?.description || null
+}
+
+function accountLabel (ctx, accountId) {
+  const a = accountId && ctx.bankAccounts.find(x => Number(x.account_id) === Number(accountId))
+  if (!a) return null
+  const entity = catalogLabel(ctx, 'we_business_entity', a.business_entity_catalog_id)
+  return [a.bank_name, a.currency, a.account_number].filter(Boolean).join(' ') + (entity ? ` (${entity})` : '')
 }
 
 export async function reconcileFicoSheets ({ urls }) {
@@ -76,8 +109,7 @@ export async function reconcileFicoSheets ({ urls }) {
 // Una por una y cada una en su transaccion: un fallo no frena a las demas.
 export async function applyReconciliationFixes ({ urls, fixes, userId }) {
   const state = await buildReconciliation(urls, { fresh: false })
-  let ctx = null
-  const getCtx = async () => { ctx = ctx || await enrollmentFicoImporter.loadContext(); return ctx }
+  const getCtx = async () => state.ctx
 
   const results = []
   for (const req of fixes) {
@@ -143,6 +175,11 @@ const EXECUTORS = {
 
   payments: financial,
   plan: financial,
+
+  async payment_data ({ row, state, userId }) {
+    const r = await repo.fillPaymentData({ enrollmentId: row.enrollment_id, userId, detailOf: state.paymentDetailOf(row._ctx.raw) })
+    return r.applied ? r.changes.join(' ') : 'Los pagos ya tenían esos datos.'
+  },
 
   async children ({ row, fix, state, getCtx, userId }) {
     const e = row._ctx.enrollment
