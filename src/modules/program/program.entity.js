@@ -38,3 +38,6 @@ export function extractPaginationMeta (rows, page, size) {
     size: Number(size)
   }
 }
+
+// Archivos del programa que manda el bot: reglas compartidas con modules/whatsapp.
+export { PROGRAM_MEDIA_SLOTS, MAX_IMAGE_BYTES, mediaKindFor, programMediaProblem } from '../../shared/program-media.js'

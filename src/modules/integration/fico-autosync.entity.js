@@ -17,8 +17,11 @@ export const AUTOSYNC = {
   safetyEveryMs: 60 * MIN,
   safetyFromHour: 7,
   safetyToHour: 22,
-  // Una corrida normal dura segundos; pasado esto se da por colgada.
-  runTimeoutMs: 5 * MIN
+  // En prod una corrida dura 2-5 min (19/10/26): la BD tarda ~35 s y el resto es
+  // Google recalculando el libro FICO (6.4M celdas, IMPORTRANGE en "1. AULA").
+  // Con 5 min fallaba en los picos. Pasado el tope se da por colgada; ojo que el
+  // race no cancela las escrituras: siguen en segundo plano tras soltar el lock.
+  runTimeoutMs: 10 * MIN
 }
 
 // El Planeamiento usa las mismas reglas de calma/tope, pero sin corrida horaria

@@ -12,6 +12,7 @@ import './services/lead-summary.cron.js'
 import './services/fico-sheets-autosync.cron.js'
 import './services/sheets-autosync.cron.js'
 import './services/prediccion.cron.js'
+import './services/whatsapp-handoff.cron.js'
 import { buildApp } from './buildApp.js'
 
 const app = await buildApp()

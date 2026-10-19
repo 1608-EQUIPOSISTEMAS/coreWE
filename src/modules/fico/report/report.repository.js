@@ -5,7 +5,7 @@ import { INSTALLMENT_EXCLUDED_STATUSES, INSTALLMENT_PENDING_STATUSES, MOVED_ENRO
 
 const INSTALLMENT_PAID_STATUSES = [2471, 4454] // pagado (legacy), pagada
 // Montos en soles: 3042 = dolares, al mismo tipo fijo 3.75 del panel FICO.
-const inSoles = (column) => `${column} * CASE WHEN e.cat_currency = 3042 THEN 3.75 ELSE 1 END`
+export const inSoles = (column) => `${column} * CASE WHEN e.cat_currency = 3042 THEN 3.75 ELSE 1 END`
 // La cuota que vence el dia de la venta (o el siguiente) es la inicial o el
 // contado: se cobra al vender. En la BD la N.1 casi siempre es esa, asi que el
 // numero de cuota no sirve para separarlas; la fecha si.

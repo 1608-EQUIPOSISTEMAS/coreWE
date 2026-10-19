@@ -197,8 +197,9 @@ describe.skipIf(!dbReady)('endpoints criticos (requieren BD de test)', () => {
 describe('modulos montados en buildApp', () => {
   const rutasDeclaradas = (modulo) => {
     const url = new URL(`../../src/modules/${modulo}`, import.meta.url)
-    return readFileSync(new URL(`${modulo}.routes.js`, `${url}/`), 'utf8')
-      .matchAll(/fastify\.(get|post|put|delete)\('([^']+)'/g)
+    return readFileSync(new URL(`${modulo.split('/').pop()}.routes.js`, `${url}/`), 'utf8')
+      // `erp.` = plugin hijo con JWT dentro del módulo (whatsapp: el webhook va sin JWT).
+      .matchAll(/(?:fastify|erp)\.(get|post|put|delete)\('([^']+)'/g)
   }
 
   it.each([
@@ -209,7 +210,10 @@ describe('modulos montados en buildApp', () => {
     ['scheduleplan', '/api/scheduleplan'],
     ['audit', '/api/audit'],
     ['plancomercial', '/api/plan-comercial'],
-    ['prediccion', '/api/prediccion']
+    ['prediccion', '/api/prediccion'],
+    ['whatsapp', '/api/whatsapp'],
+    ['fico/retirados', '/api/fico'],
+    ['fico/profitability', '/api/fico']
   ])(
     'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
       const noMontadas = []

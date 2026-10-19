@@ -66,7 +66,9 @@ export const isB2bSaleSql = ({ doctype, origin, advisor, sellerId }) => `
 // classroomStudentsList para los JOIN). Una sola regla: si el reporte usara
 // otra, contaria como jalado al que se fue por RP o retiro.
 // Estado financiero sobre el enrollment "vendido" (padre si es hijo de
-// paquete, propio si es standalone): cuotas pagadas y vencidas. Va en un
+// paquete, propio si es standalone): cuotas pagadas y vencidas. Una cuota
+// anulada (retiro / campaña de cobranza) no es deuda aunque esté vencida:
+// contarla bloqueaba la certificación del que pagó todo de una. Va en un
 // LEFT JOIN LATERAL sobre un enrollment `e`; lo usan el aula y el buscador.
 const SOLD_FINANCE_SELECT = `
         SELECT
@@ -83,7 +85,7 @@ const SOLD_FINANCE_SELECT = `
             WHERE pi.enrollment_id = ef.enrollment_id
               AND pi.installment_number > 0
               AND pi.due_date < CURRENT_DATE
-              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
           ) AS fin_overdue
           FROM public.enrollments ef
          WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)`
@@ -2140,18 +2142,9 @@ CROSS JOIN LATERAL (
       LEFT JOIN public.customers cust ON cust.customer_id = e.customer_id
       LEFT JOIN public.persons per ON per.person_id = cust.person_id
       LEFT JOIN public.classroom_student_grades g ON g.enrollment_id = e.enrollment_id
-      -- deuda: cuotas vencidas impagas de la venta (padre si es hijo), misma
-      -- regla que el marcador "Con deuda pendiente" de la lista de alumnos.
-      LEFT JOIN LATERAL (
-        SELECT (SELECT COUNT(*)::int
-                  FROM public.payment_installments pi
-                  JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-                 WHERE pi.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)
-                   AND pi.installment_number > 0
-                   AND pi.due_date < CURRENT_DATE
-                   AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
-               ) AS fin_overdue
-      ) fin ON TRUE
+      -- deuda: la MISMA regla que el marcador "Con deuda pendiente" de la
+      -- lista de alumnos; una copia aparte ya divergió una vez.
+      LEFT JOIN LATERAL (${SOLD_FINANCE_SELECT}) fin ON TRUE
      WHERE pe.edition_num_id = $1
   `, [id])
     return rows

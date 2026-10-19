@@ -4,7 +4,9 @@ import {
   normalizeActiveForCaller,
   sliceCharacter,
   buildProgramPayload,
-  extractPaginationMeta
+  extractPaginationMeta,
+  programMediaProblem,
+  MAX_IMAGE_BYTES
 } from '../program.entity.js'
 
 describe('normalizeActive (listado)', () => {
@@ -67,5 +69,21 @@ describe('extractPaginationMeta', () => {
   it('total 0 cuando no hay rows o total_count', () => {
     expect(extractPaginationMeta([], 1, 25)).toEqual({ total: 0, page: 1, size: 25 })
     expect(extractPaginationMeta([{}], 1, 25)).toEqual({ total: 0, page: 1, size: 25 })
+  })
+})
+
+describe('programMediaProblem', () => {
+  it('acepta lo que WhatsApp puede mandar en cada slot', () => {
+    expect(programMediaProblem({ slot: 'docente', filename: 'foto.PNG', sizeBytes: 1000 })).toBeNull()
+    expect(programMediaProblem({ slot: 'brochure', filename: 'brochure.pdf', sizeBytes: 20_000_000 })).toBeNull()
+    expect(programMediaProblem({ slot: 'certificado', filename: 'modelo.pdf', sizeBytes: 1000 })).toBeNull()
+  })
+  it('rechaza el formato equivocado o la imagen de más de 5 MB', () => {
+    expect(programMediaProblem({ slot: 'brochure', filename: 'brochure.png', sizeBytes: 1000 })).toBe('Brochure: sube un PDF.')
+    expect(programMediaProblem({ slot: 'docente', filename: 'foto.jpg', sizeBytes: MAX_IMAGE_BYTES + 1 })).toBe('Arte del docente: sube un JPG o PNG de hasta 5 MB.')
+    expect(programMediaProblem({ slot: 'docente', filename: 'foto.webp', sizeBytes: 10 })).toMatch(/JPG o PNG/)
+  })
+  it('un slot inventado no pasa', () => {
+    expect(programMediaProblem({ slot: 'video', filename: 'a.mp4', sizeBytes: 1 })).toMatch(/no es un archivo/)
   })
 })

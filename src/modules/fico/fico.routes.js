@@ -9,8 +9,10 @@ import emailConfirmationRoutes from './email-confirmation/email-confirmation.rou
 import auditRoutes from './audit/audit.routes.js'
 import classroomExportRoutes from './classroom-export/classroom-export.routes.js'
 import reportRoutes from './report/report.routes.js'
+import retiradosRoutes from './retirados/retirados.routes.js'
+import profitabilityRoutes from './profitability/profitability.routes.js'
 
-// Agregador del modulo FICO. Registra los 10 subdominios como plugins Fastify
+// Agregador del modulo FICO. Registra los 12 subdominios como plugins Fastify
 // encapsulados bajo el mismo prefijo /api/fico (lo aplica buildApp). Cada subdominio
 // trae su propio preHandler de autenticacion. Importa fico.bootstrap (composition
 // root) que cablea los efectos cruzados entre subdominios. El legacy fico.service.js
@@ -26,4 +28,6 @@ export default async function ficoRoutes (fastify) {
   await fastify.register(auditRoutes)
   await fastify.register(classroomExportRoutes)
   await fastify.register(reportRoutes)
+  await fastify.register(retiradosRoutes)
+  await fastify.register(profitabilityRoutes)
 }

@@ -219,3 +219,11 @@ export const programVersionDetailGetSchema = {
     }
   }
 }
+
+// Archivos del programa (la subida es multipart: se valida en el controller).
+const programMediaBody = (properties, required) => ({
+  body: { type: 'object', additionalProperties: false, required, properties }
+})
+const mediaSlot = { type: 'string', enum: ['docente', 'brochure', 'certificado'] }
+export const programMediaGetSchema = programMediaBody({ program_id: { type: 'integer', minimum: 1 } }, ['program_id'])
+export const programMediaSlotSchema = programMediaBody({ program_id: { type: 'integer', minimum: 1 }, slot: mediaSlot }, ['program_id', 'slot'])

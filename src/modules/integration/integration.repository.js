@@ -403,11 +403,6 @@ export class IntegrationRepository {
     return r.rows || []
   }
 
-  async getEnrollmentReportAll () {
-    const r = await this.db.query(`SELECT * FROM public.vw_enrollment_report`)
-    return r.rows || []
-  }
-
   async getEnrollmentReportNew () {
     const r = await this.db.query(
       `SELECT * FROM public.vw_enrollment_report WHERE "FLAG_SEND" = 'N'`
@@ -639,7 +634,7 @@ export class IntegrationRepository {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
     ) inst_overdue ON TRUE
     LEFT JOIN LATERAL (
       SELECT COALESCE(
@@ -945,7 +940,7 @@ export class IntegrationRepository {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
     ) inst_overdue ON TRUE
     LEFT JOIN LATERAL (
       SELECT COALESCE(
@@ -1291,7 +1286,7 @@ export class IntegrationRepository {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
     ) inst_overdue ON TRUE
     LEFT JOIN LATERAL (
       SELECT
@@ -1463,7 +1458,7 @@ export class IntegrationRepository {
        WHERE pi.enrollment_id = e.enrollment_id
          AND pi.installment_number > 0
          AND pi.due_date < CURRENT_DATE
-         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+         AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
     ) inst_overdue ON TRUE
     WHERE c_plan.alias = 'we_payment_way_installments'
     ORDER BY e.enrollment_id
@@ -1610,32 +1605,6 @@ export class IntegrationRepository {
       resource: { values },
     })
     return res.data.updatedCells
-  }
-
-  // Vuelca el reporte completo de enrollments (vw_enrollment_report) sobre la
-  // hoja SISTEMA-ORIGINAL: headers en A4, datos desde A5, sobreescritura total.
-  async writeEnrollmentOriginal (spreadsheetId, headers, values) {
-    const googleSheets = await this.sheets()
-    await googleSheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `SISTEMA-ORIGINAL!A4`,
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [headers] },
-    })
-    try {
-      await googleSheets.spreadsheets.values.clear({
-        spreadsheetId,
-        range: `SISTEMA-ORIGINAL!A5:ZZ`,
-      })
-    } catch (e) {
-      console.warn('Advertencia al limpiar SISTEMA-ORIGINAL:', e.message)
-    }
-    await googleSheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `SISTEMA-ORIGINAL!A5`,
-      valueInputOption: 'USER_ENTERED',
-      resource: { values },
-    })
   }
 
   // Anexa filas nuevas a la hoja SISTEMA-PILOTO, calculando la primera fila libre

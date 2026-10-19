@@ -10,7 +10,9 @@ import {
   programVersionUpdateSchema,
   programCallerSchema,
   programVersionDetailGetSchema,
-  eventCategoryListSchema
+  eventCategoryListSchema,
+  programMediaGetSchema,
+  programMediaSlotSchema
 } from './program.schemas.js'
 import * as ctrl from './program.controller.js'
 import productReportRoutes from './report/report.routes.js'
@@ -32,5 +34,11 @@ export default async function programRoutes (fastify) {
   // de lectura de programa que ese formulario ya consume.
   fastify.post('/eventcategorylist', { schema: eventCategoryListSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.eventCategoryListHandler)
   fastify.post('/programversiondetailget', { schema: programVersionDetailGetSchema, preHandler: [authenticate, ALL_COMERCIAL] }, ctrl.versionDetailGetHandler)
+  // Archivos del programa que manda el bot de WhatsApp: los sube Producto; Comercial
+  // (Líder, que opera el bot) los puede ver. La subida es multipart: sin schema AJV.
+  fastify.post('/programmediaget', { schema: programMediaGetSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.mediaGetHandler)
+  fastify.post('/programmediafile', { schema: programMediaSlotSchema, preHandler: [authenticate, PRODUCTO_COMERCIAL] }, ctrl.mediaFileHandler)
+  fastify.post('/programmediaupload', { preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.mediaUploadHandler)
+  fastify.post('/programmediadelete', { schema: programMediaSlotSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.mediaDeleteHandler)
   await fastify.register(productReportRoutes)
 }

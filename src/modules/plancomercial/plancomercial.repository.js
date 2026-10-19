@@ -67,7 +67,7 @@ const ONLINE_PRODUCT = `CASE
     WHEN p.program_id = ${MEMBERSHIP.BLACK} THEN 'BLACK'
     WHEN p.cat_type_program = ${SPECIALIZATION_TYPE} THEN 'ESPECIALIZACIONES'
     ELSE 'CURSOS' END`
-const SALE_JOINS = `
+export const SALE_JOINS = `
       JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
       JOIN public.programs p ON p.program_id = pv.program_id
       LEFT JOIN lead_of lo ON lo.enrollment_id = e.enrollment_id

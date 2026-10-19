@@ -125,7 +125,7 @@ export class ClassroomExportRepository {
               WHERE pi.enrollment_id = ef.enrollment_id
                 AND pi.installment_number > 0
                 AND pi.due_date < CURRENT_DATE
-                AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid')
+                AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
             ) AS fin_overdue
             FROM public.enrollments ef
            WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)

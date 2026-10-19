@@ -163,17 +163,10 @@ export async function syncRprospectos () {
   }
 }
 
-// Vuelca el reporte completo de enrollments a SISTEMA-ORIGINAL y las filas
-// nuevas (FLAG_SEND = 'N') a SISTEMA-PILOTO, marcandolas como enviadas en BD.
+// Anexa las filas nuevas (FLAG_SEND = 'N') a SISTEMA-PILOTO y las marca como
+// enviadas en BD. SISTEMA-ORIGINAL ya no se sincroniza (retirada 19/10/26).
 export async function syncEnrollmentToSheet () {
   const spreadsheetId = repo.SPREADSHEET.enrollment
-
-  const rowsAll = await repo.getEnrollmentReportAll()
-  if (rowsAll.length > 0) {
-    const headers = Object.keys(rowsAll[0])
-    const valuesAll = rowsAll.map(row => serializeSheetRow(row, headers))
-    await repo.writeEnrollmentOriginal(spreadsheetId, headers, valuesAll)
-  }
 
   const rowsNew = await repo.getEnrollmentReportNew()
   let pilotoResult = { rows_inserted: 0, sheet_updated_cells: 0 }
@@ -193,7 +186,6 @@ export async function syncEnrollmentToSheet () {
 
   return {
     ok: true,
-    original_rows_synced: rowsAll.length,
     piloto_rows_inserted: pilotoResult.rows_inserted,
     piloto_cells_updated: pilotoResult.sheet_updated_cells,
   }
