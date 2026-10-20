@@ -1,6 +1,6 @@
 import { pool, withTransaction } from '../../../shared/db/pool.js'
 import { odoo as odooDefault } from '../../../shared/adapters/odoo/odoo.adapter.js'
-import { STUDENT_EMAIL_SQL } from '../../../utils/student-contacts.sql.js'
+import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
 import { isMembership } from '../../../utils/fico-formatters.js'
 import {
   CAT_STATUS_PAID,
@@ -476,30 +476,10 @@ export class InstallmentRepository {
   }
 
   // Cuotas pendientes con vencimiento en el mes para el modulo Cobranzas.
-  // Trae TODAS las del mes (vencidas / hoy / por vencer): el usecase calcula
-  // los KPIs de los tres grupos y recien despues filtra por estado. 'Hoy' se
-  // resuelve en fecha de Lima para no correr el corte 5h con el UTC del server.
-  async listCollections ({ year, month, day = null, q = null, advisorIds = [] }) {
-    const params = [year, month]
-    const extra = []
-    if (day) {
-      params.push(day)
-      extra.push(`AND EXTRACT(DAY FROM pi.due_date)::int = $${params.length}`)
-    }
-    if (q) {
-      params.push(`%${q}%`)
-      const p = `$${params.length}`
-      extra.push(`AND (
-        TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) ILIKE ${p}
-        OR per.document_number ILIKE ${p}
-        OR ${STUDENT_EMAIL_SQL} ILIKE ${p}
-      )`)
-    }
-    if (advisorIds.length) {
-      params.push(advisorIds)
-      extra.push(`AND e.seller_agent_id = ANY($${params.length}::int[])`)
-    }
-
+  // Trae TODAS las del mes (vencidas / hoy / por vencer): el front las filtra
+  // por columna y calcula los KPIs. 'Hoy' se resuelve en fecha de Lima para no
+  // correr el corte 5h con el UTC del server.
+  async listCollections ({ year, month }) {
     const { rows } = await this.db.query(`
       SELECT
         pi.installment_id,
@@ -518,6 +498,7 @@ export class InstallmentRepository {
         TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS student_full_name,
         per.document_number,
         ${STUDENT_EMAIL_SQL} AS email,
+        ${STUDENT_PHONE_SQL} AS phone,
         prog.program_name,
         COALESCE(pe.global_code, '') AS edition_code,
         u.alias AS seller_agent_name
@@ -528,7 +509,7 @@ export class InstallmentRepository {
       JOIN customers cust ON cust.customer_id = e.customer_id
       JOIN persons per ON per.person_id = cust.person_id
       LEFT JOIN LATERAL (
-        SELECT lx.origin_email FROM leads lx
+        SELECT lx.origin_email, lx.origin_phone FROM leads lx
          WHERE lx.enrollment_id = e.enrollment_id LIMIT 1
       ) l ON TRUE
       LEFT JOIN users u ON u.user_id = e.seller_agent_id
@@ -545,9 +526,8 @@ export class InstallmentRepository {
         AND pi.cat_status <> 4456 -- anuladas (retiro / campaña de cobranza) no son deuda
         AND EXTRACT(YEAR FROM pi.due_date)::int = $1
         AND EXTRACT(MONTH FROM pi.due_date)::int = $2
-        ${extra.join('\n        ')}
       ORDER BY pi.due_date ASC, pi.enrollment_id
-    `, params)
+    `, [year, month])
     return rows || []
   }
 

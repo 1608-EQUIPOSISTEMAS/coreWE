@@ -22,8 +22,7 @@ import {
   pickPendingStatus,
   CAT_STATUS_ANNULLED,
   fmtMoney,
-  fmtFecha,
-  summarizeCollections
+  fmtFecha
 } from './installment.entity.js'
 
 // Orquestacion de los casos de uso de cuotas. No contiene SQL (delega en el
@@ -562,15 +561,9 @@ export async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentN
   return repo.syncInstallmentPaymentToOdoo({ enrollmentId, installmentNumber })
 }
 
-// Vista Cobranzas: cuotas pendientes con vencimiento en el mes pedido.
-// Los KPIs se calculan sobre todo el mes (respetando q/dia/asesor) para que
-// las pestañas del front muestren los conteos de los tres grupos aunque la
-// tabla este filtrada por uno solo.
-export async function getCollections ({ year, month, day = null, q = null, state = 'all', advisor_ids = [] } = {}) {
-  const rows = await repo.listCollections({ year, month, day, q, advisorIds: advisor_ids })
-
-  const kpis = summarizeCollections(rows)
-
-  const items = state === 'all' ? rows : rows.filter(r => r.state_label === state)
-  return { items, kpis }
+// Vista Cobranzas: cuotas pendientes con vencimiento en el mes pedido. Los
+// filtros y los KPIs viven en el front (entities/collection/collectionView.js):
+// el mes entero son pocos cientos de filas y asi los filtros combinan al instante.
+export async function getCollections ({ year, month }) {
+  return { items: await repo.listCollections({ year, month }) }
 }
