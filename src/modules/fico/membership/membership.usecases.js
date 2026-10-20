@@ -12,7 +12,8 @@ import {
   resolveMembershipChannels
 } from './membership.entity.js'
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
-import { buildOdooNameParts, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
+import { buildOdooNameParts, buildUniqueOdooEmail, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
+import { ODOO_DEFAULT_PASSWORD } from '../odoo-sync/odoo-sync.entity.js'
 import { toRescheduleDto } from './membership.dto.js'
 
 // Orquestacion del subdominio membership. No contiene SQL (delega en el
@@ -92,28 +93,52 @@ export async function updateMembershipActivationDate ({ enrollmentId, newDate, u
   return toRescheduleDto({ job, activationDate: classification.activationDate })
 }
 
-// Pedido de FICO (14/10/26): el ERP NO crea el usuario Odoo del socio. La alta
-// automatica dejaba socios a medias (el curso aparecia en su campus pero no
-// estaba inscrito como participante y Odoo lo botaba al entrar a la clase), y
-// el area prefiere crear la cuenta a mano. Si el socio YA tiene cuenta (alumno
-// de un curso previo) se guarda su login, para que el correo de bienvenida le
-// de su usuario .weeducacion y no el correo personal. Sin cuenta cierra en
-// success igual: el correo cae al correo registrado (membershipCampusLogin).
+// Cuenta Odoo del socio para el correo de bienvenida. Si ya tiene una (alumno
+// de un curso previo) se reusa su login; si no, se crea la @weeducacion con la
+// clave por defecto y SIN cursos (los abre 'membership_activation').
+// Pedido de FICO (14/10/26, acotado el 20/10/26): solo las membresias de
+// fico/inscripciones/new NO crean usuario (el area lo hace a mano). Esas pasan
+// por register_followup -> enrollMembershipInOdoo y nunca llegan aca: este
+// paso es exclusivo de confirmPayment (venta desde lead, B2B). Apagarlo aqui
+// tambien dejo sin cursos a esas ventas (23288, 19/10/26).
 // Job worker: 'membership_welcome', step 'account'.
 export async function createMembershipOdooUser ({ enrollmentId }) {
   try {
     const data = await repo.findEnrollmentForOdoo(enrollmentId)
     if (!data) throw new Error('Inscripcion no encontrada')
     const account = await findExistingOdooAccount(data)
-    if (!account) {
-      return { success: true, skipped: true, odoo_user_id: null, message: 'Sin cuenta Odoo: la crea el area a mano' }
-    }
+    if (!account) return await createMembershipAccount(enrollmentId, data)
     await repo.saveOdooCredentials({ enrollmentId, odooUserId: account.id, odooEmail: account.login, odooPassword: null })
     return { success: true, reused: true, odoo_user_id: account.id, odoo_login: account.login }
   } catch (err) {
     console.error('[createMembershipOdooUser] Throw inesperado:', err.message, err.stack)
     return { success: false, error: `createMembershipOdooUser: ${err.message}`, odoo_user_id: null }
   }
+}
+
+// Misma convencion que el flujo de cursos: login unico {apellido}.{nombre}
+// @weeducacion.edu.pe y ODOO_DEFAULT_PASSWORD. channels [] = usuario sin cursos.
+async function createMembershipAccount (enrollmentId, data) {
+  const login = await buildUniqueOdooEmail(data.first_name, data.last_name, data.document_number)
+  const { names, surnames } = buildOdooNameParts({
+    firstName: data.first_name,
+    lastName: data.last_name,
+    motherLastName: data.mother_last_name
+  })
+  const result = await odoo.enrollInAllOnlineCourses({
+    searchEmail: login,
+    createEmail: login,
+    fullName: `${surnames} ${names}`.trim(),
+    password: ODOO_DEFAULT_PASSWORD,
+    phone: data.origin_phone,
+    documentNumber: data.document_number,
+    names,
+    surnames,
+    channels: []
+  })
+  if (!result.success) return { success: false, error: `Alta Odoo ${login}: ${result.error}`, odoo_user_id: null }
+  await repo.saveOdooCredentials({ enrollmentId, odooUserId: result.odoo_user_id, odooEmail: login, odooPassword: ODOO_DEFAULT_PASSWORD })
+  return { success: true, created: true, odoo_user_id: result.odoo_user_id, odoo_login: login }
 }
 
 // Cuenta Odoo que el socio ya tiene, o null. Nunca crea: misma cadena que el
@@ -131,9 +156,9 @@ async function findExistingOdooAccount (data) {
 }
 
 // Activacion (15/10/26): los cursos del catalogo SI los abre el ERP, pero solo
-// sobre una cuenta Odoo que ya exista. Sin cuenta devuelve error: el job
-// 'membership_activation' reintenta con backoff y, agotado, queda 'failed' para
-// que FICO lo relance cuando el area haya creado el usuario. Contrato
+// sobre una cuenta Odoo que ya exista (la creo la bienvenida o, en /new, el
+// area a mano). Sin cuenta devuelve error: el job reintenta con backoff y,
+// agotado, queda 'failed' para que FICO lo relance. Contrato
 // no-lanzante: el worker decide los reintentos.
 export async function enrollMembershipInOdoo ({ enrollmentId }) {
   try {

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Pedido de FICO: el ERP no crea el usuario Odoo de una membresia (14/10/26),
-// pero SI le abre los cursos del catalogo sobre la cuenta que el area creo a
-// mano (15/10/26). Si esto se rompe, o vuelven los socios a medias o el socio
-// se queda sin cursos.
+// Pedido de FICO: las membresias de fico/inscripciones/new no crean usuario
+// Odoo (14/10/26, el area lo crea a mano); las demas (lead, B2B) si, en la
+// bienvenida (20/10/26). La activacion abre el catalogo sobre la cuenta que
+// exista. Si esto se rompe, el socio se queda sin cursos.
 
 const odoo = { enrollInAllOnlineCourses: vi.fn(), listOnlineChannels: vi.fn(), searchUserByEmail: vi.fn() }
 const repo = {
@@ -19,6 +19,7 @@ vi.mock('../../../../shared/adapters/odoo/odoo.adapter.js', () => ({ odoo }))
 vi.mock('../../../../shared/adapters/jobs/postgres-queue.adapter.js', () => ({ jobQueue: {} }))
 vi.mock('../../../../utils/fico-odoo.helper.js', () => ({
   resolveOdooLogin: (...a) => helper.resolveOdooLogin(...a),
+  buildUniqueOdooEmail: async (first, last) => `${last}.${first}@weeducacion.edu.pe`.toLowerCase(),
   buildOdooNameParts: ({ firstName, lastName }) => ({ names: firstName, surnames: lastName })
 }))
 
@@ -38,14 +39,19 @@ beforeEach(() => {
 })
 
 describe('membresia: usuario manual, cursos automaticos', () => {
-  it('sin cuenta previa la bienvenida no crea usuario y cierra el job en success', async () => {
+  // Caso Scarlet (23288, 19/10/26): venta desde lead sin cuenta; al no crearla,
+  // la activacion murio y la socia quedo sin cursos. /new no pasa por aca.
+  it('sin cuenta previa la bienvenida crea la @weeducacion con clave por defecto y sin cursos', async () => {
     helper.resolveOdooLogin.mockResolvedValue(null)
 
     const res = await createMembershipOdooUser({ enrollmentId: 71 })
 
-    expect(res).toMatchObject({ success: true, skipped: true, odoo_user_id: null })
-    expect(repo.saveOdooCredentials).not.toHaveBeenCalled()
-    expect(odoo.enrollInAllOnlineCourses).not.toHaveBeenCalled()
+    expect(res).toMatchObject({ success: true, created: true, odoo_user_id: 9, odoo_login: 'perez.ana@weeducacion.edu.pe' })
+    expect(odoo.enrollInAllOnlineCourses).toHaveBeenCalledWith(expect.objectContaining({
+      createEmail: 'perez.ana@weeducacion.edu.pe', password: '1234567', channels: []
+    }))
+    expect(repo.saveOdooCredentials).toHaveBeenCalledWith(
+      { enrollmentId: 71, odooUserId: 9, odooEmail: 'perez.ana@weeducacion.edu.pe', odooPassword: '1234567' })
   })
 
   // Caso Yeremy (enrollment 23070): alumno de SAP con cuenta .weeducacion; el
