@@ -1,9 +1,9 @@
 import { authenticate, hasRole } from '../../../shared/http/auth.middleware.js'
 import { salesByLine, profitByProgram, costInputs, saveInstructorRate, saveMarketing } from './profitability.usecases.js'
 
-// Margenes y tarifas de docentes son para quien decide, como el Informe FICO.
+// Margenes y tarifas de docentes los ven quienes deciden y el equipo FICO.
 // Los costos los carga el lider de FICO.
-const VE = hasRole(['ADMIN', 'GERENCIA', 'LIDER_FICO'])
+const VE = hasRole(['ADMIN', 'GERENCIA', 'LIDER_FICO', 'FICO'])
 const EDITA = hasRole(['ADMIN', 'LIDER_FICO'])
 
 const periodBody = (extra = {}) => ({
