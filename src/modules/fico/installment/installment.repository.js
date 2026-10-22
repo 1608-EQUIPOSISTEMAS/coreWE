@@ -501,7 +501,10 @@ export class InstallmentRepository {
         ${STUDENT_PHONE_SQL} AS phone,
         prog.program_name,
         COALESCE(pe.global_code, '') AS edition_code,
-        u.alias AS seller_agent_name
+        u.alias AS seller_agent_name,
+        -- OS/OP: la deuda es de la empresa, no del alumno. El front las separa
+        -- en la vista "Empresas" para no cobrarle al alumno.
+        cdt.alias AS b2b_doctype_alias
       FROM payment_installments pi
       JOIN catalog cs ON cs.catalog_id = pi.cat_status
       JOIN enrollments e ON e.enrollment_id = pi.enrollment_id
@@ -517,6 +520,7 @@ export class InstallmentRepository {
       LEFT JOIN programs prog ON prog.program_id = ver.program_id
       LEFT JOIN program_editions pe ON pe.edition_num_id = e.program_edition_id
       LEFT JOIN catalog cst ON cst.catalog_id = e.cat_type_status
+      LEFT JOIN catalog cdt ON cdt.catalog_id = e.cat_b2b_doctype
       WHERE e.active = 'Y'
         AND cf.alias = 'we_enrollment_status_checked'
         AND COALESCE(cst.alias, '') NOT IN
