@@ -197,3 +197,35 @@ describe('renderConfirmationEmail — correo de la Feria Laboral', () => {
     expect(render({ ...feria, program_name: 'V CONGRESO DE DIRECCIÓN' })).toContain('RECUERDA')
   })
 })
+
+// Algunas ediciones dan acceso por otro portal: el boton del campus apunta al
+// campus_link de la edicion; sin el, sigue yendo al login de Odoo. El enlace de
+// "olvidaste tu contrasena" no cambia (ese reset vive en Odoo).
+describe('renderConfirmationEmail — enlace del campus por edicion', () => {
+  const PORTAL = 'https://weforms.we-educacion-certificacion.com/portal/ingresar'
+  const render = (data, isOnline = false) => renderConfirmationEmail({
+    data: { program_name: 'N8N:AGENTES IA', currency_symbol: 'S/.', ...data },
+    firstName: 'Ana', lastName: 'Perez', odooEmail: 'ana@we.pe',
+    isNew: false, frequency: '', schedule: '', instRows: [], sapCredentials: null,
+    isOnline, isParentProgram: false
+  }).html
+
+  it('curso con campus_link usa ese enlace y conserva el reset de Odoo', () => {
+    const html = render({ campus_link: PORTAL })
+    expect(html).toContain(`href="${PORTAL}"`)
+    expect(html).not.toContain('href="https://we-educacion.com/web/login"')
+    expect(html).toContain('https://we-educacion.com/web/reset_password')
+  })
+
+  it('curso sin campus_link sigue yendo al login de Odoo', () => {
+    const html = render({ campus_link: null })
+    expect(html).toContain('href="https://we-educacion.com/web/login"')
+    expect(html).not.toContain(PORTAL)
+  })
+
+  it('online con campus_link usa ese enlace', () => {
+    const html = render({ campus_link: PORTAL }, true)
+    expect(html).toContain(`href="${PORTAL}"`)
+    expect(html).not.toContain('href="https://we-educacion.com/web/login"')
+  })
+})

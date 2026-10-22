@@ -18,8 +18,10 @@ export function buildConfirmacionOnlineHTML (data) {
     email,
     isNew,
     sapUser,
-    sapPassword
+    sapPassword,
+    campusLink
   } = data
+  const campusLoginUrl = campusLink || CAMPUS_LOGIN_URL
 
   const nombre = capitalizeName(studentName)
   const upperName = (programName || '').toUpperCase()
@@ -121,7 +123,7 @@ export function buildConfirmacionOnlineHTML (data) {
         <tr>
           <td align="left" style="padding: 0 30px;">
             <ol type="i" style="font-family: Tahoma, sans-serif; font-size: 16px; line-height: 1.8;">
-              <li>Dar clic en el botón "Ingresar" <a href="${CAMPUS_LOGIN_URL}" target="_blank" style="color:#1155cc;">aquí</a>.</li>
+              <li>Dar clic en el botón "Ingresar" <a href="${campusLoginUrl}" target="_blank" style="color:#1155cc;">aquí</a>.</li>
               <li>Ingresa tu usuario y contraseña.</li>
               <li>Dar clic en "Iniciar sesión".</li>
               <li>Ir al Panel y hacer clic en "Cursos Online".</li>

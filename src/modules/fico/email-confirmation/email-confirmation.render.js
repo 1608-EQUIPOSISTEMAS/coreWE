@@ -143,7 +143,8 @@ export function renderConfirmationEmail ({
         email: odooEmail,
         isNew,
         sapUser: sapCredentials?.sap_username || null,
-        sapPassword: sapCredentials?.sap_password || null
+        sapPassword: sapCredentials?.sap_password || null,
+        campusLink: data.campus_link || ''
       })
     }
   }
@@ -159,6 +160,8 @@ export function renderConfirmationEmail ({
       frequency,
       schedule,
       whatsappLink: data.whatsapp_link || '',
+      // Algunas ediciones usan otro portal de ingreso; vacio = campus Odoo.
+      campusLink: data.campus_link || '',
       email: odooEmail,
       isNew,
       bannerUrl: data.banner_link || '',

@@ -88,6 +88,7 @@ export function buildConfirmacionHTML (data) {
     frequency,
     schedule,
     whatsappLink,
+    campusLink,
     email,
     isNew,
     bannerUrl,
@@ -251,7 +252,7 @@ export function buildConfirmacionHTML (data) {
       <table align="center" style="width: 100%; max-width: 450px;">
         <tr>
               <td align="center" style="padding: 5px 0 10px 0;">
-                  <a href="https://we-educacion.com/web/login" target="_blank">
+                  <a href="${campusLink || 'https://we-educacion.com/web/login'}" target="_blank">
                       <img src="https://lh3.googleusercontent.com/d/14Ue_o6uQiobvl43mNa9zwcybGOfPB0E8"
                             alt="Ingresar al Campus Virtual"
                             width="350" style="display: block; width: 100%; max-width: 350px; height: auto; border-radius: 50px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); margin: 0 auto;">
