@@ -48,10 +48,25 @@ export function periodRange (granularity, date) {
       bucket: 'dia'
     }
   }
+  // Trimestre calendario (ene-mar, abr-jun…) contra el anterior. Lo usa Producto >
+  // Ventas (FICO no lo expone): su serie va por semana, 3 meses son pocos puntos.
+  if (granularity === 'trimestre') {
+    const q = Math.floor((m - 1) / 3) * 3 + 1
+    const end = monthOf(y, q + 2)
+    const p = monthOf(y, q - 3)
+    const pEnd = monthOf(y, q - 1)
+    return {
+      granularity,
+      from: iso(y, q, 1),
+      to: iso(end.y, end.m, daysInMonth(end.y, end.m)),
+      prev: { from: iso(p.y, p.m, 1), to: iso(pEnd.y, pEnd.m, daysInMonth(pEnd.y, pEnd.m)) },
+      bucket: 'semana'
+    }
+  }
   if (granularity === 'anio') {
     return { granularity, from: iso(y, 1, 1), to: iso(y, 12, 31), prev: { from: iso(y - 1, 1, 1), to: iso(y - 1, 12, 31) }, bucket: 'mes' }
   }
-  throw new DomainError('Periodo invalido: dia, mes o anio')
+  throw new DomainError('Periodo invalido: dia, mes, trimestre o anio')
 }
 
 // Periodo en curso: se corta a hoy y el anterior a los mismos dias (1-19 oct

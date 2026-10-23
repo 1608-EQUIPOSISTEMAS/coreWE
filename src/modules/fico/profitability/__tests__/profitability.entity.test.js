@@ -24,6 +24,17 @@ describe('periodRange', () => {
   })
 })
 
+describe('periodRange trimestral', () => {
+  it('toma el trimestre de la fecha y el anterior, cruzando el año', () => {
+    expect(periodRange('trimestre', '2026-08-15')).toMatchObject({
+      from: '2026-07-01', to: '2026-09-30', prev: { from: '2026-04-01', to: '2026-06-30' }, bucket: 'semana'
+    })
+    expect(periodRange('trimestre', '2026-02-10')).toMatchObject({
+      from: '2026-01-01', to: '2026-03-31', prev: { from: '2025-10-01', to: '2025-12-31' }
+    })
+  })
+})
+
 describe('salesRange', () => {
   it('el mes en curso se compara contra los mismos dias del mes anterior', () => {
     expect(salesRange('mes', '2026-10-01', '2026-10-19')).toMatchObject({

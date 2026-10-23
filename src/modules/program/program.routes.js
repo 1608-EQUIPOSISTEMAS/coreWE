@@ -16,6 +16,7 @@ import {
 } from './program.schemas.js'
 import * as ctrl from './program.controller.js'
 import productReportRoutes from './report/report.routes.js'
+import productSalesRoutes from './sales/sales.routes.js'
 
 export default async function programRoutes (fastify) {
   fastify.post('/programregister', { schema: programRegisterSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.registerHandler)
@@ -41,4 +42,5 @@ export default async function programRoutes (fastify) {
   fastify.post('/programmediaupload', { preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.mediaUploadHandler)
   fastify.post('/programmediadelete', { schema: programMediaSlotSchema, preHandler: [authenticate, ALL_PRODUCTO] }, ctrl.mediaDeleteHandler)
   await fastify.register(productReportRoutes)
+  await fastify.register(productSalesRoutes)
 }
