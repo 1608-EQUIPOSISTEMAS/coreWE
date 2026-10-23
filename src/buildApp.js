@@ -38,6 +38,8 @@ import ticketsRoutes from './modules/tickets/tickets.routes.js'
 import planComercialRoutes from './modules/plancomercial/plancomercial.routes.js'
 import prediccionRoutes from './modules/prediccion/prediccion.routes.js'
 import whatsappRoutes from './modules/whatsapp/whatsapp.routes.js'
+import ingresosOperativosRoutes from './modules/ingresos-operativos/ingresos-operativos.routes.js'
+import pagosAdicionalesRoutes from './modules/pagos-adicionales/pagos-adicionales.routes.js'
 import { setImporterPorts } from './modules/importer/importer.ports.js'
 import { ficoEnrollmentRegister, retireEnrollment as ficoRetireEnrollment } from './modules/fico/enrollment/enrollment.usecases.js'
 import { enrollmentRepository } from './modules/fico/enrollment/enrollment.repository.js'
@@ -266,6 +268,8 @@ export async function buildApp (opts = {}) {
   await app.register(planComercialRoutes, { prefix: '/api/plan-comercial' })
   await app.register(prediccionRoutes, { prefix: '/api/prediccion' })
   await app.register(whatsappRoutes, { prefix: '/api/whatsapp' })
+  await app.register(ingresosOperativosRoutes, { prefix: '/api/ingresos-operativos' })
+  await app.register(pagosAdicionalesRoutes, { prefix: '/api/pagos-adicionales' })
 
   app.get('/health', async () => ({ ok: true }))
 
