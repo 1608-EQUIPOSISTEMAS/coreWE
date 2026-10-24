@@ -1,8 +1,11 @@
-import { authenticate, hasRole } from '../../../shared/http/auth.middleware.js'
+import { authenticate, hasSubmoduleOrRole } from '../../../shared/http/auth.middleware.js'
 import { productSales } from './sales.usecases.js'
 
 // Solo cantidades y soles vendidos: sin margenes ni costos, que siguen en FICO.
-const VE_VENTAS = hasRole(['ADMIN', 'GERENCIA', 'LIDER_PRODUCTO', 'PRODUCTO'])
+// Ademas de los roles fijos, entra quien tenga la casilla Producto > Ventas en
+// Configuracion > Roles y Permisos (scripts/seed-producto-ventas.sql): si no, la
+// pantalla se abria por la matriz y el endpoint respondia 403.
+const VE_VENTAS = hasSubmoduleOrRole('PRODUCTO', 'VENTAS', ['ADMIN', 'GERENCIA', 'LIDER_PRODUCTO', 'PRODUCTO'])
 
 const salesSchema = {
   body: {
