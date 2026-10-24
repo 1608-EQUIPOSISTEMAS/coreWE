@@ -53,7 +53,9 @@ export class MembershipRepository {
   // de Vencimientos. Mismo universo que la hoja "5. Membresias" (sin filtrar la
   // importacion masiva: todas dan beneficio). person_id agrupa las renovaciones
   // de un mismo socio. Fechas como YYYY-MM-DD y el "hoy" en TZ Lima.
-  async listMembershipStarts () {
+  // startSql es la regla de arranque: FICO usa la cascada de pago y Academica
+  // la fecha de registro (utils/membership-start.sql.js). Nunca input del cliente.
+  async listMembershipStarts (startSql = MEMBERSHIP_START_SQL) {
     const { rows } = await this.db.query(`
       SELECT
         e.enrollment_id,
@@ -75,7 +77,7 @@ export class MembershipRepository {
       JOIN public.programs prog       ON prog.program_id = pv.program_id
                                      AND prog.is_membership = true
       LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
-      LEFT JOIN LATERAL (SELECT ${MEMBERSHIP_START_SQL} AS f) inicio ON TRUE
+      LEFT JOIN LATERAL (SELECT ${startSql} AS f) inicio ON TRUE
       WHERE e.active = 'Y'
     `)
     return rows || []

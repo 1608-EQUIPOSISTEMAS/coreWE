@@ -12,3 +12,8 @@ export const MEMBERSHIP_START_SQL = `
       ORDER BY py.payment_date ASC LIMIT 1),
     e.registration_date::date
   )`
+
+// Arranque para Academica (pedido del area, 23/10/26): el año corre desde la
+// fecha de registro de la inscripcion, sin mirar el pago ni la activacion
+// diferida. Puede no coincidir con el vencimiento que ve FICO, a proposito.
+export const MEMBERSHIP_REGISTRATION_START_SQL = 'e.registration_date::date'
