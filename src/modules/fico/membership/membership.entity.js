@@ -105,7 +105,7 @@ const toUtcMs = (ymd) => {
   const [y, m, d] = ymd.split('-').map(Number)
   return Date.UTC(y, m - 1, d)
 }
-const daysBetween = (fromYmd, toYmd) => Math.round((toUtcMs(toYmd) - toUtcMs(fromYmd)) / DAY_MS)
+export const daysBetween = (fromYmd, toYmd) => Math.round((toUtcMs(toYmd) - toUtcMs(fromYmd)) / DAY_MS)
 
 export function expiryStatus (daysToExpiry) {
   if (daysToExpiry < 0) return 'expired'
