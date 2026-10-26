@@ -12,3 +12,13 @@ export const updateMembershipActivationDateSchema = {
     }
   }
 }
+
+export const membershipActivationParamsSchema = {
+  params: {
+    type: 'object',
+    required: ['enrollmentId'],
+    properties: {
+      enrollmentId: { type: 'integer', minimum: 1 }
+    }
+  }
+}

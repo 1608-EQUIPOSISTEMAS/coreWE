@@ -6,7 +6,9 @@ import {
   validateActivationDateFormat,
   classifyActivation,
   assertReschedulable,
-  resolveMembershipChannels
+  resolveMembershipChannels,
+  describeActivationJob,
+  assertActivationRetryable
 } from '../membership.entity.js'
 
 describe('isMembership (flag explicito prioritario)', () => {
@@ -127,5 +129,39 @@ describe('resolveMembershipChannels (curaduria del catalogo de membresia)', () =
 
   it('tolera argumentos ausentes', () => {
     expect(resolveMembershipChannels().channels).toEqual([])
+  })
+})
+
+describe('describeActivationJob', () => {
+  it('sin job (importada de la hoja) no ofrece reintento', () => {
+    expect(describeActivationJob(null)).toEqual({ status: null, canRetry: false })
+  })
+  it('job fallido expone el error y permite reintentar', () => {
+    const d = describeActivationJob({ job_id: 1670, status: 'failed', attempts: 5, error_message: 'sin usuario Odoo', finished_at: 'f' })
+    expect(d).toMatchObject({ status: 'failed', jobId: 1670, error: 'sin usuario Odoo', canRetry: true })
+  })
+  it('job pendiente informa cuando corre y no permite reintentar', () => {
+    const d = describeActivationJob({ job_id: 2, status: 'pending', attempts: 0, next_attempt_at: 'x', error_message: 'viejo' })
+    expect(d).toMatchObject({ status: 'pending', scheduledFor: 'x', error: null, canRetry: false })
+  })
+})
+
+describe('assertActivationRetryable', () => {
+  const ok = { found: true, isMembershipProgram: true }
+  it('solo deja reintentar un job fallido', () => {
+    expect(() => assertActivationRetryable({ ...ok, job: { status: 'failed' } })).not.toThrow()
+  })
+  it('rechaza si hay un job vivo (duplicaria la inscripcion en Odoo)', () => {
+    for (const status of ['pending', 'in_progress']) {
+      expect(() => assertActivationRetryable({ ...ok, job: { status } })).toThrow(/en curso/)
+    }
+  })
+  it('rechaza si ya termino bien o nunca hubo job', () => {
+    expect(() => assertActivationRetryable({ ...ok, job: { status: 'done' } })).toThrow(/No hay una activacion fallida/)
+    expect(() => assertActivationRetryable({ ...ok, job: null })).toThrow(DomainError)
+  })
+  it('rechaza inscripciones inexistentes o que no son membresia', () => {
+    expect(() => assertActivationRetryable({ found: false, job: { status: 'failed' } })).toThrow(/no encontrada/)
+    expect(() => assertActivationRetryable({ found: true, isMembershipProgram: false, job: { status: 'failed' } })).toThrow(/no es membresia/)
   })
 })

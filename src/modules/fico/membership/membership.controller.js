@@ -13,6 +13,19 @@ export async function updateMembershipActivationDateHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function getMembershipActivationStatusHandler (req, reply) {
+  const data = await usecases.getMembershipActivationStatus({ enrollmentId: req.params.enrollmentId })
+  return reply.send({ ok: true, data })
+}
+
+export async function retryMembershipActivationHandler (req, reply) {
+  const data = await usecases.retryMembershipActivation({
+    enrollmentId: req.params.enrollmentId,
+    userId: req.user?.id ?? null
+  })
+  return reply.code(202).send({ ok: true, data })
+}
+
 export async function listMembershipExpiriesHandler (req, reply) {
   return reply.send({ ok: true, data: await usecases.listMembershipExpiries() })
 }

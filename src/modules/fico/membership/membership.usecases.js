@@ -9,7 +9,9 @@ import {
   classifyActivation,
   assertReschedulable,
   buildMembershipExpiries,
-  resolveMembershipChannels
+  resolveMembershipChannels,
+  describeActivationJob,
+  assertActivationRetryable
 } from './membership.entity.js'
 import { odoo } from '../../../shared/adapters/odoo/odoo.adapter.js'
 import { buildOdooNameParts, buildUniqueOdooEmail, resolveOdooLogin } from '../../../utils/fico-odoo.helper.js'
@@ -236,6 +238,39 @@ async function activateMembershipCourses (enrollmentId) {
       ? `Todos los cursos online (${channels.length}) — catalogo sin configurar`
       : `Catalogo de membresia (${channels.length} cursos)`
   }
+}
+
+// Estado del ultimo job de activacion, para la ficha de la inscripcion.
+export async function getMembershipActivationStatus ({ enrollmentId }) {
+  const job = await getLatestJobByEnrollment(enrollmentId, 'membership_activation')
+  return describeActivationJob(job)
+}
+
+// Relanza una activacion que agoto sus reintentos. Encola un job nuevo (no
+// resucita el fallido) para que el historial conserve el intento y su error.
+export async function retryMembershipActivation ({ enrollmentId, userId }) {
+  const probe = await repo.findMembershipProbeWithActivationState(enrollmentId)
+  const failed = await getLatestJobByEnrollment(enrollmentId, 'membership_activation')
+  assertActivationRetryable({
+    found: !!probe,
+    isMembershipProgram: probe ? isMembership(probe.abbreviation, probe.is_membership) : false,
+    job: failed
+  })
+
+  const job = await jobQueue.enqueue({
+    jobType: 'membership_activation',
+    enrollmentId,
+    payload: { enrollmentId }
+  })
+
+  await repo.logAudit({
+    enrollmentId,
+    action: 'membership_activation_retried',
+    userId,
+    details: `Reintento manual de la activacion (job fallido=${failed.job_id}, nuevo job=${job.job_id})`
+  })
+
+  return describeActivationJob({ ...job, attempts: 0 })
 }
 
 // Socios de membresia con su vencimiento y estado (vigente / por vencer /

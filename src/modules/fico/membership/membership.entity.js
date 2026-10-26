@@ -93,6 +93,39 @@ export function assertReschedulable ({ found, isMembershipProgram, alreadyActiva
   }
 }
 
+// ── Reintento de activacion ────────────────────────────────────────────────
+// Cuando el job 'membership_activation' agota sus reintentos queda 'failed' y
+// nadie lo vuelve a correr: el socio se queda sin cursos. La ficha muestra el
+// estado del ultimo job y deja relanzarlo solo en ese caso.
+
+// Estado del ultimo job de activacion tal como lo consume la ficha. Sin job
+// (importadas de la hoja, ventas legacy) devuelve status null.
+export function describeActivationJob (job) {
+  if (!job) return { status: null, canRetry: false }
+  return {
+    status: job.status,
+    jobId: job.job_id,
+    attempts: job.attempts,
+    error: job.status === 'failed' ? job.error_message : null,
+    finishedAt: job.finished_at ?? null,
+    scheduledFor: job.status === 'pending' ? (job.next_attempt_at ?? null) : null,
+    canRetry: job.status === 'failed'
+  }
+}
+
+// Solo se relanza una activacion fallida: si hay un job vivo se duplicaria la
+// inscripcion en Odoo, y si ya termino bien no hay nada que reintentar.
+export function assertActivationRetryable ({ found, isMembershipProgram, job }) {
+  if (!found) throw new DomainError('Inscripcion no encontrada', { statusCode: 404, code: 'NOT_FOUND' })
+  if (!isMembershipProgram) throw new DomainError('Esta inscripcion no es membresia')
+  if (job?.status === 'pending' || job?.status === 'in_progress') {
+    throw new DomainError('La activacion ya esta en curso', { statusCode: 409, code: 'ACTIVATION_IN_PROGRESS' })
+  }
+  if (job?.status !== 'failed') {
+    throw new DomainError('No hay una activacion fallida que reintentar', { statusCode: 409, code: 'NOTHING_TO_RETRY' })
+  }
+}
+
 // ── Vencimientos de membresia ──────────────────────────────────────────────
 // La membresia da un año de beneficio desde su arranque (lo calcula SQL). FICO
 // llama a los socios un mes antes de que venza para saber si renuevan o se les
