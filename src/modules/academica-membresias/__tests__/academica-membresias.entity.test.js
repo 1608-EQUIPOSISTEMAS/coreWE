@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildMembershipExpiries } from '../../fico/membership/membership.entity.js'
-import { academicStage, currentMembers } from '../academica-membresias.entity.js'
+import { academicStage, currentMembers, checkpointsFor, withChecks } from '../academica-membresias.entity.js'
 
 const m = (person_id, start_date, expiry_date) => ({ person_id, start_date, expiry_date, tier: 'PLUS' })
 
@@ -39,5 +39,31 @@ describe('currentMembers (Academica)', () => {
   })
   it('los KPIs cuentan por etapa y no incluyen vencidas', () => {
     expect(kpis).toEqual({ total: 4, welcome: 1, followup: 1, expiring: 2, renewed: 0 })
+  })
+})
+
+describe('checkpointsFor', () => {
+  it('bienvenida tiene S1..S7, uno por dia', () => {
+    expect(checkpointsFor('welcome')).toEqual(['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'])
+  })
+  it('seguimiento tiene M1..M12', () => {
+    expect(checkpointsFor('followup')).toEqual(['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10', 'M11', 'M12'])
+  })
+  it('por vencer solo tiene R1', () => {
+    expect(checkpointsFor('expiring')).toEqual(['R1'])
+  })
+})
+
+describe('withChecks', () => {
+  it('cada socio recibe solo los checks de su membresia vigente', () => {
+    const items = [{ person_id: 1, enrollment_id: 10, status: 'followup' }, { person_id: 2, enrollment_id: 20, status: 'welcome' }]
+    const rows = [
+      { enrollment_id: 10, checkpoint: 'M1' },
+      { enrollment_id: 10, checkpoint: 'M2' },
+      { enrollment_id: 9, checkpoint: 'M5' } // membresia anterior (renovo)
+    ]
+    const result = withChecks(items, rows)
+    expect(result.map(i => i.checks)).toEqual([['M1', 'M2'], []])
+    expect(result.map(i => i.checkpoints.length)).toEqual([12, 7])
   })
 })

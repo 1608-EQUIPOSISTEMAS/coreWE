@@ -15,6 +15,29 @@ export function academicStage ({ daysSinceStart, daysToExpiry }) {
   return 'followup'
 }
 
+// Checks de acompañamiento por etapa (pedido del area, 26/10/26): uno por cada
+// dia de la bienvenida (S1..S7), uno por cada mes de la membresia (M1..M12) y
+// uno de renovacion cuando esta por vencer (R1).
+const series = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`)
+const CHECKPOINTS_BY_STAGE = {
+  welcome: series('S', WELCOME_DAYS),
+  followup: series('M', 12),
+  expiring: ['R1']
+}
+export const CHECKPOINTS = Object.values(CHECKPOINTS_BY_STAGE).flat()
+
+export function checkpointsFor (stage) {
+  return CHECKPOINTS_BY_STAGE[stage] || []
+}
+
+// Pega a cada socio los checks de su etapa (checkpoints) y los ya marcados de SU
+// membresia vigente (checks). La pantalla solo pinta checkpoints: la regla vive aqui.
+export function withChecks (items, checkRows) {
+  const byEnrollment = new Map()
+  for (const r of checkRows) byEnrollment.set(r.enrollment_id, [...(byEnrollment.get(r.enrollment_id) || []), r.checkpoint])
+  return items.map(i => ({ ...i, checkpoints: checkpointsFor(i.status), checks: byEnrollment.get(i.enrollment_id) || [] }))
+}
+
 // Academica solo atiende a socios que todavia tienen beneficio: las vencidas son
 // de FICO (llama para renovar o retira), asi que aqui no se listan ni se cuentan.
 // Recibe la salida de buildMembershipExpiries y reemplaza su status (ventana de
