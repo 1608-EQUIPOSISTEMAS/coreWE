@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { buildPresentialCourseName } from '../modules/fico/odoo-sync/odoo-sync.entity.js'
 
 // ─── Validación de entorno al arranque ───────────────────────────────────────
 const REQUIRED_ENV = ['ODOO_URL', 'ODOO_DB', 'ODOO_LOGIN', 'ODOO_PASSWORD']
@@ -870,6 +871,87 @@ async function certificatesCountByGroup (groupNames) {
   return new Map((rows || []).map(r => [r.slide_group_id?.[1], r.__count ?? r.slide_group_id_count ?? 0]))
 }
 
+// Datos de cada aula presencial leidos de su grupo en Odoo (slide.group +
+// su docente en res.partner): dos llamadas para todas las aulas. SOLO LEE.
+// `editions`: [{ edition_id, odoo_activation, start_date }]. Devuelve
+// Map edition_id -> { course, instructor, instructor_email, sessions, schedule,
+// start_date, end_date } (sin entrada si el grupo no existe en Odoo).
+async function classroomsFromOdoo (editions) {
+  const nameOf = new Map(editions.map(e => [e.edition_id, buildPresentialCourseName({ odooActivation: e.odoo_activation.trim(), startDate: e.start_date })]))
+  if (!nameOf.size) return new Map()
+  const groups = await callKw('slide.group', 'search_read', [
+    [['name', 'in', [...new Set(nameOf.values())]]]
+  ], { fields: ['name', 'slide_channel_id', 'docente_ids', 'total_sessions', 'schedule_name', 'start_datetime', 'end_datetime'] })
+  // ponytail: primer docente del grupo; hoy ningun grupo tiene mas de uno.
+  const partnerIds = [...new Set(groups.map(g => g.docente_ids[0]).filter(Boolean))]
+  const partners = partnerIds.length ? await callKw('res.partner', 'read', [partnerIds, ['name', 'email']]) : []
+  const partnerOf = new Map(partners.map(p => [p.id, p]))
+  // Odoo devuelve false en los campos vacios: se pasan a null.
+  const byName = new Map(groups.map(g => {
+    const teacher = partnerOf.get(g.docente_ids[0])
+    return [g.name, {
+      group_id: g.id,
+      course: g.slide_channel_id?.[1] || null,
+      instructor: teacher?.name || null,
+      instructor_email: teacher?.email || null,
+      sessions: g.total_sessions || null,
+      schedule: g.schedule_name || null,
+      start_date: g.start_datetime || null,
+      end_date: g.end_datetime || null
+    }]
+  }))
+  return new Map([...nameOf].filter(([, name]) => byName.has(name)).map(([id, name]) => [id, byName.get(name)]))
+}
+
+// Los alumnos de un grupo son sus INSCRITOS (slide.group.student); la
+// evaluacion (slide.group.evaluation, 1 por inscrito) recien existe cuando le
+// ponen nota. Leer solo evaluaciones dejaba fuera a las aulas sin notas aun
+// (caso 26/10/26: Lean Six Sigma 25/10 con 26 inscritos y 0 evaluaciones).
+const SCORE_FIELDS = ['midterm_exam', 'final_exam', 'substitute_exam']
+const NO_SCORE = { midterm_exam: 0, final_exam: 0, substitute_exam: 0 }
+
+// Un registro por inscrito de varios grupos con sus notas guardadas (0 si no
+// tiene evaluacion). Sin final_score: se calcula al leer y pedirlo para cientos
+// de grupos tarda minutos (medido 26/10/26). SOLO LEE.
+async function studentScoresByGroup (groupIds) {
+  if (!groupIds.length) return []
+  const domain = [['slide_group_id', 'in', groupIds]]
+  const [students, evals] = await Promise.all([
+    callKw('slide.group.student', 'search_read', [domain], { fields: ['slide_group_id'] }),
+    callKw('slide.group.evaluation', 'search_read', [domain], { fields: ['student_id', ...SCORE_FIELDS] })
+  ])
+  const evalOf = new Map(evals.map(e => [e.student_id?.[0], e]))
+  return students.map(st => ({ ...NO_SCORE, ...evalOf.get(st.id), slide_group_id: st.slide_group_id }))
+}
+
+// Inscritos de UN grupo con su promedio final real de Odoo (aqui si se pide
+// final_score: es un solo grupo). SOLO LEE.
+async function groupStudents (groupId) {
+  const domain = [['slide_group_id', '=', groupId]]
+  const [students, evals] = await Promise.all([
+    callKw('slide.group.student', 'search_read', [domain], { fields: ['partner_id'] }),
+    callKw('slide.group.evaluation', 'search_read', [domain], { fields: ['student_id', ...SCORE_FIELDS, 'final_score'] })
+  ])
+  const evalOf = new Map(evals.map(e => [e.student_id?.[0], e]))
+  const partnerIds = [...new Set(students.map(st => st.partner_id?.[0]).filter(Boolean))]
+  const partners = partnerIds.length ? await callKw('res.partner', 'read', [partnerIds, ['vat', 'email']]) : []
+  const partnerOf = new Map(partners.map(p => [p.id, p]))
+  return students.map(st => {
+    const ev = evalOf.get(st.id) || { ...NO_SCORE, final_score: null }
+    const partner = partnerOf.get(st.partner_id?.[0])
+    return {
+      id: st.id,
+      full_name: st.partner_id?.[1] || null,
+      document_number: partner?.vat || null,
+      email: partner?.email || null,
+      midterm_exam: ev.midterm_exam,
+      final_exam: ev.final_exam,
+      substitute_exam: ev.substitute_exam,
+      final_score: ev.final_score
+    }
+  })
+}
+
 // Vista previa del boton "Certificar": SOLO LEE. Dice por alumno si esta en el
 // aula de Odoo y si ya tiene certificado, para avisar antes de confirmar.
 async function previewCertification ({ groupName, grades }) {
@@ -1122,4 +1204,4 @@ async function updateStudentInOdoo (odooUserId, { name, login, phone, vat, names
   }
 }
 
-export default { callKw, certifyClassroom, previewCertification, certificatesCountByGroup, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchUsersByDocument, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }
+export default { callKw, certifyClassroom, previewCertification, certificatesCountByGroup, classroomsFromOdoo, studentScoresByGroup, groupStudents, syncInstructorToOdoo, syncStudentToOdoo, syncStudentToOdooOnline, searchUserByEmail, searchUsersByDocument, searchSlideGroup, searchSlideChannelByName, enrollStudentInChannelOnly, listOnlineChannels, enrollInAllOnlineCourses, createSaleOrderWithFees, activateFees, markFeeAsPaid, updateFeeDueDates, updateFees, findOdooFees, unenrollStudentFromCourse, cancelSaleOrder, updateUserLogin, updateStudentInOdoo }

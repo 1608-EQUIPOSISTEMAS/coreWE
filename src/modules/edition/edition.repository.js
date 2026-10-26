@@ -4,6 +4,11 @@ import { buildOdooEmailBase } from '../../utils/fico-odoo.helper.js'
 import { accountProvidersSql, studentPersonalAccount } from '../../shared/personal-account.js'
 import { FECHA_CORTE_RUBRICA, rubricaDe, GRADE_RULES } from './edition.entity.js'
 import { isWebMatchByB2bAdvisorSql } from '../../utils/b2b-web-match.sql.js'
+import { hasAnyGradeSql } from '../../utils/classroom-grades.sql.js'
+
+// Se movio a utils/ para que Seguimiento al Alumno lo comparta; se reexporta
+// para no romper a quien lo importa desde aqui.
+export { hasAnyGradeSql }
 
 // Los unicos estados de lead que negocio considera una CONSULTA. Cualquier otro
 // (Eliminado, Cerrado, Desestimado, Indiferente, Prox. Inicio, Inscrito,
@@ -45,16 +50,6 @@ const MANUAL_SCORE20_SQL = `(CASE
 //
 // Recibe EXPRESIONES SQL, no alias: la "venta" es el padre cuando la fila es un
 // hijo de paquete, y cada query la resuelve a su manera (par/e, e_sold/e, es/e).
-// "Tiene nota" = alguien cargo ALGO del alumno: un test (un 0 escrito cuenta),
-// una participacion, un criterio del parcial o del final. Misma regla que
-// hasAnyGrade del aula (AulaDetail): el panel del lider ignoraba tests y
-// participacion y mostraba menos alumnos con nota que el aula.
-const anyNumber = (col) => `EXISTS (SELECT 1 FROM jsonb_each(COALESCE(${col}, '{}'::jsonb)) x WHERE jsonb_typeof(x.value) = 'number')`
-export const hasAnyGradeSql = (g) => `(${anyNumber(`${g}.tests`)}
-      OR EXISTS (SELECT 1 FROM jsonb_each(COALESCE(${g}.participation, '{}'::jsonb)) x WHERE x.value = 'true'::jsonb)
-      OR ${anyNumber(`${g}.partial_criteria`)}
-      OR ${anyNumber(`${g}.final_criteria`)})`
-
 export const isB2bSaleSql = ({ doctype, origin, advisor, sellerId }) => `
            (COALESCE(${origin}, '') ILIKE '%b2b%'
             OR ${isWebMatchByB2bAdvisorSql({ origin, sellerId })}
