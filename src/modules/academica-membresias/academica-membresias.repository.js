@@ -1,7 +1,7 @@
 import { pool } from '../../shared/db/pool.js'
 
 // Unico que habla con academic_membership_checks. SQL plano (sin SPs): la tabla
-// es nueva y su DDL vive en scripts/ddl-academica-membresia-checks.sql.
+// es nueva y su DDL se aplica al arrancar (src/config/startup-schema.js).
 
 // ponytail: trae todos los checks y el usecase los cruza con los socios
 // vigentes; filtrar por enrollment_id = ANY($1) si la tabla crece a cientos de miles.

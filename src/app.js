@@ -14,8 +14,13 @@ import './services/sheets-autosync.cron.js'
 import './services/prediccion.cron.js'
 import './services/whatsapp-handoff.cron.js'
 import { buildApp } from './buildApp.js'
+import { ensureStartupSchema } from './config/startup-schema.js'
 
 const app = await buildApp()
+
+// No tumba el arranque: si falla, el resto del ERP sigue y solo fallan las
+// pantallas que usan esas tablas (queda en el log).
+await ensureStartupSchema().catch(err => app.log.warn({ err }, 'startup-schema fallo'))
 
 const PORT = process.env.PORT || 8082
 const HOST = process.env.HOST || '0.0.0.0'

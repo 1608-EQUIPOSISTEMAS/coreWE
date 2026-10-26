@@ -6,6 +6,9 @@ import odooClient from '../../../config/odooClient.js'
 export function createOdooAdapter (client = odooClient) {
   return {
     callKw: (...args) => client.callKw(...args),
+    classroomsFromOdoo: (...args) => client.classroomsFromOdoo(...args),
+    studentScoresByGroup: (...args) => client.studentScoresByGroup(...args),
+    groupStudents: (...args) => client.groupStudents(...args),
     syncInstructorToOdoo: payload => client.syncInstructorToOdoo(payload),
     syncStudentToOdoo: payload => client.syncStudentToOdoo(payload),
     syncStudentToOdooOnline: payload => client.syncStudentToOdooOnline(payload),
