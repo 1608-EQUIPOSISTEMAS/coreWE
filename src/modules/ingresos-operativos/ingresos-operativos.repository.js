@@ -27,6 +27,7 @@ const PAGOS_SQL = `
     cg.description          AS linea_producto,
     pr.program_name         AS curso,
     pe.specific_code        AS edicion,
+    pv.version_code,
     COALESCE(
       NULLIF(trim(concat_ws(' ', ps.last_name, ps.mother_last_name, ps.first_name)), ''),
       co.razon_social
@@ -74,5 +75,40 @@ const PAGOS_SQL = `
 
 export async function listPagos (inicio, fin) {
   const { rows } = await pool.query(PAGOS_SQL, [inicio, fin])
+  return rows
+}
+
+// Pagos fuera de venta del modulo FICO > Pagos Adicionales (migrados del sheet
+// de adicionales el 26/10/2026). Suman a "Pagos extras" junto con los
+// certificados, reasignaciones y diferencias por CC de la inscripcion: los que
+// ya estaban en payments no se migraron, asi que no se duplican.
+const ADICIONALES_SQL = `
+  SELECT
+    a.additional_payment_id,
+    to_char(a.payment_date, 'YYYY-MM-DD') AS fecha_pago,
+    a.amount            AS monto,
+    a.currency,
+    a.business_line,
+    a.program,
+    a.subject,
+    a.full_name,
+    a.phone,
+    a.product_line,
+    a.transaction_code,
+    a.status,
+    med.description     AS medio_pago,
+    emp.description     AS entidad_empresa,
+    ba.bank_name        AS entidad_financiera
+  FROM public.fico_additional_payments a
+  LEFT JOIN public.catalog med      ON med.catalog_id = a.cat_payment_medium
+  LEFT JOIN public.catalog emp      ON emp.catalog_id = a.cat_business_entity
+  LEFT JOIN public.bank_accounts ba ON ba.account_id = a.bank_account_id
+  WHERE a.active = 'Y'
+    AND a.payment_date >= $1::date
+    AND a.payment_date <  $2::date
+  ORDER BY a.payment_date, a.additional_payment_id`
+
+export async function listAdicionales (inicio, fin) {
+  const { rows } = await pool.query(ADICIONALES_SQL, [inicio, fin])
   return rows
 }

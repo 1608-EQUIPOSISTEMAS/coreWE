@@ -83,8 +83,8 @@ export function lineaNegocio (row) {
   return row.modality_id === MODALIDAD_ONLINE ? 'ONLINE' : 'EN VIVO'
 }
 
-// Fila del resumen a la que suma el pago. ONLINE lleva las membresias enteras
-// (ventas y cuotas), como el sheet.
+// Fila del resumen a la que suma el pago. Las membresias GOLD y BLACK se
+// reparten antes en toDetalles.
 export function grupoDe (linea, tipo) {
   if (tipo === 'ADICIONAL') return 'EXTRAS'
   if (linea === 'ONLINE') return 'ONLINE'
@@ -117,6 +117,59 @@ export function toDetalle (row) {
     nOper: row.n_oper || null,
     estadoLiquidacion: row.estado_liquidacion ?? null,
     grupo: grupoDe(linea, tipo)
+  }
+}
+
+// Membresias GOLD y BLACK: el sheet parte cada venta en la parte de programas
+// online y la de Zoom (columnas "PAGO ONLINE" / "PAGO ZOOM" de las hojas
+// WE-MB). FICO pidio la misma estructura (26/10/2026):
+//   venta (PT o PP inicial) → hasta 250 en ONLINE (tipo PT) + el resto en EN VIVO
+//   cuotas                  → todo en EN VIVO
+// WE PLUS y WE PLAT quedan enteras en su linea (ONLINE).
+const MEMBRESIAS_PARTIDAS = new Set(['MEMB-02', 'MEMB-04'])
+// Tope de la parte ONLINE por moneda (FICO, 26/10/2026: S/ 250 o US$ 75).
+export const PARTE_ONLINE = { PEN: 250, USD: 75 }
+
+// Filas de detalle de un pago: una, o dos si es venta de membresia partida.
+// Las dos mitades comparten paymentId; `parte` las distingue.
+export function toDetalles (row) {
+  const d = toDetalle(row)
+  if (!MEMBRESIAS_PARTIDAS.has(row.version_code)) return [d]
+  if (d.tipoPago === 'CUOTA') return [{ ...d, lineaNegocio: 'EN VIVO', grupo: 'EN_VIVO_CUOTAS' }]
+  if (d.tipoPago !== 'PT' && d.tipoPago !== 'PP') return [d]
+  const online = Math.min(d.monto, PARTE_ONLINE[d.moneda])
+  const filas = [{ ...d, parte: 'ONLINE', lineaNegocio: 'ONLINE', tipoPago: 'PT', monto: online, grupo: 'ONLINE' }]
+  const zoom = round2(d.monto - online)
+  if (zoom > 0) filas.push({ ...d, parte: 'EN VIVO', lineaNegocio: 'EN VIVO', monto: zoom, grupo: 'EN_VIVO_VENTAS' })
+  return filas
+}
+
+// Pago de FICO > Pagos Adicionales. Siempre suma a "Pagos extras" (linea
+// ADICIONALES del sheet), sea cual sea su linea de negocio. paymentId negativo:
+// la tabla usa paymentId como clave de fila y no choca con los de payments.
+export function toDetalleAdicional (row) {
+  return {
+    paymentId: -row.additional_payment_id,
+    additionalPaymentId: row.additional_payment_id,
+    enrollmentId: null,
+    fechaPago: row.fecha_pago,
+    celular: row.phone ?? null,
+    alumno: row.full_name ?? null,
+    lineaNegocio: row.business_line === 'FUNDACIÓN WE' ? 'FUNDACIÓN' : row.business_line,
+    tipoPrograma: 'ADICIONALES',
+    lineaProducto: row.product_line ?? null,
+    curso: row.program ?? null,
+    edicion: null,
+    asunto: row.subject ?? null,
+    tipoPago: 'ADICIONAL',
+    moneda: row.currency === 'USD' ? 'USD' : 'PEN',
+    monto: Number(row.monto),
+    medioPago: row.medio_pago ?? null,
+    entidadEmpresa: row.entidad_empresa ?? null,
+    entidadFinanciera: row.entidad_financiera ?? null,
+    nOper: row.transaction_code || null,
+    estadoLiquidacion: row.status ?? null,
+    grupo: 'EXTRAS'
   }
 }
 

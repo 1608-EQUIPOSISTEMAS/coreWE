@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { DomainError } from '../../../shared/errors.js'
-import { parsePeriodo, tipoPago, lineaNegocio, grupoDe, toDetalle, buildResumen } from '../ingresos-operativos.entity.js'
+import { parsePeriodo, tipoPago, lineaNegocio, grupoDe, toDetalle, toDetalles, toDetalleAdicional, buildResumen } from '../ingresos-operativos.entity.js'
 
 const pago = (extra = {}) => ({
   payment_id: 1,
@@ -100,5 +100,75 @@ describe('buildResumen', () => {
     const r = buildResumen([])
     expect(r.total.soles).toBe(0)
     expect(r.filas.every(f => f.pct === 0)).toBe(true)
+  })
+})
+
+describe('toDetalleAdicional', () => {
+  const adic = (extra = {}) => ({
+    additional_payment_id: 1250,
+    fecha_pago: '2026-06-25',
+    monto: '50.00',
+    currency: 'PEN',
+    business_line: 'FUNDACIÓN WE',
+    program: 'GEST. ÁGIL PROYECT',
+    subject: 'Reprog.',
+    full_name: 'TORRES LEZMA BRYAN',
+    status: 'EFECTUADO',
+    ...extra
+  })
+  it('suma a Pagos extras como ADICIONAL, sea cual sea la línea', () => {
+    const d = toDetalleAdicional(adic())
+    expect(d).toMatchObject({
+      paymentId: -1250, additionalPaymentId: 1250, tipoPago: 'ADICIONAL', grupo: 'EXTRAS',
+      lineaNegocio: 'FUNDACIÓN', tipoPrograma: 'ADICIONALES', curso: 'GEST. ÁGIL PROYECT', monto: 50, moneda: 'PEN'
+    })
+  })
+  it('entra en el resumen junto con los pagos de inscripción', () => {
+    const r = buildResumen([toDetalle(pago({ payment_type_id: 5061, installment_number: null })), toDetalleAdicional(adic({ currency: 'USD', monto: '14' }))], 4)
+    expect(r.filas.find(f => f.id === 'EXTRAS')).toMatchObject({ pen: 100, usd: 14, soles: 156, pagos: 2 })
+  })
+})
+
+describe('toDetalles: membresías GOLD y BLACK partidas como el sheet', () => {
+  const CONTADO = 'we_payment_way_single'
+  const CUOTAS = 'we_payment_way_installments'
+  const memb = (extra = {}) => pago({ business_line_id: 3226, version_code: 'MEMB-04', payment_plan: CONTADO, ...extra })
+  const corto = filas => filas.map(f => [f.lineaNegocio, f.tipoPago, f.monto, f.grupo])
+
+  it('venta al contado: 250 a ONLINE y el resto a EN VIVO', () => {
+    expect(corto(toDetalles(memb({ monto: '1900.00', version_code: 'MEMB-04' })))).toEqual([
+      ['ONLINE', 'PT', 250, 'ONLINE'], ['EN VIVO', 'PT', 1650, 'EN_VIVO_VENTAS']
+    ])
+    expect(corto(toDetalles(memb({ monto: '650.00', version_code: 'MEMB-02' })))).toEqual([
+      ['ONLINE', 'PT', 250, 'ONLINE'], ['EN VIVO', 'PT', 400, 'EN_VIVO_VENTAS']
+    ])
+  })
+  it('inicial en cuotas: la parte ONLINE va como PT y la de Zoom como PP', () => {
+    const pp = { payment_plan: CUOTAS, installment_number: 0, min_number: 0, total_installments: 4 }
+    expect(corto(toDetalles(memb({ ...pp, monto: '390.00' })))).toEqual([
+      ['ONLINE', 'PT', 250, 'ONLINE'], ['EN VIVO', 'PP', 140, 'EN_VIVO_VENTAS']
+    ])
+    // inicial menor que el tope: todo a ONLINE, sin fila en 0
+    expect(corto(toDetalles(memb({ ...pp, monto: '200.00', version_code: 'MEMB-02' })))).toEqual([['ONLINE', 'PT', 200, 'ONLINE']])
+  })
+  it('las cuotas van enteras a EN VIVO', () => {
+    const c = { payment_plan: CUOTAS, installment_number: 3, min_number: 0, total_installments: 6, monto: '277.00' }
+    expect(corto(toDetalles(memb(c)))).toEqual([['EN VIVO', 'CUOTA', 277, 'EN_VIVO_CUOTAS']])
+  })
+  it('en dólares el tope ONLINE es US$ 75', () => {
+    expect(corto(toDetalles(memb({ monto: '53.00', currency_id: 3042, version_code: 'MEMB-02' })))).toEqual([['ONLINE', 'PT', 53, 'ONLINE']])
+    expect(corto(toDetalles(memb({ monto: '746.00', currency_id: 3042 })))).toEqual([
+      ['ONLINE', 'PT', 75, 'ONLINE'], ['EN VIVO', 'PT', 671, 'EN_VIVO_VENTAS']
+    ])
+  })
+  it('WE PLUS, becas y cursos quedan en una sola fila', () => {
+    expect(toDetalles(memb({ version_code: 'MEMB-01', monto: '180.00' }))).toHaveLength(1)
+    expect(toDetalles(memb({ monto: '0.00' }))[0].tipoPago).toBe('BECA')
+    expect(toDetalles(pago({ version_code: 'EX-CZ-01', monto: '900.00' }))).toHaveLength(1)
+  })
+  it('las dos mitades comparten paymentId y se distinguen por parte', () => {
+    const [a, b] = toDetalles(memb({ monto: '390.00' }))
+    expect([a.paymentId, b.paymentId]).toEqual([1, 1])
+    expect([a.parte, b.parte]).toEqual(['ONLINE', 'EN VIVO'])
   })
 })
