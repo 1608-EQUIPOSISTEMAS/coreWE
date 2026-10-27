@@ -1037,7 +1037,6 @@ export class IntegrationRepository {
         ELSE 'P'
       END AS ocup,
       CASE
-        WHEN (e.total_amount) = 0 AND e.agent_origin = 'AUS' THEN 'AUS'
         WHEN (e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
         WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'
@@ -1166,7 +1165,6 @@ export class IntegrationRepository {
         ELSE COALESCE(ag_token.alias, u.alias, e.agent_origin, 'S/A')
       END AS asesor,
       CASE
-        WHEN (e.total_amount) = 0 AND e.agent_origin = 'AUS' THEN 'AUS'
         WHEN (e.total_amount) = 0 THEN 'BECA'
         WHEN c_plan.alias = 'we_payment_way_single'       THEN 'PT'
         WHEN c_plan.alias = 'we_payment_way_installments' THEN 'PP'

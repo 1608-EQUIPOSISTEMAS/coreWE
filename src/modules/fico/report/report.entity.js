@@ -162,14 +162,14 @@ export function collectionByMethod (filas) {
   return { total: Math.round(total), medios }
 }
 
-const OUTCOME_KEYS = ['total', 'pt', 'pp', 'becas', 'auspicios', 'retirados', 'rp', 'cc']
+const OUTCOME_KEYS = ['total', 'pt', 'pp', 'becas', 'retirados', 'rp', 'cc']
 
 // Inscripciones por F. PAGO y en que terminaron. Es cohorte, no evento: los
 // retirados de agosto son ventas de agosto que HOY estan retiradas, porque la
 // fecha del retiro o de la RP no se guarda (audit_logs empieza el 17/08/26).
-// filas = [{ dia, total, pt, pp, becas, auspicios, retirados, rp, cc }]
+// filas = [{ dia, total, pt, pp, becas, retirados, rp, cc }]
 export function enrollmentOutcomes (filas) {
-  const n = Object.fromEntries(OUTCOME_KEYS.map((k) => [k, filas.reduce((s, f) => s + (f[k] || 0), 0)]))
+  const n = Object.fromEntries(OUTCOME_KEYS.map((k) => [k, filas.reduce((s, f) => s + f[k], 0)]))
   const pct = (k) => percentOf(n[k], n.total)
   return { ...n, pct_pp: percentOf(n.pp, n.pt + n.pp), pct_retirados: pct('retirados'), pct_rp: pct('rp'), pct_cc: pct('cc') }
 }

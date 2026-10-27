@@ -1117,16 +1117,6 @@ export class EnrollmentRepository {
     // (invalidateAdvisorsCache) tras esta escritura.
   }
 
-  // Cambia la nota de la cuota 0 de una venta sin pago entre beca y auspicio.
-  // Solo toca la nota que escribe el alta: las de RP/CC u otras se respetan.
-  async relabelZeroInstallment (enrollmentId, label) {
-    await this.db.query(`
-      UPDATE payment_installments SET notes = $2
-       WHERE enrollment_id = $1 AND amount = 0
-         AND notes IN ('Beca - sin pago requerido', 'Auspicio - sin pago requerido')`,
-    [enrollmentId, label])
-  }
-
   // --- Match WEB ----------------------------------------------------------
 
   // Consultas que un asesor registro para ESTE alumno y ESTE programa y que

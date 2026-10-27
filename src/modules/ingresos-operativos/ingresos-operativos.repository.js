@@ -16,7 +16,6 @@ const PAGOS_SQL = `
     p.cat_payment_type      AS payment_type_id,
     e.cat_currency          AS currency_id,
     e.total_amount          AS enrollment_total,
-    e.agent_origin,
     plan.alias              AS payment_plan,
     pi.installment_number,
     ins.min_number,

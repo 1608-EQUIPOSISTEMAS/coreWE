@@ -5,8 +5,6 @@ import { isMembership } from '../../../utils/fico-formatters.js'
 import { buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   fmtAgent,
-  zeroPaymentLabel,
-  SPONSORSHIP_ORIGIN,
   advisorObservationOrNull,
   flattenDailyKpis,
   resolveSellerAgentChange,
@@ -172,18 +170,12 @@ export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = fal
       }
     }
 
-    // El SP etiqueta como beca la cuota 0 de toda venta sin pago; el auspicio
-    // tambien entra en 0 y no debe leerse como beca en el detalle.
-    if (inscription.is_scholarship && inscription.agent_origin === SPONSORSHIP_ORIGIN) {
-      await repo.relabelZeroInstallment(eid, zeroPaymentLabel(SPONSORSHIP_ORIGIN))
-    }
-
     await repo.logAudit({ enrollmentId: eid, action: 'created', userId, details: 'Inscripcion registrada desde FICO' })
     await repo.logAudit({
       enrollmentId: eid,
       action: 'approved',
       userId,
-      details: inscription.is_scholarship ? zeroPaymentLabel(inscription.agent_origin) : 'Auto-aprobado por registro directo FICO'
+      details: inscription.is_scholarship ? 'Beca - sin pago requerido' : 'Auto-aprobado por registro directo FICO'
     })
     if (!inscription.is_scholarship && data.cat_payment_medium) {
       const payAmount = data.total_amount || data.saved_money || 0
@@ -784,10 +776,6 @@ export async function editSellerAgent ({ enrollmentId, newSellerAgentId, newAgen
 
   await repo.setSellerAgent(enrollmentId, newAgentId, newOrigin)
   if (matchedLeadId) await repo.linkLeadToEnrollment(matchedLeadId, enrollmentId, userId)
-  // Entrar o salir del canal AUS cambia la nota de la cuota 0 (beca <-> auspicio).
-  if ((old.old_origin === SPONSORSHIP_ORIGIN) !== (newOrigin === SPONSORSHIP_ORIGIN)) {
-    await repo.relabelZeroInstallment(enrollmentId, zeroPaymentLabel(newOrigin))
-  }
   invalidateAdvisorsCache()
 
   const changes = {

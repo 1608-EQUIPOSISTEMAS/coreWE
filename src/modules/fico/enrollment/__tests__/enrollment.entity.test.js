@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { DomainError } from '../../../../shared/errors.js'
 import {
   fmtAgent,
-  zeroPaymentLabel,
   advisorObservationOrNull,
   composeAdvisorName,
   resolveProgramTypeLabel,
@@ -24,20 +23,6 @@ import {
   selectChildrenToRetireOnCourseChange,
   PAID_INSTALLMENT_CAT_IDS
 } from '../enrollment.entity.js'
-
-describe('canal AUS (auspicio)', () => {
-  it('la venta sin pago del canal AUS se etiqueta como auspicio, el resto como beca', () => {
-    expect(zeroPaymentLabel('AUS')).toBe('Auspicio - sin pago requerido')
-    expect(zeroPaymentLabel('SA')).toBe('Beca - sin pago requerido')
-    expect(zeroPaymentLabel(null)).toBe('Beca - sin pago requerido')
-  })
-  it('editar asesor persiste AUS tal cual, con o sin asesor', () => {
-    expect(resolveSellerAgentChange({ oldAgentId: 5, oldOrigin: null, newSellerAgentId: null, newAgentOrigin: 'AUS' }))
-      .toEqual({ newAgentId: null, newOrigin: 'AUS', isSinAsesor: true })
-    expect(resolveSellerAgentChange({ oldAgentId: null, oldOrigin: 'SA', newSellerAgentId: 7, newAgentOrigin: 'AUS' }))
-      .toEqual({ newAgentId: 7, newOrigin: 'AUS', isSinAsesor: false })
-  })
-})
 
 describe('fmtAgent', () => {
   it('compone origin - alias cuando ambos existen', () => {

@@ -55,7 +55,7 @@ export function parsePeriodo ({ desde, hasta } = {}) {
 // sincronizacion al sheet (integration.repository: BECA / PT / PP). El
 // cat_payment_type del pago no sirve: marca muchas cuotas como "Pago Unico".
 //   adicional sin cuota              → ADICIONAL
-//   inscripcion de total 0 o monto 0 → BECA (AUS si es del canal auspicio)
+//   inscripcion de total 0 o monto 0 → BECA
 //   forma de pago contado            → PT (pago total)
 //   en cuotas: la primera (0 o 1)    → PP (pago inicial)
 //   en cuotas: el resto              → CUOTA
@@ -66,9 +66,7 @@ const PLAN_CUOTAS = 'we_payment_way_installments'
 export function tipoPago (row) {
   const sinCuota = row.installment_number == null
   if (sinCuota && TIPOS_ADICIONAL.has(row.payment_type_id)) return 'ADICIONAL'
-  if (Number(row.monto) === 0 || Number(row.enrollment_total) === 0) {
-    return row.agent_origin === 'AUS' ? 'AUS' : 'BECA'
-  }
+  if (Number(row.monto) === 0 || Number(row.enrollment_total) === 0) return 'BECA'
   const contado = row.payment_plan === PLAN_CONTADO ||
     (row.payment_plan !== PLAN_CUOTAS && Number(row.total_installments) <= 1)
   if (contado || sinCuota) return 'PT'

@@ -185,7 +185,7 @@ export const editSellerAgentSchema = {
     properties: {
       enrollment_id: { type: 'integer' },
       new_seller_agent_id: { type: ['integer', 'null'] },
-      new_agent_origin: { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'TWE', 'FWE', 'SA', 'AUS', null] },
+      new_agent_origin: { type: ['string', 'null'], enum: ['B2B', 'WEB', 'WE', 'TWE', 'FWE', 'SA', null] },
       // Consulta del asesor a enganchar. Obligatoria para el canal WEB (el
       // usecase la exige), ignorada en el resto.
       lead_id: { type: ['integer', 'null'] },
