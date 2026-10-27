@@ -141,6 +141,7 @@ async function attachChannelMetrics (items = []) {
     it.cnt_segui = m?.cnt_segui ?? 0
     it.cnt_memb = m?.cnt_memb ?? 0
     it.cnt_becas = m?.cnt_becas ?? 0
+    it.cnt_aus = m?.cnt_aus ?? 0
     it.cnt_b2b = m?.cnt_b2b ?? 0
     it.cnt_aula = m?.cnt_aula ?? 0
     it.cnt_total = m?.cnt_total ?? 0

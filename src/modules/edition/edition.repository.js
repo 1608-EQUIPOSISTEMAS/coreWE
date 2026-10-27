@@ -759,7 +759,7 @@ export class EditionRepository {
                         WHERE cc.enrollment_destination_id = e.enrollment_id)
             OR e.notes ILIKE '%Reprogramacion desde inscripcion #%'
             THEN CASE WHEN mem.is_member THEN 'MEMB'
-                      WHEN bec.is_beca THEN 'BECA'
+                      WHEN bec.is_beca THEN bec.beca_bucket
                       ELSE 'SEGUI' END
           -- HIJO de paquete:
           WHEN e.parent_enrollment_id IS NOT NULL THEN
@@ -795,13 +795,13 @@ export class EditionRepository {
               -- Prioridad: socio manda > B2B > BECA > SEG.
               WHEN mem.is_member THEN 'MEMB'
               WHEN ${isB2bSaleSql({ doctype: 'par.cat_b2b_doctype', origin: 'par.agent_origin', advisor: 'upar.alias', sellerId: 'upar.user_id' })} THEN 'B2B'
-              WHEN bec.is_beca THEN 'BECA'
+              WHEN bec.is_beca THEN bec.beca_bucket
               ELSE 'SEGUI'
             END
           -- PADRE (tiene hijos) o VENTA DIRECTA (standalone): es la venta.
           WHEN mem.is_member THEN 'MEMB'
           WHEN ${isB2bSaleSql({ doctype: 'e.cat_b2b_doctype', origin: 'e.agent_origin', advisor: 'ua.alias', sellerId: 'ua.user_id' })} THEN 'B2B'
-          WHEN bec.is_beca THEN 'BECA'
+          WHEN bec.is_beca THEN bec.beca_bucket
           ELSE 'VENTAS'
         END AS comm_bucket,
         -- B) HOJA = asiste a un aula = NO tiene hijos. El PADRE (tiene hijos) NO
@@ -895,7 +895,11 @@ export class EditionRepository {
                 NOT ILIKE '%desde inscripcion #%'
             AND NOT EXISTS (SELECT 1 FROM public.course_changes ccx
                              WHERE ccx.enrollment_destination_id
-                                   = COALESCE(e.parent_enrollment_id, e.enrollment_id))) AS is_beca
+                                   = COALESCE(e.parent_enrollment_id, e.enrollment_id))) AS is_beca,
+            -- Auspicio (canal AUS de la venta): sigue el flujo de la beca, ocupa
+            -- asiento sin sumar al AULA, pero se cuenta en su propia columna.
+            CASE WHEN COALESCE(par.agent_origin, e.agent_origin) = 'AUS'
+                 THEN 'AUS' ELSE 'BECA' END AS beca_bucket
         ) bec ON TRUE
        WHERE e.program_edition_id = ANY($1::int[])
          AND e.active = 'Y'
@@ -938,8 +942,10 @@ export class EditionRepository {
       COUNT(*) FILTER (WHERE comm_bucket = 'SEGUI')::int  AS cnt_segui,
       COUNT(*) FILTER (WHERE comm_bucket = 'MEMB')::int   AS cnt_memb,
       COUNT(*) FILTER (WHERE comm_bucket = 'BECA')::int   AS cnt_becas,
+      COUNT(*) FILTER (WHERE comm_bucket = 'AUS')::int    AS cnt_aus,
       COUNT(*) FILTER (WHERE comm_bucket = 'B2B')::int    AS cnt_b2b,
-      -- B) aula (headcount del salon): hojas no-beca; cnt_total incluye becas.
+      -- B) aula (headcount del salon): hojas no-beca (el auspicio cuenta como
+      --    beca); cnt_total incluye becas y auspicios.
       COUNT(*) FILTER (WHERE is_leaf AND NOT is_beca_leaf)::int AS cnt_aula,
       COUNT(*) FILTER (WHERE is_leaf)::int                AS cnt_total
       FROM roster

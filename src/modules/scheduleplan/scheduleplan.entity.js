@@ -116,7 +116,7 @@ const CAMPOS_DE_ORIGEN = [
   'registration_date', 'modification_date', 'user_registration_id', 'user_modification_id',
   'whatsapp_link', 'teams_link', 'ficha_link', 'grades_link', 'banner_link',
   'calc_da', 'calc_dp', 'cat_status_edition', 'cat_type_approved',
-  'cnt_ventas', 'cnt_segui', 'cnt_memb', 'cnt_b2b', 'cnt_becas', 'cnt_aula', 'cnt_total'
+  'cnt_ventas', 'cnt_segui', 'cnt_memb', 'cnt_b2b', 'cnt_becas', 'cnt_aus', 'cnt_aula', 'cnt_total'
 ]
 
 // En los modulos se hace al reves —lista de lo que SE QUEDA— porque

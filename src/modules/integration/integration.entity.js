@@ -282,7 +282,8 @@ export function buildCronogramaRow (r, m) {
     0,                        // CURSO: fijo en 0
     m?.cnt_total ?? 0,        // AULA (contempla becados, memb, b2b)
     b2b,
-    m?.cnt_becas ?? 0,
+    // La hoja no tiene columna de auspicio: va con las becas, como antes.
+    (m?.cnt_becas ?? 0) + (m?.cnt_aus ?? 0),
     memb,
     ventas,                   // PRG NETO
     segui,                    // SEGUIMIENTO NETO
