@@ -1,5 +1,5 @@
 import { pool, withTransaction } from '../../shared/db/pool.js'
-import { IS_SALE } from '../dashboard/results/comercial.repository.js'
+import { IS_COMMERCIAL_SALE } from '../dashboard/results/comercial.repository.js'
 import { RP_LINK_CTE } from '../integration/integration.repository.js'
 import { isComercialUserSql } from '../../shared/organigrama.js'
 
@@ -147,7 +147,7 @@ export const planComercialRepository = {
                (e.agent_origin = 'B2B' OR e.b2b_contract_id IS NOT NULL) AS b2b, COUNT(*)::int AS n
           FROM public.enrollments e
           LEFT JOIN public.users web ON UPPER(web.alias) = 'WEB' ${programOf}
-         WHERE ${IS_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
+         WHERE ${IS_COMMERCIAL_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
            AND e.registration_date >= $1::date AND e.registration_date < $2::date + 1
          GROUP BY 1, 2, 3`, range),
       // Ingreso = lo cobrado ese dia (inicial y cuotas) de las ventas del ERP.
@@ -156,7 +156,7 @@ export const planComercialRepository = {
                (e.cat_currency = ${USD}) AS usd, SUM(pay.amount)::float8 AS monto
           FROM public.payments pay
           JOIN public.enrollments e ON e.enrollment_id = pay.enrollment_id ${programOf}
-         WHERE ${IS_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
+         WHERE ${IS_COMMERCIAL_SALE} AND ${IN_LINE('p.cat_model_modality', 3)}
            AND pay.active = 'Y'
            AND pay.payment_date >= $1::date AND pay.payment_date < $2::date + 1
          GROUP BY 1, 2`, range),
@@ -290,7 +290,7 @@ export const planComercialRepository = {
         LEFT JOIN public.vw_r_prospectos pr ON pr.vacio_obligatorio = lo.lead_id::varchar
         LEFT JOIN public.leads l ON l.lead_id = lo.lead_id
         LEFT JOIN public.catalog cm ON cm.catalog_id = l.cat_client_moment
-       WHERE ${IS_SALE} AND p.cat_model_modality = ${ONLINE_MODALITY}
+       WHERE ${IS_COMMERCIAL_SALE} AND p.cat_model_modality = ${ONLINE_MODALITY}
          AND COALESCE(e.agent_origin, '') <> 'B2B' AND e.b2b_contract_id IS NULL
          AND e.registration_date >= $1::date AND e.registration_date < $2::date + 1
        GROUP BY 1, 2, 3, 4`, [from, to])

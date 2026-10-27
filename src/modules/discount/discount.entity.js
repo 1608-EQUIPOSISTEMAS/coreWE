@@ -63,6 +63,16 @@ export function buildGetResult (r = {}) {
   }
 }
 
+// Descuentos que solo FICO puede aplicar (el CRM de comerciales no los ve).
+// GLOBAL/AUSPICIO 100%: el auspicio lo registra FICO, nunca un asesor.
+export const FICO_ONLY_DISCOUNT_ALIASES = ['100_global_auspicio']
+
+// Filtra el resultado del caller segun quien lo pide: FICO ve todo.
+export function visibleDiscounts (rows = [], scope = null) {
+  if (scope === 'fico') return rows
+  return rows.filter(r => !FICO_ONLY_DISCOUNT_ALIASES.includes(r.alias))
+}
+
 // Proyeccion de una fila del SP caller al DTO de seleccion.
 export function buildCallerItem (r) {
   return {

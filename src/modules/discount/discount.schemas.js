@@ -96,7 +96,9 @@ export const discountCallerSchema = {
       q: { type: ['string', 'null'] },
       cat_discount_type: { type: ['integer', 'null'] },
       cat_currency: { type: ['integer', 'null'] },
-      active: { type: ['boolean', 'null'], default: true }
+      active: { type: ['boolean', 'null'], default: true },
+      // 'fico' incluye los descuentos exclusivos de FICO (ej. auspicio).
+      scope: { type: ['string', 'null'], enum: ['fico', null] }
     }
   }
 }

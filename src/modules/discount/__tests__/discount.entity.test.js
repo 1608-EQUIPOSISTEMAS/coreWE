@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  visibleDiscounts,
   normalizeValue,
   paginationDefaults,
   buildListItem,
@@ -129,5 +130,15 @@ describe('buildCallerItem', () => {
       type_label: 'Porcentaje',
       currency_alias: 'we_currency_soles'
     })
+  })
+})
+
+describe('visibleDiscounts', () => {
+  const rows = [{ id: 17, alias: '100_global' }, { id: 55, alias: '100_global_auspicio' }]
+  it('el CRM no ve el descuento de auspicio, que es solo de FICO', () => {
+    expect(visibleDiscounts(rows).map(r => r.id)).toEqual([17])
+  })
+  it('FICO ve todos', () => {
+    expect(visibleDiscounts(rows, 'fico').map(r => r.id)).toEqual([17, 55])
   })
 })

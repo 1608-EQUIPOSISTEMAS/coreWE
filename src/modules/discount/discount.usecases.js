@@ -1,5 +1,5 @@
 import { discountRepository } from './discount.repository.js'
-import { paginationDefaults } from './discount.entity.js'
+import { paginationDefaults, visibleDiscounts } from './discount.entity.js'
 import { toRegisterDto, toListDto, toGetDto, toUpdateDto, toCallerDto } from './discount.dto.js'
 
 const repo = discountRepository
@@ -46,9 +46,10 @@ export async function callerDiscounts (payload = {}) {
     q = null,
     cat_discount_type = null,
     cat_currency = null,
-    active = true
+    active = true,
+    scope = null
   } = payload
 
   const rows = await repo.caller({ q, cat_discount_type, cat_currency, active })
-  return toCallerDto({ rows })
+  return toCallerDto({ rows: visibleDiscounts(rows, scope) })
 }

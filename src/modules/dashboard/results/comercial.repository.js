@@ -9,6 +9,12 @@ export const IS_SALE = `
          e.active = 'Y'${PARENT_OR_CC_DESTINATION}
          AND COALESCE(e.notes, '') NOT LIKE '%masiva FICO%'`
 
+// Venta para los reportes de COMERCIAL: IS_SALE sin los auspicios (canal AUS).
+// El auspicio lo registra FICO y no es venta de ningun asesor, aunque lleve
+// uno asociado ('AUS - AE30'). FICO sigue usando IS_SALE: ahi si debe verlo.
+export const IS_COMMERCIAL_SALE = `${IS_SALE}
+         AND COALESCE(e.agent_origin, '') <> 'AUS'`
+
 // Estados de lead que ya no esperan gestion: pago, inscrito, cerrado,
 // desestimado, eliminado o anulado.
 const LEAD_CLOSED_STATUSES = [2366, 3054, 2574, 2367, 3199, 3136]
@@ -30,7 +36,7 @@ export async function fetchComercialRaw ({ areaRoles }, db = pool) {
       ventas AS (
         SELECT e.registration_date
           FROM public.enrollments e
-         WHERE ${IS_SALE}
+         WHERE ${IS_COMMERCIAL_SALE}
            AND e.seller_agent_id IN (SELECT user_id FROM equipo)
            AND e.registration_date >= CURRENT_DATE - 40
       ),
@@ -56,7 +62,7 @@ export async function fetchComercialRaw ({ areaRoles }, db = pool) {
       ventas AS (
         SELECT e.enrollment_id, e.seller_agent_id, e.registration_date
           FROM public.enrollments e
-         WHERE ${IS_SALE}
+         WHERE ${IS_COMMERCIAL_SALE}
            AND e.seller_agent_id IN (SELECT user_id FROM equipo)
            AND e.registration_date >= date_trunc('month', LOCALTIMESTAMP) - interval '1 month'
       ),
@@ -139,7 +145,7 @@ export async function fetchComercialRaw ({ areaRoles }, db = pool) {
       ventas AS (
         SELECT e.registration_date
           FROM public.enrollments e
-         WHERE ${IS_SALE}
+         WHERE ${IS_COMMERCIAL_SALE}
            AND e.seller_agent_id IN (SELECT user_id FROM equipo)
            AND e.registration_date >= CURRENT_DATE - 40
       ),
