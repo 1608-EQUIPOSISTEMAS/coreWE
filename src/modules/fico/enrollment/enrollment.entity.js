@@ -37,6 +37,14 @@ export function fmtAgent (alias, origin) {
   return '(sin asesor)'
 }
 
+// El descuento GLOBAL/AUSPICIO 100% implica el canal AUS (cronograma y reportes
+// de Comercial lo separan por el canal). Mismo alias que discount.entity.js.
+export const AUSPICIO_DISCOUNT_ALIAS = '100_global_auspicio'
+export function withSponsorshipChannel (inscription, porcentDiscountAlias) {
+  if (porcentDiscountAlias !== AUSPICIO_DISCOUNT_ALIAS) return inscription
+  return { ...inscription, agent_origin: 'AUS' }
+}
+
 // Mismo CASE WHEN que arma sp_fico_enrollment_list para seller_agent_name, en
 // forma de funcion pura para derivar la etiqueta del dropdown de asesores.
 export function composeAdvisorName (agentOrigin, alias) {

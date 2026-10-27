@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DomainError } from '../../../../shared/errors.js'
 import {
   fmtAgent,
+  withSponsorshipChannel,
   advisorObservationOrNull,
   composeAdvisorName,
   resolveProgramTypeLabel,
@@ -490,5 +491,16 @@ describe('buildCourseChangeNewInstallments', () => {
   it('rechaza montos no positivos y fechas invalidas', () => {
     expect(() => buildCourseChangeNewInstallments({ requested: [{ amount: 0, due_date: '2026-11-02' }], paidNow: 1 })).toThrow(DomainError)
     expect(() => buildCourseChangeNewInstallments({ requested: [{ amount: 5, due_date: '' }], paidNow: 1 })).toThrow(DomainError)
+  })
+})
+
+describe('withSponsorshipChannel', () => {
+  it('el descuento GLOBAL/AUSPICIO 100% fuerza el canal AUS', () => {
+    expect(withSponsorshipChannel({ agent_origin: null, x: 1 }, '100_global_auspicio')).toEqual({ agent_origin: 'AUS', x: 1 })
+  })
+  it('cualquier otro descuento deja el canal como venia', () => {
+    const insc = { agent_origin: 'SA' }
+    expect(withSponsorshipChannel(insc, '100_global')).toBe(insc)
+    expect(withSponsorshipChannel(insc, null)).toBe(insc)
   })
 })

@@ -5,6 +5,7 @@ import { isMembership } from '../../../utils/fico-formatters.js'
 import { buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   fmtAgent,
+  withSponsorshipChannel,
   advisorObservationOrNull,
   flattenDailyKpis,
   resolveSellerAgentChange,
@@ -155,7 +156,10 @@ export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = fal
     if (duplicate) return buildDuplicateResponse(duplicate)
   }
 
-  const inscription = buildDirectInscription(data)
+  const inscription = withSponsorshipChannel(
+    buildDirectInscription(data),
+    data.dsct_porcent_id ? await repo.discountAlias(data.dsct_porcent_id) : null
+  )
   const enrollResp = await repo.registerDirect({ userId, inscription })
 
   if (enrollResp.result === 1 && enrollResp.enrollment_id) {

@@ -1009,6 +1009,11 @@ export class EnrollmentRepository {
     return rows?.[0]?.alias || null
   }
 
+  async discountAlias (discountId) {
+    const { rows } = await this.db.query('SELECT alias FROM discounts WHERE discount_id = $1', [discountId])
+    return rows?.[0]?.alias || null
+  }
+
   async getResubmitState (enrollmentId) {
     const { rows } = await this.db.query(
       'SELECT cat_fico_status, seller_agent_id FROM enrollments WHERE enrollment_id = $1',
