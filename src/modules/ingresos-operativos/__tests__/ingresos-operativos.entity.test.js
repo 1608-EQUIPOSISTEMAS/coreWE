@@ -41,6 +41,10 @@ describe('tipoPago', () => {
     expect(tipoPago(pago({ monto: '0.00' }))).toBe('BECA')
     expect(tipoPago(pago({ enrollment_total: '0.00', payment_plan: CONTADO }))).toBe('BECA')
   })
+  it('monto 0 del canal AUS es auspicio, no beca', () => {
+    expect(tipoPago(pago({ monto: '0.00', agent_origin: 'AUS' }))).toBe('AUS')
+    expect(tipoPago(pago({ enrollment_total: '0.00', agent_origin: 'AUS' }))).toBe('AUS')
+  })
   it('forma de pago contado es PT aunque el cronograma tenga varias cuotas', () => {
     expect(tipoPago(pago({ payment_plan: CONTADO, total_installments: 2, installment_number: 2 }))).toBe('PT')
   })

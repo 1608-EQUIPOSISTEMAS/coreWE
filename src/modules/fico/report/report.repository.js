@@ -88,13 +88,17 @@ export class FicoReportRepository {
   // Inscripciones aprobadas por dia de F. PAGO (la misma de la hoja FICO) y en
   // que terminaron. Una inscripcion = la raiz: el destino de un CC cuelga del
   // origen y el de una RP se descarta, porque ninguno es una venta nueva. La
-  // beca (monto 0) va aparte de PT/PP, como en la hoja.
+  // beca (monto 0) va aparte de PT/PP, como en la hoja; el auspicio (canal AUS)
+  // tambien entra en 0 pero se cuenta aparte de la beca.
   async enrollmentsByOutcome ({ from, to }) {
     const { rows } = await this.db.query(`
       WITH ${RP_LINK_CTE}, ${SALE_DATES_CTES}
       SELECT to_char(${SALE_DATE}, 'YYYY-MM-DD') AS dia,
              COUNT(*)::int AS total,
-             COUNT(*) FILTER (WHERE COALESCE(e.total_amount, 0) = 0)::int AS becas,
+             COUNT(*) FILTER (WHERE COALESCE(e.total_amount, 0) = 0
+                                AND e.agent_origin IS DISTINCT FROM 'AUS')::int AS becas,
+             COUNT(*) FILTER (WHERE COALESCE(e.total_amount, 0) = 0
+                                AND e.agent_origin = 'AUS')::int AS auspicios,
              COUNT(*) FILTER (WHERE e.total_amount > 0 AND e.cat_payment_plan = $3)::int AS pt,
              COUNT(*) FILTER (WHERE e.total_amount > 0 AND e.cat_payment_plan IS DISTINCT FROM $3)::int AS pp,
              COUNT(*) FILTER (WHERE e.cat_type_status = $4)::int AS retirados,

@@ -37,6 +37,17 @@ export function fmtAgent (alias, origin) {
   return '(sin asesor)'
 }
 
+// Canal de auspicio: la venta entra en 0 igual que una beca, pero no lo es. Los
+// reportes que deducen "beca" del monto 0 (Reporte FICO, Ingresos Operativos,
+// sync a la hoja) lo separan por este canal. El cronograma lo deja como esta.
+export const SPONSORSHIP_ORIGIN = 'AUS'
+
+// Nota de la cuota 0 y del audit de una venta sin pago. El SP de alta escribe
+// siempre la de beca; para el auspicio se re-etiqueta despues.
+export function zeroPaymentLabel (agentOrigin) {
+  return agentOrigin === SPONSORSHIP_ORIGIN ? 'Auspicio - sin pago requerido' : 'Beca - sin pago requerido'
+}
+
 // Mismo CASE WHEN que arma sp_fico_enrollment_list para seller_agent_name, en
 // forma de funcion pura para derivar la etiqueta del dropdown de asesores.
 export function composeAdvisorName (agentOrigin, alias) {

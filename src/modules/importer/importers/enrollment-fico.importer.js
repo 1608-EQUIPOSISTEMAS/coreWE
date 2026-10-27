@@ -423,14 +423,14 @@ async function resolveRow (raw, ctx, installments = []) {
   }
 
   // Agente (columna AS). Dos casos:
-  //  - Marcador de CANAL (S/A, SA, WEB, B2B, WE): va a agent_origin, sin asesor.
+  //  - Marcador de CANAL (S/A, SA, WEB, B2B, WE, AUS): va a agent_origin, sin asesor.
   //    "S/A"/"SA" = sin asesor -> 'SA' (asi se muestra en el listado).
   //  - Codigo de asesor (ej "AE30"): resuelve seller_agent_id por alias. NO se mete
   //    en agent_origin (eso producia el duplicado "AE30 - AE30").
   const agentCode = (raw.agent_code || '').trim()
   if (agentCode) {
     const n = normText(agentCode)
-    const isChannel = (x) => x === 'web' || x === 'b2b' || x === 'we'
+    const isChannel = (x) => x === 'web' || x === 'b2b' || x === 'we' || x === 'aus'
     if (n === 's/a' || n === 'sa') {
       data.agent_origin = 'SA'
     } else if (isChannel(n)) {
