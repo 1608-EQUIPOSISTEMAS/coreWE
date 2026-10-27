@@ -215,8 +215,7 @@ describe('modulos montados en buildApp', () => {
     ['fico/retirados', '/api/fico'],
     ['fico/profitability', '/api/fico'],
     ['academica-membresias', '/api/academica-membresias'],
-    ['academica-seguimiento', '/api/academica-seguimiento'],
-    ['fundacion-becas', '/api/fundacion-becas']
+    ['academica-seguimiento', '/api/academica-seguimiento']
   ])(
     'todas las rutas de %s responden algo distinto de 404', async (modulo, prefijo) => {
       const noMontadas = []

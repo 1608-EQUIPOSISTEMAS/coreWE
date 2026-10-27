@@ -13,7 +13,6 @@ import './services/fico-sheets-autosync.cron.js'
 import './services/sheets-autosync.cron.js'
 import './services/prediccion.cron.js'
 import './services/whatsapp-handoff.cron.js'
-import './services/fundacion-becas-alerts.cron.js'
 import { buildApp } from './buildApp.js'
 import { ensureStartupSchema } from './config/startup-schema.js'
 

@@ -50,51 +50,6 @@ SELECT r.rol_id, n.submodule_id, TRUE, now()
   FROM nuevas n
   JOIN public.rol r ON r.alias IN ('LIDER_ACADEMICA', 'ACADEMICA')
 ON CONFLICT (rol_id, submodule_id) DO NOTHING;
-
--- Fundacion > Becas (27/10/26): reemplaza el sheet "Gestion de Becas 2026".
--- La modalidad no se guarda: sale del programa. La beca termina cuando termina
--- el curso: en vivo/presencial con el fin de la edicion; online no tiene
--- ediciones y se cierra con access_until (regla de plazo aun por definir).
--- ponytail: el aliado es texto libre (hoy son 6); pasar a tabla propia cuando
--- haga falta medir cupos por convenio.
-CREATE TABLE IF NOT EXISTS public.scholarships (
-  scholarship_id        serial       PRIMARY KEY,
-  agreement_type        varchar(10)  NOT NULL CHECK (agreement_type IN ('CONVENIO', 'AUSPICIO')),
-  partner_name          varchar(150) NOT NULL,
-  beneficiary_name      varchar(200) NOT NULL,
-  document_number       varchar(20)  NOT NULL,
-  email                 varchar(150),
-  phone                 varchar(20),
-  career                varchar(150),
-  program_id            integer      NOT NULL REFERENCES public.programs(program_id),
-  program_edition_id    integer      REFERENCES public.program_editions(edition_num_id),
-  scholarship_type      varchar(10)  NOT NULL CHECK (scholarship_type IN ('COMPLETA', 'SEMIBECA')),
-  activated_at          date,
-  access_until          date,
-  registration_date     timestamp with time zone NOT NULL DEFAULT now(),
-  user_registration_id  integer      REFERENCES public.users(user_id)
-);
-
--- Una beca por persona y curso (y edicion). El usecase avisa antes con un
--- mensaje claro; el indice es la red si dos personas guardan a la vez.
--- COALESCE: con NULL (online) el UNIQUE no compararia y dejaria duplicar.
-CREATE UNIQUE INDEX IF NOT EXISTS scholarships_person_course_uq
-  ON public.scholarships (document_number, program_id, COALESCE(program_edition_id, 0));
-
-WITH nueva AS (
-  INSERT INTO public.submodules (module_id, code, name, sort_order, active)
-  SELECT m.module_id, 'BECAS', 'Becas',
-         COALESCE((SELECT MAX(s.sort_order) FROM public.submodules s WHERE s.module_id = m.module_id), 0) + 1, 'Y'
-    FROM public.modules m
-   WHERE m.code = 'FUNDACION'
-  ON CONFLICT (module_id, code) DO NOTHING
-  RETURNING submodule_id
-)
-INSERT INTO public.rol_submodule_permission (rol_id, submodule_id, can_access, assigned_at)
-SELECT r.rol_id, n.submodule_id, TRUE, now()
-  FROM nueva n
-  JOIN public.rol r ON r.alias IN ('LIDER_FUNDACION', 'FUNDACION')
-ON CONFLICT (rol_id, submodule_id) DO NOTHING;
 `
 
 export async function ensureStartupSchema () {
