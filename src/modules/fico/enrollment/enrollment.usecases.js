@@ -6,6 +6,7 @@ import { buildOdooNameParts } from '../../../utils/fico-odoo.helper.js'
 import {
   fmtAgent,
   withSponsorshipChannel,
+  AUSPICIO_DISCOUNT_ALIAS,
   advisorObservationOrNull,
   flattenDailyKpis,
   resolveSellerAgentChange,
@@ -156,6 +157,13 @@ export async function ficoEnrollmentRegister ({ data, userId, skipFollowup = fal
     if (duplicate) return buildDuplicateResponse(duplicate)
   }
 
+  // Casilla "Auspicio 100% (sin pago)": venta sin pago como la beca, con el
+  // descuento de auspicio resuelto aqui por su alias (la pantalla no lo busca).
+  if (data.is_sponsorship === true) {
+    const auspicioId = await repo.discountIdByAlias(AUSPICIO_DISCOUNT_ALIAS)
+    if (!auspicioId) throw new DomainError('No existe el descuento GLOBAL/AUSPICIO 100%')
+    data = { ...data, is_scholarship: true, dsct_porcent_id: auspicioId }
+  }
   const inscription = withSponsorshipChannel(
     buildDirectInscription(data),
     data.dsct_porcent_id ? await repo.discountAlias(data.dsct_porcent_id) : null
