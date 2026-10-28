@@ -52,6 +52,20 @@ describe('checkpointsFor', () => {
   it('por vencer solo tiene R1', () => {
     expect(checkpointsFor('expiring')).toEqual(['R1'])
   })
+  it('Gold: S1..S3, M1..M3 y R1', () => {
+    expect(checkpointsFor('welcome', 'WE GOLD')).toEqual(['S1', 'S2', 'S3'])
+    expect(checkpointsFor('followup', 'WE GOLD')).toEqual(['M1', 'M2', 'M3'])
+    expect(checkpointsFor('expiring', 'WE GOLD')).toEqual(['R1'])
+  })
+  it('Plus: solo S1, M1..M2 y R1', () => {
+    expect(checkpointsFor('welcome', 'WE PLUS')).toEqual(['S1'])
+    expect(checkpointsFor('followup', 'WE PLUS')).toEqual(['M1', 'M2'])
+    expect(checkpointsFor('expiring', 'WE PLUS')).toEqual(['R1'])
+  })
+  it('Black y Platinum siguen con el set completo', () => {
+    expect(checkpointsFor('welcome', 'WE BLACK')).toHaveLength(7)
+    expect(checkpointsFor('followup', 'WE PLAT')).toHaveLength(12)
+  })
 })
 
 describe('withChecks', () => {
@@ -65,5 +79,9 @@ describe('withChecks', () => {
     const result = withChecks(items, rows)
     expect(result.map(i => i.checks)).toEqual([['M1', 'M2'], []])
     expect(result.map(i => i.checkpoints.length)).toEqual([12, 7])
+  })
+  it('los checkpoints salen del tier del socio', () => {
+    const items = [{ enrollment_id: 1, status: 'followup', tier: 'WE PLUS' }, { enrollment_id: 2, status: 'welcome', tier: 'WE GOLD' }]
+    expect(withChecks(items, []).map(i => i.checkpoints)).toEqual([['M1', 'M2'], ['S1', 'S2', 'S3']])
   })
 })

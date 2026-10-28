@@ -26,8 +26,15 @@ const CHECKPOINTS_BY_STAGE = {
 }
 export const CHECKPOINTS = Object.values(CHECKPOINTS_BY_STAGE).flat()
 
-export function checkpointsFor (stage) {
-  return CHECKPOINTS_BY_STAGE[stage] || []
+// Gold y Plus llevan menos acompañamiento (pedido del area, 27/10/26). Los demas
+// tiers (Black, Platinum) siguen con el set completo de arriba.
+const CHECKPOINTS_BY_TIER = {
+  'WE GOLD': { welcome: series('S', 3), followup: series('M', 3), expiring: ['R1'] },
+  'WE PLUS': { welcome: ['S1'], followup: series('M', 2), expiring: ['R1'] }
+}
+
+export function checkpointsFor (stage, tier) {
+  return (CHECKPOINTS_BY_TIER[tier] || CHECKPOINTS_BY_STAGE)[stage] || []
 }
 
 // Pega a cada socio los checks de su etapa (checkpoints) y los ya marcados de SU
@@ -35,7 +42,7 @@ export function checkpointsFor (stage) {
 export function withChecks (items, checkRows) {
   const byEnrollment = new Map()
   for (const r of checkRows) byEnrollment.set(r.enrollment_id, [...(byEnrollment.get(r.enrollment_id) || []), r.checkpoint])
-  return items.map(i => ({ ...i, checkpoints: checkpointsFor(i.status), checks: byEnrollment.get(i.enrollment_id) || [] }))
+  return items.map(i => ({ ...i, checkpoints: checkpointsFor(i.status, i.tier), checks: byEnrollment.get(i.enrollment_id) || [] }))
 }
 
 // Academica solo atiende a socios que todavia tienen beneficio: las vencidas son
