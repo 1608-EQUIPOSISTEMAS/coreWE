@@ -7,6 +7,7 @@ import {
   assertCasoAbierto,
   assertPuedeAceptar,
   assertPuedeProponer,
+  assertDestinoDeCurso,
   buildJustificacion,
   cierraSinDestino,
   resolveDestKind
@@ -41,6 +42,7 @@ export async function proposeDestination ({ enrollmentId, destProgramVersionId, 
     destEditionId,
     salida
   })
+  assertDestinoDeCurso({ esCurso: !!venta.parent_enrollment_id, destKind })
   // Reembolso y reserva no guardan destino aunque el front haya dejado uno a
   // medio elegir: la fila tiene que quedar sin a-donde para que nadie lo mueva.
   const sinDestino = cierraSinDestino(destKind)
@@ -120,14 +122,22 @@ async function ejecutarVeredicto ({ caso, venta, enrollmentId, userId }) {
     destino: `edicion #${caso.dest_edition_id || 's/e'}`
   })
 
+  // Las cuotas quedan con sus fechas: la bandeja no muestra el plan, y correrlas
+  // a ciegas se sumaba a lo que FICO ya habia ajustado a mano (#14016). Un curso
+  // del paquete no tiene cuotas propias: las del paquete no se tocan.
   if (caso.dest_kind === KIND.REPROGRAMACION) {
     return reprogramEdition({
       enrollmentId,
       newEditionId: caso.dest_edition_id,
       justificacion,
-      userId
+      userId,
+      shiftInstallments: false
     })
   }
+
+  // Un caso de curso abierto antes del 27/10/2026 pudo quedar como CC: moveria
+  // el paquete entero al curso suelto.
+  assertDestinoDeCurso({ esCurso: !!venta.parent_enrollment_id, destKind: caso.dest_kind })
 
   // La edicion la cancelamos nosotros: el destino no cobra nada nuevo (pago
   // cero) y courseChange le hereda las cuotas que el alumno aun debe, igual que
@@ -147,9 +157,12 @@ async function ejecutarVeredicto ({ caso, venta, enrollmentId, userId }) {
 // se traga los fallos con safeAsync. En los dos casos el unico dato duro que
 // vuelve es si quedo correo por mandar, asi que lo demas se marca como "revisar
 // en el campus" en lugar de afirmar que salio bien.
+// La RP ya informa si sacarlo del aula vieja quedo a medias (que aula no se
+// encontro o fallo); solo eso queda como pendiente. El correo lo manda el job
+// con reintentos y su estado se ve en la inscripcion.
 function pasosPendientes (resultado) {
   const pendientes = []
-  if (resultado?.email_pending) pendientes.push('correo en cola (job de FICO)')
-  pendientes.push('verificar en Odoo: inscrito en el aula nueva y retirado de la vieja')
+  if (resultado?.odoo_incomplete) pendientes.push(`Odoo: ${resultado.odoo_detail}`)
+  else if (!('odoo_incomplete' in (resultado || {}))) pendientes.push('verificar en Odoo: inscrito en el aula nueva y retirado de la vieja')
   return pendientes
 }

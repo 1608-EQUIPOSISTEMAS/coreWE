@@ -265,6 +265,41 @@ export const reprogramEditionSchema = {
   }
 }
 
+export const programCoursesSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id'],
+    additionalProperties: false,
+    properties: { enrollment_id: { type: 'integer' } }
+  }
+}
+
+export const reprogramCoursesSchema = {
+  body: {
+    type: 'object',
+    required: ['enrollment_id', 'courses', 'justificacion'],
+    additionalProperties: false,
+    properties: {
+      // El paquete (padre) cuyos cursos se mueven.
+      enrollment_id: { type: 'integer' },
+      justificacion: { type: 'string', minLength: 1 },
+      courses: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          required: ['enrollment_id', 'new_edition_id'],
+          additionalProperties: false,
+          properties: {
+            enrollment_id: { type: 'integer' },
+            new_edition_id: { type: 'integer' }
+          }
+        }
+      }
+    }
+  }
+}
+
 export const approvePendingReviewSchema = {
   body: {
     type: 'object',

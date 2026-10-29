@@ -6,7 +6,7 @@ import {
   retireEnrollmentSchema, deleteEnrollmentSchema, enrollmentFlagsSchema, editStudentSchema,
   changeModalitySchema, editSellerAgentSchema, courseChangeSchema, reprogramEditionSchema,
   approvePendingReviewSchema, rejectEnrollmentSchema, resubmitEnrollmentSchema,
-  webMatchCandidatesSchema
+  webMatchCandidatesSchema, programCoursesSchema, reprogramCoursesSchema
 } from './enrollment.schemas.js'
 
 // Acciones de FICO sobre una venta ya registrada: reprogramacion, cambio de
@@ -41,6 +41,8 @@ export default async function enrollmentRoutes (fastify) {
   fastify.post('/editselleragent', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: editSellerAgentSchema }, ctrl.editSellerAgentHandler)
   fastify.post('/coursechange', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: courseChangeSchema }, ctrl.courseChangeHandler)
   fastify.post('/reprogramedition', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: reprogramEditionSchema }, ctrl.reprogramEditionHandler)
+  fastify.post('/programcourses', { schema: programCoursesSchema }, ctrl.programCoursesHandler)
+  fastify.post('/reprogramcourses', { preHandler: [authenticate, hasRole(FICO_ACTION_ROLES)], schema: reprogramCoursesSchema }, ctrl.reprogramCoursesHandler)
   fastify.post('/approvependingreview', { schema: approvePendingReviewSchema }, ctrl.approvePendingReviewHandler)
   fastify.post('/rejectenrollment', { schema: rejectEnrollmentSchema }, ctrl.rejectEnrollmentHandler)
   fastify.post('/resubmitenrollment', { schema: resubmitEnrollmentSchema }, ctrl.resubmitEnrollmentHandler)

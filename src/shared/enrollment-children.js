@@ -27,8 +27,12 @@ const SQL = `
     JOIN public.program_versions pv ON pv.program_version_id = h.program_version_id
     JOIN public.programs pr         ON pr.program_id = pv.program_id
     LEFT JOIN public.program_editions pe ON pe.edition_num_id = h.program_edition_id
+    LEFT JOIN public."catalog" cts ON cts.catalog_id = h.cat_type_status
    WHERE h.parent_enrollment_id = ANY($1::int[])
      AND h.active = 'Y'
+     -- Un curso reprogramado deja su fila en RP y nace otra en la fecha nueva,
+     -- colgada del mismo padre: el listado muestra solo la vigente.
+     AND (cts.alias IS NULL OR cts.alias <> 'we_enrollment_status_reprogrammed')
    ORDER BY h.parent_enrollment_id, pe.start_date NULLS LAST, h.enrollment_id
 `
 

@@ -184,6 +184,21 @@ export async function reprogramEditionHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function programCoursesHandler (req, reply) {
+  const data = await usecases.getProgramCourses({ enrollmentId: req.body.enrollment_id })
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function reprogramCoursesHandler (req, reply) {
+  const data = await usecases.reprogramCourses({
+    parentEnrollmentId: req.body.enrollment_id,
+    courses: req.body.courses,
+    justificacion: req.body.justificacion,
+    userId: req.user?.id ?? req.body.user_id
+  })
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function approvePendingReviewHandler (req, reply) {
   const data = await usecases.approvePendingReview({
     enrollmentId: req.body.enrollment_id,

@@ -156,22 +156,25 @@ describe('buildA5MigrationPlan', () => {
     expect(buildA5MigrationPlan([], [])).toEqual({ valid: true, sinDestino: [], plan: [] })
   })
 
-  // Un modulo de paquete no lleva destino propio: su caso vive en la venta y
-  // mover la venta le vuelve a crear los modulos en el destino. Si el plan lo
-  // incluyera, se guardaria una propuesta con el program_version del modulo
-  // sobre el caso del paquete, y FICO la leeria como Cambio de Curso.
-  it('no le exige destino al hijo de un paquete ni lo mete en el plan', () => {
+  // Desde el 27/10/2026 el curso de un paquete se reprograma solo: su caso en
+  // la bandeja es el curso (no la venta) y lleva destino propio, otra edicion
+  // del mismo curso. La propuesta va sobre el curso, asi que es una RP.
+  it('el curso de un paquete lleva su propio destino en el plan', () => {
     const { valid, plan } = buildA5MigrationPlan(
       [{ enrollment_id: 10 }, { enrollment_id: 20, is_child: true }],
-      [{ enrollment_id: 10, target_edition_id: 900 }]
+      [{ enrollment_id: 10, target_edition_id: 900 }, { enrollment_id: 20, target_edition_id: 901 }]
     )
     expect(valid).toBe(true)
-    expect(plan).toEqual([{ enrollmentId: 10, targetEditionId: 900 }])
+    expect(plan).toEqual([
+      { enrollmentId: 10, targetEditionId: 900 },
+      { enrollmentId: 20, targetEditionId: 901 }
+    ])
   })
 
-  it('una edicion de puros hijos se cancela sin proponer ningun destino', () => {
-    expect(buildA5MigrationPlan([{ enrollment_id: 20, is_child: true }], []))
-      .toEqual({ valid: true, sinDestino: [], plan: [] })
+  it('un curso de paquete sin destino bloquea la cancelacion', () => {
+    const r = buildA5MigrationPlan([{ enrollment_id: 20, is_child: true }], [])
+    expect(r.valid).toBe(false)
+    expect(r.sinDestino).toEqual([{ enrollment_id: 20, is_child: true }])
   })
 })
 

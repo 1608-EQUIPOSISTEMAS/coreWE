@@ -351,6 +351,112 @@ export function selectChildrenToRetireOnCourseChange ({ children = [], destinati
 
 const round2 = n => Math.round(Number(n) * 100) / 100
 
+// Fecha calendario 'YYYY-MM-DD' de un Date (componentes locales: node-pg arma
+// las columnas `date` a medianoche local) o de un string ISO.
+function calendarDay (value) {
+  if (!value) return ''
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+  }
+  return String(value).slice(0, 10)
+}
+
+export const COURSE_STATE = {
+  FINISHED: 'terminado',
+  IN_PROGRESS: 'en_curso',
+  NOT_STARTED: 'por_iniciar'
+}
+
+// Estado de un curso del paquete segun su edicion. Sin fecha (online) cuenta
+// como por iniciar: no hay aula que dejar.
+export function courseState ({ startDate, endDate, today }) {
+  const from = calendarDay(today)
+  const start = calendarDay(startDate)
+  const end = calendarDay(endDate)
+  if (!start || start > from) return COURSE_STATE.NOT_STARTED
+  if (end && end < from) return COURSE_STATE.FINISHED
+  return COURSE_STATE.IN_PROGRESS
+}
+
+// Estados de un curso hijo que ya no ocupan su aula.
+const LEFT_COURSE_STATUSES = new Set([
+  'we_enrollment_status_retired',
+  'we_enrollment_status_course_changed',
+  'we_enrollment_status_reprogrammed'
+])
+
+export const isLiveCourse = statusAlias => !LEFT_COURSE_STATUSES.has(statusAlias)
+
+// RP del paquete COMPLETO: solo si el alumno no empezo ningun curso. Si ya llevo
+// alguno, mudar el paquete lo retiraba de lo cursado y lo volvia a inscribir en
+// todo (39 de 52 RP de paquetes entre abril y octubre de 2026). Desde el
+// 27/10/2026 eso se resuelve reprogramando solo los cursos que faltan.
+export function assertFullReprogramAllowed ({ children = [], today }) {
+  const started = children.filter(c =>
+    isLiveCourse(c.status_alias) &&
+    courseState({ startDate: c.start_date, endDate: c.end_date, today }) !== COURSE_STATE.NOT_STARTED)
+  if (started.length > 0) {
+    const names = started.map(c => c.child_program_name).filter(Boolean).join(', ')
+    throw new DomainError(`El alumno ya empezo ${started.length} curso(s) del programa${names ? ` (${names})` : ''}: reprograma solo los cursos que faltan, no el programa completo`)
+  }
+}
+
+// RP de UN curso del paquete. El curso tiene que colgar del paquete que se
+// esta tocando, seguir vivo y no estar terminado (lo cursado no se mueve).
+export function assertCourseReprogrammable ({ course, parentEnrollmentId, today }) {
+  if (!course) throw new DomainError('El curso no existe')
+  if (Number(course.parent_enrollment_id) !== Number(parentEnrollmentId)) {
+    throw new DomainError(`El curso #${course.enrollment_id} no pertenece a este programa`)
+  }
+  if (!isLiveCourse(course.status_alias)) {
+    throw new DomainError(`${course.child_program_name || 'El curso'} ya no esta vigente (retirado, cambiado o reprogramado)`)
+  }
+  if (courseState({ startDate: course.start_date, endDate: course.end_date, today }) === COURSE_STATE.FINISHED) {
+    throw new DomainError(`${course.child_program_name || 'El curso'} ya termino: no se reprograma`)
+  }
+}
+
+// Texto de bitacora de una desinscripcion Odoo: lo que realmente se quito y lo
+// que no se encontro, en vez de un "Desinscrito" que no se verifico.
+export function describeOdooUnenroll ({ removed = [], missing = [], cancelledOrders = [], error = null } = {}) {
+  const parts = []
+  if (removed.length) parts.push(`retirado de ${removed.join(', ')}`)
+  if (cancelledOrders.length) parts.push(`orden(es) ${cancelledOrders.join(', ')} cancelada(s)`)
+  if (missing.length) parts.push(`REVISAR A MANO: ${missing.join(', ')}`)
+  if (error) parts.push(`ERROR: ${error}`)
+  return parts.join(' | ') || 'sin aulas que quitar'
+}
+
+export const odooUnenrollIncomplete = res => !!(res && (res.missing?.length || res.error))
+
+// Cursos del paquete para la vista de FICO: el estado de cada uno, y para los
+// que se reprogramaron, a que curso nuevo se fueron. Una fila RP sin destino
+// conocido (flujo viejo) igual se muestra como reprogramada.
+export function buildProgramCourses ({ rows = [], today }) {
+  const fromOf = new Map(rows.filter(r => r.reprogrammed_to).map(r => [Number(r.reprogrammed_to), Number(r.enrollment_id)]))
+  const courses = rows.map(r => ({
+    enrollment_id: r.enrollment_id,
+    program_version_id: r.program_version_id,
+    course_name: r.child_program_name,
+    edition_id: r.program_edition_id,
+    edition_code: r.edition_code,
+    start_date: calendarDay(r.start_date) || null,
+    end_date: calendarDay(r.end_date) || null,
+    status_alias: r.status_alias,
+    status_label: r.status_label,
+    state: isLiveCourse(r.status_alias)
+      ? courseState({ startDate: r.start_date, endDate: r.end_date, today })
+      : null,
+    reprogrammed: r.status_alias === 'we_enrollment_status_reprogrammed',
+    reprogrammed_to: r.reprogrammed_to ? Number(r.reprogrammed_to) : null,
+    reprogrammed_from: fromOf.get(Number(r.enrollment_id)) ?? null
+  }))
+  return {
+    courses,
+    reprogrammed_count: courses.filter(c => c.reprogrammed).length
+  }
+}
+
 // Normaliza una fecha (Date o string ISO) a 'YYYY-MM-DD' y la desplaza N dias.
 // Aritmetica en UTC sobre la cadena calendario: inmune al TZ del server.
 function shiftCalendarDate (value, days) {

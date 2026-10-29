@@ -24,6 +24,13 @@ import {
   courseChangeAmountDifference,
   assertOriginNotMovedYet,
   selectChildrenToRetireOnCourseChange,
+  courseState,
+  COURSE_STATE,
+  assertFullReprogramAllowed,
+  assertCourseReprogrammable,
+  buildProgramCourses,
+  describeOdooUnenroll,
+  odooUnenrollIncomplete,
   MEMBERSHIP_ACTIVATION_WINDOW_MONTHS,
   paymentMovementType,
   movementBusinessLine,
@@ -271,7 +278,17 @@ async function tagDestinationPersonalAccount ({ newEid, personalAccount, userId,
   })
 }
 
-export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null, personalAccount = null }) {
+// Dos formas de RP desde el 27/10/2026:
+//  - CURSO de un paquete (el origen cuelga de un padre): se mueve solo ese
+//    curso. El paquete no se toca: sigue activo con sus pagos y sus cuotas, y
+//    el curso nuevo nace en el mismo padre, sin cuotas propias.
+//  - PROGRAMA completo (o curso suelto): solo si no empezo ningun curso del
+//    paquete. Si ya llevo alguno, se reprograman los cursos que faltan.
+//
+// shiftInstallments=false deja las fechas de las cuotas pendientes tal cual: la
+// bandeja de Reprogramaciones no muestra el plan, y correrlas a ciegas sumaba el
+// desplazamiento encima del que FICO ya habia hecho a mano (#14016, 27/10/2026).
+export async function reprogramEdition ({ enrollmentId, newEditionId, justificacion, userId, installmentPlan = null, personalAccount = null, shiftInstallments = true }) {
   const old = await repo.getCourseChangeOrigin(enrollmentId)
   if (!old) throw new DomainError('Inscripcion no encontrada')
   assertOriginNotMovedYet(old.old_status_alias)
@@ -285,9 +302,21 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
     throw new DomainError('La edicion destino no pertenece al mismo programa')
   }
 
+  const today = new Date()
+  const isCourse = !!old.parent_enrollment_id
+  if (isCourse) {
+    assertCourseReprogrammable({
+      course: await repo.getCourseForReprogram(enrollmentId),
+      parentEnrollmentId: old.parent_enrollment_id,
+      today
+    })
+  } else {
+    assertFullReprogramAllowed({ children: await repo.getProgramCourses(enrollmentId), today })
+  }
+
   const pendingRows = await repo.getReprogramPendingInstallments(enrollmentId)
-  const diffDays = editionShiftDays(old.old_start_date, newEd.start_date)
-  const plan = buildReprogramPlan({ pendingRows, requestedPlan: installmentPlan, diffDays })
+  const diffDays = shiftInstallments ? editionShiftDays(old.old_start_date, newEd.start_date) : 0
+  const plan = buildReprogramPlan({ pendingRows, requestedPlan: isCourse ? null : installmentPlan, diffDays })
 
   const rpNote = `Reprogramacion desde inscripcion #${enrollmentId} (${old.old_program_name || ''} ${old.old_edition_code || ''})`
   const inscription = buildReprogramInscription({
@@ -312,12 +341,15 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
   // de lo anterior falla, el origen queda intacto.
   await repo.setReprogrammedStatus(enrollmentId, userId)
 
-  // Hijos SEG del origen -> R (retirados). El followup del destino creara los suyos.
+  // Hijos SEG del origen -> R (retirados). El followup del destino creara los
+  // suyos. Un curso no tiene hijos; un paquete llega aca sin ninguno empezado.
   const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
   const retiredChildren = []
+  const retiredChildIds = []
   if (retId) {
     const children = await repo.getActiveChildren(enrollmentId, retId)
     for (const child of children) {
+      retiredChildIds.push(child.enrollment_id)
       await repo.retireChild(child.enrollment_id, retId, userId)
       await repo.logAudit({
         enrollmentId: child.enrollment_id,
@@ -373,16 +405,39 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
     details: `Creado por reprogramacion de #${enrollmentId}: ${edicionChange.old} → ${edicionChange.new}${plan.length ? `. ${plan.length} cuota(s) pendiente(s) heredada(s)` : ''}`
   })
 
-  // Odoo: desinscribir el origen (grupos del aula vieja + cancelar orden de venta).
-  if (old.old_odoo_activation) {
-    await repo.unenrollFromOldOdoo({ enrollmentId, old })
-    await repo.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${old.old_odoo_activation}` })
+  // El paquete guarda la constancia de que curso se movio: es lo que FICO mira.
+  if (isCourse) {
+    await repo.logAudit({
+      enrollmentId: old.parent_enrollment_id,
+      action: 'course_reprogrammed',
+      userId,
+      justificacion,
+      changes: {
+        'Curso': { old: '---', new: old.old_program_name || '---' },
+        'Edicion': edicionChange,
+        'Curso origen': { old: '---', new: `#${enrollmentId}` },
+        'Curso nuevo': { old: '---', new: `#${newEid}` }
+      },
+      details: `Curso reprogramado: ${old.old_program_name || ''} ${edicionChange.old} → ${edicionChange.new}. Las cuotas del programa no cambian`
+    })
   }
 
-  // Destino: hijos SEG -> Odoo -> correo de confirmacion, via job con reintentos.
+  // Odoo: sacarlo del aula vieja (y de las de sus cursos) y cancelar la orden.
+  let odooResult = null
+  if (old.old_odoo_activation) {
+    odooResult = await repo.unenrollFromOldOdoo({ enrollmentId, old, childIds: retiredChildIds })
+    await repo.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Odoo: ${describeOdooUnenroll(odooResult || {})}` })
+  }
+
+  // Destino: hijos SEG -> Odoo -> correo, via job con reintentos. El curso
+  // reprogramado recibe el aviso de reprogramacion, no la bienvenida.
   let jobId = null
   try {
-    const job = await repo.enqueueRegisterFollowup({ enrollmentId: newEid, userId })
+    const job = await repo.enqueueRegisterFollowup({
+      enrollmentId: newEid,
+      userId,
+      ...(isCourse && { emailKind: 'course_reprogram', originEnrollmentId: enrollmentId })
+    })
     jobId = job.job_id
   } catch (qErr) {
     console.error('[reprogramEdition] enqueue register_followup fallo:', qErr.message)
@@ -391,10 +446,71 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
   repo.refreshMv('on-reprogram')
   return {
     result: 1,
-    message: 'Edicion reprogramada correctamente',
+    message: isCourse ? 'Curso reprogramado correctamente' : 'Edicion reprogramada correctamente',
     new_enrollment_id: newEid,
     email_pending: true,
-    job_id: jobId
+    job_id: jobId,
+    odoo_incomplete: odooUnenrollIncomplete(odooResult),
+    odoo_detail: odooResult ? describeOdooUnenroll(odooResult) : null
+  }
+}
+
+// --- Cursos del paquete (RP por curso) ------------------------------------
+
+// Lo que FICO ve en el detalle del paquete: sus cursos con estado, cuales se
+// reprogramaron y si debe cuotas vencidas (aviso, no bloqueo: FICO decide).
+export async function getProgramCourses ({ enrollmentId }) {
+  const rows = await repo.getProgramCourses(enrollmentId)
+  const { courses, reprogrammed_count } = buildProgramCourses({ rows, today: new Date() })
+  const overdue = courses.length ? await repo.getOverdueInstallments(enrollmentId) : { cantidad: 0, monto: 0 }
+  return {
+    courses,
+    reprogrammed_count,
+    any_started: courses.some(c => c.state && c.state !== COURSE_STATE.NOT_STARTED),
+    overdue
+  }
+}
+
+// RP de varios cursos del mismo paquete en una sola accion. Se valida todo antes
+// de mover nada; cada curso es una RP independiente (si una falla, las previas
+// ya quedaron hechas y se informa cual fallo).
+export async function reprogramCourses ({ parentEnrollmentId, courses = [], justificacion, userId }) {
+  if (!courses.length) throw new DomainError('Elige al menos un curso para reprogramar')
+  if (!justificacion?.trim()) throw new DomainError('La justificacion es obligatoria')
+  const ids = courses.map(c => Number(c.enrollment_id))
+  if (new Set(ids).size !== ids.length) throw new DomainError('Un mismo curso viene dos veces')
+
+  const today = new Date()
+  for (const c of courses) {
+    if (!c.new_edition_id) throw new DomainError('Falta la edicion destino de un curso')
+    assertCourseReprogrammable({
+      course: await repo.getCourseForReprogram(c.enrollment_id),
+      parentEnrollmentId,
+      today
+    })
+  }
+
+  const results = []
+  for (const c of courses) {
+    try {
+      const res = await reprogramEdition({
+        enrollmentId: Number(c.enrollment_id),
+        newEditionId: Number(c.new_edition_id),
+        justificacion,
+        userId
+      })
+      results.push({ enrollment_id: Number(c.enrollment_id), ok: true, new_enrollment_id: res.new_enrollment_id, odoo_incomplete: res.odoo_incomplete, odoo_detail: res.odoo_detail })
+    } catch (err) {
+      results.push({ enrollment_id: Number(c.enrollment_id), ok: false, error: err.message })
+    }
+  }
+  const failed = results.filter(r => !r.ok)
+  return {
+    result: failed.length ? 0 : 1,
+    message: failed.length
+      ? `${results.length - failed.length} de ${results.length} curso(s) reprogramado(s). Fallo: ${failed.map(f => `#${f.enrollment_id} (${f.error})`).join('; ')}`
+      : `${results.length} curso(s) reprogramado(s). El correo se enviara automaticamente.`,
+    results
   }
 }
 
@@ -403,7 +519,8 @@ export async function reprogramEdition ({ enrollmentId, newEditionId, justificac
 // Retira los modulos del paquete origen que todavia no empiezan y devuelve sus
 // etiquetas para la bitacora. Espeja lo que ya hacian reprogramEdition y
 // retireEnrollment; la regla de CUALES retirar vive en la entity.
-async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId, userId, justificacion, destinationLabel }) {
+// retiredIds recibe los ids retirados: son las aulas de Odoo que hay que dejar.
+async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId, userId, justificacion, destinationLabel, retiredIds = [] }) {
   const retId = await repo.resolveCatalogId(ALIAS.ENROLLMENT_STATUS_RETIRED)
   if (!retId) {
     console.warn('[courseChange] No se encontro catalogo Retirado: modulos del origen sin retirar')
@@ -416,6 +533,7 @@ async function retireUnstartedChildren ({ enrollmentId, destinationEnrollmentId,
   const retirados = []
   for (const child of porRetirar) {
     await repo.retireChild(child.enrollment_id, retId, userId)
+    retiredIds.push(child.enrollment_id)
     await repo.logAudit({
       enrollmentId: child.enrollment_id,
       action: 'retired',
@@ -509,9 +627,11 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   // Modulos del paquete ORIGEN que aun no empiezan: el alumno se fue a otro
   // programa, ya no los va a llevar. Sin esto quedaban vivos ocupando asiento en
   // sus aulas (11 casos al 25/08/2026, ver selectChildrenToRetireOnCourseChange).
+  const retiredChildIds = []
   const retiredChildren = await retireUnstartedChildren({
     enrollmentId, destinationEnrollmentId: newEid, userId, justificacion,
-    destinationLabel: `${newEd.new_program_name || ''} ${newEd.global_code || ''}`.trim()
+    destinationLabel: `${newEd.new_program_name || ''} ${newEd.global_code || ''}`.trim(),
+    retiredIds: retiredChildIds
   })
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---'
@@ -552,9 +672,9 @@ export async function courseChange ({ enrollmentId, newProgramVersionId, newEdit
   }
 
   if (newEid) {
-    await repo.unenrollFromOldOdoo({ enrollmentId, old })
-    if (old.old_odoo_activation) {
-      await repo.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo: ${old.old_odoo_activation}` })
+    const odooOut = await repo.unenrollFromOldOdoo({ enrollmentId, old, childIds: retiredChildIds })
+    if (odooOut) {
+      await repo.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Odoo: ${describeOdooUnenroll(odooOut)}` })
     }
 
     const odoo = await safeAsync('[courseChange][Odoo] enroll new', () => repo.enrollInOdoo({ enrollmentId: newEid }))
@@ -859,7 +979,14 @@ export async function retireEnrollment ({ enrollmentId, reason, hasRefund, refun
     details: `Alumno retirado: ${target.program_name || ''} ${target.edition_code || ''}. ${hasRefund ? `Devolucion: S/. ${Number(refundAmount || 0).toFixed(2)}` : 'Sin devolucion'}${cancelledInstallments.length ? `. ${cancelledInstallments.length} cuota(s) pendiente(s) eliminada(s)` : ''}${retiredChildren.length ? `. ${retiredChildren.length} modulo(s) hijo(s) retirado(s)` : ''}`
   })
 
-  await repo.unenrollOdooOnRetire({ enrollmentId, userId })
+  const today = new Date()
+  await repo.unenrollOdooOnRetire({
+    enrollmentId,
+    userId,
+    childIds: childEnrollments
+      .filter(c => courseState({ startDate: c.start_date, endDate: c.end_date, today }) !== COURSE_STATE.FINISHED)
+      .map(c => c.enrollment_id)
+  })
 
   repo.notifyStudentRetirement({
     studentName: target.student_name || '---',

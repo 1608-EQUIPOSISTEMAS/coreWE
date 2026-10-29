@@ -299,6 +299,56 @@ export class EmailConfirmationRepository {
     return rows?.[0] || null
   }
 
+  // Aviso de curso reprogramado: el curso nuevo, la fecha que deja (curso
+  // origen) y el paquete del que cuelga. $1 = curso nuevo, $2 = curso origen.
+  async findCourseRescheduleData (enrollmentId, originEnrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT e.enrollment_id, e.parent_enrollment_id, e.email_cc,
+             per.first_name, per.last_name, per.mother_last_name,
+             ${STUDENT_EMAIL_SQL} AS origin_email,
+             COALESCE(NULLIF(TRIM(pv.brand_name), ''), pv.abbreviation) AS course_name,
+             COALESCE(NULLIF(TRIM(ppv.brand_name), ''), ppv.abbreviation) AS program_name,
+             pe.start_date::date::text  AS new_start_date,
+             pe.end_date::date::text    AS new_end_date,
+             ope.start_date::date::text AS old_start_date,
+             COALESCE(NULLIF(dayc.variable_3, ''), dayc.description) AS frequency,
+             hourc.description AS schedule,
+             cur.variable_2    AS currency_symbol
+        FROM public.enrollments e
+        JOIN public.customers cust ON cust.customer_id = e.customer_id
+        JOIN public.persons per    ON per.person_id = cust.person_id
+        LEFT JOIN public.leads l   ON l.enrollment_id = e.enrollment_id
+        JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+        JOIN public.programs pr         ON pr.program_id = pv.program_id
+        LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+        LEFT JOIN public."catalog" dayc  ON dayc.catalog_id  = pe.cat_day_combination_id
+        LEFT JOIN public."catalog" hourc ON hourc.catalog_id = pe.cat_hour_combination_id
+        JOIN public.enrollments par      ON par.enrollment_id = e.parent_enrollment_id
+        JOIN public.program_versions ppv ON ppv.program_version_id = par.program_version_id
+        JOIN public.programs ppr         ON ppr.program_id = ppv.program_id
+        LEFT JOIN public."catalog" cur   ON cur.catalog_id = par.cat_currency
+        LEFT JOIN public.enrollments o      ON o.enrollment_id = $2
+        LEFT JOIN public.program_editions ope ON ope.edition_num_id = o.program_edition_id
+       WHERE e.enrollment_id = $1
+    `, [enrollmentId, originEnrollmentId])
+    return rows?.[0] || null
+  }
+
+  // Lo que el alumno todavia debe del paquete (misma regla de pendiente real que
+  // la RP): el aviso de curso reprogramado le recuerda que sus cuotas siguen igual.
+  async findPendingInstallments (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT pi.installment_number, pi.amount, pi.due_date
+        FROM public.payment_installments pi
+       WHERE pi.enrollment_id = $1 AND pi.installment_number > 0 AND pi.amount > 0
+         AND pi.cat_status NOT IN (4454, 2471, 4456)
+         AND NOT EXISTS (SELECT 1 FROM public.payments p
+                          WHERE p.installment_id = pi.installment_id AND p.active = 'Y')
+       ORDER BY pi.installment_number
+    `, [enrollmentId])
+    return rows || []
+  }
+
   // Cuotas (installment_number > 0) para construir el cronograma del correo.
   // ponytail: se excluyen las de monto 0 (destino de CC/RP arrastra un pago 0
   // como cuota); una cuota de S/. 0.00 no le dice nada al alumno.

@@ -8,6 +8,7 @@ import {
   assertCasoAbierto,
   assertPuedeAceptar,
   assertPuedeProponer,
+  assertDestinoDeCurso,
   resolveDestKind
 } from '../reprogramacion.entity.js'
 
@@ -138,5 +139,18 @@ describe('assertCasoAbierto', () => {
       expect(() => assertCasoAbierto({ status })).not.toThrow()
     }
     expect(() => assertCasoAbierto(null)).not.toThrow()
+  })
+})
+
+describe('assertDestinoDeCurso', () => {
+  it('un curso del paquete solo admite RP (otra fecha del mismo curso)', () => {
+    expect(() => assertDestinoDeCurso({ esCurso: true, destKind: KIND.REPROGRAMACION })).not.toThrow()
+    expect(() => assertDestinoDeCurso({ esCurso: true, destKind: KIND.CAMBIO_DE_CURSO })).toThrow(ReprogramacionError)
+    expect(() => assertDestinoDeCurso({ esCurso: true, destKind: KIND.REEMBOLSO })).toThrow(ReprogramacionError)
+  })
+  it('la venta sigue con todas sus salidas', () => {
+    for (const kind of Object.values(KIND)) {
+      expect(() => assertDestinoDeCurso({ esCurso: false, destKind: kind })).not.toThrow()
+    }
   })
 })

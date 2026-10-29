@@ -70,6 +70,16 @@ export function resolveDestKind ({ originProgramVersionId, destProgramVersionId,
   return kind
 }
 
+// Un caso de CURSO (el curso de un paquete cuya edicion se cayo) solo se
+// resuelve moviendolo a otra fecha del mismo curso: el paquete, sus pagos y
+// sus cuotas siguen donde estan. Cambiar de programa, reservar o reembolsar se
+// decide sobre la venta, desde FICO.
+export function assertDestinoDeCurso ({ esCurso, destKind }) {
+  if (esCurso && destKind !== KIND.REPROGRAMACION) {
+    throw new ReprogramacionError('Un curso del paquete solo se reprograma a otra fecha del mismo curso')
+  }
+}
+
 // Sin fila en reprogram_cases el caso existe igual: es un afectado que nadie
 // tomo todavia. Por eso el estado se deriva y no se siembra.
 export function estadoDelCaso (caso) {

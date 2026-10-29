@@ -770,7 +770,7 @@ export async function a5CancelAndHandOff ({ payload = {}, user_id } = {}) {
 
   return {
     result: 1,
-    message: `Edicion cancelada (A5). ${plan.length} venta(s) derivada(s) a Reprogramaciones con destino propuesto.`,
+    message: `Edicion cancelada (A5). ${plan.length} inscripcion(es) derivada(s) a Reprogramaciones con destino propuesto.`,
     migrated_count: plan.length
   }
 }

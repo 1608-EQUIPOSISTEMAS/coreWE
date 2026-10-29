@@ -104,6 +104,55 @@ async function getEditionTree(editionNumId) {
   return rows?.[0] || null
 }
 
+// 'YYYY-MM-DD' de un Date (componentes locales) o de un string ISO.
+function calendarDay(value) {
+  if (!value) return null
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+  }
+  return String(value).slice(0, 10)
+}
+
+// El arbol de la edicion es el cronograma de la COHORTE. Un alumno que
+// reprogramo un curso (o lo tiene en otra edicion) lo lleva en otra fecha: su
+// cronograma tiene que decir la suya. Reemplaza cada fila del arbol por la
+// edicion real del curso vigente del alumno cuando no coinciden.
+async function applyStudentCourseEditions(enrollmentId, children) {
+  const { rows } = await pool.query(`
+    SELECT h.program_version_id, h.program_edition_id
+      FROM enrollments h
+      LEFT JOIN catalog cts ON cts.catalog_id = h.cat_type_status
+     WHERE h.parent_enrollment_id = $1 AND h.active = 'Y' AND h.program_edition_id IS NOT NULL
+       AND (cts.alias IS NULL OR cts.alias NOT IN (
+             'we_enrollment_status_retired', 'we_enrollment_status_course_changed',
+             'we_enrollment_status_reprogrammed'))
+  `, [enrollmentId])
+  if (!rows.length) return children
+  const editionOf = new Map(rows.map(r => [Number(r.program_version_id), Number(r.program_edition_id)]))
+
+  const out = []
+  for (const ch of children) {
+    const own = editionOf.get(Number(ch.child_program_version_id))
+    if (!own || own === Number(resolveId(ch))) { out.push(ch); continue }
+    const ed = await getEditionTree(own).catch(() => null)
+    if (!ed) { out.push(ch); continue }
+    out.push({
+      ...ch,
+      edition_id: own,
+      start_date: calendarDay(ed.start_date),
+      end_date: calendarDay(ed.end_date),
+      global_code: ed.global_code,
+      instructor_label: ed.instructor_label,
+      sessions: ed.sessions,
+      day_combination_label: ed.day_combination_label,
+      hour_combination_label: ed.hour_combination_label,
+      schedules: ed.schedules || ch.schedules
+    })
+  }
+  // Se conserva el orden del arbol: el numero de modulo es el de la malla.
+  return out
+}
+
 // ─── Generador del PDF ────────────────────────────────────────────────────────
 export async function generateSchedulePdf(parentEditionId, childEditionId) {
   const [tree, catalog] = await Promise.all([
@@ -490,6 +539,7 @@ export async function generateCronogramaPdf({ enrollmentId }) {
     const row = Array.isArray(tree) ? tree[0] : tree
     children = Array.isArray(row.children) ? row.children
              : (row.children ? JSON.parse(row.children) : [])
+    children = await applyStudentCourseEditions(enrollmentId, children)
     parentInfo = {
       version_code:       row.version_code || parentInfo.version_code,
       global_code:        row.global_code  || parentInfo.global_code,

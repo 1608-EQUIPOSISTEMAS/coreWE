@@ -215,17 +215,16 @@ export function buildA5Payload (payload = {}) {
   return { valid, editionId }
 }
 
-// Plan de destinos A5: cruza las VENTAS vivas de la edicion contra los destinos
-// que propuso Producto.
+// Plan de destinos A5: cruza las inscripciones vivas de la edicion contra los
+// destinos que propuso Producto.
 //
-// Solo entran las ventas propias. Un modulo de un paquete (hijo) no lleva
-// destino: el caso vive en su venta y mover la venta le vuelve a crear los hijos
-// en el destino, asi que un destino propio para el hijo seria una propuesta que
-// nadie puede ejecutar. El hijo caido igual llega a la bandeja, adentro de su
-// venta, y ahi lo resuelve Academica.
+// Entran las ventas propias Y los cursos de paquetes. Desde el 27/10/2026 un
+// curso de paquete se reprograma solo (otra edicion del mismo curso) y el
+// paquete sigue igual, asi que su caso en la bandeja es el curso y necesita su
+// propio destino.
 //
-// Regla dura: si UNA sola venta queda sin destino no se propone nada y la edicion
-// no se cancela. Cancelar dejando alumnos a medias es invisible —el cronograma
+// Regla dura: si UNA sola inscripcion queda sin destino no se propone nada y la
+// edicion no se cancela. Cancelar dejando alumnos a medias es invisible —el cronograma
 // oculta las filas A5— pero sus modulos siguen ocupando el AULA de otros cursos.
 //
 // La fuente de verdad es `pending` (lo que hay vivo AHORA en la BD), no la lista
@@ -236,7 +235,7 @@ export function buildA5MigrationPlan (pending = [], migrations = []) {
     (migrations || []).map((m) => [Number(m.enrollment_id), Number(m.target_edition_id) || null])
   )
   const conDestino = (e) => destinoDe.get(Number(e.enrollment_id)) || null
-  const ventas = (pending || []).filter((e) => !e.is_child)
+  const ventas = pending || []
 
   const sinDestino = ventas.filter((e) => !conDestino(e))
   if (sinDestino.length > 0) return { valid: false, sinDestino, plan: [] }

@@ -28,16 +28,48 @@ export class ReprogramacionRepository {
       AND (vts.alias  IS NULL OR vts.alias  NOT IN ${ReprogramacionRepository.TERMINALES})`
   }
 
-  // Bandeja: UNA fila por VENTA afectada. Si compro un paquete, la fila es la
-  // venta del padre y sus modulos caidos van adentro como detalle — mover la
-  // venta los arrastra, asi que listarlos aparte seria pedir el mismo trabajo
-  // cinco veces.
+  // Bandeja: UNA fila por CASO. Desde el 27/10/2026 el caso es el CURSO que se
+  // cayo, no la venta: si compro un paquete y solo se cancelo un curso, se
+  // reprograma ese curso y el paquete sigue igual. La fila es la venta solo
+  // cuando lo que se cayo es la venta misma (curso suelto, o la edicion del
+  // paquete entero), o cuando ya habia un caso abierto sobre la venta (flujo
+  // anterior: no se le cambia de dueno a medio camino).
   async listAffected () {
     const { rows } = await this.db.query(`
-    WITH caida AS (
+    WITH iniciado AS (
+      -- Paquetes con algun curso vivo ya empezado: no se mudan enteros (la RP
+      -- del paquete completo lo rechaza), se reprograman sus cursos caidos.
+      SELECT DISTINCT h.parent_enrollment_id AS venta_id
+        FROM public.enrollments h
+        JOIN public.program_editions hpe ON hpe.edition_num_id = h.program_edition_id
+        LEFT JOIN public."catalog" hts ON hts.catalog_id = h.cat_type_status
+       WHERE h.parent_enrollment_id IS NOT NULL AND h.active = 'Y'
+         AND hpe.start_date <= CURRENT_DATE
+         AND (hts.alias IS NULL OR hts.alias NOT IN ${ReprogramacionRepository.TERMINALES})
+    ),
+    con_caso AS (
+      SELECT enrollment_id FROM public.reprogram_cases WHERE active = 'Y'
+    ),
+    caida AS (
       SELECT e.enrollment_id,
              e.parent_enrollment_id,
-             COALESCE(e.parent_enrollment_id, e.enrollment_id) AS venta_id,
+             CASE
+               -- Caso abierto antes sobre la venta: se queda donde esta.
+               WHEN e.parent_enrollment_id IN (SELECT enrollment_id FROM con_caso)
+                AND e.enrollment_id NOT IN (SELECT enrollment_id FROM con_caso)
+                 THEN e.parent_enrollment_id
+               -- La venta misma: curso suelto, o paquete sin cursos empezados.
+               -- Un paquete ya empezado no es caso (lo son sus cursos caidos).
+               WHEN e.parent_enrollment_id IS NULL THEN
+                 CASE WHEN e.enrollment_id IN (SELECT venta_id FROM iniciado)
+                       AND e.enrollment_id NOT IN (SELECT enrollment_id FROM con_caso)
+                      THEN NULL ELSE e.enrollment_id END
+               -- Se cayo la edicion del paquete entero y no empezo: se muda entero.
+               WHEN vseg.alias = 'we_segment_a5'
+                AND e.parent_enrollment_id NOT IN (SELECT venta_id FROM iniciado)
+                 THEN e.parent_enrollment_id
+               ELSE e.enrollment_id
+             END AS caso_id,
              pe.edition_num_id AS ed_a5,
              pe.specific_code  AS ed_a5_codigo,
              pe.start_date     AS ed_a5_inicio,
@@ -47,6 +79,8 @@ export class ReprogramacionRepository {
         LEFT JOIN public."catalog" cts ON cts.catalog_id = e.cat_type_status
         LEFT JOIN public.enrollments venta ON venta.enrollment_id = e.parent_enrollment_id
         LEFT JOIN public."catalog" vts ON vts.catalog_id = venta.cat_type_status
+        LEFT JOIN public.program_editions vpe ON vpe.edition_num_id = venta.program_edition_id
+        LEFT JOIN public."catalog" vseg ON vseg.catalog_id = vpe.cat_segment
         JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
         JOIN public."catalog" cseg ON cseg.catalog_id = pe.cat_segment
                                   AND cseg.alias = 'we_segment_a5'
@@ -60,29 +94,36 @@ export class ReprogramacionRepository {
           OR EXISTS (
                SELECT 1 FROM public.reprogram_cases rc2
                 WHERE rc2.active = 'Y'
-                  AND rc2.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id))
+                  AND rc2.enrollment_id IN (e.enrollment_id, e.parent_enrollment_id))
     )
     SELECT v.enrollment_id,
+           (v.enrollment_id <> COALESCE(v.parent_enrollment_id, v.enrollment_id)) AS es_curso,
+           COALESCE(v.parent_enrollment_id, v.enrollment_id) AS venta_id,
            per.person_id,
            per.document_number                    AS dni,
            per.first_name                         AS nombres,
            TRIM(concat_ws(' ', per.last_name, per.mother_last_name)) AS apellidos,
            tel.value                              AS celular,
            mail.value                             AS correo,
-           prog.program_name                      AS programa,
+           -- "Compro": la venta (el paquete si es un curso suyo).
+           COALESCE(vprog.program_name, prog.program_name) AS programa,
+           COALESCE(ved.specific_code, ed.specific_code)   AS venta_edicion_codigo,
+           COALESCE(ved.start_date, ed.start_date)         AS venta_edicion_inicio,
+           -- El caso: el curso que se reprograma (o la venta misma).
+           CASE WHEN v.parent_enrollment_id IS NOT NULL THEN prog.program_name END AS curso,
            v.program_version_id,
            ed.edition_num_id                      AS edicion_id,
            ed.specific_code                       AS edicion_codigo,
            ed.start_date                          AS edicion_inicio,
-           v.total_amount,
-           v.discount_amount,
+           COALESCE(vv.total_amount, v.total_amount)       AS total_amount,
+           COALESCE(vv.discount_amount, v.discount_amount) AS discount_amount,
            -- Cuotas que el alumno todavia debe, con la MISMA regla que usa la RP
            -- para trasladarlas (enrollment.repository.getReprogramPendingInstallments):
            -- si las dos cuentas no coinciden, FICO firma a ciegas.
            (SELECT jsonb_build_object('cantidad', COUNT(*)::int,
                                       'monto', COALESCE(SUM(pi.amount), 0))
               FROM public.payment_installments pi
-             WHERE pi.enrollment_id = v.enrollment_id
+             WHERE pi.enrollment_id = COALESCE(v.parent_enrollment_id, v.enrollment_id)
                AND pi.installment_number > 0
                AND pi.cat_status NOT IN (4454, 2471, 4456)
                AND NOT EXISTS (SELECT 1 FROM public.payments p
@@ -94,7 +135,7 @@ export class ReprogramacionRepository {
                      'programa',   c.ed_a5_programa,
                      'inicio',     c.ed_a5_inicio,
                      'es_la_venta', c.enrollment_id = v.enrollment_id))
-              FROM caida c WHERE c.venta_id = v.enrollment_id) AS caidas,
+              FROM caida c WHERE c.caso_id = v.enrollment_id) AS caidas,
            rc.reprogram_case_id, rc.status, rc.dest_program_version_id,
            rc.dest_edition_id, rc.dest_kind,
            rc.proposed_source,
@@ -109,6 +150,10 @@ export class ReprogramacionRepository {
       JOIN public.program_versions pver ON pver.program_version_id = v.program_version_id
       JOIN public.programs prog ON prog.program_id = pver.program_id
       LEFT JOIN public.program_editions ed ON ed.edition_num_id = v.program_edition_id
+      LEFT JOIN public.enrollments vv ON vv.enrollment_id = v.parent_enrollment_id
+      LEFT JOIN public.program_versions vpver ON vpver.program_version_id = vv.program_version_id
+      LEFT JOIN public.programs vprog ON vprog.program_id = vpver.program_id
+      LEFT JOIN public.program_editions ved ON ved.edition_num_id = vv.program_edition_id
       LEFT JOIN public.reprogram_cases rc ON rc.enrollment_id = v.enrollment_id AND rc.active = 'Y'
       LEFT JOIN public.program_versions dest_pv ON dest_pv.program_version_id = rc.dest_program_version_id
       LEFT JOIN public.programs dest_p ON dest_p.program_id = dest_pv.program_id
@@ -127,7 +172,7 @@ export class ReprogramacionRepository {
          WHERE pc.person_id = per.person_id AND pc.active = 'Y'
          ORDER BY pc.person_contact_id DESC LIMIT 1
       ) mail ON TRUE
-     WHERE v.enrollment_id IN (SELECT venta_id FROM caida)
+     WHERE v.enrollment_id IN (SELECT caso_id FROM caida WHERE caso_id IS NOT NULL)
      ORDER BY per.last_name, per.first_name`)
     return rows
   }
@@ -143,7 +188,7 @@ export class ReprogramacionRepository {
   // Datos de la venta que necesitan los casos de uso de FICO (RP / CC).
   async getVenta (enrollmentId) {
     const { rows } = await this.db.query(`
-      SELECT e.enrollment_id, e.program_version_id, e.program_edition_id,
+      SELECT e.enrollment_id, e.parent_enrollment_id, e.program_version_id, e.program_edition_id,
              e.total_amount, e.discount_amount, e.cat_currency
         FROM public.enrollments e
        WHERE e.enrollment_id = $1 AND e.active = 'Y'`, [enrollmentId])

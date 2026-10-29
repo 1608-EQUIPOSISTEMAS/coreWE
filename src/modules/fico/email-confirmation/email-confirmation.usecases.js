@@ -13,6 +13,7 @@ import { email } from '../../../shared/adapters/email/email.adapter.js'
 import { renderConfirmationEmail, resolveConfirmationTemplate, buildConfirmationSubject } from './email-confirmation.render.js'
 import { buildConfirmacionPagoHTML } from '../../../templates/confirmacion-pago.js'
 import { buildMembresiaHTML, detectMembershipType } from '../../../templates/bienvenida-membresia.js'
+import { buildReprogramacionCursoHTML } from '../../../templates/reprogramacion-curso.js'
 import { generateCronogramaPdf } from '../../../services/pdf.service.js'
 import { emailConfirmationRepository } from './email-confirmation.repository.js'
 import {
@@ -441,6 +442,71 @@ export async function sendConfirmationEmail ({ enrollmentId, cc, sapUsername = n
     })
   }
 
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// ENVIO: curso reprogramado dentro de su paquete
+//
+// El destino de una RP de curso NO recibe la confirmacion de inscripcion: ya es
+// alumno del paquete, y el correo de bienvenida de un curso suelto le hacia creer
+// que se habia inscrito en otra cosa. Va el aviso de reprogramacion con el
+// cronograma del paquete (ya con la fecha nueva) y lo que le falta pagar.
+export async function sendCourseRescheduleEmail ({ enrollmentId, originEnrollmentId, cc }) {
+  const data = await repo.findCourseRescheduleData(enrollmentId, originEnrollmentId)
+  if (!data) return { success: false, error: 'Curso reprogramado no encontrado' }
+  if (!data.origin_email) return { success: false, error: 'El estudiante no tiene correo registrado' }
+
+  const parentId = data.parent_enrollment_id
+  const pending = await repo.findPendingInstallments(parentId)
+  const installmentsHTML = buildInstallmentsTableHTML(pending, data.currency_symbol || 'S/.')
+
+  const pdf = await buildCronogramaAttachment({ enrollmentId: parentId, programName: data.program_name })
+  if (pdf.error) return { success: false, error: pdf.error }
+
+  const htmlBody = buildReprogramacionCursoHTML({
+    studentName: [data.first_name, data.last_name, data.mother_last_name].filter(Boolean).join(' '),
+    courseName: data.course_name,
+    programName: data.program_name,
+    oldStartDate: data.old_start_date,
+    newStartDate: data.new_start_date,
+    newEndDate: data.new_end_date,
+    frequency: data.frequency,
+    schedule: data.schedule,
+    installmentsHTML
+  })
+
+  const { list: ccResolved, error: ccError } = await resolveCcForSend({ enrollmentId, cc, stored: data.email_cc })
+  if (ccError) return { success: false, error: ccError }
+
+  const subject = `Reprogramacion de curso - ${data.course_name} (${data.program_name})`
+  const result = await deps.sendEmail({
+    to: data.origin_email,
+    subject,
+    htmlBody,
+    attachments: pdf.attachments,
+    cc: ccResolved.length > 0 ? ccResolved : undefined
+  })
+
+  try {
+    await repo.insertEmailLog({
+      enrollmentId,
+      toEmail: data.origin_email,
+      subject,
+      messageId: result.messageId,
+      templateType: 'reprogramacion_curso',
+      status: result.success ? 'sent' : 'failed'
+    })
+  } catch (logErr) {
+    console.error('[EmailLog] Error registrando log:', logErr.message)
+  }
+
+  const audit = result.success
+    ? { action: 'email_sent', details: `Correo de curso reprogramado enviado a ${data.origin_email}` }
+    : { action: 'email_failed', details: `Error al enviar el correo de curso reprogramado a ${data.origin_email}: ${result.error || 'desconocido'}` }
+  for (const id of [enrollmentId, parentId]) {
+    await repo.logAudit({ enrollmentId: id, userId: null, ...audit }).catch(() => {})
+  }
   return result
 }
 

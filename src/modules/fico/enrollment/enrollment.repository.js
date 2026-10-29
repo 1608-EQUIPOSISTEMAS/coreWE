@@ -6,9 +6,10 @@ import { attachPersonalAccount, setPersonalAccount } from '../../../shared/perso
 import { ALIAS } from '../../../utils/catalog-aliases.js'
 import { getCatalogIdByAlias } from '../../../utils/catalog-helper.js'
 import { STUDENT_EMAIL_SQL, STUDENT_PHONE_SQL } from '../../../utils/student-contacts.sql.js'
-import { getEnrollmentOdoo, getProgramPrice as queryProgramPrice } from '../../../utils/fico-queries.sql.js'
+import { getProgramPrice as queryProgramPrice } from '../../../utils/fico-queries.sql.js'
 import { buildOdooEmailBase } from '../../../utils/fico-odoo.helper.js'
-import { MEMBERSHIP_ACTIVATION_WINDOW_MONTHS, EXTRA_PAYMENT_ALIASES } from './enrollment.entity.js'
+import { MEMBERSHIP_ACTIVATION_WINDOW_MONTHS, EXTRA_PAYMENT_ALIASES, describeOdooUnenroll } from './enrollment.entity.js'
+import { buildPresentialCourseName } from '../odoo-sync/odoo-sync.entity.js'
 
 // Efectos cruzados que todavia viven en el service legacy porque pertenecen a
 // otros subdominios (audit, confirmacion, hijos, membresia, odoo, MV refresh,
@@ -425,11 +426,18 @@ export class EnrollmentRepository {
   // sapUsername/sapPassword viajan en el payload porque el correo de este flujo
   // lo manda el worker, no el request: sin ellas el alumno de un curso SAP online
   // recibia la confirmacion sin sus accesos al servidor.
-  async enqueueRegisterFollowup ({ enrollmentId, userId, sapUsername = null, sapPassword = null }) {
+  // emailKind 'course_reprogram': el destino es un curso reprogramado dentro de
+  // su paquete; el step email manda el aviso de reprogramacion, no la bienvenida.
+  async enqueueRegisterFollowup ({ enrollmentId, userId, sapUsername = null, sapPassword = null, emailKind = null, originEnrollmentId = null }) {
     const job = await enqueueJob({
       jobType: 'register_followup',
       enrollmentId,
-      payload: { userId, sapUsername, sapPassword }
+      payload: {
+        userId,
+        sapUsername,
+        sapPassword,
+        ...(emailKind && { emailKind, originEnrollmentId })
+      }
     })
     return job
   }
@@ -904,22 +912,156 @@ export class EnrollmentRepository {
     })
   }
 
-  async unenrollFromOldOdoo ({ enrollmentId, old }) {
-    if (!old.old_odoo_activation) return
+  // --- Cursos del paquete (RP por curso) ----------------------------------
+
+  // Cursos hijos de un paquete con su estado y, si se reprogramaron, el curso
+  // nuevo al que se fueron (anclado en la bitacora del curso origen).
+  async getProgramCourses (parentEnrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT h.enrollment_id, h.parent_enrollment_id, h.program_version_id, h.program_edition_id,
+             COALESCE(NULLIF(TRIM(pv.abbreviation), ''), pr.program_name) AS child_program_name,
+             pe.global_code AS edition_code,
+             pe.start_date::date::text AS start_date,
+             pe.end_date::date::text   AS end_date,
+             cts.alias       AS status_alias,
+             cts.description AS status_label,
+             rp.new_eid      AS reprogrammed_to
+        FROM public.enrollments h
+        JOIN public.program_versions pv ON pv.program_version_id = h.program_version_id
+        JOIN public.programs pr         ON pr.program_id = pv.program_id
+        LEFT JOIN public.program_editions pe ON pe.edition_num_id = h.program_edition_id
+        LEFT JOIN public."catalog" cts ON cts.catalog_id = h.cat_type_status
+        LEFT JOIN LATERAL (
+          SELECT NULLIF(a.changes->>'new_enrollment_id', '')::int AS new_eid
+            FROM public.enrollment_audit_log a
+           WHERE a.enrollment_id = h.enrollment_id AND a.action = 'edition_reprogrammed'
+             AND a.changes->>'new_enrollment_id' ~ '^[0-9]+$'
+           ORDER BY a.audit_id DESC LIMIT 1
+        ) rp ON TRUE
+       WHERE h.parent_enrollment_id = $1 AND h.active = 'Y'
+       ORDER BY pe.start_date NULLS LAST, h.enrollment_id
+    `, [parentEnrollmentId])
+    return rows
+  }
+
+  // Un curso hijo, con lo que hace falta para validar su RP.
+  async getCourseForReprogram (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT h.enrollment_id, h.parent_enrollment_id,
+             COALESCE(NULLIF(TRIM(pv.abbreviation), ''), pr.program_name) AS child_program_name,
+             pe.start_date::date::text AS start_date,
+             pe.end_date::date::text   AS end_date,
+             cts.alias AS status_alias
+        FROM public.enrollments h
+        JOIN public.program_versions pv ON pv.program_version_id = h.program_version_id
+        JOIN public.programs pr         ON pr.program_id = pv.program_id
+        LEFT JOIN public.program_editions pe ON pe.edition_num_id = h.program_edition_id
+        LEFT JOIN public."catalog" cts ON cts.catalog_id = h.cat_type_status
+       WHERE h.enrollment_id = $1 AND h.active = 'Y'
+    `, [enrollmentId])
+    return rows[0] || null
+  }
+
+  // Cuotas vencidas del paquete (misma regla de "pendiente real" que la RP):
+  // FICO decide caso por caso, el sistema solo avisa.
+  async getOverdueInstallments (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT COUNT(*)::int AS cantidad, COALESCE(SUM(pi.amount), 0)::numeric AS monto
+        FROM public.payment_installments pi
+       WHERE pi.enrollment_id = $1 AND pi.installment_number > 0
+         AND pi.cat_status NOT IN (4454, 2471, 4456)
+         AND pi.due_date < CURRENT_DATE
+         AND NOT EXISTS (SELECT 1 FROM public.payments p
+                          WHERE p.installment_id = pi.installment_id AND p.active = 'Y')
+    `, [enrollmentId])
+    return { cantidad: rows[0]?.cantidad || 0, monto: Number(rows[0]?.monto || 0) }
+  }
+
+  // Aulas de Odoo (slide.group) de un conjunto de inscripciones: activacion del
+  // programa + fecha de inicio de su edicion = nombre exacto del grupo.
+  async getOdooGroupsOf (enrollmentIds = []) {
+    if (!enrollmentIds.length) return []
+    const { rows } = await this.db.query(`
+      SELECT e.enrollment_id, e.odoo_order_id, prog.odoo_activation,
+             pe.start_date::date::text AS start_date
+        FROM public.enrollments e
+        JOIN public.program_versions pv ON pv.program_version_id = e.program_version_id
+        JOIN public.programs prog       ON prog.program_id = pv.program_id
+        LEFT JOIN public.program_editions pe ON pe.edition_num_id = e.program_edition_id
+       WHERE e.enrollment_id = ANY($1::int[])
+    `, [enrollmentIds])
+    return rows
+  }
+
+  // Saca al alumno de las aulas EXACTAS de esas inscripciones y cancela sus
+  // ordenes de venta. Antes se borraba de todo grupo cuyo nombre contuviera la
+  // activacion del programa: eso dejaba vivas las aulas de los cursos del
+  // paquete (caso #14016, 27/10/2026) y, en un curso suelto, lo sacaba tambien de
+  // la misma materia que llevaba por otro programa. Devuelve que se quito y que
+  // no se encontro, para que la bitacora no afirme lo que no paso.
+  async unenrollFromOdooGroups ({ enrollmentIds = [], studentEnrollmentId }) {
+    const out = { removed: [], missing: [], cancelledOrders: [], error: null }
     try {
-      const od = await getEnrollmentOdoo(enrollmentId)
-      if (!od?.odoo_user_id) return
-      const user = await odoo.searchUserByEmail(old.origin_email)
-      if (user?.partner_id?.[0]) {
-        const groups = await odoo.searchSlideGroup(old.old_odoo_activation)
-        for (const g of (groups || [])) {
-          await odoo.unenrollStudentFromCourse({ partnerId: user.partner_id[0], slideGroupId: g.id })
+      const rows = await this.getOdooGroupsOf(enrollmentIds)
+      const groups = rows.filter(g => g.odoo_activation && g.start_date)
+      const orders = rows.map(g => g.odoo_order_id).filter(Boolean)
+      if (!groups.length && !orders.length) return out
+
+      const partnerId = await this.resolveOdooPartner(studentEnrollmentId)
+      if (partnerId) {
+        for (const g of groups) {
+          const name = buildPresentialCourseName({ odooActivation: g.odoo_activation.trim(), startDate: g.start_date })
+          const found = (await odoo.searchSlideGroup(g.odoo_activation.trim())).find(x => x.name === name)
+          if (!found) { out.missing.push(name); continue }
+          const res = await odoo.unenrollStudentFromCourse({ partnerId, slideGroupId: found.id })
+          if (res?.success === false) out.missing.push(`${name} (${res.error})`)
+          else out.removed.push(name)
         }
+      } else if (groups.length) {
+        out.missing.push('alumno no encontrado en Odoo')
       }
-      if (od.odoo_order_id) {
-        await odoo.cancelSaleOrder(od.odoo_order_id)
+      for (const orderId of [...new Set(orders)]) {
+        const res = await odoo.cancelSaleOrder(orderId)
+        if (res?.success !== false) out.cancelledOrders.push(orderId)
       }
-    } catch (e) { console.error('[courseChange][Odoo] unenroll old:', e.message) }
+    } catch (e) {
+      console.error('[unenrollFromOdooGroups]', e.message)
+      out.error = e.message
+    }
+    return out
+  }
+
+  // Partner Odoo del alumno: por su usuario Odoo guardado y, si no, por login.
+  async resolveOdooPartner (enrollmentId) {
+    const { rows } = await this.db.query(`
+      SELECT COALESCE(e.odoo_user_id, par.odoo_user_id) AS odoo_user_id,
+             COALESCE(e.odoo_email, par.odoo_email)     AS odoo_email,
+             ${STUDENT_EMAIL_SQL} AS origin_email
+        FROM public.enrollments e
+        JOIN public.customers cust ON cust.customer_id = e.customer_id
+        JOIN public.persons per ON per.person_id = cust.person_id
+        LEFT JOIN public.leads l ON l.enrollment_id = e.enrollment_id
+        LEFT JOIN public.enrollments par ON par.enrollment_id = e.parent_enrollment_id
+       WHERE e.enrollment_id = $1`, [enrollmentId])
+    const r = rows[0]
+    if (!r) return null
+    if (r.odoo_user_id) {
+      const users = await odoo.callKw('res.users', 'read', [[Number(r.odoo_user_id)]], { fields: ['partner_id'] }).catch(() => null)
+      const pid = users?.[0]?.partner_id?.[0]
+      if (pid) return pid
+    }
+    for (const login of [r.odoo_email, r.origin_email].filter(Boolean)) {
+      const user = await odoo.searchUserByEmail(login)
+      if (user?.partner_id?.[0]) return user.partner_id[0]
+    }
+    return null
+  }
+
+  // Origen de un RP/CC: su aula y las de los cursos del paquete que deja
+  // (childIds), mas su orden de venta.
+  async unenrollFromOldOdoo ({ enrollmentId, old, childIds = [] }) {
+    if (!old.old_odoo_activation) return null
+    return this.unenrollFromOdooGroups({ enrollmentIds: [enrollmentId, ...childIds], studentEnrollmentId: enrollmentId })
   }
 
   // --- Snapshot / observar / reenviar ------------------------------------
@@ -1249,6 +1391,7 @@ export class EnrollmentRepository {
              pv2.abbreviation AS child_program_name,
              pe2.global_code AS edition_code,
              pe2.start_date,
+             pe2.end_date,
              to_char(pe2.start_date, 'DD/MM/YYYY') AS start_date_fmt
       FROM enrollments e
       LEFT JOIN program_versions pv2 ON pv2.program_version_id = e.program_version_id
@@ -1263,33 +1406,13 @@ export class EnrollmentRepository {
     await this.db.query(`DELETE FROM payment_installments WHERE enrollment_id = $1 AND cat_status NOT IN (4454, 2471)`, [childEnrollmentId])
   }
 
-  async unenrollOdooOnRetire ({ enrollmentId, userId }) {
+  // childIds: cursos del paquete que el alumno deja (los terminados se quedan en
+  // Odoo con sus notas). Sin ellos el alumno seguia en las aulas de los cursos.
+  async unenrollOdooOnRetire ({ enrollmentId, userId, childIds = [] }) {
     try {
-      const { rows: odooData } = await this.db.query(
-        `SELECT e.odoo_user_id, e.odoo_order_id,
-                ${STUDENT_EMAIL_SQL} AS origin_email,
-                prog.odoo_activation
-         FROM enrollments e
-         JOIN customers cust ON cust.customer_id = e.customer_id
-         JOIN persons per ON per.person_id = cust.person_id
-         LEFT JOIN leads l ON l.enrollment_id = e.enrollment_id
-         LEFT JOIN program_versions pv ON pv.program_version_id = e.program_version_id
-         LEFT JOIN programs prog ON prog.program_id = pv.program_id
-         WHERE e.enrollment_id = $1`, [enrollmentId]
-      ).catch(() => ({ rows: [] }))
-      const od = odooData?.[0]
-      if (od?.odoo_user_id && od?.odoo_activation && od?.origin_email) {
-        const user = await odoo.searchUserByEmail(od.origin_email)
-        if (user?.partner_id?.[0]) {
-          const groups = await odoo.searchSlideGroup(od.odoo_activation)
-          for (const g of (groups || [])) {
-            await odoo.unenrollStudentFromCourse({ partnerId: user.partner_id[0], slideGroupId: g.id })
-          }
-        }
-        if (od.odoo_order_id) {
-          await odoo.cancelSaleOrder(od.odoo_order_id)
-        }
-        await this.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Desinscrito de Odoo por retiro` })
+      const res = await this.unenrollFromOdooGroups({ enrollmentIds: [enrollmentId, ...childIds], studentEnrollmentId: enrollmentId })
+      if (res.removed.length || res.cancelledOrders.length || res.missing.length || res.error) {
+        await this.logAudit({ enrollmentId, action: 'odoo_unenrolled', userId, details: `Odoo por retiro: ${describeOdooUnenroll(res)}` })
       }
     } catch (e) { console.error('[retireEnrollment] Error desinscribiendo Odoo:', e.message) }
   }

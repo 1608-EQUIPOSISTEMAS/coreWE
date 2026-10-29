@@ -14,7 +14,7 @@ import { claimNextJob, completeJob, failJob, updateCurrentStep, reapStaleJobs } 
 import '../modules/fico/fico.bootstrap.js'
 import { createChildEnrollments } from '../modules/fico/validation/validation.usecases.js'
 import { enrollInOdoo } from '../modules/fico/odoo-sync/odoo-sync.usecases.js'
-import { sendConfirmationEmail, sendMembershipEmail } from '../modules/fico/email-confirmation/email-confirmation.usecases.js'
+import { sendConfirmationEmail, sendMembershipEmail, sendCourseRescheduleEmail } from '../modules/fico/email-confirmation/email-confirmation.usecases.js'
 import { enrollMembershipInOdoo, createMembershipOdooUser } from '../modules/fico/membership/membership.usecases.js'
 
 // Steps del job 'register_followup' en orden topologico de dependencias.
@@ -72,7 +72,11 @@ const handlers = {
 
     if (startIdx <= 2) {
       try {
-        const email = await sendConfirmationEmail({ enrollmentId, cc, sapUsername, sapPassword })
+        // Curso reprogramado dentro de su paquete: aviso de reprogramacion, no
+        // la confirmacion de inscripcion de un curso nuevo.
+        const email = payload?.emailKind === 'course_reprogram'
+          ? await sendCourseRescheduleEmail({ enrollmentId, originEnrollmentId: payload.originEnrollmentId, cc })
+          : await sendConfirmationEmail({ enrollmentId, cc, sapUsername, sapPassword })
         result.email = { success: !!email?.success, messageId: email?.messageId, error: email?.error }
         // sendConfirmationEmail no tira — devuelve { success: false, error } en fallos
         // 'lentos' (Odoo no creado, etc.). Tratamos como fallo del step para que
