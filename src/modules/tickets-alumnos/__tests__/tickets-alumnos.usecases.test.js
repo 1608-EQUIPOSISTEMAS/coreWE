@@ -6,7 +6,7 @@ vi.mock('../../fico/enrollment/enrollment.usecases.js', () => ({ reprogramEditio
 vi.mock('../../../shared/adapters/storage/nexus-archivos.adapter.js', () => ({ urlDeLectura: vi.fn() }))
 vi.mock('../tickets-alumnos.repository.js', () => ({ ticketsRepository: {} }))
 
-const { firmarTramite, rechazarTramite, listarBandeja, urlDeAdjunto } = await import('../tickets-alumnos.usecases.js')
+const { firmarTramite, rechazarTramite, listarBandeja, urlDeAdjunto, tomarTramite, liberarTramite } = await import('../tickets-alumnos.usecases.js')
 
 const FICO = ['FICO']
 const ACADEMICA = ['ACADEMICA']
@@ -18,7 +18,8 @@ function montar (ticket, { ejecutorFalla = false } = {}) {
     async obtener () { return ticket },
     async listar () { return Array.isArray(ticket) ? ticket : [ticket] },
     async monedaDeVenta () { return 2001 },
-    async guardarFirma (firma) { guardados.push(firma); return firma }
+    async guardarFirma (firma) { guardados.push(firma); return firma },
+    async registrarEvento (ev) { guardados.push(ev); return ev }
   }
   const ejecutor = {
     async reprogramEdition (args) {
@@ -143,5 +144,53 @@ describe('urlDeAdjunto', () => {
     const { deps } = montar(pagado())
 
     await expect(urlDeAdjunto({ solicitudId: 1, cual: 'evidencia', roles: FICO }, deps)).rejects.toMatchObject({ statusCode: 404 })
+  })
+})
+
+describe('seguimiento (tomar / liberar)', () => {
+  it('tomar deja constancia del area y el paso en que estaba', async () => {
+    const { deps, guardados } = montar(pagado())
+
+    await tomarTramite({ solicitudId: 1, roles: FICO, userId: 9 }, deps)
+
+    expect(guardados[0]).toMatchObject({ accion: 'TOMAR', area: 'FICO', status: 'PAGO_REGISTRADO', userId: 9 })
+  })
+
+  it('no deja firmar un tramite que esta revisando otra persona', async () => {
+    const { deps, guardados } = montar(pagado({ revisor_id: 4, revisor: 'Ana' }))
+
+    await expect(firmarTramite({ solicitudId: 1, roles: FICO, userId: 9 }, deps))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/Ana/) })
+    expect(guardados).toEqual([])
+  })
+
+  it('quien lo tomo firma normal y la firma queda auditada', async () => {
+    const { deps, guardados } = montar(pagado({ revisor_id: '9' }))
+
+    await firmarTramite({ solicitudId: 1, roles: FICO, userId: 9 }, deps)
+
+    expect(guardados[0].evento).toEqual({ accion: 'FIRMAR', area: 'FICO' })
+  })
+
+  it('ADMIN puede soltar el tramite de otro y queda dicho en el comentario', async () => {
+    const { deps, guardados } = montar(pagado({ revisor_id: 4, revisor: 'Ana' }))
+
+    await liberarTramite({ solicitudId: 1, roles: ['ADMIN'], userId: 1 }, deps)
+
+    expect(guardados[0]).toMatchObject({ accion: 'LIBERAR', comentario: expect.stringMatching(/Ana/) })
+  })
+
+  it('otro del area no puede soltarlo', async () => {
+    const { deps } = montar(pagado({ revisor_id: 4 }))
+
+    await expect(liberarTramite({ solicitudId: 1, roles: FICO, userId: 9 }, deps)).rejects.toMatchObject({ statusCode: 403 })
+  })
+
+  it('la bandeja marca los que reviso yo', async () => {
+    const { deps } = montar([pagado({ revisor_id: 9 }), pagado({ solicitud_id: 2, revisor_id: 4 })])
+
+    const bandeja = await listarBandeja({ roles: FICO, userId: 9 }, deps)
+
+    expect(bandeja.map(t => t.lo_reviso_yo)).toEqual([true, false])
   })
 })

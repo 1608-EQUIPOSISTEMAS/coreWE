@@ -52,3 +52,16 @@ export const archivoSchema = {
     }
   }
 }
+
+export const seguimientoSchema = {
+  tags: [TAG],
+  description: 'Tomar / liberar la revision de un tramite, o leer su bitacora de auditoria.',
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['solicitud_id'],
+    properties: {
+      solicitud_id: { type: ['integer', 'string'] }
+    }
+  }
+}

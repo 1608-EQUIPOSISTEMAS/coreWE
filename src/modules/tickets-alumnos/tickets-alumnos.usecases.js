@@ -2,10 +2,15 @@ import { ticketsRepository } from './tickets-alumnos.repository.js'
 import {
   ACCION,
   ESTADO,
+  EVENTO,
   TERMINALES,
   TicketError,
   areasDelUsuario,
+  assertNoLoRevisaOtro,
   assertPuedeFirmar,
+  assertPuedeLiberar,
+  assertPuedeTomar,
+  loRevisa,
   avanzar,
   planDeEjecucion,
   rechazar,
@@ -34,7 +39,7 @@ function assertTieneArea (areas) {
  * "¿en que va mi tramite?"). El repositorio trae de mas y aca se filtra: la
  * regla de turnos vive en un solo sitio, la entity.
  */
-export async function listarBandeja ({ roles, incluirCerrados, tipo, q }, { repo } = DEPENDENCIAS) {
+export async function listarBandeja ({ roles, userId, incluirCerrados, tipo, q }, { repo } = DEPENDENCIAS) {
   const areas = areasDelUsuario(roles)
   assertTieneArea(areas)
 
@@ -50,6 +55,7 @@ export async function listarBandeja ({ roles, incluirCerrados, tipo, q }, { repo
         ...t,
         area_actual: turnoDe(t),
         puede_firmar: areas.includes(turnoDe(t)) && !TERMINALES.includes(t.status),
+        lo_reviso_yo: loRevisa(t, userId),
         requiere_accion_manual: plan?.accion === ACCION.MANUAL ? plan.motivo : null
       }
     })
@@ -61,7 +67,7 @@ export async function listarBandeja ({ roles, incluirCerrados, tipo, q }, { repo
  * pendiente y se puede reintentar, en vez de quedar "resuelto" sin haber hecho nada.
  */
 export async function firmarTramite ({ solicitudId, respuesta, monto, roles, userId }, deps = DEPENDENCIAS) {
-  const ticket = await tomarParaFirmar({ solicitudId, roles }, deps)
+  const ticket = await tomarParaFirmar({ solicitudId, roles, userId }, deps)
   const siguiente = avanzar(ticket, { monto })
 
   const ejecucion = siguiente.status === ESTADO.RESUELTA
@@ -76,12 +82,13 @@ export async function firmarTramite ({ solicitudId, respuesta, monto, roles, use
     respuesta,
     userId,
     cierra: siguiente.status === ESTADO.RESUELTA,
-    datosExtra: ejecucion
+    datosExtra: ejecucion,
+    evento: { accion: EVENTO.FIRMAR, area: turnoDe(ticket) }
   })
 }
 
 export async function rechazarTramite ({ solicitudId, respuesta, roles, userId }, deps = DEPENDENCIAS) {
-  const ticket = await tomarParaFirmar({ solicitudId, roles }, deps)
+  const ticket = await tomarParaFirmar({ solicitudId, roles, userId }, deps)
 
   const siguiente = rechazar(ticket)
   return deps.repo.guardarFirma({
@@ -92,8 +99,40 @@ export async function rechazarTramite ({ solicitudId, respuesta, roles, userId }
     respuesta,
     userId,
     cierra: true,
-    datosExtra: null
+    datosExtra: null,
+    evento: { accion: EVENTO.RECHAZAR, area: turnoDe(ticket) }
   })
+}
+
+/** "Empiezo a revisarlo yo": deja constancia de quien y desde cuando. */
+export async function tomarTramite ({ solicitudId, roles, userId }, { repo } = DEPENDENCIAS) {
+  const areas = areasDelUsuario(roles)
+  assertTieneArea(areas)
+  const ticket = await repo.obtener(solicitudId)
+  assertPuedeTomar(ticket, { areas, userId, roles })
+  return repo.registrarEvento({
+    solicitudId, accion: EVENTO.TOMAR, area: turnoDe(ticket), status: ticket.status, userId
+  })
+}
+
+/** Lo suelta para que otro del area lo tome. ADMIN puede soltar el de cualquiera. */
+export async function liberarTramite ({ solicitudId, roles, userId }, { repo } = DEPENDENCIAS) {
+  assertTieneArea(areasDelUsuario(roles))
+  const ticket = await repo.obtener(solicitudId)
+  assertPuedeLiberar(ticket, { userId, roles })
+  return repo.registrarEvento({
+    solicitudId,
+    accion: EVENTO.LIBERAR,
+    area: turnoDe(ticket),
+    status: ticket.status,
+    userId,
+    comentario: !loRevisa(ticket, userId) ? `Liberado (lo revisaba ${ticket.revisor})` : null
+  })
+}
+
+export async function historialTramite ({ solicitudId, roles }, { repo } = DEPENDENCIAS) {
+  assertTieneArea(areasDelUsuario(roles))
+  return repo.historial(solicitudId)
 }
 
 /** URL temporal del voucher o la evidencia que subio el alumno. */
@@ -137,11 +176,12 @@ async function ejecutarPlan (ticket, { userId, justificacion }, { repo, ejecutor
 // Lo comun a firmar y rechazar: traer el ticket y verificar que a quien lo pide
 // le toca ese paso. Va contra la BD y no contra lo que mando el front, que es
 // justo el dato que un cliente manipulado falsearia.
-async function tomarParaFirmar ({ solicitudId, roles }, { repo }) {
+async function tomarParaFirmar ({ solicitudId, roles, userId }, { repo }) {
   const areas = areasDelUsuario(roles)
   assertTieneArea(areas)
 
   const ticket = await repo.obtener(solicitudId)
   assertPuedeFirmar(ticket, areas)
+  assertNoLoRevisaOtro(ticket, { userId, roles })
   return ticket
 }

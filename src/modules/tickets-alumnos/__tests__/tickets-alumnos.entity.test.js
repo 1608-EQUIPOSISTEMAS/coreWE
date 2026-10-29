@@ -7,6 +7,7 @@ import {
   areaInicial,
   areasDelUsuario,
   assertPuedeFirmar,
+  assertPuedeTomar,
   avanzar,
   planDeEjecucion,
   rechazar,
@@ -152,5 +153,20 @@ describe('planDeEjecucion', () => {
 
   it('no mueve nada en los tramites que no cambian la matricula', () => {
     expect(planDeEjecucion(ticket('CERTIFICADOS'))).toBeNull()
+  })
+})
+
+describe('assertPuedeTomar', () => {
+  const enFico = extra => ticket('ALQUILER_SAP', extra)
+
+  it('no se toma un tramite cerrado ni uno de otra area', () => {
+    expect(() => assertPuedeTomar(enFico({ status: ESTADO.RESUELTA }), { areas: [AREA.FICO], userId: 1 })).toThrow(TicketError)
+    expect(() => assertPuedeTomar(enFico(), { areas: [AREA.ACADEMICA], userId: 1 })).toThrow(/FICO/)
+  })
+
+  it('no se toma dos veces ni encima de otro (salvo ADMIN)', () => {
+    expect(() => assertPuedeTomar(enFico({ revisor_id: 1 }), { areas: [AREA.FICO], userId: 1 })).toThrow(/Ya lo estas/)
+    expect(() => assertPuedeTomar(enFico({ revisor_id: 2, revisor: 'Ana' }), { areas: [AREA.FICO], userId: 1 })).toThrow(/Ana/)
+    expect(() => assertPuedeTomar(enFico({ revisor_id: 2 }), { areas: [AREA.FICO], userId: 1, roles: ['ADMIN'] })).not.toThrow()
   })
 })

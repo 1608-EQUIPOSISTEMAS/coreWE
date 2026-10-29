@@ -92,6 +92,44 @@ export function assertPuedeFirmar (ticket, areas = []) {
   }
 }
 
+export const EVENTO = {
+  TOMAR: 'TOMAR',
+  LIBERAR: 'LIBERAR',
+  FIRMAR: 'FIRMAR',
+  RECHAZAR: 'RECHAZAR'
+}
+
+// Seguimiento: un tramite en revision es de quien lo tomo. Sin esta guarda dos
+// personas del area lo trabajan a la vez y una firma encima de lo que la otra
+// le estaba respondiendo al alumno. ADMIN pasa igual: es el desempate cuando
+// alguien lo tomo y se fue.
+function esAdmin (roles = []) { return roles.includes('ADMIN') }
+// El id del token puede venir como string; el de la BD, como numero.
+const mismo = (a, b) => a != null && b != null && Number(a) === Number(b)
+
+/** El usuario logueado es quien tiene tomado el tramite. */
+export const loRevisa = (ticket, userId) => mismo(ticket?.revisor_id, userId)
+
+export function assertNoLoRevisaOtro (ticket, { userId, roles = [] }) {
+  if (!ticket?.revisor_id || loRevisa(ticket, userId) || esAdmin(roles)) return
+  throw new TicketError(`Este tramite lo esta revisando ${ticket.revisor || 'otra persona'}`, 409)
+}
+
+/** Tomar = "empiezo a revisarlo yo". Solo quien puede firmar el paso puede tomarlo. */
+export function assertPuedeTomar (ticket, { areas = [], userId, roles = [] }) {
+  assertPuedeFirmar(ticket, areas)
+  if (loRevisa(ticket, userId)) throw new TicketError('Ya lo estas revisando tu', 409)
+  assertNoLoRevisaOtro(ticket, { userId, roles })
+}
+
+export function assertPuedeLiberar (ticket, { userId, roles = [] }) {
+  if (!ticket) throw new TicketError('El ticket no existe', 404)
+  if (!ticket.revisor_id) throw new TicketError('Nadie lo esta revisando', 409)
+  if (!loRevisa(ticket, userId) && !esAdmin(roles)) {
+    throw new TicketError('Solo quien lo tomo (o un ADMIN) puede soltarlo', 403)
+  }
+}
+
 // El certificado fisico se coordina con Academica por WhatsApp: no se cobra por
 // el portal. Un monto 0 (cambio de curso con 72 h de anticipacion) tampoco.
 // Un monto null SI cobra: es la reasignacion, cuyo monto se acuerda con Finanzas.

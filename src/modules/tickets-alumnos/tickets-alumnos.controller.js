@@ -10,6 +10,7 @@ const areasDe = req => req.user?.roles || []
 export async function listHandler (req, reply) {
   const data = await usecases.listarBandeja({
     roles: areasDe(req),
+    userId: req.user?.id,
     incluirCerrados: req.body?.incluir_cerrados === true,
     tipo: req.body?.tipo || null,
     q: req.body?.q || null
@@ -44,5 +45,20 @@ export async function archivoHandler (req, reply) {
     cual: req.body.cual,
     roles: areasDe(req)
   })
+  return reply.code(200).send({ ok: true, data })
+}
+
+export async function tomarHandler (req, reply) {
+  const data = await usecases.tomarTramite({ solicitudId: num(req.body.solicitud_id), roles: areasDe(req), userId: req.user?.id })
+  return reply.code(200).send({ ok: true, message: 'Tramite tomado', data })
+}
+
+export async function liberarHandler (req, reply) {
+  const data = await usecases.liberarTramite({ solicitudId: num(req.body.solicitud_id), roles: areasDe(req), userId: req.user?.id })
+  return reply.code(200).send({ ok: true, message: 'Tramite liberado', data })
+}
+
+export async function historialHandler (req, reply) {
+  const data = await usecases.historialTramite({ solicitudId: num(req.body.solicitud_id), roles: areasDe(req) })
   return reply.code(200).send({ ok: true, data })
 }
