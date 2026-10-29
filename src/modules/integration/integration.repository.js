@@ -707,7 +707,9 @@ export class IntegrationRepository {
     WITH ${RP_LINK_CTE}
     SELECT
       to_char(l.registration_date, 'DD/MM/YYYY')           AS fecha,
-      COALESCE(comp_lead.razon_social, comp_ctr.razon_social, l.company_name, '') AS empresa,
+      COALESCE(comp_lead.razon_social, comp_ctr.razon_social, l.company_name,
+        CASE WHEN c_strat.alias = 'we_type_strategy_b2b' THEN 'Estrategia B2B' END,
+        '')                                                AS empresa,
       TRIM(BOTH FROM concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS nombres,
       ${STUDENT_PHONE_SQL}                                                    AS numero,
       COALESCE(pv.abbreviation, '')                        AS nombre_p,
@@ -749,6 +751,10 @@ export class IntegrationRepository {
     -- sin fecha y sin razon social (#18956, DINET).
     LEFT JOIN public.leads l              ON l.enrollment_id = COALESCE(rp_origen.enrollment_id, e.enrollment_id)
     LEFT JOIN public.companies comp_lead  ON comp_lead.company_id = l.company_id
+    -- Comercial marca la estrategia del lead como B2B cuando la venta no lleva
+    -- empresa: la hoja la reporta como 'Estrategia B2B' (24160, 24186). Sin esa
+    -- estrategia EMPRESA queda vacia, como siempre.
+    LEFT JOIN public."catalog" c_strat    ON c_strat.catalog_id = l.cat_type_strategy
     LEFT JOIN public.b2b_contracts ctr    ON ctr.b2b_contract_id = e.b2b_contract_id
     LEFT JOIN public.companies comp_ctr   ON comp_ctr.company_id = ctr.company_id
     LEFT JOIN public.program_versions pv  ON pv.program_version_id = e.program_version_id

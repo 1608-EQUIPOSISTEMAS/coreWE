@@ -43,3 +43,16 @@ describe('EXCLUDE_IMPORTED', () => {
     expect(sql).toContain(IMPORT_OBSERVATION_TOKEN)
   })
 })
+
+describe('hoja "7. Convenios": EMPRESA', () => {
+  // Sin empresa en el lead ni contrato, la estrategia B2B del lead se reporta
+  // como 'Estrategia B2B'; cualquier otra estrategia deja la celda vacia.
+  it('cae a Estrategia B2B solo si la estrategia del lead es B2B', async () => {
+    let sql = ''
+    const db = { query: (texto) => { sql = texto; return { rows: [] } } }
+    await new IntegrationRepository(db).getFicoConvenios()
+    const plano = sql.replace(/\s+/g, ' ')
+    expect(plano).toContain("l.company_name, CASE WHEN c_strat.alias = 'we_type_strategy_b2b' THEN 'Estrategia B2B' END, '')")
+    expect(plano).toContain('c_strat.catalog_id = l.cat_type_strategy')
+  })
+})
