@@ -1,4 +1,4 @@
-import { summarizeClassrooms, withGradeStatus, withOdooData, odooGradeRows, mergeGradeRows, odooFinalScore, withEnrollmentFlow, withDepartures } from './academica-seguimiento.entity.js'
+import { summarizeClassrooms, withGradeStatus, withOdooData, odooGradeRows, mergeGradeRows, odooFinalScore, withEnrollmentFlow, withDepartures, docKey, flexDocKeys } from './academica-seguimiento.entity.js'
 import { listClassrooms, listGradeRows, listClassroomStudents, getClassroomOdooKey, listRetiredCounts, listClassroomDepartures } from './academica-seguimiento.repository.js'
 import { odoo } from '../../shared/adapters/odoo/odoo.adapter.js'
 
@@ -17,7 +17,7 @@ export async function listClassroomSummary () {
   const odooData = await odoo.classroomsFromOdoo(classrooms.filter(hasOdooKey)).catch(orErp(new Map()))
   const editionToGroup = new Map([...odooData].map(([id, o]) => [id, o.group_id]))
   const odooStudents = await odoo.studentScoresByGroup([...new Set(editionToGroup.values())]).catch(orErp([]))
-  const gradeRows = mergeGradeRows(erpGradeRows, odooGradeRows(editionToGroup, odooStudents))
+  const gradeRows = mergeGradeRows(erpGradeRows, odooGradeRows(editionToGroup, odooStudents, flexDocKeys(erpGradeRows)))
   const { items, kpis } = summarizeClassrooms(withOdooData(classrooms, odooData), gradeRows)
   // Hoy en Lima: la regla de 'finalizada' es la misma que la del front.
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
@@ -34,20 +34,22 @@ export async function listStudents (editionId) {
 // el grupo no existe o no tiene alumnos, los del ERP (misma regla que
 // mergeGradeRows, para que el modal cuadre con la fila).
 async function listCurrentStudents (editionId) {
-  const key = await getClassroomOdooKey(editionId)
+  const [key, erpStudents] = await Promise.all([getClassroomOdooKey(editionId), listClassroomStudents(editionId)])
   if (hasOdooKey(key)) {
     const group = (await odoo.classroomsFromOdoo([key]).catch(orErp(new Map()))).get(editionId)
     const students = group ? await odoo.groupStudents(group.group_id).catch(orErp([])) : []
     if (students.length) {
+      const flexKeys = flexDocKeys(erpStudents.map(s => ({ ...s, edition_id: editionId })))
       return withGradeStatus(students.map(s => ({
         enrollment_id: `odoo-${s.id}`,
         full_name: s.full_name,
         document_number: s.document_number,
         email: s.email,
         final_grade: s.final_score,
-        has_grade: odooFinalScore(s) !== null
+        has_grade: odooFinalScore(s) !== null,
+        is_flex: flexKeys.has(docKey(editionId, s.document_number))
       })))
     }
   }
-  return withGradeStatus(await listClassroomStudents(editionId))
+  return withGradeStatus(erpStudents)
 }

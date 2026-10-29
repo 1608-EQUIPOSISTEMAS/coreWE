@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gradeStatus, summarizeClassrooms, withGradeStatus, withOdooData, odooFinalScore, odooGradeRows, mergeGradeRows, withEnrollmentFlow, withDepartures } from '../academica-seguimiento.entity.js'
+import { gradeStatus, summarizeClassrooms, withGradeStatus, withOdooData, odooFinalScore, odooGradeRows, mergeGradeRows, withEnrollmentFlow, withDepartures, flexDocKeys } from '../academica-seguimiento.entity.js'
 
 describe('gradeStatus', () => {
   it('aprueba con 12 o mas', () => {
@@ -27,17 +27,17 @@ describe('summarizeClassrooms', () => {
     { edition_id: 3, course: 'SIN ALUMNOS' }
   ]
   const rows = [
-    { edition_id: 1, has_grade: true, final_grade: '15.00' },
+    { edition_id: 1, has_grade: true, final_grade: '15.00', is_flex: true },
     { edition_id: 1, has_grade: true, final_grade: '11.00' },
-    { edition_id: 1, has_grade: false, final_grade: null },
+    { edition_id: 1, has_grade: false, final_grade: null, is_flex: true },
     { edition_id: 2, has_grade: true, final_grade: '11.50' }
   ]
   const { items, kpis } = summarizeClassrooms(classrooms, rows)
 
-  it('cuenta por estado en cada aula y deja fuera las aulas sin alumnos', () => {
+  it('cuenta por estado en cada aula, y aparte los Flex; deja fuera las aulas sin alumnos', () => {
     expect(items).toEqual([
-      { edition_id: 1, course: 'EXCEL', students: 3, approved: 1, failed: 1, no_grade: 1 },
-      { edition_id: 2, course: 'POWER BI', students: 1, approved: 1, failed: 0, no_grade: 0 }
+      { edition_id: 1, course: 'EXCEL', students: 3, approved: 1, failed: 1, no_grade: 1, flex: { students: 2, approved: 1, failed: 0, no_grade: 1 } },
+      { edition_id: 2, course: 'POWER BI', students: 1, approved: 1, failed: 0, no_grade: 0, flex: { students: 0, approved: 0, failed: 0, no_grade: 0 } }
     ])
   })
   it('los KPIs suman todas las aulas listadas', () => {
@@ -86,16 +86,24 @@ describe('odooFinalScore', () => {
 
 describe('notas de Odoo por aula', () => {
   const evals = [
-    { slide_group_id: [7, 'G'], midterm_exam: 15, final_exam: 15, substitute_exam: 0 },
-    { slide_group_id: [7, 'G'], midterm_exam: 0, final_exam: 0, substitute_exam: 0 }
+    { slide_group_id: [7, 'G'], midterm_exam: 15, final_exam: 15, substitute_exam: 0, document_number: ' 70000001 ' },
+    { slide_group_id: [7, 'G'], midterm_exam: 0, final_exam: 0, substitute_exam: 0, document_number: null }
   ]
   it('arma filas por aula y dos aulas del mismo grupo reciben las mismas', () => {
     const rows = odooGradeRows(new Map([[1, 7], [2, 7]]), evals)
     expect(rows).toHaveLength(4)
     expect(rows.filter(r => r.edition_id === 1)).toEqual([
-      { edition_id: 1, final_grade: 15, has_grade: true },
-      { edition_id: 1, final_grade: null, has_grade: false }
+      { edition_id: 1, final_grade: 15, has_grade: true, is_flex: false },
+      { edition_id: 1, final_grade: null, has_grade: false, is_flex: false }
     ])
+  })
+  it('es Flex si su documento es Flex en esa misma aula del ERP (no en otra)', () => {
+    const flexKeys = flexDocKeys([
+      { edition_id: 1, document_number: '70000001', is_flex: true },
+      { edition_id: 2, document_number: '70000001', is_flex: false }
+    ])
+    const rows = odooGradeRows(new Map([[1, 7], [2, 7]]), evals, flexKeys)
+    expect(rows.map(r => [r.edition_id, r.is_flex])).toEqual([[1, true], [1, false], [2, false], [2, false]])
   })
   it('un aula con alumnos en Odoo usa solo Odoo; sin ellos queda el ERP', () => {
     const erp = [{ edition_id: 1, final_grade: '08', has_grade: true }, { edition_id: 3, final_grade: '14', has_grade: true }]
@@ -106,13 +114,17 @@ describe('notas de Odoo por aula', () => {
 })
 
 describe('withEnrollmentFlow', () => {
-  const aula = { edition_id: 1, students: 20, approved: 12, failed: 5, end_date: '2026-10-20' }
+  const aula = { edition_id: 1, students: 20, approved: 12, failed: 5, end_date: '2026-10-20', flex: { students: 4, approved: 2, failed: 1, no_grade: 1 } }
   it('inscritos iniciales = los que siguen + retirados', () => {
-    const [r] = withEnrollmentFlow([aula], new Map([[1, 3]]), '2026-10-26')
+    const [r] = withEnrollmentFlow([aula], new Map([[1, { all: 3, flex: 1 }]]), '2026-10-26')
     expect(r).toMatchObject({ retired: 3, initial: 23 })
   })
   it('en aula finalizada culminaron = con nota final (aprobados + desaprobados)', () => {
     expect(withEnrollmentFlow([aula], new Map(), '2026-10-26')[0]).toMatchObject({ retired: 0, initial: 20, completed: 17 })
+  })
+  it('Flex lleva el mismo flujo con sus propios conteos', () => {
+    const [r] = withEnrollmentFlow([aula], new Map([[1, { all: 3, flex: 1 }]]), '2026-10-26')
+    expect(r.flex).toEqual({ students: 4, approved: 2, failed: 1, no_grade: 1, retired: 1, initial: 5, completed: 3 })
   })
   it('en aula que aun no termina (incluye el ultimo dia) culminaron es null', () => {
     expect(withEnrollmentFlow([aula], new Map(), '2026-10-20')[0].completed).toBeNull()

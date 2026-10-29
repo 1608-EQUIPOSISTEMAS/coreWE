@@ -912,16 +912,25 @@ const NO_SCORE = { midterm_exam: 0, final_exam: 0, substitute_exam: 0 }
 
 // Un registro por inscrito de varios grupos con sus notas guardadas (0 si no
 // tiene evaluacion). Sin final_score: se calcula al leer y pedirlo para cientos
-// de grupos tarda minutos (medido 26/10/26). SOLO LEE.
+// de grupos tarda minutos (medido 26/10/26). document_number (vat) sirve para
+// cruzar con la modalidad Flex del ERP. SOLO LEE.
 async function studentScoresByGroup (groupIds) {
   if (!groupIds.length) return []
   const domain = [['slide_group_id', 'in', groupIds]]
   const [students, evals] = await Promise.all([
-    callKw('slide.group.student', 'search_read', [domain], { fields: ['slide_group_id'] }),
+    callKw('slide.group.student', 'search_read', [domain], { fields: ['slide_group_id', 'partner_id'] }),
     callKw('slide.group.evaluation', 'search_read', [domain], { fields: ['student_id', ...SCORE_FIELDS] })
   ])
   const evalOf = new Map(evals.map(e => [e.student_id?.[0], e]))
-  return students.map(st => ({ ...NO_SCORE, ...evalOf.get(st.id), slide_group_id: st.slide_group_id }))
+  const partnerIds = [...new Set(students.map(st => st.partner_id?.[0]).filter(Boolean))]
+  const partners = partnerIds.length ? await callKw('res.partner', 'read', [partnerIds, ['vat']]) : []
+  const vatOf = new Map(partners.map(p => [p.id, p.vat || null]))
+  return students.map(st => ({
+    ...NO_SCORE,
+    ...evalOf.get(st.id),
+    slide_group_id: st.slide_group_id,
+    document_number: vatOf.get(st.partner_id?.[0]) ?? null
+  }))
 }
 
 // Inscritos de UN grupo con su promedio final real de Odoo (aqui si se pide
