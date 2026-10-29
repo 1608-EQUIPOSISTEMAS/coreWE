@@ -13,6 +13,7 @@ import { ORIGEN } from '../reprogramacion/reprogramacion.entity.js'
 import { handleSpResponse } from '../../utils/dbResponse.js'
 import { hasFinalGrade, buildAcademicOutcomes, todayInLima } from './academic-outcomes.entity.js'
 import { getCatalog } from '../catalog/catalog.usecases.js'
+import { attachTeamsLinks, syncTeamsForEdition } from './teams-meetings.usecases.js'
 import {
   holidayStartErrors,
   buildEditionFilters,
@@ -200,6 +201,7 @@ export async function editionWeeklyControl ({ year, week } = {}) {
       const last = r.sessions[r.sessions.length - 1]
       return first && first.date <= date_end && last.date >= date_start
     })
+  await attachTeamsLinks(editions)
   return { year: y, week: w, date_start, date_end, editions }
 }
 
@@ -310,17 +312,21 @@ export async function editionSessionControlSave ({ edition_num_id, session_numbe
     }
   }
   await repo.sessionControlSave({ edition_num_id, session_number, status, new_date }, user_id)
+  // Una R corre las sesiones siguientes: sus reuniones de Teams se mueven en
+  // segundo plano (mismo link). Best-effort: no frena el guardado.
+  syncTeamsAfterSave(edition_num_id)
   const row = await repo.controlEditionGet(edition_num_id)
   if (!row) return null
   const [controls, catalog] = await Promise.all([
     repo.sessionControlsList([Number(edition_num_id)]),
     getCatalog()
   ])
-  return buildControlRow(row, {
+  const [control] = await attachTeamsLinks([buildControlRow(row, {
     dayCombos: catalog.we_day_combination || [],
     holidaySet: new Set((catalog.we_holiday || []).map((h) => h.variable_3).filter(Boolean)),
     controls
-  })
+  })])
+  return control
 }
 
 // Una edicion NO se cancela (A5) con alumnos vivos adentro: primero hay que
@@ -356,6 +362,7 @@ export async function editionUpdate ({ id, edition = {}, user_id = null } = {}) 
   await assertSinAlumnosVivos(payloadEdition.edition_num_id, edition.cat_segment_id)
   await assertNoHolidayStarts([{ label: 'Inicio', date: edition.start_date, edition_id: payloadEdition.edition_num_id }])
   const rows = await repo.update(payloadEdition, user_id)
+  syncTeamsAfterSave(payloadEdition.edition_num_id)
   return toUpdateDto(rows)
 }
 
@@ -364,7 +371,17 @@ export async function editionTreeUpdate ({ edition = {}, user_id } = {}) {
   await assertSinAlumnosVivos(edition.edition_id, edition.cat_segment_id)
   await assertNoHolidayStarts(childStarts(edition.children))
   const rows = await repo.treeUpdate(edition, user_id)
+  syncTeamsAfterSave([edition.edition_id, ...(edition.children || []).map((c) => c.edition_id)])
   return toSpRowOrFallback(rows)
+}
+
+// Producto reprograma el aula en su Cronograma (inicio, dias, horario, docente,
+// cancelacion): las reuniones de Teams se mueven en segundo plano al guardar,
+// con el mismo link. Best-effort: nunca frena el guardado.
+function syncTeamsAfterSave (editionIds) {
+  try { syncTeamsForEdition(editionIds) } catch (err) {
+    console.warn(`[teams] sync tras guardar edicion no arranco: ${err.message}`)
+  }
 }
 
 // OBTENER EDICION (padre + hijos) POR ID. Retorna raw, el front mapea.

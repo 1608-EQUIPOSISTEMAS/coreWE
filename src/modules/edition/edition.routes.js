@@ -45,6 +45,8 @@ import {
   schedulePdfSchema
 } from './edition.schemas.js'
 import * as ctrl from './edition.controller.js'
+import * as teamsCtrl from './teams-meetings.controller.js'
+import { teamsSyncStartSchema, teamsSyncStatusSchema, teamsEditionLinksSchema } from './teams-meetings.schemas.js'
 
 // Escribir el cronograma (crear/editar ediciones, cancelar A5, cargar links en
 // masa) es de Producto: por ROL y no por modulo, porque la matriz tambien le da
@@ -247,6 +249,14 @@ export default async function editionRoutes (fastify) {
     schema: classroomLinksSaveSchema,
     preHandler: hasRole(['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO', 'ACADEMICA', 'LIDER_ACADEMICA'])
   }, ctrl.classroomLinksSaveHandler)
+
+  // Reuniones de Teams por sesion. Generar/mover/cancelar toca el calendario
+  // corporativo: mismos roles que mantienen los links del aula.
+  const TEAMS_WRITERS = hasRole(['ADMIN', 'PRODUCTO', 'LIDER_PRODUCTO', 'ACADEMICA', 'LIDER_ACADEMICA'])
+  fastify.post('/teams/syncstart', { schema: teamsSyncStartSchema, preHandler: TEAMS_WRITERS }, teamsCtrl.teamsSyncStartHandler)
+  fastify.post('/teams/syncstatus', { schema: teamsSyncStatusSchema, preHandler: TEAMS_WRITERS }, teamsCtrl.teamsSyncStatusHandler)
+  fastify.post('/teams/summary', { preHandler: TEAMS_WRITERS }, teamsCtrl.teamsSummaryHandler)
+  fastify.post('/teams/editionlinks', { schema: teamsEditionLinksSchema }, teamsCtrl.teamsEditionLinksHandler)
 
   fastify.post('/editionupdate', {
     schema: editionUpdateSchema,

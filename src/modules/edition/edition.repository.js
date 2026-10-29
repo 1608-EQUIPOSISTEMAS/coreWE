@@ -1881,6 +1881,13 @@ export class EditionRepository {
            hourc.description         AS hour_label,
            pe.new_methodology,
            INITCAP(CONCAT_WS(' ', per.first_name, per.last_name)) AS instructor,
+           -- Para los links de Teams por sesion (teams-meetings.usecases.js).
+           hourc.alias               AS hour_alias,
+           cmod.alias                AS modality_alias,
+           i.teams_username,
+           p.odoo_activation,
+           per.first_name            AS instructor_first_name,
+           per.last_name             AS instructor_last_name,
            -- Codigo de aula de Nexus (vw_aula_auditoria_resumen_2026): siglas
            -- del curso + fecha de inicio. Dos aulas del mismo curso que abren
            -- el mismo dia se desempatan con las iniciales del docente.
@@ -1897,6 +1904,7 @@ export class EditionRepository {
  LEFT JOIN public."catalog" cseg      ON cseg.catalog_id = pe.cat_segment
  LEFT JOIN public."catalog" dayc      ON dayc.catalog_id = pe.cat_day_combination_id
  LEFT JOIN public."catalog" hourc     ON hourc.catalog_id = pe.cat_hour_combination_id
+ LEFT JOIN public."catalog" cmod      ON cmod.catalog_id = p.cat_model_modality
  LEFT JOIN public.instructors i       ON i.instructor_id = pe.instructor_id
  LEFT JOIN public.persons per         ON per.person_id = i.person_id
 CROSS JOIN LATERAL (
