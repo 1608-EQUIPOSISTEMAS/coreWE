@@ -100,6 +100,11 @@ export const CONVENIOS_HEADER_ROW = [
 const CONVENIOS_TIPO_CLIENTE = 'B2B NACIONAL'
 const CONVENIOS_PROGRAMA = 'CONVENIO'
 
+// Venta B2B sin empresa (el lead no tiene ninguna, o no hay lead): el negocio
+// la reporta como venta de la estrategia B2B, no como celda vacia (2026-10-29,
+// 24160/24186/24170/24173 salian sin EMPRESA y el asesor no las encontraba).
+const CONVENIOS_EMPRESA_DEFAULT = 'Estrategia B2B'
+
 // TIPO PROGRAM y UNIDAD son listas desplegables de la hoja: si el texto no
 // coincide letra por letra con una de sus opciones, la celda queda marcada como
 // invalida. El catalogo de la BD escribe 'En Vivo' con V mayuscula, la hoja
@@ -114,14 +119,14 @@ const conveniosUnidad = (modalidad) =>
 const CONVENIOS_TIPO_EVENTO = 'CONGRESO / EVENTO'
 
 // Mapea un resultado de la query de convenios FICO a las 20 columnas A..T.
-// EMPRESA sale del contrato B2B: llega vacia en las ventas anteriores al
-// 2026-08-24, que todavia no guardaban la empresa.
+// EMPRESA sale del lead o del contrato B2B; sin ninguno de los dos va
+// CONVENIOS_EMPRESA_DEFAULT.
 export function buildConveniosRow (r) {
   const z = isZeroAmountEmail(r.correo)
   const money = (v) => (z ? 0 : (v || ''))
   const esEvento = r.tipo_program === CONVENIOS_TIPO_EVENTO
   return [
-    r.fecha || '', r.empresa || '', CONVENIOS_TIPO_CLIENTE, CONVENIOS_PROGRAMA,
+    r.fecha || '', r.empresa?.trim() || CONVENIOS_EMPRESA_DEFAULT, CONVENIOS_TIPO_CLIENTE, CONVENIOS_PROGRAMA,
     r.nombres || '', r.numero || '', r.nombre_p || '', r.f_programa || '',
     r.ocup || '', r.f_pago || '', r.moneda || '', money(r.monto),
     r.tipo_pago || '', r.mes || '', r.anio || '', r.correo || '',
