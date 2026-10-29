@@ -65,6 +65,10 @@ export const isB2bSaleSql = ({ doctype, origin, advisor, sellerId }) => `
 // anulada (retiro / campaña de cobranza) no es deuda aunque esté vencida:
 // contarla bloqueaba la certificación del que pagó todo de una. Va en un
 // LEFT JOIN LATERAL sobre un enrollment `e`; lo usan el aula y el buscador.
+//
+// Una venta B2B (canal 'B2B' o 'B2B - <asesor>') o con Orden de Servicio/Compra
+// NUNCA es deuda del alumno: la paga su empresa. Academica cobraba a estos
+// alumnos por el aviso azul del aula (23326, B2B con OC, 29/10/26).
 const SOLD_FINANCE_SELECT = `
         SELECT
           ef.total_amount AS fin_total,
@@ -74,14 +78,18 @@ const SOLD_FINANCE_SELECT = `
             WHERE pi.enrollment_id = ef.enrollment_id
               AND cs.alias IN ('we_inst_paid', 'we_payment_status_paid')
           ) AS fin_paid,
-          (SELECT COUNT(*)::int
-             FROM public.payment_installments pi
-             JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
-            WHERE pi.enrollment_id = ef.enrollment_id
-              AND pi.installment_number > 0
-              AND pi.due_date < CURRENT_DATE
-              AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled')
-          ) AS fin_overdue
+          CASE
+            WHEN COALESCE(ef.agent_origin, '') ILIKE '%b2b%'
+              OR COALESCE(ef.cat_b2b_doctype, e.cat_b2b_doctype) IS NOT NULL
+            THEN 0
+            ELSE (SELECT COUNT(*)::int
+                    FROM public.payment_installments pi
+                    JOIN public."catalog" cs ON cs.catalog_id = pi.cat_status
+                   WHERE pi.enrollment_id = ef.enrollment_id
+                     AND pi.installment_number > 0
+                     AND pi.due_date < CURRENT_DATE
+                     AND cs.alias NOT IN ('we_inst_paid', 'we_payment_status_paid', 'we_inst_cancelled'))
+          END AS fin_overdue
           FROM public.enrollments ef
          WHERE ef.enrollment_id = COALESCE(e.parent_enrollment_id, e.enrollment_id)`
 
