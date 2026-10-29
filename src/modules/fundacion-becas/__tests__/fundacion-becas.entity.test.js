@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  scholarshipEndDate, scholarshipStatus, assertCourseChoice, summarizeScholarships,
+  scholarshipEndDate, scholarshipStatus, assertCourseChoice, assertEditable, summarizeScholarships,
   normalizeScholarship, duplicateMessage, scholarshipAlerts
 } from '../fundacion-becas.entity.js'
 
@@ -122,5 +122,33 @@ describe('scholarshipAlerts', () => {
       { scholarship_id: 5, status: 'active', end_date: HOY }
     ]
     expect(ids(scholarshipAlerts(items, HOY).expiringSoon)).toEqual([1, 5])
+  })
+})
+
+describe('assertEditable', () => {
+  const guardada = { program_id: 5, program_edition_id: 10, activated_at: null, edition_end_date: '2026-11-30', access_until: null }
+  const activada = { ...guardada, activated_at: '2026-10-01' }
+  const mismo = { program_id: 5, program_edition_id: 10 }
+
+  it('sin activar: se puede cambiar el curso', () => {
+    expect(() => assertEditable(guardada, { program_id: 6, program_edition_id: 20 }, HOY)).not.toThrow()
+  })
+  it('activada: corregir otros datos con el mismo curso pasa', () => {
+    expect(() => assertEditable(activada, mismo, HOY)).not.toThrow()
+  })
+  it('activada: pasarse a otra edicion del mismo curso pasa (postergacion)', () => {
+    expect(() => assertEditable(activada, { program_id: 5, program_edition_id: 11 }, HOY)).not.toThrow()
+  })
+  it('activada: cambiar a otro curso se rechaza', () => {
+    expect(() => assertEditable(activada, { program_id: 6, program_edition_id: 20 }, HOY)).toThrow(/activada/)
+  })
+  it('vencida sin activar: solo lectura', () => {
+    expect(() => assertEditable({ ...guardada, edition_end_date: '2026-10-03' }, mismo, HOY)).toThrow(/vencida/)
+  })
+  it('vencida y activada: solo lectura', () => {
+    expect(() => assertEditable({ ...activada, edition_end_date: '2026-10-20' }, mismo, HOY)).toThrow(/vencida/)
+  })
+  it('el dia del fin aun se puede editar', () => {
+    expect(() => assertEditable({ ...activada, edition_end_date: HOY }, mismo, HOY)).not.toThrow()
   })
 })

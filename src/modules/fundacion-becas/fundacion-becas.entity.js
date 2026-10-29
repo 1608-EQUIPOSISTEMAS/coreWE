@@ -50,6 +50,24 @@ export function normalizeScholarship (data) {
   }
 }
 
+// Reglas al editar (pedido de Fundacion, 28/10/26). current es la beca guardada;
+// next, los datos ya normalizados.
+// - Vencida: solo lectura, es historico (solo se puede eliminar).
+// - Activada: activated_at es la fecha en que el becario empezo ESE curso;
+//   cambiarle el curso dejaria esa fecha pegada a otro. La edicion si cambia:
+//   el becario que se posterga sigue en el mismo curso.
+// ponytail: activated_at conserva la fecha de la edicion anterior; guardar
+// historial de ediciones si Fundacion necesita medir postergaciones.
+export function assertEditable (current, next, today) {
+  const endDate = scholarshipEndDate(current)
+  if (scholarshipStatus({ activatedAt: current.activated_at, endDate }, today) === 'expired') {
+    throw new DomainError('La beca está vencida: es un registro histórico y no se puede editar.', { statusCode: 409 })
+  }
+  if (current.activated_at && next.program_id !== current.program_id) {
+    throw new DomainError('La beca ya está activada: no se puede cambiar de curso, solo de edición.', { statusCode: 409 })
+  }
+}
+
 export function duplicateMessage (existing) {
   return `Esta persona ya tiene una beca en este curso (registro #${existing.scholarship_id}, ${existing.partner_name}).`
 }

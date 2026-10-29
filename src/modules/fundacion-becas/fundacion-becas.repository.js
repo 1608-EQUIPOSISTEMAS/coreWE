@@ -98,6 +98,18 @@ export async function findCourse (programId, editionId) {
   return rows[0] || null
 }
 
+export async function findScholarship (scholarshipId) {
+  const { rows } = await pool.query(`
+    SELECT s.program_id, s.program_edition_id,
+           to_char(s.activated_at, 'YYYY-MM-DD') AS activated_at,
+           to_char(s.access_until, 'YYYY-MM-DD') AS access_until,
+           to_char(pe.end_date, 'YYYY-MM-DD')    AS edition_end_date
+      FROM public.scholarships s
+      LEFT JOIN public.program_editions pe ON pe.edition_num_id = s.program_edition_id
+     WHERE s.scholarship_id = $1`, [scholarshipId])
+  return rows[0] || null
+}
+
 // La otra beca de la misma persona en el mismo curso/edicion, sin contar la que
 // se esta editando (exceptId).
 export async function findDuplicate ({ document_number, program_id, program_edition_id }, exceptId = null) {

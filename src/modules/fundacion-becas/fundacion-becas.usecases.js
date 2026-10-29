@@ -1,7 +1,7 @@
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 import { email } from '../../shared/adapters/email/email.adapter.js'
 import {
-  assertCourseChoice, summarizeScholarships, normalizeScholarship, duplicateMessage, scholarshipAlerts
+  assertCourseChoice, assertEditable, summarizeScholarships, normalizeScholarship, duplicateMessage, scholarshipAlerts
 } from './fundacion-becas.entity.js'
 import * as repo from './fundacion-becas.repository.js'
 import { ALERTS_SUBJECT, renderAlertsDigest } from './fundacion-becas.render.js'
@@ -49,7 +49,10 @@ export async function registerScholarship (data, userId) {
 }
 
 export async function updateScholarship (scholarshipId, data) {
+  const [current, today] = await Promise.all([repo.findScholarship(scholarshipId), repo.today()])
+  if (!current) throw new NotFoundError('La beca no existe')
   const s = await validScholarship(data, scholarshipId)
+  assertEditable(current, s, today)
   if (!(await repo.updateScholarship(scholarshipId, s))) throw new NotFoundError('La beca no existe')
 }
 
