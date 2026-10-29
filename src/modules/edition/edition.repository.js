@@ -1886,6 +1886,7 @@ export class EditionRepository {
            cmod.alias                AS modality_alias,
            i.teams_username,
            p.odoo_activation,
+           pe.teams_link             AS classroom_teams_link,
            per.first_name            AS instructor_first_name,
            per.last_name             AS instructor_last_name,
            -- Codigo de aula de Nexus (vw_aula_auditoria_resumen_2026): siglas

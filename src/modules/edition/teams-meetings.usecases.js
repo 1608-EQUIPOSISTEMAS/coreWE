@@ -14,6 +14,7 @@ import {
   matchOdooSession,
   meetingOptions,
   organizerIdFromJoinUrl,
+  isManualClassroom,
   horizonEndOf,
   DEFAULT_HORIZON_DAYS
 } from './teams-meetings.entity.js'
@@ -53,7 +54,9 @@ export function teamsConfig (env = process.env) {
     coorganizer: env.MS_TEAMS_COORGANIZER !== 'false',
     autoRecord: env.MS_TEAMS_AUTO_RECORD !== 'false',
     // Quien entra sin sala de espera: everyone | organization | organizer | default
-    lobby: env.MS_TEAMS_LOBBY_BYPASS || 'everyone'
+    lobby: env.MS_TEAMS_LOBBY_BYPASS || 'everyone',
+    // Respetar las aulas con link manual (teams_link): no se les crea reunion.
+    respectManual: env.MS_TEAMS_RESPECT_MANUAL !== 'false'
   }
 }
 
@@ -225,6 +228,8 @@ export async function syncTeamsMeetings ({ editionIds = null, dryRun = false, pr
     invites_avg: 0,
     invites_max: 0,
     skipped_in_person: 0,
+    // Aulas con link manual de Academica (teams_link) que se respetan.
+    skipped_manual: 0,
     skipped_no_hours: [],
     created: 0,
     updated: 0,
@@ -239,13 +244,28 @@ export async function syncTeamsMeetings ({ editionIds = null, dryRun = false, pr
     sample: []
   }
 
+  // Aulas que el ERP ya maneja (tienen reuniones suyas): se siguen
+  // sincronizando aunque tengan teams_link.
+  const managed = new Set(
+    (await repo.listActive(candidates.map((c) => Number(c.row.edition_num_id))))
+      .map((e) => Number(e.program_edition_id))
+  )
+
   const work = []
   for (const { row, control } of candidates) {
     const sessions = futureSessions(control, today)
+    const inRange = sessions.some((s) => s.date <= horizonEnd)
     // Presenciales: se dictan en local, sin Teams. Se cuentan solo las que
     // tienen clases dentro del rango, igual que el resto del resumen.
     if (!needsTeams(row)) {
-      if (sessions.some((s) => s.date <= horizonEnd)) stats.skipped_in_person++
+      if (inRange) stats.skipped_in_person++
+      continue
+    }
+    // Aula con link manual de Academica (campo Teams del aula): se respeta
+    // para no duplicar reuniones ni partir la clase. Para pasarla al ERP,
+    // Academica borra su teams_link (y su serie manual en Teams).
+    if (isManualClassroom(row, { respectManual: cfg.respectManual, managedByErp: managed.has(Number(row.edition_num_id)) })) {
+      if (inRange) stats.skipped_manual++
       continue
     }
     const hours = parseHourRange(row.hour_alias)

@@ -26,6 +26,14 @@ export function parseHourRange (alias) {
   return { start, end }
 }
 
+// Aula con link manual de Academica: tiene el campo Teams del aula
+// (teams_link) lleno y el ERP aun no le creo reuniones. Se respeta para no
+// duplicar la serie manual. Si el ERP ya la maneja, se sigue sincronizando.
+export function isManualClassroom (row = {}, { respectManual = true, managedByErp = false } = {}) {
+  if (!respectManual || managedByErp) return false
+  return String(row.classroom_teams_link || '').trim() !== ''
+}
+
 // Presencial no lleva Teams; cualquier otra modalidad (En Vivo) si.
 export const needsTeams = (row = {}) => row.modality_alias !== IN_PERSON_ALIAS
 

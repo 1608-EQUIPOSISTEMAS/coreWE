@@ -10,6 +10,7 @@ import {
   matchOdooSession,
   meetingOptions,
   organizerIdFromJoinUrl,
+  isManualClassroom,
   horizonEndOf
 } from '../teams-meetings.entity.js'
 
@@ -92,6 +93,19 @@ describe('buildEventPayload', () => {
   it('no se invita a si mismo si el docente es el organizador', () => {
     const slot = desiredSlot(row, { session_number: 1, date: '2026-11-02' }, hours)
     expect(buildEventPayload(row, slot, { organizer: 'd@x.com', instructor: 'd@x.com' }).attendees).toEqual([])
+  })
+})
+
+describe('isManualClassroom', () => {
+  const manual = { classroom_teams_link: 'https://teams.microsoft.com/meet/123' }
+  it('aula con link manual se respeta', () => {
+    expect(isManualClassroom(manual)).toBe(true)
+    expect(isManualClassroom({ classroom_teams_link: '  ' })).toBe(false)
+    expect(isManualClassroom({})).toBe(false)
+  })
+  it('si el ERP ya la maneja o se desactiva la regla, se sincroniza', () => {
+    expect(isManualClassroom(manual, { managedByErp: true })).toBe(false)
+    expect(isManualClassroom(manual, { respectManual: false })).toBe(false)
   })
 })
 
