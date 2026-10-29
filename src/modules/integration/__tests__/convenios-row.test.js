@@ -36,14 +36,12 @@ describe('buildConveniosRow', () => {
     ])
   })
 
-  // Sin empresa en el lead (o sin lead) la venta se reporta como de la
-  // estrategia B2B; el negocio lo pidio el 2026-10-29.
-  it('escribe Estrategia B2B si la venta no tiene empresa', () => {
-    for (const empresa of ['', null, undefined, '  ']) {
-      const celdas = buildConveniosRow({ ...fila, empresa })
-      expect(celdas[1]).toBe('Estrategia B2B')
-      expect(celdas[11]).toBe('328,00')
-    }
+  // EMPRESA sale del convenio del lead, que se empezo a guardar el 2026-08-24:
+  // las ventas anteriores no la tienen y la fila tiene que subir igual.
+  it('deja EMPRESA vacia si el lead no tiene empresa vinculada', () => {
+    const celdas = buildConveniosRow({ ...fila, empresa: '' })
+    expect(celdas[1]).toBe('')
+    expect(celdas[11]).toBe('328,00')
   })
 
   // El negocio pidio (2026-08-25) que estas dos columnas sean fijas: toda
