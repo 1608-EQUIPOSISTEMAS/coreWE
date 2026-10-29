@@ -19,6 +19,12 @@ const STUDENTS_FROM = `
 const IS_STUDENT = `e.active = 'Y'
     AND NOT EXISTS (SELECT 1 FROM public.enrollments c WHERE c.parent_enrollment_id = e.enrollment_id)`
 
+// Modalidad Flex de la inscripcion. Se lee de la fila del hijo: el cambio de
+// modalidad ya cascadea a los hijos (setModalityWithChildren).
+const IS_FLEX = `EXISTS (SELECT 1 FROM public.catalog cim
+                    WHERE cim.catalog_id = e.cat_inscription_modality
+                      AND cim.alias = '${ALIAS.INSCRIPTION_MODALITY_FLEX}')`
+
 // Aulas = ediciones de cursos, con las columnas de la vista Aulas y sus mismas
 // exclusiones: aulas inactivas y segmento A5 (cancelados) no se listan.
 export async function listClassrooms () {
@@ -61,13 +67,18 @@ export async function listClassrooms () {
 }
 
 // Una fila liviana por alumno de todas las aulas: solo lo que hace falta para
-// contar aprobados (~11k filas; nunca viajan al navegador).
+// contar aprobados (~11k filas; nunca viajan al navegador). El documento sirve
+// para marcar como Flex a los alumnos que vienen de Odoo (flexDocKeys).
 export async function listGradeRows () {
   const { rows } = await pool.query(`
     SELECT e.program_edition_id AS edition_id,
            g.final_grade,
-           (g.grade_id IS NOT NULL AND ${hasAnyGradeSql('g')}) AS has_grade
+           (g.grade_id IS NOT NULL AND ${hasAnyGradeSql('g')}) AS has_grade,
+           ${IS_FLEX} AS is_flex,
+           per.document_number
     ${STUDENTS_FROM}
+      JOIN public.customers cust ON cust.customer_id = e.customer_id
+      JOIN public.persons per    ON per.person_id = cust.person_id
      WHERE ${IS_STUDENT}`)
   return rows
 }
@@ -79,7 +90,8 @@ export async function listClassroomStudents (editionId) {
            per.document_number,
            ${STUDENT_EMAIL_SQL} AS email,
            g.final_grade,
-           (g.grade_id IS NOT NULL AND ${hasAnyGradeSql('g')}) AS has_grade
+           (g.grade_id IS NOT NULL AND ${hasAnyGradeSql('g')}) AS has_grade,
+           ${IS_FLEX} AS is_flex
     ${STUDENTS_FROM}
       JOIN public.customers cust ON cust.customer_id = e.customer_id
       JOIN public.persons per    ON per.person_id = cust.person_id
@@ -117,13 +129,13 @@ const EXIT_ALIASES = [ALIAS.ENROLLMENT_STATUS_RETIRED, ALIAS.ENROLLMENT_STATUS_R
 // La usan el contador de la lista y el modal: misma regla en los dos.
 const SALIDAS_SQL = `
   WITH salidas AS (
-    SELECT e.program_edition_id AS edition_id, cust.person_id, e.enrollment_id, cts.alias AS reason
+    SELECT e.program_edition_id AS edition_id, cust.person_id, e.enrollment_id, cts.alias AS reason, ${IS_FLEX} AS is_flex
       FROM public.enrollments e
       JOIN public.catalog cts    ON cts.catalog_id = e.cat_type_status AND cts.alias = ANY($1)
       JOIN public.customers cust ON cust.customer_id = e.customer_id
      WHERE e.program_edition_id IS NOT NULL
     UNION
-    SELECT (a.changes->>'old_edition_id')::int, cust.person_id, e.enrollment_id, '${ALIAS.ENROLLMENT_STATUS_REPROGRAMMED}'
+    SELECT (a.changes->>'old_edition_id')::int, cust.person_id, e.enrollment_id, '${ALIAS.ENROLLMENT_STATUS_REPROGRAMMED}', ${IS_FLEX}
       FROM public.enrollment_audit_log a
       JOIN public.enrollments e  ON e.enrollment_id = a.enrollment_id
       JOIN public.customers cust ON cust.customer_id = e.customer_id
@@ -143,12 +155,15 @@ const SALIDAS_SQL = `
               AND e2.enrollment_id <> s.enrollment_id
               AND (c2.alias IS NULL OR c2.alias <> ALL($1)))`
 
+// Por aula: { all, flex } (flex = los que salieron siendo Flex).
 export async function listRetiredCounts () {
   const { rows } = await pool.query(`
-    SELECT edition_id, COUNT(DISTINCT person_id)::int AS retired
+    SELECT edition_id,
+           COUNT(DISTINCT person_id)::int AS retired,
+           COUNT(DISTINCT person_id) FILTER (WHERE is_flex)::int AS retired_flex
       FROM (${SALIDAS_SQL}) x
      GROUP BY edition_id`, [EXIT_ALIASES])
-  return new Map(rows.map(r => [r.edition_id, r.retired]))
+  return new Map(rows.map(r => [r.edition_id, { all: r.retired, flex: r.retired_flex }]))
 }
 
 // Los que salieron de UN aula, para listarlos en rojo en el modal. Una fila por
@@ -156,7 +171,7 @@ export async function listRetiredCounts () {
 export async function listClassroomDepartures (editionId) {
   const { rows } = await pool.query(`
     SELECT DISTINCT ON (x.person_id)
-           x.enrollment_id, x.reason,
+           x.enrollment_id, x.reason, x.is_flex,
            TRIM(concat_ws(' ', per.first_name, per.last_name, per.mother_last_name)) AS full_name,
            per.document_number,
            ${STUDENT_EMAIL_SQL} AS email

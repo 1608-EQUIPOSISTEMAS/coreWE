@@ -16,14 +16,27 @@ export function gradeStatus ({ hasGrade, finalGrade }) {
 
 const emptyCounts = () => ({ students: 0, approved: 0, failed: 0, no_grade: 0 })
 
+// Modalidad Flex (pedido del usuario 29/10/26): la marca vive en el ERP
+// (enrollments.cat_inscription_modality); Odoo no la tiene, asi que a los
+// alumnos de Odoo se les cruza por documento dentro de la misma aula.
+export const docKey = (editionId, doc) => doc ? `${editionId}|${String(doc).trim()}` : null
+
+export function flexDocKeys (erpRows) {
+  return new Set(erpRows.filter(r => r.is_flex).map(r => docKey(r.edition_id, r.document_number)).filter(Boolean))
+}
+
 // Cruza las aulas con la nota de cada alumno y cuenta por estado. Las aulas sin
-// alumnos no se listan: no hay a quien hacerle seguimiento.
+// alumnos no se listan: no hay a quien hacerle seguimiento. En flex van los
+// mismos conteos, solo de los alumnos Flex del aula.
 export function summarizeClassrooms (classrooms, gradeRows) {
   const byEdition = new Map()
   for (const r of gradeRows) {
-    const counts = byEdition.get(r.edition_id) || emptyCounts()
-    counts.students++
-    counts[gradeStatus({ hasGrade: r.has_grade, finalGrade: r.final_grade })]++
+    const counts = byEdition.get(r.edition_id) || { ...emptyCounts(), flex: emptyCounts() }
+    const status = gradeStatus({ hasGrade: r.has_grade, finalGrade: r.final_grade })
+    for (const c of r.is_flex ? [counts, counts.flex] : [counts]) {
+      c.students++
+      c[status]++
+    }
     byEdition.set(r.edition_id, counts)
   }
   const items = classrooms
@@ -48,17 +61,21 @@ export function odooFinalScore ({ midterm_exam: mid, final_exam: fin, substitute
 
 // Filas de nota (mismo shape que listGradeRows) desde los inscritos de Odoo
 // (studentScoresByGroup: uno por inscrito, con 0 en las notas no cargadas).
-export function odooGradeRows (editionToGroup, odooStudents) {
+// flexKeys (flexDocKeys): un inscrito de Odoo es Flex si su documento esta
+// como Flex en esa aula del ERP; si no cruza, va como regular.
+export function odooGradeRows (editionToGroup, odooStudents, flexKeys = new Set()) {
   const byGroup = new Map()
   for (const e of odooStudents) {
     const gid = e.slide_group_id?.[0]
     if (!byGroup.has(gid)) byGroup.set(gid, [])
     const score = odooFinalScore(e)
-    byGroup.get(gid).push({ final_grade: score, has_grade: score !== null })
+    byGroup.get(gid).push({ final_grade: score, has_grade: score !== null, doc: e.document_number })
   }
   const rows = []
   for (const [editionId, gid] of editionToGroup) {
-    for (const r of byGroup.get(gid) || []) rows.push({ edition_id: editionId, ...r })
+    for (const { doc, ...r } of byGroup.get(gid) || []) {
+      rows.push({ edition_id: editionId, ...r, is_flex: flexKeys.has(docKey(editionId, doc)) })
+    }
   }
   return rows
 }
@@ -75,11 +92,14 @@ export function mergeGradeRows (erpRows, odooRows) {
 //  - completed: culminaron = terminaron con nota final (aprobado o desaprobado).
 //    Solo en aulas finalizadas (fin < hoy, misma regla que aulaStatus del
 //    front); en curso o proximas es null: aun no termina nadie.
+// retiredByEdition: edicion -> { all, flex } (listRetiredCounts). Flex recibe
+// el mismo flujo con sus propios conteos.
 export function withEnrollmentFlow (items, retiredByEdition, today) {
   return items.map(i => {
-    const retired = retiredByEdition.get(i.edition_id) || 0
+    const retired = retiredByEdition.get(i.edition_id) || { all: 0, flex: 0 }
     const finished = Boolean(i.end_date) && String(i.end_date).slice(0, 10) < today
-    return { ...i, retired, initial: i.students + retired, completed: finished ? i.approved + i.failed : null }
+    const flow = (c, n) => ({ ...c, retired: n, initial: c.students + n, completed: finished ? c.approved + c.failed : null })
+    return { ...flow(i, retired.all), flex: flow(i.flex, retired.flex) }
   })
 }
 
@@ -132,7 +152,8 @@ export function withDepartures (students, departures) {
       email: d.email,
       final_grade: null,
       status: 'retired',
-      reason: d.reason
+      reason: d.reason,
+      is_flex: Boolean(d.is_flex)
     }))
   ]
 }
