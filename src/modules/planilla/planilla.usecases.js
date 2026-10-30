@@ -10,7 +10,7 @@ import {
   puedeVerSueldos,
   validarPeriodo
 } from './planilla.entity.js'
-import { cifrarMonto, descifrarMonto } from './planilla.crypto.js'
+import { cifrarMonto, cifrarTexto, descifrarMonto, descifrarTexto } from './planilla.crypto.js'
 import { exportarPlanilla, leerArchivo, plantillaPersonal } from './planilla.xlsx.js'
 import { DomainError, NotFoundError } from '../../shared/errors.js'
 
@@ -49,22 +49,25 @@ export async function listarPersonal ({ roles }, { repo } = DEPENDENCIAS) {
   }
 }
 
-// Sin `confirmar` es una vista previa: no guarda nada.
-export async function importarPersonal ({ buffer, archivo, confirmar, roles, userId }, { repo } = DEPENDENCIAS) {
+// Se importa a inicio de mes: los sueldos valen desde (anio, mes) hasta que otra
+// importacion los reemplace. Sin `confirmar` es una vista previa: no guarda nada.
+export async function importarPersonal ({ buffer, archivo, confirmar, anio, mes, roles, userId }, { repo } = DEPENDENCIAS) {
   assertPuedeVerSueldos(roles)
+  const periodo = validarPeriodo(anio, mes)
   const { personal, errores } = parsearPersonal(await leerArchivo(buffer, archivo))
   const conHorario = personal.map(p => {
     const h = horarioDeArea(p.area)
     return { ...p, hora_ingreso: h.ingreso, hora_salida: h.salida }
   })
   if (!confirmar) {
-    return { confirmado: false, total: conHorario.length, errores, personal: conHorario }
+    return { confirmado: false, anio: periodo.anio, mes: periodo.mes, total: conHorario.length, errores, personal: conHorario }
   }
+  await assertPeriodoAbierto(repo, periodo.anio, periodo.mes)
   if (!conHorario.length) throw new DomainError('El archivo no tiene filas validas.', { statusCode: 422 })
   const filas = conHorario.map(({ sueldo_neto: s, ...p }) => ({ ...p, sueldo_cifrado: cifrarMonto(s) }))
-  await repo.guardarPersonal(filas, { userId, archivo })
-  await repo.auditar(userId, 'IMPORTAR_PERSONAL', { archivo, filas: filas.length })
-  return { confirmado: true, total: filas.length, errores }
+  await repo.guardarPersonal(filas, { userId, archivo, anio: periodo.anio, mes: periodo.mes })
+  await repo.auditar(userId, 'IMPORTAR_PERSONAL', { archivo, filas: filas.length, anio: periodo.anio, mes: periodo.mes })
+  return { confirmado: true, anio: periodo.anio, mes: periodo.mes, total: filas.length, errores }
 }
 
 export async function actualizarPersonal ({ personalId, cambios, userId }, { repo } = DEPENDENCIAS) {
@@ -130,7 +133,10 @@ async function cruzarPeriodo (repo, anio, mes) {
 }
 
 export async function asistencia ({ anio, mes }, { repo } = DEPENDENCIAS) {
-  const { periodo, asistencia: filas, porCodigo, cierre } = await cruzarPeriodo(repo, anio, mes)
+  const { periodo, asistencia: filas, porCodigo: actual, cierre } = await cruzarPeriodo(repo, anio, mes)
+  // Mes cerrado: nombre, area y horario como estaban al cerrar (sin montos).
+  const foto = cierre ? await leerFoto(repo, periodo.anio, periodo.mes) : null
+  const porCodigo = foto ? new Map(foto.trabajadores.map(t => [t.codigo, t])) : actual
   return {
     ...periodo,
     cerrado: !!cierre,
@@ -165,19 +171,42 @@ export async function justificar ({ asistenciaId, justificado, motivo, userId },
 
 // ── Planilla (con montos: solo Talento) ──────────────────────────────────
 
+async function leerFoto (repo, anio, mes) {
+  const cifrado = await repo.snapshotPeriodo(anio, mes)
+  return cifrado ? JSON.parse(descifrarTexto(cifrado)) : null
+}
+
+// Mes cerrado = la foto guardada al cerrar. Solo los abiertos se calculan.
 async function calcular (repo, anio, mes) {
+  const p = validarPeriodo(anio, mes)
+  const cierre = await repo.getPeriodo(p.anio, p.mes)
+  if (cierre) {
+    const foto = await leerFoto(repo, p.anio, p.mes)
+    if (foto) return { ...foto, cerrado: true, cierre }
+  }
+  return calcularEnVivo(repo, anio, mes)
+}
+
+async function calcularEnVivo (repo, anio, mes) {
   const { periodo, personal, asistencia: filas, cierre } = await cruzarPeriodo(repo, anio, mes)
+  const vigentes = new Map((await repo.sueldosVigentes(periodo.anio, periodo.mes)).map(s => [s.codigo, s]))
   const diasPorCodigo = new Map()
   for (const a of filas) {
     if (!diasPorCodigo.has(a.codigo)) diasPorCodigo.set(a.codigo, [])
     diasPorCodigo.get(a.codigo).push(a)
   }
   const trabajadores = personal
-    .filter(p => p.activo || diasPorCodigo.has(p.codigo))
+    .filter(p => (p.activo && vigentes.has(p.codigo)) || diasPorCodigo.has(p.codigo))
     .map(p => {
-      const sueldo = descifrarMonto(p.sueldo_cifrado) || 0
+      const vigente = vigentes.get(p.codigo)
+      const sueldo = vigente ? descifrarMonto(vigente.sueldo_cifrado) : 0
       const calc = calcularTrabajador({ sueldoNeto: sueldo, horaIngreso: p.hora_ingreso }, diasPorCodigo.get(p.codigo) || [])
-      return { personal_id: p.personal_id, codigo: p.codigo, dni: p.dni, nombre: p.nombre, area: p.area, hora_ingreso: p.hora_ingreso, sin_sueldo: !p.sueldo_cifrado, ...calc }
+      return {
+        personal_id: p.personal_id, codigo: p.codigo, dni: p.dni, nombre: p.nombre, area: p.area, hora_ingreso: p.hora_ingreso,
+        sin_sueldo: !vigente,
+        sueldo_vigente_desde: vigente ? `${vigente.anio}-${String(vigente.mes).padStart(2, '0')}` : null,
+        ...calc
+      }
     })
   const suma = k => Math.round(trabajadores.reduce((a, t) => a + t[k], 0) * 100) / 100
   return {
@@ -214,7 +243,10 @@ export async function exportar ({ anio, mes, roles, userId }, { repo } = DEPENDE
 export async function cerrarPeriodo ({ anio, mes, roles, userId }, { repo } = DEPENDENCIAS) {
   assertPuedeVerSueldos(roles)
   const p = validarPeriodo(anio, mes)
-  await repo.cerrarPeriodo(p.anio, p.mes, userId)
+  await assertPeriodoAbierto(repo, p.anio, p.mes)
+  const foto = await calcularEnVivo(repo, p.anio, p.mes)
+  const { cerrado, cierre, ...datos } = foto
+  await repo.cerrarPeriodo(p.anio, p.mes, userId, cifrarTexto(JSON.stringify(datos)))
   await repo.auditar(userId, 'CERRAR_PERIODO', { anio: p.anio, mes: p.mes })
   return repo.getPeriodo(p.anio, p.mes)
 }

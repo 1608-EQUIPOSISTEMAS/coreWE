@@ -20,7 +20,9 @@ export class PlanillaRepository {
   }
 
   // Alta o actualizacion por codigo de huellero. No toca a quien no viene en el archivo.
-  async guardarPersonal (personal, { userId, archivo }) {
+  // El sueldo se guarda ademas en el historial con su mes de vigencia; en la
+  // ficha queda el ultimo importado, solo para mostrarlo.
+  async guardarPersonal (personal, { userId, archivo, anio, mes }) {
     return withTransaction(async client => {
       for (const p of personal) {
         await client.query(
@@ -33,6 +35,13 @@ export class PlanillaRepository {
                   sueldo_cifrado = EXCLUDED.sueldo_cifrado, activo = TRUE,
                   updated_at = now(), updated_by = EXCLUDED.updated_by`,
           [p.codigo, p.dni, p.nombre, p.area, p.hora_ingreso, p.hora_salida, p.sueldo_cifrado, userId]
+        )
+        await client.query(
+          `INSERT INTO public.planilla_sueldo (codigo, anio, mes, sueldo_cifrado, user_id)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (codigo, anio, mes) DO UPDATE SET
+                  sueldo_cifrado = EXCLUDED.sueldo_cifrado, user_id = EXCLUDED.user_id, created_at = now()`,
+          [p.codigo, anio, mes, p.sueldo_cifrado, userId]
         )
       }
       await client.query(
@@ -82,6 +91,19 @@ export class PlanillaRepository {
     })
   }
 
+  // Sueldo vigente de cada trabajador en el mes: el ultimo importado con
+  // vigencia en ese mes o antes. Quien solo tiene sueldos posteriores no aparece.
+  async sueldosVigentes (anio, mes) {
+    const { rows } = await this.db.query(
+      `SELECT DISTINCT ON (codigo) codigo, anio, mes, sueldo_cifrado
+         FROM public.planilla_sueldo
+        WHERE (anio, mes) <= ($1, $2)
+        ORDER BY codigo, anio DESC, mes DESC`,
+      [anio, mes]
+    )
+    return rows
+  }
+
   async asistenciaDelPeriodo (desde, hasta) {
     const { rows } = await this.db.query(
       `SELECT a.asistencia_id, a.codigo, a.nombre_huellero,
@@ -128,12 +150,20 @@ export class PlanillaRepository {
     return rows[0] ?? null
   }
 
-  async cerrarPeriodo (anio, mes, userId) {
+  async cerrarPeriodo (anio, mes, userId, snapshotCifrado) {
     await this.db.query(
-      `INSERT INTO public.planilla_periodo (anio, mes, estado, cerrado_por)
-       VALUES ($1, $2, 'CERRADO', $3) ON CONFLICT (anio, mes) DO NOTHING`,
-      [anio, mes, userId]
+      `INSERT INTO public.planilla_periodo (anio, mes, estado, cerrado_por, snapshot_cifrado)
+       VALUES ($1, $2, 'CERRADO', $3, $4) ON CONFLICT (anio, mes) DO NOTHING`,
+      [anio, mes, userId, snapshotCifrado]
     )
+  }
+
+  async snapshotPeriodo (anio, mes) {
+    const { rows } = await this.db.query(
+      'SELECT snapshot_cifrado FROM public.planilla_periodo WHERE anio = $1 AND mes = $2',
+      [anio, mes]
+    )
+    return rows[0]?.snapshot_cifrado ?? null
   }
 
   async reabrirPeriodo (anio, mes) {

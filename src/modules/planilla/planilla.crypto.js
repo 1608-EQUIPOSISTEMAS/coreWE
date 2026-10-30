@@ -27,12 +27,20 @@ export function cifrarMonto (monto) {
   return ['v1', iv.toString('base64'), cipher.getAuthTag().toString('base64'), enc.toString('base64')].join('.')
 }
 
-export function descifrarMonto (valor) {
+export function cifrarTexto (texto) {
+  return cifrarMonto(texto)
+}
+
+export function descifrarTexto (valor) {
   if (!valor) return null
   const [v, iv, tag, enc] = String(valor).split('.')
-  if (v !== 'v1') throw new DomainError('Formato de sueldo cifrado desconocido.', { statusCode: 500 })
+  if (v !== 'v1') throw new DomainError('Formato cifrado desconocido.', { statusCode: 500 })
   const decipher = crypto.createDecipheriv('aes-256-gcm', clave(), Buffer.from(iv, 'base64'))
   decipher.setAuthTag(Buffer.from(tag, 'base64'))
-  const txt = Buffer.concat([decipher.update(Buffer.from(enc, 'base64')), decipher.final()]).toString('utf8')
-  return Number(txt)
+  return Buffer.concat([decipher.update(Buffer.from(enc, 'base64')), decipher.final()]).toString('utf8')
+}
+
+export function descifrarMonto (valor) {
+  const txt = descifrarTexto(valor)
+  return txt === null ? null : Number(txt)
 }

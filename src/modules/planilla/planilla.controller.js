@@ -22,7 +22,13 @@ export async function personalHandler (req, reply) {
 }
 
 export async function importarPersonalHandler (req, reply) {
-  const data = await usecases.importarPersonal({ ...(await leerSubida(req)), confirmar: confirmar(req), ...ctx(req) })
+  const data = await usecases.importarPersonal({
+    ...(await leerSubida(req)),
+    confirmar: confirmar(req),
+    anio: Number(req.query?.anio),
+    mes: Number(req.query?.mes),
+    ...ctx(req)
+  })
   return reply.send({ ok: true, data })
 }
 
