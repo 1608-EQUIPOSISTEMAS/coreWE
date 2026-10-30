@@ -190,6 +190,12 @@ export async function previewConfirmationEmail ({ enrollmentId, overrideEditionI
   const instRows = Array.isArray(overrideInstallments)
     ? overrideInstallments
     : await repo.findInstallments(enrollmentId)
+  // El destino con cuotas queda "en cuotas" aunque el origen fuera al contado
+  // (appendCourseChangeInstallments): sin esto el preview del CC escondia la
+  // cuota de la diferencia que el envio real si muestra (#22134).
+  if (Array.isArray(overrideInstallments) && overrideInstallments.length > 0) {
+    data.payment_plan_alias = ALIAS.PAYMENT_WAY_INSTALLMENTS
+  }
 
   const firstName = firstWord(data.first_name)
   const lastName = firstWord(data.last_name)
