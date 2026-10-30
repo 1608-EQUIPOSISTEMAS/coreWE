@@ -141,6 +141,11 @@ export async function collectionsHandler (req, reply) {
   return reply.code(200).send({ ok: true, data })
 }
 
+export async function receivablesHandler (req, reply) {
+  const data = await usecases.getReceivablesSummary(req.body || {})
+  return reply.code(200).send({ ok: true, data })
+}
+
 export async function syncInstallmentPaymentHandler (req, reply) {
   const data = await usecases.syncInstallmentPaymentToOdoo({
     enrollmentId: req.body.enrollment_id,

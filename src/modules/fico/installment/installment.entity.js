@@ -431,3 +431,57 @@ export function buildRescheduleAuditDetails ({ reasonCode, count, odooResult, ha
 // se cobra en soles (3041, y ~300 ventas viejas con un id que no existe en el
 // catalogo). Cobranzas sumaba S/ y $ juntos en un solo total.
 export const CAT_CURRENCY_DOLLARS = 3042
+
+// ── Pestaña CxC (Cobranzas) ───────────────────────────────────────────────
+// Lineas del cuadro mensual, en el orden del sheet "II. CxC 26". Minicurso se
+// reporta como Curso; un tipo desconocido cae en "Otros" para no perder deuda.
+export const CXC_LINES = [
+  { key: 'diploma', label: 'Diplomado', aliases: ['we_program_type_diploma'] },
+  { key: 'pee', label: 'PEE', aliases: ['we_program_type_pee'] },
+  { key: 'specialization', label: 'Esp.', aliases: ['we_program_type_specialization'] },
+  { key: 'course', label: 'Curso', aliases: ['we_program_type_course', 'we_program_type_minicourse'] },
+  { key: 'event', label: 'Evento', aliases: ['we_program_type_event'] },
+  { key: 'membership', label: 'Membresía', aliases: ['we_program_type_membership'] }
+]
+const CXC_OTHER = { key: 'other', label: 'Otros' }
+
+// rows: { month, program_type, currency, projected, received, balance } -> 12
+// meses con el saldo por linea (PEN/USD) y su total; mas los totales del año
+// (proyectado, recibido, deuda) para los KPIs. "Otros" solo aparece si tiene saldo.
+export function buildReceivablesSummary (rows = []) {
+  const lineOf = (alias) => CXC_LINES.find((l) => l.aliases.includes(alias)) || CXC_OTHER
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    lines: [...CXC_LINES, CXC_OTHER].map(({ key, label }) => ({ key, label, pen: 0, usd: 0 }))
+  }))
+  for (const r of rows) {
+    const m = months[Number(r.month) - 1]
+    if (!m) continue
+    const line = m.lines.find((l) => l.key === lineOf(r.program_type).key)
+    line[r.currency === 'USD' ? 'usd' : 'pen'] += Number(r.balance) || 0
+  }
+  const kpis = { projected: { pen: 0, usd: 0 }, received: { pen: 0, usd: 0 } }
+  for (const r of rows) {
+    const cur = r.currency === 'USD' ? 'usd' : 'pen'
+    kpis.projected[cur] += Number(r.projected) || 0
+    kpis.received[cur] += Number(r.received) || 0
+  }
+  const total = { pen: 0, usd: 0 }
+  for (const m of months) {
+    m.lines = m.lines
+      .map((l) => ({ ...l, pen: round2(l.pen), usd: round2(l.usd) }))
+      .filter((l) => l.key !== 'other' || l.pen || l.usd)
+    m.total = {
+      pen: round2(m.lines.reduce((a, l) => a + l.pen, 0)),
+      usd: round2(m.lines.reduce((a, l) => a + l.usd, 0))
+    }
+    total.pen += m.total.pen
+    total.usd += m.total.usd
+  }
+  const money = (o) => ({ pen: round2(o.pen), usd: round2(o.usd) })
+  return {
+    months,
+    total: money(total),
+    kpis: { projected: money(kpis.projected), received: money(kpis.received), debt: money(total) }
+  }
+}

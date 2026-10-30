@@ -535,6 +535,52 @@ export class InstallmentRepository {
     return rows || []
   }
 
+  // Pestaña CxC de Cobranzas, por mes de vencimiento, tipo de programa y moneda:
+  // proyectado (monto de las cuotas), recibido (pagado de esas cuotas) y saldo
+  // pendiente (monto - pagos parciales). Mismo universo que
+  // listCollections (ventas aprobadas, sin retiro/RP/CC, sin inicial ni
+  // anuladas; aqui tambien las pagadas, para el proyectado; las cuotas en Borrador de ventas aprobadas SI son deuda).
+  async receivablesByMonth ({ year }) {
+    const { rows } = await this.db.query(`
+      WITH pagado AS (
+        SELECT installment_id, SUM(amount) AS monto
+          FROM payments
+         WHERE active = 'Y' AND installment_id IS NOT NULL
+         GROUP BY 1
+      )
+      SELECT
+        EXTRACT(MONTH FROM pi.due_date)::int AS month,
+        COALESCE(ctp.alias, '') AS program_type,
+        CASE WHEN e.cat_currency = 3042 THEN 'USD' ELSE 'PEN' END AS currency,
+        SUM(pi.amount)::float8 AS projected,
+        SUM(LEAST(COALESCE(pg.monto, 0), pi.amount))::float8 AS received,
+        -- Una cuota en estado Pagada no es deuda aunque sus pagos no sumen el monto.
+        SUM(CASE WHEN cs.alias IN ('we_inst_paid', 'we_payment_status_paid') THEN 0
+                 ELSE GREATEST(pi.amount - COALESCE(pg.monto, 0), 0) END)::float8 AS balance
+      FROM payment_installments pi
+      JOIN catalog cs ON cs.catalog_id = pi.cat_status
+      JOIN enrollments e ON e.enrollment_id = pi.enrollment_id
+      JOIN catalog cf ON cf.catalog_id = e.cat_fico_status
+      LEFT JOIN pagado pg ON pg.installment_id = pi.installment_id
+      LEFT JOIN program_versions ver ON ver.program_version_id = e.program_version_id
+      LEFT JOIN programs prog ON prog.program_id = ver.program_id
+      LEFT JOIN catalog ctp ON ctp.catalog_id = prog.cat_type_program
+      LEFT JOIN catalog cst ON cst.catalog_id = e.cat_type_status
+      WHERE e.active = 'Y'
+        AND cf.alias = 'we_enrollment_status_checked'
+        AND COALESCE(cst.alias, '') NOT IN
+            ('we_enrollment_status_retired', 'we_enrollment_status_reprogrammed', 'we_enrollment_status_course_changed')
+        -- Inicial / contado = la cuota de menor numero de la venta (no siempre
+        -- es la 0: hay ventas que arrancan en 1). Se cobra al vender: no es CxC.
+        AND pi.installment_number > (SELECT MIN(z.installment_number) FROM payment_installments z
+                                      WHERE z.enrollment_id = pi.enrollment_id)
+        AND pi.cat_status <> 4456
+        AND EXTRACT(YEAR FROM pi.due_date)::int = $1
+      GROUP BY 1, 2, 3
+    `, [year])
+    return rows || []
+  }
+
   // Inserta una fila en la bitacora de auditoria de la inscripcion. Best-effort:
   // un fallo de auditoria no revierte la operacion principal.
   async logAudit ({ enrollmentId, action, userId, justificacion = null, changes = null, details = null }) {

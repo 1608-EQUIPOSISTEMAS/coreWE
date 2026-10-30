@@ -10,7 +10,8 @@ import {
   rescheduleInstallmentsSchema,
   collectionCampaignSchema,
   syncInstallmentPaymentSchema,
-  collectionsSchema
+  collectionsSchema,
+  receivablesSchema
 } from './installment.schemas.js'
 import * as ctrl from './installment.controller.js'
 
@@ -31,4 +32,5 @@ export default async function installmentRoutes (fastify) {
   fastify.post('/collectioncampaign', { preHandler: [authenticate, hasRole(RESCHEDULE_ROLES)], schema: collectionCampaignSchema }, ctrl.collectionCampaignHandler)
   fastify.post('/syncinstallmentpayment', { preHandler: [authenticate], schema: syncInstallmentPaymentSchema }, ctrl.syncInstallmentPaymentHandler)
   fastify.post('/collections', { preHandler: [authenticate], schema: collectionsSchema }, ctrl.collectionsHandler)
+  fastify.post('/collections/cxc', { preHandler: [authenticate], schema: receivablesSchema }, ctrl.receivablesHandler)
 }

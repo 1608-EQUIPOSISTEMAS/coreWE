@@ -206,6 +206,17 @@ export const collectionsSchema = {
   }
 }
 
+export const receivablesSchema = {
+  body: {
+    type: 'object',
+    required: ['year'],
+    additionalProperties: true,
+    properties: {
+      year: { type: 'integer', minimum: 2000 }
+    }
+  }
+}
+
 export const syncInstallmentPaymentSchema = {
   body: {
     type: 'object',

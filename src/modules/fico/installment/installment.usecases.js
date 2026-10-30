@@ -7,6 +7,7 @@ import { installmentRepository } from './installment.repository.js'
 import { sendPaymentConfirmationEmail } from '../email-confirmation/email-confirmation.usecases.js'
 import {
   isPaidByAlias,
+  buildReceivablesSummary,
   assertEditableAmount,
   assertAddAmount,
   normalizeDueDate,
@@ -566,4 +567,10 @@ export async function syncInstallmentPaymentToOdoo ({ enrollmentId, installmentN
 // el mes entero son pocos cientos de filas y asi los filtros combinan al instante.
 export async function getCollections ({ year, month }) {
   return { items: await repo.listCollections({ year, month }) }
+}
+
+// Pestaña CxC de Cobranzas: lo que falta cobrar por mes de vencimiento y tipo
+// de programa, PEN y USD por separado (reemplaza la hoja "II. CxC 26").
+export async function getReceivablesSummary ({ year }) {
+  return { year, ...buildReceivablesSummary(await repo.receivablesByMonth({ year })) }
 }
