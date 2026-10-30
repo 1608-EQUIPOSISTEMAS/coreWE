@@ -34,6 +34,7 @@ import marketingRoutes from './modules/marketing/marketing.routes.js'
 import b2bRoutes from './modules/b2b/b2b.routes.js'
 import reprogramacionRoutes from './modules/reprogramacion/reprogramacion.routes.js'
 import ticketsAlumnosRoutes from './modules/tickets-alumnos/tickets-alumnos.routes.js'
+import planillaRoutes from './modules/planilla/planilla.routes.js'
 import ticketsRoutes from './modules/tickets/tickets.routes.js'
 import planComercialRoutes from './modules/plancomercial/plancomercial.routes.js'
 import prediccionRoutes from './modules/prediccion/prediccion.routes.js'
@@ -264,6 +265,7 @@ export async function buildApp (opts = {}) {
   await app.register(b2bRoutes, { prefix: '/api/b2b' })
   await app.register(reprogramacionRoutes, { prefix: '/api/reprogramacion' })
   await app.register(ticketsAlumnosRoutes, { prefix: '/api/tickets-alumnos' })
+  await app.register(planillaRoutes, { prefix: '/api/planilla' })
   await app.register(ticketsRoutes, { prefix: '/api/tickets' })
   await app.register(planComercialRoutes, { prefix: '/api/plan-comercial' })
   await app.register(prediccionRoutes, { prefix: '/api/prediccion' })
