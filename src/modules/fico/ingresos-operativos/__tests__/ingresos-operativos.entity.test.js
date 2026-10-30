@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DomainError } from '../../../shared/errors.js'
+import { DomainError } from '../../../../shared/errors.js'
 import { parsePeriodo, tipoPago, lineaNegocio, grupoDe, toDetalle, toDetalles, toDetalleAdicional, buildResumen } from '../ingresos-operativos.entity.js'
 
 const pago = (extra = {}) => ({

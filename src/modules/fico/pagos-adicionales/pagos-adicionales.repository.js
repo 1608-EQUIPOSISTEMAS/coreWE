@@ -1,4 +1,4 @@
-import { pool } from '../../shared/db/pool.js'
+import { pool } from '../../../shared/db/pool.js'
 
 // Unico que habla con la BD. SQL plano (sin SPs): la tabla es nueva y su DDL
 // vive versionado en scripts/ddl-pagos-adicionales.sql, mismo criterio que

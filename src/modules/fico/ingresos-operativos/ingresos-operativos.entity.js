@@ -1,4 +1,4 @@
-import { DomainError } from '../../shared/errors.js'
+import { DomainError } from '../../../shared/errors.js'
 
 // Reglas del consultor de Ingresos Operativos (reemplaza el sheet "Ing.
 // Operativos - GRUPO WE"). Funciones puras: ni BD ni HTTP.

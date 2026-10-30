@@ -1,4 +1,4 @@
-import { authenticate, hasSubmoduleOrRole, hasRole } from '../../shared/http/auth.middleware.js'
+import { authenticate, hasSubmoduleOrRole, hasRole } from '../../../shared/http/auth.middleware.js'
 import { consultar, detalle, registrar, editar, anular } from './pagos-adicionales.usecases.js'
 import { LINEAS, ESTADOS, MONEDAS, ASUNTOS } from './pagos-adicionales.entity.js'
 

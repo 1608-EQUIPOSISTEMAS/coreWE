@@ -1,4 +1,4 @@
-import { DomainError } from '../../shared/errors.js'
+import { DomainError } from '../../../shared/errors.js'
 
 // Reglas del modulo Pagos Adicionales (reemplaza el sheet de pagos adicionales
 // de FICO, pestaña "1. Pago Adicional"). Funciones puras: ni BD ni HTTP.

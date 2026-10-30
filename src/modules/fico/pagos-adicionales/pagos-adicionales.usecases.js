@@ -1,4 +1,4 @@
-import { NotFoundError } from '../../shared/errors.js'
+import { NotFoundError } from '../../../shared/errors.js'
 import { listPagos, getPago, getCuenta, insertPago, updatePago, anularPago } from './pagos-adicionales.repository.js'
 import { parsePeriodo, buildPago, toFila } from './pagos-adicionales.entity.js'
 

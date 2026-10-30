@@ -1,4 +1,4 @@
-import { pool } from '../../shared/db/pool.js'
+import { pool } from '../../../shared/db/pool.js'
 
 // Unico que habla con la BD. SQL plano de solo lectura, como el reporte de
 // ingresos B2C de marketing (ingresosB2C): mismo filtro de B2B, asi el

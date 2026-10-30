@@ -1,4 +1,4 @@
-import { authenticate, hasSubmoduleOrRole } from '../../shared/http/auth.middleware.js'
+import { authenticate, hasSubmoduleOrRole } from '../../../shared/http/auth.middleware.js'
 import { ingresosOperativos } from './ingresos-operativos.usecases.js'
 
 // Submodulo de Finanzas con casilla propia en la matriz (FICO >
