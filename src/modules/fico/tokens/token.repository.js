@@ -24,6 +24,7 @@ const BASE_SELECT = `
     COALESCE(pe.global_code, pe_dir.global_code) AS edition_code,
     COALESCE(pe.start_date, pe_dir.start_date) AS edition_start_date,
     c_prov.description AS provider_name,
+    COALESCE((pt.inscription_data->'inscription'->>'mp_interest_free')::boolean, false) AS mp_interest_free,
     CASE WHEN COALESCE(c_sit.alias, c_sit_dir.alias) IN ${B2B_SITUATION_ALIASES} AND u_req.alias IS NOT NULL
          THEN 'B2B - ' || u_req.alias
          ELSE u_req.alias

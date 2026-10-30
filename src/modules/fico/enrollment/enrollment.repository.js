@@ -228,6 +228,13 @@ export class EnrollmentRepository {
              e.email_cc,
              e.requires_email_cc,
              e.notes AS advisor_observation,
+             -- Etiqueta "Cuotas sin intereses - Mercado Pago": vive en el JSON
+             -- del token que origino la venta.
+             EXISTS (
+               SELECT 1 FROM payment_tokens pt
+               WHERE pt.enrollment_id = e.enrollment_id
+                 AND (pt.inscription_data->'inscription'->>'mp_interest_free') = 'true'
+             ) AS mp_interest_free,
              -- OS/OP: el panel lo necesita para confirmar la inscripcion sin
              -- pedir datos bancarios (la empresa deposita semanas despues).
              cdt.alias AS b2b_doctype_alias,

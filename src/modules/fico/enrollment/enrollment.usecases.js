@@ -124,6 +124,7 @@ export async function paymentDetailGet ({ enrollment_id }) {
         // los tres en el preview del correo y decide; nunca se parsea la nota.
         result.email_cc = ed.email_cc || null
         result.requires_email_cc = ed.requires_email_cc === true
+        result.mp_interest_free = ed.mp_interest_free === true
         result.advisor_observation = advisorObservationOrNull(ed.advisor_observation)
       }
     } catch (err) {
